@@ -1,0 +1,107 @@
+{
+	"languages": {
+		"CSS": {
+			"formatter": [{ "language_server": { "name": "oxfmt" } }],
+			"prettier": { "allowed": false }
+		},
+		"JavaScript": {
+			"format_on_save": "on",
+			"formatter": [
+				{ "language_server": { "name": "oxfmt" } },
+				{ "code_action": "source.fixAll.oxc" }
+			],
+			"prettier": { "allowed": false }
+		},
+		"JSON": {
+			"format_on_save": "on",
+			"formatter": [
+				{ "language_server": { "name": "oxfmt" } },
+				{ "code_action": "source.fixAll.oxc" }
+			],
+			"prettier": { "allowed": false }
+		},
+		"JSONC": {
+			"format_on_save": "on",
+			"formatter": [
+				{ "language_server": { "name": "oxfmt" } },
+				{ "code_action": "source.fixAll.oxc" }
+			],
+			"prettier": { "allowed": false }
+		},
+		"Markdown": {
+			"format_on_save": "on",
+			"formatter": [
+				{ "language_server": { "name": "oxfmt" } },
+				{ "code_action": "source.fixAll.oxc" }
+			],
+			"prettier": { "allowed": false }
+		},
+		"MDX": {
+			"format_on_save": "on",
+			"formatter": [
+				{ "language_server": { "name": "oxfmt" } },
+				{ "code_action": "source.fixAll.oxc" }
+			],
+			"prettier": { "allowed": false }
+		},
+		"TOML": {
+			"format_on_save": "on",
+			"formatter": [
+				{ "language_server": { "name": "oxfmt" } },
+				{ "code_action": "source.fixAll.oxc" }
+			],
+			"prettier": { "allowed": false }
+		},
+		"TSX": {
+			"format_on_save": "on",
+			"formatter": [
+				{ "language_server": { "name": "oxfmt" } },
+				{ "code_action": "source.fixAll.oxc" }
+			],
+			"language_servers": ["typescript-ls", "!vtsls", "!typescript-language-server", "..."],
+			"prettier": { "allowed": false }
+		},
+		"TypeScript": {
+			"format_on_save": "on",
+			"formatter": [
+				{ "language_server": { "name": "oxfmt" } },
+				{ "code_action": "source.fixAll.oxc" }
+			],
+			"language_servers": ["typescript-ls", "!vtsls", "!typescript-language-server", "..."],
+			"prettier": { "allowed": false }
+		},
+		"YAML": {
+			"format_on_save": "on",
+			"formatter": [
+				{ "language_server": { "name": "oxfmt" } },
+				{ "code_action": "source.fixAll.oxc" }
+			],
+			"prettier": { "allowed": false }
+		}
+	},
+	"lsp": {
+		"oxlint": {
+			"initialization_options": {
+				"settings": {
+					"typeAware": true,
+					"unusedDisableDirectives": "warn"
+				}
+			}
+		},
+		"oxfmt": {
+			"initialization_options": {
+				"settings": {
+					"run": "onSave"
+				}
+			}
+		},
+		"tailwindcss-language-server": {
+			"settings": {
+				"classFunctions": ["cn", "cva"],
+				"experimental.configFile": {
+					"apps/web/src/app/globals.css": "apps/web/src/**"
+				}
+			}
+		}
+	}
+}

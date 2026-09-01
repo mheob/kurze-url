@@ -1,0 +1,60 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+.output/
+.nitro/
+.tanstack/
+.vercel/
+
+# Go
+*.exe
+*.test
+*.out
+apps/api/bin/
+apps/cli/bin/
+
+# goreleaser
+apps/cli/dist/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Supabase CLI
+supabase/.branches/
+supabase/.temp/
+supabase/.env
+
+# Test / coverage output
+coverage/
+playwright-report/
+test-results/
+blob-report/
+.playwright/
+
+# Storybook
+storybook-static/
+
+# Caches
+.cache/
+.turbo/
+*.tsbuildinfo
+.eslintcache
+
+# Editors
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
