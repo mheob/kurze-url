@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/mileusna/useragent"
 )
@@ -128,9 +129,17 @@ func fallback(v string) string {
 	return truncate(v)
 }
 
+// truncate bounds v to maxValueLength bytes without ever returning invalid
+// UTF-8: v is attacker-supplied free-form text, so a naive byte slice can cut
+// a multi-byte rune in half. Backing off a few extra bytes to the last valid
+// rune boundary is preferable to writing a broken string into Postgres.
 func truncate(v string) string {
-	if len(v) > maxValueLength {
-		return v[:maxValueLength]
+	if len(v) <= maxValueLength {
+		return v
+	}
+	v = v[:maxValueLength]
+	for len(v) > 0 && !utf8.ValidString(v) {
+		v = v[:len(v)-1]
 	}
 	return v
 }

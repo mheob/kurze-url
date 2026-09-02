@@ -3,8 +3,10 @@ package analytics_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/require"
 
@@ -82,6 +84,21 @@ func TestExtractDimensionsBoundsValueLength(t *testing.T) {
 
 	require.LessOrEqual(t, len(analytics.ExtractDimensions(r).UTMSource), 128,
 		"unbounded dimension values would let anyone inflate the rollup table")
+}
+
+func TestExtractDimensionsTruncatesUTMSourceAtARuneBoundary(t *testing.T) {
+	// 127 ASCII bytes followed by repeated "ü" (2 bytes each) puts byte index
+	// 127 at the first byte of a multi-byte rune, so a byte-slice truncation
+	// at 128 bytes cuts the rune in half.
+	long := strings.Repeat("a", 127) + strings.Repeat("ü", 20)
+	target := "/hello?" + url.Values{"utm_source": {long}}.Encode()
+	r := request(t, target, "Mozilla/5.0", nil)
+
+	value := analytics.ExtractDimensions(r).UTMSource
+
+	require.LessOrEqual(t, len(value), 128)
+	require.True(t, utf8.ValidString(value),
+		"truncating mid-rune produces invalid UTF-8, which Postgres rejects on insert")
 }
 
 func TestRowsAlwaysIncludeTotalWithANullValue(t *testing.T) {
