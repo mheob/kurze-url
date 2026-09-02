@@ -172,8 +172,6 @@ func (o linkOptions) verification() string {
 	return "verified"
 }
 
-//nolint:unused // reserved for a later test file in this package that needs a non-default slug.
-func withSlug(s string) func(*linkOptions)  { return func(o *linkOptions) { o.slug = s } }
 func withState(s string) func(*linkOptions) { return func(o *linkOptions) { o.state = s } }
 func withRedirectType(t int) func(*linkOptions) {
 	return func(o *linkOptions) { o.redirectType = t }
