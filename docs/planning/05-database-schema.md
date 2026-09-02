@@ -7,7 +7,7 @@ Project context: Postgres via Supabase, schema owned by Supabase CLI migrations,
 ## Decided
 
 | Concern | Choice | Notes |
-|---|---|---|
+| --- | --- | --- |
 | Naming | **`team`, not `verein`, in all identifiers** (decided 2026-09-01) | Renamed throughout — see below |
 | Password protection | **In MVP scope, not deferred** (decided 2026-09-01) | Moved out of "deferred" — see "Password protection" below |
 | Audit log | Built in from day one | Generic `audit_log` table |
@@ -161,7 +161,7 @@ Implementation notes, since this is itself security-sensitive:
 
 Added 2026-09-02, during implementation. `01-architecture.md` requires that "analytics collection must be possible to disable per link or per account", but the schema above originally had no field for it. `link.analytics_enabled` (boolean, not null, default true) fills that gap: when false the redirect path records no click at all — no rollup row, and no entry in the Redis unique-visitor set.
 
-Per-link satisfies the stated requirement ("per link *or* per account"). A team-level switch can layer on top later without changing this column. It was added during the redirect-path work rather than deferred because the redirect handler is the only place that can honour it, and retrofitting would mean reopening the hot path plus a second migration.
+Per-link satisfies the stated requirement ("per link _or_ per account"). A team-level switch can layer on top later without changing this column. It was added during the redirect-path work rather than deferred because the redirect handler is the only place that can honour it, and retrofitting would mean reopening the hot path plus a second migration.
 
 ## Analytics rollup design
 

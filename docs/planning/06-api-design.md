@@ -7,7 +7,7 @@ Project context: Go backend, **Huma** (code-first, generates OpenAPI 3.1) on **c
 ## Decided
 
 | Concern | Choice | Notes |
-|---|---|---|
+| --- | --- | --- |
 | Versioning | **`/v1` URL path prefix** | See "Versioning" below |
 | Error format | **Huma's default** — RFC 9457 `application/problem+json` | No custom error model; Huma's built-in behavior is kept as-is |
 | Auth scheme | **Bearer JWT (Supabase-issued), verified via JWKS** | Asymmetric (ES256) verification, no shared secret in the backend — see "Authentication" below |
@@ -39,7 +39,7 @@ Huma-level implementation:
 
 Decided: **offset/limit** (`?page=1&per_page=25`), with a typed response envelope — not cursor/keyset pagination, and not pagination-via-headers (`Link`, `X-Total-Count`).
 
-Reasoning: the consuming UI is an admin-style data table (TanStack Table, page-numbered, "search and filter by URL, alias, creator, time period" per the original feature list) at a scale (per-Verein link counts) where offset drift from concurrent inserts is a non-issue — this isn't a high-write public feed where keyset pagination's stability advantage would matter. Headers are the more "RESTful" option but are invisible to a strongly-typed generated TypeScript client — Huma's core value is typed response *bodies*, so pagination metadata belongs in the body:
+Reasoning: the consuming UI is an admin-style data table (TanStack Table, page-numbered, "search and filter by URL, alias, creator, time period" per the original feature list) at a scale (per-Verein link counts) where offset drift from concurrent inserts is a non-issue — this isn't a high-write public feed where keyset pagination's stability advantage would matter. Headers are the more "RESTful" option but are invisible to a strongly-typed generated TypeScript client — Huma's core value is typed response _bodies_, so pagination metadata belongs in the body:
 
 ```go
 type Page[T any] struct {
@@ -74,7 +74,7 @@ Decided 2026-09-01: real email invitations from day one, not deferred to "add ex
 
 Finding: Supabase's Admin API (`auth.admin.inviteUserByEmail`) creates the `auth.users` row synchronously (unconfirmed) and sends the invite email itself — no separate `team_invitation` table is needed, since a valid `user_id` exists immediately and the `team_member` row (with `team_id`/`role` passed through as `data` metadata on the invite call) can be inserted right away, before the invitee has even clicked the link. The person simply appears as a member whose account happens to be unconfirmed until they follow the email.
 
-Caveat that changes the plan: Supabase's **built-in** email sending is capped at **2 emails/hour** — unusable for real invite volume even for a single small Verein onboarding a handful of people at once. Fixing this requires **custom SMTP** on the Supabase project; **Resend** is the pick (free tier: 3,000 emails/month, simplest setup of the compared providers — API key as the SMTP password, no separate domain/IAM ceremony like SES). This becomes a new external service: `02-external-services-and-hosting.md` needs a short addition. Note this is purely a Supabase project setting (SMTP configured in the Supabase dashboard) — the Go backend itself doesn't send email, it only calls Supabase's Admin API (already using the service-role key it needs anyway) to trigger the invite, so no new secret is needed in `04-backend-architecture.md`. Since Supabase routes *all* auth emails (signup confirmation, magic link, password reset, invites) through whatever SMTP is configured, this one addition also fixes the 2/hour ceiling for every other auth email, not just invites.
+Caveat that changes the plan: Supabase's **built-in** email sending is capped at **2 emails/hour** — unusable for real invite volume even for a single small Verein onboarding a handful of people at once. Fixing this requires **custom SMTP** on the Supabase project; **Resend** is the pick (free tier: 3,000 emails/month, simplest setup of the compared providers — API key as the SMTP password, no separate domain/IAM ceremony like SES). This becomes a new external service: `02-external-services-and-hosting.md` needs a short addition. Note this is purely a Supabase project setting (SMTP configured in the Supabase dashboard) — the Go backend itself doesn't send email, it only calls Supabase's Admin API (already using the service-role key it needs anyway) to trigger the invite, so no new secret is needed in `04-backend-architecture.md`. Since Supabase routes _all_ auth emails (signup confirmation, magic link, password reset, invites) through whatever SMTP is configured, this one addition also fixes the 2/hour ceiling for every other auth email, not just invites.
 
 Edge case flagged, not fully resolved here: inviting an email address that **already** has a Supabase account (e.g. a person being added to a second Verein) needs different handling than a brand-new invite — `inviteUserByEmail` is for creating new users. Recommendation to carry into implementation: detect this case (lookup by email first, or handle the error `inviteUserByEmail` returns for an existing address) and fall back to inserting the `team_member` row directly with no email sent — the person simply sees the new team the next time they log in. A proper "you were added to a team" notification for that path is out of scope for MVP (no notification system decided yet) and stays a known gap, not a blocker.
 
@@ -85,9 +85,11 @@ Endpoint: `POST /v1/teams/{team_id}/members` accepts `{email, role}`; internally
 Grouped by resource. All under `/v1` and Bearer-authenticated unless noted otherwise (the public redirect surface above is the only unauthenticated exception).
 
 **Session**
+
 - `GET /v1/me` — current user's profile plus their team memberships and roles (drives the team switcher in the frontend).
 
 **Teams**
+
 - `POST /v1/teams` — create a team; creator becomes `owner`.
 - `GET /v1/teams` — teams the caller belongs to.
 - `GET /v1/teams/{team_id}`
@@ -95,12 +97,14 @@ Grouped by resource. All under `/v1` and Bearer-authenticated unless noted other
 - Team deletion: **not exposed for MVP** — a rare, destructive operation with no clear requirement for it yet; revisit if/when a real need shows up.
 
 **Team members**
+
 - `GET /v1/teams/{team_id}/members`
 - `POST /v1/teams/{team_id}/members` — invite/add, per "Team invitations" above.
 - `PATCH /v1/teams/{team_id}/members/{user_id}` — change role.
 - `DELETE /v1/teams/{team_id}/members/{user_id}` — remove.
 
 **Domains**
+
 - `POST /v1/teams/{team_id}/domains`
 - `GET /v1/teams/{team_id}/domains`
 - `GET /v1/domains/{domain_id}`
@@ -108,14 +112,17 @@ Grouped by resource. All under `/v1` and Bearer-authenticated unless noted other
 - `DELETE /v1/domains/{domain_id}`
 
 **Folders**
+
 - `POST /v1/teams/{team_id}/folders`, `GET /v1/teams/{team_id}/folders`
 - `PATCH /v1/folders/{folder_id}`, `DELETE /v1/folders/{folder_id}`
 
 **Tags**
+
 - `POST /v1/teams/{team_id}/tags`, `GET /v1/teams/{team_id}/tags`
 - `PATCH /v1/tags/{tag_id}`, `DELETE /v1/tags/{tag_id}`
 
 **Links**
+
 - `POST /v1/teams/{team_id}/links` — create.
 - `GET /v1/teams/{team_id}/links` — list; filter/sort/paginate per "Pagination"/"Filtering" above.
 - `GET /v1/links/{link_id}` — includes the latest `link_scan_result` verdict as a nested field (no separate scan-status endpoint — folding it into the main resource is simpler than a second round-trip).
@@ -127,6 +134,7 @@ Grouped by resource. All under `/v1` and Bearer-authenticated unless noted other
 - `GET /v1/links/{link_id}/stats` — analytics rollups; query params `from`, `to`, `dimension` (daily granularity only for MVP, per `05-database-schema.md`).
 
 **Audit log**
+
 - `GET /v1/teams/{team_id}/audit-log` — paginated; filter by `entity_type`, `action`, `actor_user_id`, `from`/`to`.
 
 **CLI note**: every CLI command (`short link create`, `short link list`, `short link stats`, `short qr`) maps directly onto one of the endpoints above — no CLI-specific endpoints exist or are needed, confirming the "CLI is a thin client over the same API" principle from `01-architecture.md` holds with zero exceptions.

@@ -1,0 +1,100 @@
+name: CI — API
+
+# apps/api is Go, so it sits outside the pnpm workspace graph. Its checks are
+# path-filtered by hand rather than inferred from the lockfile.
+on:
+  pull_request:
+    paths:
+      - "apps/api/**"
+      - "supabase/**"
+      - ".github/workflows/ci-api.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/api/**"
+      - "supabase/**"
+      - ".github/workflows/ci-api.yml"
+
+concurrency:
+  group: ci-api-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: apps/api
+
+jobs:
+  static:
+    name: vet & lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/api/go.mod
+          cache-dependency-path: apps/api/go.sum
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt'd:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.13.2
+          working-directory: apps/api
+
+  test:
+    name: go test
+    runs-on: ubuntu-latest
+    # supabase start pulls several container images on a cold runner.
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/api/go.mod
+          cache-dependency-path: apps/api/go.sum
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      # Brings up Postgres with auth.users, applies every migration and loads
+      # supabase/seed.sql. The db and api tests resolve the seeded short.test
+      # link; the cache and api tests start their own Redis via testcontainers,
+      # which uses the runner's Docker daemon.
+      - name: Start the local Supabase stack
+        working-directory: .
+        run: supabase start
+
+      - name: go test
+        env:
+          TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:54322/postgres
+        run: go test ./... -count=1
+
+      # internal/analytics is the only package with real concurrency: an
+      # unguarded buffer there corrupts click counts silently rather than
+      # failing loudly.
+      - name: go test -race (analytics, api)
+        env:
+          TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:54322/postgres
+        run: go test -race ./internal/analytics/... ./internal/api/... -count=1
+
+      - name: Stop the local Supabase stack
+        if: always()
+        working-directory: .
+        run: supabase stop --no-backup
