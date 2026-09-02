@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
 	"github.com/mheob/kurze-url/apps/api/internal/db"
@@ -48,7 +49,7 @@ func TestUpsertClickStatsAccumulatesAcrossBatches(t *testing.T) {
 	pool := testPool(t)
 	q := db.New(pool)
 
-	linkID := uuid.MustParse("00000000-0000-0000-0000-0000000000d1")
+	linkID := createTestLink(ctx, t, pool)
 	day := time.Now().UTC().Truncate(24 * time.Hour)
 	firefox := "Firefox"
 
@@ -68,10 +69,35 @@ func TestUpsertClickStatsAccumulatesAcrossBatches(t *testing.T) {
 
 	require.EqualValues(t, 4, totalClicks)
 	require.EqualValues(t, 2, totalUnique)
+}
 
-	// Leave the table as we found it so reruns stay deterministic.
-	_, err := pool.Exec(ctx, `delete from link_click_stats where link_id = $1`, linkID)
-	require.NoError(t, err)
+// createTestLink inserts a dedicated team, domain and link so the test owns
+// its rollup rows instead of borrowing the seeded `hello` link, which the API
+// server's own redirect handler (and any manual smoke test) also writes to.
+// Deleting the team on cleanup cascades to the domain, link and its
+// link_click_stats rows.
+func createTestLink(ctx context.Context, t *testing.T, pool *pgxpool.Pool) uuid.UUID {
+	t.Helper()
+
+	var userID, teamID, domainID, linkID uuid.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`select id from auth.users limit 1`).Scan(&userID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`insert into team (name) values ('click-stats-test') returning id`).Scan(&teamID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`insert into domain (team_id, hostname, verification_status, verified_at)
+		 values ($1, $2, 'verified', now()) returning id`,
+		teamID, "t"+uuid.NewString()[:8]+".test").Scan(&domainID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`insert into link (domain_id, team_id, slug, destination_url, created_by)
+		 values ($1, $2, 'click-stats', 'https://example.org/click-stats', $3) returning id`,
+		domainID, teamID, userID).Scan(&linkID))
+
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `delete from team where id = $1`, teamID)
+	})
+
+	return linkID
 }
 
 func execBatch(ctx context.Context, q *db.Queries, params []db.UpsertClickStatsParams) error {
