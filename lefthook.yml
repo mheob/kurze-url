@@ -1,0 +1,111 @@
+# Git hooks, managed by lefthook.
+#
+# IMPORTANT — this repository is driven with GitButler, and `but commit`
+# bypasses git hooks entirely (verified: a commit whose subject violated
+# Conventional Commits was accepted without complaint, and the CLI exposes no
+# flag to change it). So `pre-commit` and `commit-msg` below only fire for
+# plain `git commit` or a manual `lefthook run`. The checks that must not be
+# skippable therefore also live in `pre-push`, which `but push` does honour —
+# it has a `--no-hooks` escape hatch, which is the tell.
+#
+# CI remains the real gate. These hooks exist to make a red pipeline rare, not
+# to be the only thing standing between a mistake and main.
+#
+# Skip once with LEFTHOOK=0, e.g. `LEFTHOOK=0 but push ...`.
+
+pre-commit:
+  parallel: true
+  jobs:
+    # oxfmt owns Markdown, JSON and YAML here too, not just TypeScript.
+    - name: format
+      glob: "*.{ts,tsx,js,jsx,json,md,yml,yaml}"
+      run: pnpm exec oxfmt --check {staged_files}
+
+    - name: lint
+      glob: "*.{ts,tsx,js,jsx}"
+      run: pnpm exec oxlint {staged_files}
+
+    # gofmt -l prints offending files but still exits 0, so the emptiness of
+    # its output is the actual assertion.
+    - name: gofmt
+      glob: "*.go"
+      run: |
+        unformatted=$(gofmt -l {staged_files})
+        if [ -n "$unformatted" ]; then
+          echo "Not gofmt'd:"
+          echo "$unformatted"
+          exit 1
+        fi
+
+commit-msg:
+  jobs:
+    - name: conventional commit
+      run: |
+        subject=$(head -1 "{1}")
+        case "$subject" in
+          '#'*|'Merge '*|'fixup!'*|'squash!'*) exit 0 ;;
+        esac
+        if ! printf '%s' "$subject" \
+          | grep -Eq '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9._/-]+\))?!?: .+'; then
+          echo "Not a Conventional Commit subject:"
+          echo "  $subject"
+          echo
+          echo "Expected: <type>[(scope)][!]: <description>"
+          exit 1
+        fi
+
+# The hook that actually runs in the GitButler workflow. Everything here is
+# cheap enough to sit in front of a push; `go test` stays in CI because it
+# needs Postgres and Redis containers.
+pre-push:
+  parallel: true
+  jobs:
+    # Mirrors .github/workflows/commit-lint.yml, checked here because
+    # commit-msg never fires for `but commit`.
+    - name: conventional commits
+      run: |
+        pattern='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9._/-]+\))?!?: .+'
+        base=$(git rev-parse --verify --quiet origin/main) || exit 0
+        failed=0
+        while IFS= read -r subject; do
+          [ -z "$subject" ] && continue
+          # GitButler's synthetic workspace commit is not authored by anyone.
+          case "$subject" in
+            'Merge '*|'GitButler Workspace Commit'*) continue ;;
+          esac
+          if ! printf '%s' "$subject" | grep -Eq "$pattern"; then
+            echo "  ✗ $subject"
+            failed=1
+          fi
+        done <<EOT
+        $(git log --no-merges --format='%s' "$base"..HEAD)
+        EOT
+        if [ "$failed" -ne 0 ]; then
+          echo
+          echo "Expected: <type>[(scope)][!]: <description>"
+          exit 1
+        fi
+
+    - name: go vet
+      glob: "apps/api/**/*.go"
+      root: apps/api/
+      run: go vet ./...
+
+    - name: gofmt
+      glob: "apps/api/**/*.go"
+      root: apps/api/
+      run: |
+        unformatted=$(gofmt -l .)
+        if [ -n "$unformatted" ]; then
+          echo "Not gofmt'd:"
+          echo "$unformatted"
+          exit 1
+        fi
+
+    - name: format
+      glob: "*.{ts,tsx,js,jsx,json,md,yml,yaml}"
+      run: pnpm format:check
+
+    - name: typecheck
+      glob: "*.{ts,tsx}"
+      run: pnpm typecheck
