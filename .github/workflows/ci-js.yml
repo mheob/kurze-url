@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   changes:
-    name: detect changes
+    name: detect changes (js)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
