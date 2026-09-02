@@ -1,31 +1,15 @@
 name: CI — JS/TS
 
+# Deliberately NOT filtered with `on.paths` — see the note in ci-api.yml. A
+# workflow that never triggers produces no check run, which permanently blocks
+# a PR if that check is required.
+#
 # The workspace currently holds only root tooling; apps/web and
 # packages/api-client join these checks automatically as they land.
 on:
   pull_request:
-    paths:
-      - "apps/web/**"
-      - "packages/**"
-      - "**/*.ts"
-      - "**/*.tsx"
-      - "**/*.js"
-      - "**/*.json"
-      - "pnpm-lock.yaml"
-      - "pnpm-workspace.yaml"
-      - ".github/workflows/ci-js.yml"
   push:
     branches: [main]
-    paths:
-      - "apps/web/**"
-      - "packages/**"
-      - "**/*.ts"
-      - "**/*.tsx"
-      - "**/*.js"
-      - "**/*.json"
-      - "pnpm-lock.yaml"
-      - "pnpm-workspace.yaml"
-      - ".github/workflows/ci-js.yml"
 
 concurrency:
   group: ci-js-${{ github.ref }}
@@ -35,8 +19,42 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    name: detect changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      js: ${{ steps.filter.outputs.js }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - id: filter
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          # Fail towards running the checks when the base is unknown.
+          if [ -z "$BASE_SHA" ] \
+            || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ] \
+            || ! git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            echo "js=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # oxfmt also formats Markdown, JSON and YAML, so the format check is
+          # relevant well beyond the TypeScript sources.
+          if git diff --name-only "$BASE_SHA" HEAD \
+            | grep -qE '(\.(ts|tsx|js|jsx|json|md|ya?ml)$|^pnpm-lock\.yaml$|^pnpm-workspace\.yaml$|^apps/web/|^packages/)'; then
+            echo "js=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "js=false" >> "$GITHUB_OUTPUT"
+          fi
+
   check:
     name: format, lint & typecheck
+    needs: changes
+    if: needs.changes.outputs.js == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
