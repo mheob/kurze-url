@@ -43,3 +43,33 @@ Start at [`docs/planning/00-index.md`](docs/planning/00-index.md) for a map of t
 ## License
 
 MIT
+
+## Running the API locally
+
+Prerequisites: Go 1.27+, Docker, the [Supabase CLI](https://supabase.com/docs/guides/cli), and [sqlc](https://sqlc.dev).
+
+```bash
+# 1. Start Postgres (with auth) and Redis
+supabase start
+docker run -d --name kurze-url-redis -p 6379:6379 redis:7-alpine
+
+# 2. Apply migrations and the local seed
+supabase db reset
+
+# 3. Configure and run the API
+cp apps/api/.env.example apps/api/.env   # then set VISITOR_SALT
+cd apps/api && go run ./cmd/api
+```
+
+The seed creates a verified `short.test` domain with a `hello` link, so:
+
+```bash
+curl -i -H 'Host: short.test' http://localhost:8080/hello   # 302 to example.org
+curl -i http://localhost:8080/v1/health                     # 200, API surface
+```
+
+Regenerate the database layer after changing a migration or a query:
+
+```bash
+cd apps/api && sqlc generate
+```

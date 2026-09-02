@@ -1,0 +1,6 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "buildCommand": "go build -o bin/api ./cmd/api",
+  "regions": ["fra1"]
+}
