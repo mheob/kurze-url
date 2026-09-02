@@ -77,6 +77,7 @@ link (
   folder_id             uuid references folder(id),
   expires_at            timestamptz,
   password_hash         text,                              -- nullable; set = link requires a password. See "Password protection" below.
+  analytics_enabled     boolean not null default true,     -- added 2026-09-02; see "Analytics opt-out" below
   created_by            uuid not null references auth.users(id),
   created_at            timestamptz not null default now(),
   updated_at            timestamptz not null default now(),
@@ -111,11 +112,17 @@ link_click_stats (
   id                bigint generated always as identity primary key,
   link_id           uuid not null references link(id) on delete cascade,
   bucket_start      date not null,                      -- daily granularity for MVP
-  dimension_type    text not null,                       -- 'total' | 'browser' | 'os' | 'device' | 'country' | 'referrer' | 'utm_source' | 'bot_status' | 'qr_vs_regular'
+  dimension_type    text not null check (dimension_type in (
+                      'total','browser','os','device','country',
+                      'referrer','utm_source','bot_status','qr_vs_regular')),
   dimension_value   text,                                 -- null when dimension_type = 'total'
   clicks            bigint not null default 0,
   unique_visitors   bigint not null default 0,
-  unique (link_id, bucket_start, dimension_type, dimension_value)
+  -- NULLS NOT DISTINCT is load-bearing, not a style choice: Postgres treats
+  -- nulls as distinct in a unique constraint by default, so the
+  -- dimension_type = 'total' row (whose dimension_value is null) would
+  -- duplicate on every upsert instead of incrementing. Corrected 2026-09-02.
+  unique nulls not distinct (link_id, bucket_start, dimension_type, dimension_value)
 )
 
 -- Audit
@@ -149,6 +156,12 @@ Implementation notes, since this is itself security-sensitive:
 - **Brute-force protection**: the password-check endpoint needs its own, tighter rate limit than general API rate limiting (see `04-backend-architecture.md`) — scoped per-link (or per-link-per-IP), since a short or guessable password would otherwise be crackable quickly even with Argon2id's inherent slowness.
 - **Audit log hygiene**: `audit_log.metadata` must never capture the plaintext password or the hash itself on a `link.password_set`/`link.password_changed` action — log that a password was set/changed/removed, not the value.
 - **Redirect flow implication**: for a password-protected link, the redirect can no longer be an instant cache-hit-and-go — the visitor needs an interstitial page to enter the password first, verified against `password_hash` before the actual redirect happens. This is a real branch in the redirect flow described in `01-architecture.md`, worth reflecting there too rather than only here.
+
+## Analytics opt-out (`link.analytics_enabled`)
+
+Added 2026-09-02, during implementation. `01-architecture.md` requires that "analytics collection must be possible to disable per link or per account", but the schema above originally had no field for it. `link.analytics_enabled` (boolean, not null, default true) fills that gap: when false the redirect path records no click at all — no rollup row, and no entry in the Redis unique-visitor set.
+
+Per-link satisfies the stated requirement ("per link *or* per account"). A team-level switch can layer on top later without changing this column. It was added during the redirect-path work rather than deferred because the redirect handler is the only place that can honour it, and retrofitting would mean reopening the hot path plus a second migration.
 
 ## Analytics rollup design
 
@@ -187,6 +200,16 @@ These remain out of the MVP schema — password protection was moved out of this
 - Configurable query-parameter rules (accept/reject/override/add-fixed): would add a `query_param_rules jsonb` column to `link`.
 - Link health monitoring (Healthy/Redirected/Broken/Unknown): would need its own `link_health_check` table (status, last_checked_at) plus a scheduled checker job.
 - Link reporting and domain blocklist: would need `link_report` and `domain_blocklist` tables.
+
+## Corrections applied during implementation (2026-09-02)
+
+Recorded here so this doc stays the schema's source of truth rather than drifting from the migration:
+
+- **`link.analytics_enabled`** added — see "Analytics opt-out" above.
+- **`link_click_stats` uses `unique nulls not distinct`** — see the inline note above. Plain `unique` was a latent bug.
+- **`link_click_stats.dimension_type` carries a `check` constraint** listing the nine permitted values, so a typo in application code fails the insert rather than silently creating a new dimension. The set must stay in sync with what the backend emits per click.
+- **Explicit `on delete` clauses** were added to the foreign keys (`cascade` for the tenancy and link relationships, `set null` for `folder.parent_folder_id`, `link.folder_id` and the `audit_log` references). The sketch above left them implicit.
+- **GeoIP** resolves from Vercel's `x-vercel-ip-country` request header rather than a bundled database — see `01-architecture.md`.
 
 ## Not yet decided / to revisit
 
