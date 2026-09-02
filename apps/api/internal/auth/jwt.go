@@ -30,6 +30,12 @@ func NewVerifier(ctx context.Context, jwksURL, issuer, audience string) (*Verifi
 	if jwksURL == "" {
 		return nil, fmt.Errorf("auth: jwks url is required")
 	}
+	if issuer == "" {
+		return nil, fmt.Errorf("auth: issuer is required")
+	}
+	if audience == "" {
+		return nil, fmt.Errorf("auth: audience is required")
+	}
 
 	k, err := keyfunc.NewDefaultCtx(ctx, []string{jwksURL})
 	if err != nil {
@@ -52,12 +58,8 @@ func (v *Verifier) Verify(ctx context.Context, rawToken string) (Claims, error) 
 	options := []jwt.ParserOption{
 		jwt.WithValidMethods([]string{jwt.SigningMethodES256.Alg()}),
 		jwt.WithExpirationRequired(),
-	}
-	if v.issuer != "" {
-		options = append(options, jwt.WithIssuer(v.issuer))
-	}
-	if v.audience != "" {
-		options = append(options, jwt.WithAudience(v.audience))
+		jwt.WithIssuer(v.issuer),
+		jwt.WithAudience(v.audience),
 	}
 
 	claims := &supabaseClaims{}

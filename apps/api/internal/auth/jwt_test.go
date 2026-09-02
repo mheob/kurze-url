@@ -29,6 +29,23 @@ const (
 // returns the private half for signing test tokens.
 func jwksServer(t *testing.T) (*ecdsa.PrivateKey, string) {
 	t.Helper()
+	return startJWKSServer(t, true)
+}
+
+// jwksServerWithoutAlg is like jwksServer, but the served JWK omits the
+// optional "alg" member. MicahParks/keyfunc only refuses to hand back a key
+// when the token header's alg disagrees with the JWK's declared one (see
+// keyfunc's KeyfuncCtx) — with alg present, that check alone would already
+// block a cross-algorithm token before jwt.WithValidMethods ever gets a say,
+// which is exactly what makes jwksServer unsuitable for isolating the pin.
+// Omitting alg removes that ambiguity.
+func jwksServerWithoutAlg(t *testing.T) (*ecdsa.PrivateKey, string) {
+	t.Helper()
+	return startJWKSServer(t, false)
+}
+
+func startJWKSServer(t *testing.T, includeAlg bool) (*ecdsa.PrivateKey, string) {
+	t.Helper()
 
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
@@ -43,15 +60,18 @@ func jwksServer(t *testing.T) (*ecdsa.PrivateKey, string) {
 	require.Len(t, uncompressed, 65, "P-256 uncompressed point must be 1+32+32 bytes")
 	x, y := uncompressed[1:33], uncompressed[33:65]
 
-	document := map[string]any{"keys": []map[string]string{{
+	jwk := map[string]string{
 		"kty": "EC",
 		"crv": "P-256",
 		"kid": testKID,
-		"alg": "ES256",
 		"use": "sig",
 		"x":   base64.RawURLEncoding.EncodeToString(x),
 		"y":   base64.RawURLEncoding.EncodeToString(y),
-	}}}
+	}
+	if includeAlg {
+		jwk["alg"] = "ES256"
+	}
+	document := map[string]any{"keys": []map[string]string{jwk}}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -87,6 +107,31 @@ func newVerifier(t *testing.T, jwksURL string) *auth.Verifier {
 	v, err := auth.NewVerifier(context.Background(), jwksURL, testIssuer, testAudience)
 	require.NoError(t, err)
 	return v
+}
+
+// alwaysValidSigningMethod is a jwt.SigningMethod whose Verify never fails,
+// regardless of key or signature — the opposite of every signing method
+// golang-jwt ships, each of which type-checks its key before using it (HMAC
+// requires []byte, ECDSA requires *ecdsa.PublicKey, "none" requires the
+// UnsafeAllowNoneSignatureType sentinel). That built-in type-checking is
+// exactly why a real HS256-or-none downgrade attempt is rejected even with
+// jwt.WithValidMethods removed: MicahParks/keyfunc returns a concrete
+// *ecdsa.PublicKey for our EC JWK regardless of the token's claimed alg, and
+// golang-jwt's own HMAC.Verify/none.Verify then refuse that key type on their
+// own, independent of any allow-list. A test built from a real algorithm
+// therefore cannot tell whether the allow-list or golang-jwt's own type
+// safety did the rejecting. This synthetic method has no such check, so only
+// jwt.WithValidMethods can stop it.
+type alwaysValidSigningMethod struct{}
+
+func (alwaysValidSigningMethod) Verify(string, []byte, any) error { return nil }
+func (alwaysValidSigningMethod) Sign(string, any) ([]byte, error) { return []byte("sig"), nil }
+func (alwaysValidSigningMethod) Alg() string                      { return "test-always-valid" }
+
+func init() {
+	jwt.RegisterSigningMethod("test-always-valid", func() jwt.SigningMethod {
+		return alwaysValidSigningMethod{}
+	})
 }
 
 func TestVerifyAcceptsAValidES256Token(t *testing.T) {
@@ -174,4 +219,42 @@ func TestVerifyRejectsANonUUIDSubject(t *testing.T) {
 	_, err := verifier.Verify(context.Background(), sign(t, key, claims, jwt.SigningMethodES256))
 
 	require.Error(t, err)
+}
+
+// TestVerifyRejectsAnAlgorithmOutsideTheAllowList isolates the
+// jwt.WithValidMethods pin itself, independent of golang-jwt's own
+// per-algorithm type safety and of MicahParks/keyfunc's alg-mismatch check
+// (see jwksServerWithoutAlg and alwaysValidSigningMethod). With this fixture,
+// removing the pin from Verify would make this token accepted, not rejected
+// — see the RED evidence recorded in the fix-round report.
+func TestVerifyRejectsAnAlgorithmOutsideTheAllowList(t *testing.T) {
+	_, jwksURL := jwksServerWithoutAlg(t)
+	verifier := newVerifier(t, jwksURL)
+
+	token := jwt.NewWithClaims(alwaysValidSigningMethod{}, validClaims(uuid.NewString()))
+	token.Header["kid"] = testKID
+	raw, err := token.SignedString([]byte("irrelevant: this method's Verify never fails"))
+	require.NoError(t, err)
+
+	_, err = verifier.Verify(context.Background(), raw)
+
+	require.Error(t, err,
+		"jwt.WithValidMethods must reject an algorithm outside {ES256} even when "+
+			"that algorithm's own Verify never fails")
+}
+
+func TestNewVerifierRejectsAnEmptyIssuer(t *testing.T) {
+	_, jwksURL := jwksServer(t)
+
+	_, err := auth.NewVerifier(context.Background(), jwksURL, "", testAudience)
+
+	require.Error(t, err, "a misconfigured deployment must fail to start, not accept tokens from any issuer")
+}
+
+func TestNewVerifierRejectsAnEmptyAudience(t *testing.T) {
+	_, jwksURL := jwksServer(t)
+
+	_, err := auth.NewVerifier(context.Background(), jwksURL, testIssuer, "")
+
+	require.Error(t, err, "a misconfigured deployment must fail to start, not accept tokens for any audience")
 }
