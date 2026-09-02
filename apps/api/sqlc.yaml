@@ -1,0 +1,46 @@
+version: "2"
+sql:
+  - engine: postgresql
+    schema:
+      - internal/db/schema
+      - ../../supabase/migrations
+    queries: internal/db/queries
+    gen:
+      go:
+        package: db
+        out: internal/db
+        sql_package: pgx/v5
+        emit_json_tags: false
+        emit_pointers_for_null_types: true
+        emit_empty_slices: true
+        rename:
+          destination_url: DestinationURL
+          qr_logo_url: QRLogoURL
+        overrides:
+          - db_type: uuid
+            go_type: github.com/google/uuid.UUID
+          - db_type: uuid
+            nullable: true
+            go_type:
+              import: github.com/google/uuid
+              type: UUID
+              pointer: true
+          # Without these, sqlc's pgx/v5 mapping yields pgtype.Date and the
+          # rollup's bucket_start would not be a time.Time.
+          - db_type: date
+            go_type: time.Time
+          - db_type: date
+            nullable: true
+            go_type:
+              type: time.Time
+              pointer: true
+          # Without these, nullable/non-null timestamptz columns (e.g.
+          # link.expires_at) generate as pgtype.Timestamptz instead of
+          # (*)time.Time.
+          - db_type: timestamptz
+            go_type: time.Time
+          - db_type: timestamptz
+            nullable: true
+            go_type:
+              type: time.Time
+              pointer: true
