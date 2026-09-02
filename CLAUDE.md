@@ -2,7 +2,7 @@
 
 Open-source, multi-tenant URL shortener for German non-profit associations ("Vereine"). **One shared instance** operated by the maintainer(s) — not per-Verein self-hosting. License: MIT. This is a private side project, unaffiliated with any employer.
 
-Full reasoning behind every decision below lives in the planning docs (see "Planning docs" at the end). This file is the condensed, load-bearing version: read it first, consult a planning doc when you need the *why* or the detail.
+Full reasoning behind every decision below lives in the planning docs (see "Planning docs" at the end). This file is the condensed, load-bearing version: read it first, consult a planning doc when you need the _why_ or the detail.
 
 ---
 
@@ -13,7 +13,7 @@ The things that are easy to get wrong, and expensive to get wrong:
 1. **The tenant is called `team`** in every identifier — tables, columns, Go types, API paths, TS types. "Verein" appears only in user-facing German copy. Never `verein_id`.
 2. **The redirect path is the hot path.** `GET /<slug>` must never wait on anything optional. Click recording is always async/non-blocking. Every design choice gets checked against this one code path.
 3. **Security items are MVP scope, not "later"**: HTTPS-only URL scheme allowlist, SSRF protection with DNS-rebinding re-checks at fetch time, rate limiting, async Safe Browsing scanning, Argon2id password protection. Do not defer these to get a demo working.
-4. **There is no RLS.** Postgres enforces *nothing* about tenancy — the service-role connection bypasses it by design. Every single query path must filter by `team_id` and check the caller's `team_member.role` in Go. If you write a query without a tenancy filter, that is a data-leak bug, not a style issue.
+4. **There is no RLS.** Postgres enforces _nothing_ about tenancy — the service-role connection bypasses it by design. Every single query path must filter by `team_id` and check the caller's `team_member.role` in Go. If you write a query without a tenancy filter, that is a data-leak bug, not a style issue.
 5. **Never store a full IP address, ever.** Unique visitors are counted via a daily-rotating salted hash of IP+UA, deduplicated in Redis. Postgres only ever receives aggregate counts — never the hash, never a raw click row.
 6. **i18n from the first component.** English is default, German ships alongside it. No hardcoded user-facing string anywhere, not even temporarily.
 7. **Free-tier limits are a design constraint, not a footnote.** Redis command volume binds first (~16.7K/day), because every redirect costs at least one GET.
@@ -24,19 +24,19 @@ The things that are easy to get wrong, and expensive to get wrong:
 ## Stack
 
 | Layer | Choice | Notes |
-|---|---|---|
+| --- | --- | --- |
 | Backend | Go, **chi** router + **Huma** (code-first, generates OpenAPI 3.1) | Single persistent `net/http` server, `cmd/api/main.go` |
 | DB access | **sqlc** — raw SQL, generated type-safe Go | No ORM. GORM explicitly rejected. |
 | Migrations | **Supabase CLI only** (`supabase migration new`, `db push`) | No golang-migrate, no Atlas — one owner of schema state |
-| Database | Supabase (Postgres), free tier, **Frankfurt/EU region** | |
+| Database | Supabase (Postgres), free tier, **Frankfurt/EU region** |  |
 | Cache | Upstash Redis, free tier | Fronts the redirect path; also does unique-visitor dedup and rate limiting |
-| Frontend | TanStack Start (React) + Router/Query/Form/Table | |
-| UI | **shadcn/ui on Radix** (`-b radix`), Tremor for analytics, lucide-react | Radix deliberately, *not* the new Base UI default — Tremor is Radix-based |
+| Frontend | TanStack Start (React) + Router/Query/Form/Table |  |
+| UI | **shadcn/ui on Radix** (`-b radix`), Tremor for analytics, lucide-react | Radix deliberately, _not_ the new Base UI default — Tremor is Radix-based |
 | CLI | Go, thin HTTP client over the same API | No shared Go module with the backend |
 | Hosting | Vercel — two projects from one monorepo (`apps/api`, `apps/web`) | Go Framework Preset for the API |
-| Auth | Supabase OAuth 2.1 Server (Authorization Code + PKCE) | Backend only *verifies* JWTs |
+| Auth | Supabase OAuth 2.1 Server (Authorization Code + PKCE) | Backend only _verifies_ JWTs |
 | Email | Resend as custom SMTP on the Supabase project | Supabase's built-in sender caps at 2 mails/hour |
-| Errors/monitoring | Sentry (free tier) + Better Stack uptime | |
+| Errors/monitoring | Sentry (free tier) + Better Stack uptime |  |
 
 ---
 
@@ -61,7 +61,7 @@ Inside `apps/api`: `cmd/api/main.go` plus `internal/{api,db,redis,auth,scanning,
 
 ## Conventions
 
-- **API versioning**: `/v1` path prefix. The public redirect surface is deliberately *unversioned* and *not* in the OpenAPI spec.
+- **API versioning**: `/v1` path prefix. The public redirect surface is deliberately _unversioned_ and _not_ in the OpenAPI spec.
 - **Errors**: Huma's default RFC 9457 `application/problem+json`. Do not build a custom error model.
 - **Pagination**: offset/limit (`page`, `per_page`, capped at 100) with a typed `Page[T]` response envelope — never pagination headers.
 - **Filtering**: flat, explicitly typed query params per endpoint. Not a generic `filter=field:op:value` scheme.
@@ -78,8 +78,7 @@ All under `/v1`, all Bearer-authenticated, except the public redirect surface.
 
 `GET /me` · teams (`POST|GET /teams`, `GET|PATCH /teams/{id}`) · members (`GET|POST /teams/{id}/members`, `PATCH|DELETE .../{user_id}`) · domains (under team, plus `POST /domains/{id}/verify`) · folders · tags · links (`POST|GET /teams/{id}/links`, `GET|PATCH|DELETE /links/{id}`) · `PUT|DELETE /links/{id}/password` (deliberately separate from PATCH — own audit action, own rate limit) · `GET /links/{id}/qr` (returns raw image bytes) · `GET /links/{id}/stats` · `GET /teams/{id}/audit-log`.
 
-**Public, hostname-routed, plain chi handlers outside Huma:**
-`GET /{slug}` (redirect) · `GET /{slug}/verify` (password interstitial, server-rendered HTML, deliberately framework-free) · `POST /{slug}/verify` (tight rate limit).
+**Public, hostname-routed, plain chi handlers outside Huma:** `GET /{slug}` (redirect) · `GET /{slug}/verify` (password interstitial, server-rendered HTML, deliberately framework-free) · `POST /{slug}/verify` (tight rate limit).
 
 ---
 
@@ -148,7 +147,7 @@ Geotargeting · click-count-based expiration · configurable query-parameter rul
 In `docs/planning/`. Detailed reasoning, alternatives considered, and rejected options:
 
 | Doc | Contents |
-|---|---|
+| --- | --- |
 | `01-architecture.md` | System overview, redirect data flow, 301/302, security-by-design, analytics/privacy, CLI auth |
 | `02-external-services-and-hosting.md` | Supabase/Upstash/Vercel free-tier limits, Safe Browsing, custom domains, Resend, alert thresholds, Sentry, Better Stack |
 | `03-frontend.md` | TanStack, Radix-vs-Base-UI reasoning, Tremor, i18n, accessibility, Storybook, testing strategy |

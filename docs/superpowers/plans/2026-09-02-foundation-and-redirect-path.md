@@ -19,7 +19,7 @@ Every task's requirements implicitly include this section.
 - **There is no RLS.** Postgres enforces nothing about tenancy. Every query path filters by `team_id` in Go. A query without a tenancy filter is a data-leak bug. (Plan 1's redirect queries are hostname+slug-scoped and read-only, which is the one legitimate exception — a redirect is public by definition.)
 - **Never store a full IP address, ever.** Unique visitors are counted via a daily-rotating salted hash of IP+UA, deduplicated in Redis. Postgres receives aggregate counts only — never the hash, never a raw click row.
 - **No hardcoded user-facing string**, not even temporarily. English is default, German ships alongside it. This applies to the server-rendered redirect-surface pages too (`internal/pages`).
-- **Security items are MVP scope**: rate limiting and Argon2id password protection ship in this plan. HTTPS-only URL scheme allowlist, SSRF protection with DNS-rebinding re-checks, and async Safe Browsing scanning attach to link *creation*, which lives in plan 2 — they are not deferred, they are in the next plan by dependency, and plan 2 must not start without them.
+- **Security items are MVP scope**: rate limiting and Argon2id password protection ship in this plan. HTTPS-only URL scheme allowlist, SSRF protection with DNS-rebinding re-checks, and async Safe Browsing scanning attach to link _creation_, which lives in plan 2 — they are not deferred, they are in the next plan by dependency, and plan 2 must not start without them.
 - **Free-tier limits are a design constraint.** Upstash Redis binds first at 500K commands/month (~16.7K/day). This plan's redirect path costs **2 Redis commands on a cache hit** (rate-limit EVAL + lookup EVAL), giving ~8,300 redirects/day of headroom. See "Redis command budget" below.
 - **Go module path:** `github.com/mheob/kurze-url/apps/api`. `apps/api` and `apps/cli` are separate modules, no `go.work`.
 - **Migrations are Supabase CLI-owned.** `supabase migration new`, `supabase db push`. No golang-migrate, no Atlas.
@@ -29,7 +29,7 @@ Every task's requirements implicitly include this section.
 ### Redis command budget
 
 | Path | Commands | Note |
-|---|---|---|
+| --- | --- | --- |
 | Redirect, cache hit | 2 | `ratelimit.lua` EVAL + `redirect_lookup.lua` EVAL (the latter folds `GET` + unique-visitor `SADD`/`EXPIRE` into one) |
 | Redirect, cache miss, link found | 4–5 | \+ `SET` to populate, \+ `SADD` for the visitor the script could not dedup without a link id (\+ `EXPIRE` when that visitor is new) |
 | Redirect, cache miss, no such link | 3 | \+ negative-cache `SET` |
@@ -91,6 +91,7 @@ Each file owns one responsibility. `internal/api` owns HTTP shape only — no SQ
 ## Task 1: Go module, config, and a served health endpoint
 
 **Files:**
+
 - Create: `apps/api/go.mod`
 - Create: `apps/api/.golangci.yml`
 - Create: `apps/api/internal/config/config.go`
@@ -98,6 +99,7 @@ Each file owns one responsibility. `internal/api` owns HTTP shape only — no SQ
 - Test: `apps/api/internal/config/config_test.go`
 
 **Interfaces:**
+
 - Consumes: nothing (first task)
 - Produces: `config.Config` struct and `config.Load() (Config, error)`. Every later task reads its settings from this struct — field names below are load-bearing.
 
@@ -117,7 +119,7 @@ go mod tidy
 Later tasks run `golangci-lint run`, which needs a ruleset. Create `apps/api/.golangci.yml` (schema v2, matching golangci-lint 2.x):
 
 ```yaml
-version: "2"
+version: '2'
 
 linters:
   default: standard
@@ -219,8 +221,7 @@ func TestLoadRejectsNonNumericRateLimit(t *testing.T) {
 
 - [ ] **Step 4: Run the test to verify it fails**
 
-Run: `cd apps/api && go test ./internal/config/...`
-Expected: FAIL — `no required module provides package .../internal/config`
+Run: `cd apps/api && go test ./internal/config/...` Expected: FAIL — `no required module provides package .../internal/config`
 
 - [ ] **Step 5: Implement the config package**
 
@@ -335,8 +336,7 @@ func envInt(name string, fallback int) (int, error) {
 
 - [ ] **Step 6: Run the config test to verify it passes**
 
-Run: `cd apps/api && go test ./internal/config/...`
-Expected: PASS (4 tests)
+Run: `cd apps/api && go test ./internal/config/...` Expected: PASS (4 tests)
 
 - [ ] **Step 7: Write the failing health-endpoint test**
 
@@ -371,8 +371,7 @@ func TestHealthHandlerReportsOK(t *testing.T) {
 
 - [ ] **Step 8: Run it to verify it fails**
 
-Run: `cd apps/api && go test ./cmd/api/...`
-Expected: FAIL — `undefined: healthHandler`
+Run: `cd apps/api && go test ./cmd/api/...` Expected: FAIL — `undefined: healthHandler`
 
 - [ ] **Step 9: Write a minimal main.go with the health handler**
 
@@ -452,8 +451,7 @@ func healthHandler() http.Handler {
 
 - [ ] **Step 10: Run all tests and vet**
 
-Run: `cd apps/api && go vet ./... && go test ./...`
-Expected: PASS
+Run: `cd apps/api && go vet ./... && go test ./...` Expected: PASS
 
 - [ ] **Step 11: Commit**
 
@@ -467,12 +465,14 @@ git commit -m "feat(api): add Go module, config loader and health endpoint"
 ## Task 2: Database schema migration on the local Supabase stack
 
 **Files:**
+
 - Create: `supabase/config.toml` (generated by `supabase init`)
 - Create: `supabase/migrations/<timestamp>_initial_schema.sql`
 - Create: `supabase/seed.sql`
 - Test: `apps/api/internal/db/schema_test.go`
 
 **Interfaces:**
+
 - Consumes: nothing from earlier tasks
 - Produces: the physical schema every later task queries. Table and column names are exactly those in `docs/planning/05-database-schema.md`. Local Postgres is reachable at `postgres://postgres:postgres@127.0.0.1:54322/postgres` once `supabase start` is running.
 
@@ -654,6 +654,7 @@ create index audit_log_entity_idx on audit_log (entity_type, entity_id);
 ```bash
 supabase db reset      # drops, recreates, replays every migration, then runs seed.sql
 ```
+
 Expected: no errors; the command finishes with `Finished supabase db reset.`
 
 - [ ] **Step 5: Write the local-dev seed file**
@@ -823,6 +824,7 @@ go get github.com/jackc/pgx/v5
 go mod tidy
 go test ./internal/db/...
 ```
+
 Expected: PASS (2 tests). If they skip, `supabase start` is not running. If `TestTotalRollupRowIncrementsInsteadOfDuplicating` fails with `2 rows`, the `nulls not distinct` clause is missing from the migration.
 
 - [ ] **Step 8: Commit**
@@ -837,6 +839,7 @@ git commit -m "feat(db): add initial schema migration, local seed and schema tes
 ## Task 3: sqlc setup and the redirect queries
 
 **Files:**
+
 - Create: `apps/api/sqlc.yaml`
 - Create: `apps/api/internal/db/schema/0000_auth_stub.sql`
 - Create: `apps/api/internal/db/queries/link.sql`
@@ -845,6 +848,7 @@ git commit -m "feat(db): add initial schema migration, local seed and schema tes
 - Test: `apps/api/internal/db/queries_test.go`
 
 **Interfaces:**
+
 - Consumes: the schema from Task 2.
 - Produces:
   - `db.New(pool *pgxpool.Pool) *db.Queries`
@@ -881,7 +885,7 @@ create table auth.users (
 Create `apps/api/sqlc.yaml`:
 
 ```yaml
-version: "2"
+version: '2'
 sql:
   - engine: postgresql
     schema:
@@ -1004,6 +1008,7 @@ go get github.com/google/uuid
 go mod tidy
 go build ./...
 ```
+
 Expected: `sqlc generate` prints nothing and writes `internal/db/*.go`; `go build` succeeds.
 
 - [ ] **Step 7: Write the failing query test**
@@ -1102,11 +1107,9 @@ func execBatch(ctx context.Context, q *db.Queries, params []db.UpsertClickStatsP
 }
 ```
 
-
 - [ ] **Step 8: Run the query tests**
 
-Run: `cd apps/api && go test ./internal/db/...`
-Expected: PASS (5 tests total, including Task 2's two)
+Run: `cd apps/api && go test ./internal/db/...` Expected: PASS (5 tests total, including Task 2's two)
 
 - [ ] **Step 9: Commit**
 
@@ -1120,12 +1123,14 @@ git commit -m "feat(db): generate sqlc queries for the redirect path and click r
 ## Task 4: Redis client and the sliding-window rate limiter
 
 **Files:**
+
 - Create: `apps/api/internal/cache/client.go`
 - Create: `apps/api/internal/cache/lua/ratelimit.lua`
 - Test: `apps/api/internal/cache/ratelimit_test.go`
 - Test: `apps/api/internal/cache/testhelper_test.go`
 
 **Interfaces:**
+
 - Consumes: `config.Config.RedisURL`
 - Produces:
   - `cache.New(redisURL string) (*cache.Client, error)`
@@ -1257,8 +1262,7 @@ func TestAllowRecoversAfterTheWindowPasses(t *testing.T) {
 
 - [ ] **Step 4: Run it to verify it fails**
 
-Run: `cd apps/api && go test ./internal/cache/...`
-Expected: FAIL — the `cache` package does not exist yet
+Run: `cd apps/api && go test ./internal/cache/...` Expected: FAIL — the `cache` package does not exist yet
 
 - [ ] **Step 5: Write the rate-limit Lua script**
 
@@ -1373,8 +1377,7 @@ func (c *Client) Allow(ctx context.Context, key string, limit int, window time.D
 
 - [ ] **Step 7: Run the rate-limit tests**
 
-Run: `cd apps/api && go test ./internal/cache/...`
-Expected: PASS (3 tests)
+Run: `cd apps/api && go test ./internal/cache/...` Expected: PASS (3 tests)
 
 - [ ] **Step 8: Commit**
 
@@ -1388,12 +1391,14 @@ git commit -m "feat(cache): add Redis client with a sliding-window rate limiter"
 ## Task 5: The link cache and the redirect lookup script
 
 **Files:**
+
 - Create: `apps/api/internal/link/cached.go`
 - Modify: `apps/api/internal/cache/client.go` (add the lookup, put and invalidate methods)
 - Create: `apps/api/internal/cache/lua/redirect_lookup.lua`
 - Test: `apps/api/internal/cache/lookup_test.go`
 
 **Interfaces:**
+
 - Consumes: `cache.New` from Task 4.
 - Produces:
   - `link.Cached` struct: `ID uuid.UUID`, `TeamID uuid.UUID`, `DestinationURL string`, `RedirectType int`, `State string`, `ExpiresAt *time.Time`, `HasPassword bool`; plus `link.CacheKey(hostname, slug string) string` and `link.UniqueSetPrefix`
@@ -1549,8 +1554,7 @@ func TestInvalidateRemovesTheCachedLink(t *testing.T) {
 
 - [ ] **Step 3: Run it to verify it fails**
 
-Run: `cd apps/api && go test ./internal/cache/...`
-Expected: FAIL — `client.LookupForRedirect undefined`
+Run: `cd apps/api && go test ./internal/cache/...` Expected: FAIL — `client.LookupForRedirect undefined`
 
 - [ ] **Step 4: Write the redirect lookup Lua script**
 
@@ -1720,8 +1724,7 @@ func (c *Client) InvalidateLink(ctx context.Context, cacheKey string) error {
 
 - [ ] **Step 6: Run the cache tests**
 
-Run: `cd apps/api && go test ./internal/cache/...`
-Expected: PASS (7 tests)
+Run: `cd apps/api && go test ./internal/cache/...` Expected: PASS (7 tests)
 
 - [ ] **Step 7: Commit**
 
@@ -1735,10 +1738,12 @@ git commit -m "feat(cache): add link cache with single-command redirect lookup"
 ## Task 6: The daily-rotating visitor hash
 
 **Files:**
+
 - Create: `apps/api/internal/analytics/visitor.go`
 - Test: `apps/api/internal/analytics/visitor_test.go`
 
 **Interfaces:**
+
 - Consumes: `config.Config.VisitorSalt`
 - Produces:
   - `analytics.VisitorHash(secret, ip, userAgent string, at time.Time) string` — 32 lowercase hex characters
@@ -1834,8 +1839,7 @@ func TestDayIsUTCDateOnly(t *testing.T) {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `cd apps/api && go test ./internal/analytics/...`
-Expected: FAIL — package `analytics` does not exist
+Run: `cd apps/api && go test ./internal/analytics/...` Expected: FAIL — package `analytics` does not exist
 
 - [ ] **Step 3: Implement the visitor hash**
 
@@ -1882,8 +1886,7 @@ func Day(at time.Time) string {
 
 - [ ] **Step 4: Run the tests**
 
-Run: `cd apps/api && go test ./internal/analytics/...`
-Expected: PASS (7 tests)
+Run: `cd apps/api && go test ./internal/analytics/...` Expected: PASS (7 tests)
 
 - [ ] **Step 5: Commit**
 
@@ -1897,10 +1900,12 @@ git commit -m "feat(analytics): add daily-rotating salted visitor hash"
 ## Task 7: Request-to-dimension extraction
 
 **Files:**
+
 - Create: `apps/api/internal/analytics/dimensions.go`
 - Test: `apps/api/internal/analytics/dimensions_test.go`
 
 **Interfaces:**
+
 - Consumes: nothing from earlier tasks
 - Produces:
   - `analytics.Dimensions` struct: `Browser, OS, Device, Country, Referrer, UTMSource, BotStatus, Source string`
@@ -2049,8 +2054,7 @@ func TestRowsOmitUTMSourceWhenAbsent(t *testing.T) {
 
 - [ ] **Step 3: Run it to verify it fails**
 
-Run: `cd apps/api && go test ./internal/analytics/...`
-Expected: FAIL — `undefined: analytics.ExtractDimensions`
+Run: `cd apps/api && go test ./internal/analytics/...` Expected: FAIL — `undefined: analytics.ExtractDimensions`
 
 - [ ] **Step 4: Implement dimension extraction**
 
@@ -2207,8 +2211,7 @@ func truncate(v string) string {
 
 - [ ] **Step 5: Run the tests**
 
-Run: `cd apps/api && go test ./internal/analytics/...`
-Expected: PASS (16 tests)
+Run: `cd apps/api && go test ./internal/analytics/...` Expected: PASS (16 tests)
 
 - [ ] **Step 6: Commit**
 
@@ -2222,10 +2225,12 @@ git commit -m "feat(analytics): derive rollup dimensions from the redirect reque
 ## Task 8: The click recorder
 
 **Files:**
+
 - Create: `apps/api/internal/analytics/recorder.go`
 - Test: `apps/api/internal/analytics/recorder_test.go`
 
 **Interfaces:**
+
 - Consumes: `analytics.Dimensions` (Task 7)
 - Produces:
   - `analytics.Row` struct: `LinkID uuid.UUID`, `Day time.Time`, `DimType string`, `DimValue *string`, `Clicks int64`, `Unique int64`
@@ -2416,11 +2421,9 @@ func TestRunFlushesWhenTheBufferFills(t *testing.T) {
 }
 ```
 
-
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `cd apps/api && go test ./internal/analytics/...`
-Expected: FAIL — `undefined: analytics.NewRecorder`
+Run: `cd apps/api && go test ./internal/analytics/...` Expected: FAIL — `undefined: analytics.NewRecorder`
 
 - [ ] **Step 3: Implement the recorder**
 
@@ -2591,8 +2594,7 @@ func (r *Recorder) Flush(ctx context.Context) error {
 
 - [ ] **Step 4: Run the tests**
 
-Run: `cd apps/api && go test ./internal/analytics/...`
-Expected: PASS (24 tests)
+Run: `cd apps/api && go test ./internal/analytics/...` Expected: PASS (24 tests)
 
 - [ ] **Step 5: Commit**
 
@@ -2606,12 +2608,14 @@ git commit -m "feat(analytics): add non-blocking click recorder with buffered ro
 ## Task 9: Server-rendered redirect-surface pages, in English and German
 
 **Files:**
+
 - Create: `apps/api/internal/pages/pages.go`
 - Create: `apps/api/internal/pages/templates/error.html`
 - Create: `apps/api/internal/pages/templates/password.html`
 - Test: `apps/api/internal/pages/pages_test.go`
 
 **Interfaces:**
+
 - Consumes: nothing from earlier tasks
 - Produces:
   - `pages.Locale` with `pages.LocaleEN` / `pages.LocaleDE`; `pages.Negotiate(acceptLanguage string) Locale`
@@ -2729,8 +2733,7 @@ func TestPasswordPromptIsAccessible(t *testing.T) {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `cd apps/api && go test ./internal/pages/...`
-Expected: FAIL — package `pages` does not exist
+Run: `cd apps/api && go test ./internal/pages/...` Expected: FAIL — package `pages` does not exist
 
 - [ ] **Step 3: Write the templates**
 
@@ -2739,28 +2742,45 @@ Create `apps/api/internal/pages/templates/error.html`:
 ```html
 <!doctype html>
 <html lang="{{ .Lang }}">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="robots" content="noindex" />
-    <title>{{ .Title }}</title>
-    <style>
-      :root { color-scheme: light dark; }
-      body {
-        margin: 0; min-height: 100vh; display: grid; place-items: center;
-        font: 16px/1.5 system-ui, sans-serif; padding: 1.5rem;
-      }
-      main { max-width: 32rem; text-align: center; }
-      h1 { font-size: 1.5rem; margin: 0 0 0.5rem; }
-      p { margin: 0; opacity: 0.8; }
-    </style>
-  </head>
-  <body>
-    <main>
-      <h1>{{ .Heading }}</h1>
-      <p>{{ .Body }}</p>
-    </main>
-  </body>
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="robots" content="noindex" />
+		<title>{{ .Title }}</title>
+		<style>
+			:root {
+				color-scheme: light dark;
+			}
+			body {
+				margin: 0;
+				min-height: 100vh;
+				display: grid;
+				place-items: center;
+				font:
+					16px/1.5 system-ui,
+					sans-serif;
+				padding: 1.5rem;
+			}
+			main {
+				max-width: 32rem;
+				text-align: center;
+			}
+			h1 {
+				font-size: 1.5rem;
+				margin: 0 0 0.5rem;
+			}
+			p {
+				margin: 0;
+				opacity: 0.8;
+			}
+		</style>
+	</head>
+	<body>
+		<main>
+			<h1>{{ .Heading }}</h1>
+			<p>{{ .Body }}</p>
+		</main>
+	</body>
 </html>
 ```
 
@@ -2769,54 +2789,86 @@ Create `apps/api/internal/pages/templates/password.html`:
 ```html
 <!doctype html>
 <html lang="{{ .Lang }}">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="robots" content="noindex" />
-    <title>{{ .Title }}</title>
-    <style>
-      :root { color-scheme: light dark; }
-      body {
-        margin: 0; min-height: 100vh; display: grid; place-items: center;
-        font: 16px/1.5 system-ui, sans-serif; padding: 1.5rem;
-      }
-      main { max-width: 24rem; width: 100%; }
-      h1 { font-size: 1.5rem; margin: 0 0 0.5rem; }
-      p { margin: 0 0 1rem; opacity: 0.8; }
-      label { display: block; font-weight: 600; margin-bottom: 0.375rem; }
-      input, button {
-        width: 100%; box-sizing: border-box; font: inherit;
-        padding: 0.625rem 0.75rem; border-radius: 0.5rem;
-        border: 1px solid currentColor;
-      }
-      button { margin-top: 0.75rem; cursor: pointer; font-weight: 600; }
-      .error {
-        margin: 0 0 1rem; padding: 0.625rem 0.75rem; border-radius: 0.5rem;
-        border: 1px solid currentColor; font-weight: 600;
-      }
-    </style>
-  </head>
-  <body>
-    <main>
-      <h1>{{ .Heading }}</h1>
-      <p>{{ .Body }}</p>
-      {{ if .WrongPassword }}
-        <p class="error" role="alert">{{ .ErrorMessage }}</p>
-      {{ end }}
-      <form method="post" action="{{ .Action }}">
-        <label for="password">{{ .PasswordLabel }}</label>
-        <input
-          id="password"
-          name="password"
-          type="password"
-          autocomplete="current-password"
-          required
-          autofocus
-        />
-        <button type="submit">{{ .SubmitLabel }}</button>
-      </form>
-    </main>
-  </body>
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="robots" content="noindex" />
+		<title>{{ .Title }}</title>
+		<style>
+			:root {
+				color-scheme: light dark;
+			}
+			body {
+				margin: 0;
+				min-height: 100vh;
+				display: grid;
+				place-items: center;
+				font:
+					16px/1.5 system-ui,
+					sans-serif;
+				padding: 1.5rem;
+			}
+			main {
+				max-width: 24rem;
+				width: 100%;
+			}
+			h1 {
+				font-size: 1.5rem;
+				margin: 0 0 0.5rem;
+			}
+			p {
+				margin: 0 0 1rem;
+				opacity: 0.8;
+			}
+			label {
+				display: block;
+				font-weight: 600;
+				margin-bottom: 0.375rem;
+			}
+			input,
+			button {
+				width: 100%;
+				box-sizing: border-box;
+				font: inherit;
+				padding: 0.625rem 0.75rem;
+				border-radius: 0.5rem;
+				border: 1px solid currentColor;
+			}
+			button {
+				margin-top: 0.75rem;
+				cursor: pointer;
+				font-weight: 600;
+			}
+			.error {
+				margin: 0 0 1rem;
+				padding: 0.625rem 0.75rem;
+				border-radius: 0.5rem;
+				border: 1px solid currentColor;
+				font-weight: 600;
+			}
+		</style>
+	</head>
+	<body>
+		<main>
+			<h1>{{ .Heading }}</h1>
+			<p>{{ .Body }}</p>
+			{{ if .WrongPassword }}
+			<p class="error" role="alert">{{ .ErrorMessage }}</p>
+			{{ end }}
+			<form method="post" action="{{ .Action }}">
+				<label for="password">{{ .PasswordLabel }}</label>
+				<input
+					id="password"
+					name="password"
+					type="password"
+					autocomplete="current-password"
+					required
+					autofocus
+				/>
+				<button type="submit">{{ .SubmitLabel }}</button>
+			</form>
+		</main>
+	</body>
 </html>
 ```
 
@@ -3022,11 +3074,9 @@ func render(w http.ResponseWriter, status int, name string, data any) {
 }
 ```
 
-
 - [ ] **Step 5: Run the tests**
 
-Run: `cd apps/api && go test ./internal/pages/...`
-Expected: PASS (8 tests)
+Run: `cd apps/api && go test ./internal/pages/...` Expected: PASS (8 tests)
 
 - [ ] **Step 6: Commit**
 
@@ -3040,6 +3090,7 @@ git commit -m "feat(pages): add localised server-rendered redirect-surface pages
 ## Task 10: The redirect handler
 
 **Files:**
+
 - Create: `apps/api/internal/api/api.go`
 - Create: `apps/api/internal/api/middleware.go`
 - Create: `apps/api/internal/api/redirect.go`
@@ -3047,6 +3098,7 @@ git commit -m "feat(pages): add localised server-rendered redirect-surface pages
 - Test: `apps/api/internal/api/redirect_test.go`
 
 **Interfaces:**
+
 - Consumes: `config.Config` (T1), `db.Queries` (T3), `cache.Client` (T4, T5), `analytics` (T6–T8), `pages` (T9)
 - Produces:
   - `api.Deps` struct: `Config config.Config`, `Queries *db.Queries`, `Cache *cache.Client`, `Recorder *analytics.Recorder`, `Log *slog.Logger`, `Now func() time.Time`
@@ -3093,7 +3145,6 @@ func (d Deps) now() time.Time {
 	return time.Now()
 }
 ```
-
 
 Create `apps/api/internal/api/middleware.go`:
 
@@ -3545,8 +3596,7 @@ func TestRedirectRespondsInGermanWhenPreferred(t *testing.T) {
 
 - [ ] **Step 4: Run it to verify it fails**
 
-Run: `cd apps/api && go test ./internal/api/...`
-Expected: FAIL — `f.deps.HandleRedirect undefined`
+Run: `cd apps/api && go test ./internal/api/...` Expected: FAIL — `f.deps.HandleRedirect undefined`
 
 - [ ] **Step 5: Implement the redirect handler**
 
@@ -3733,13 +3783,11 @@ func (d Deps) writeRedirect(w http.ResponseWriter, r *http.Request, l link.Cache
 
 - [ ] **Step 6: Run the redirect tests**
 
-Run: `cd apps/api && go test ./internal/api/...`
-Expected: PASS (14 tests, including the three state sub-tests)
+Run: `cd apps/api && go test ./internal/api/...` Expected: PASS (14 tests, including the three state sub-tests)
 
 - [ ] **Step 7: Run the whole suite and vet**
 
-Run: `cd apps/api && go vet ./... && go test ./... && golangci-lint run`
-Expected: PASS
+Run: `cd apps/api && go vet ./... && go test ./... && golangci-lint run` Expected: PASS
 
 - [ ] **Step 8: Commit**
 
@@ -3753,12 +3801,14 @@ git commit -m "feat(api): add the cached, rate-limited redirect handler"
 ## Task 11: Argon2id password protection and the verify endpoints
 
 **Files:**
+
 - Create: `apps/api/internal/auth/password.go`
 - Create: `apps/api/internal/api/verify.go`
 - Test: `apps/api/internal/auth/password_test.go`
 - Test: `apps/api/internal/api/verify_test.go`
 
 **Interfaces:**
+
 - Consumes: `pages` (T9), `Deps` (T10), `db.GetLinkForVerify` (T3)
 - Produces:
   - `auth.HashPassword(plain string) (string, error)` — PHC-encoded Argon2id
@@ -3858,8 +3908,7 @@ func TestVerifyPasswordRoundTripsParametersFromTheEncodedHash(t *testing.T) {
 
 - [ ] **Step 3: Run it to verify it fails**
 
-Run: `cd apps/api && go test ./internal/auth/...`
-Expected: FAIL — package `auth` does not exist
+Run: `cd apps/api && go test ./internal/auth/...` Expected: FAIL — package `auth` does not exist
 
 - [ ] **Step 4: Implement Argon2id hashing**
 
@@ -3964,8 +4013,7 @@ func VerifyPassword(encoded, plain string) (bool, error) {
 
 - [ ] **Step 5: Run the password tests**
 
-Run: `cd apps/api && go test ./internal/auth/...`
-Expected: PASS (6 tests)
+Run: `cd apps/api && go test ./internal/auth/...` Expected: PASS (6 tests)
 
 - [ ] **Step 6: Write the failing verify-endpoint test**
 
@@ -4111,8 +4159,7 @@ func TestVerifyOnAnInactiveLinkIsRefusedBeforeCheckingThePassword(t *testing.T) 
 
 - [ ] **Step 7: Run it to verify it fails**
 
-Run: `cd apps/api && go test ./internal/api/...`
-Expected: FAIL — `f.deps.HandleVerifyForm undefined`
+Run: `cd apps/api && go test ./internal/api/...` Expected: FAIL — `f.deps.HandleVerifyForm undefined`
 
 - [ ] **Step 8: Implement the verify handlers**
 
@@ -4264,11 +4311,9 @@ func (d Deps) loadProtectedLink(
 }
 ```
 
-
 - [ ] **Step 9: Run the verify tests**
 
-Run: `cd apps/api && go test ./internal/api/...`
-Expected: PASS (22 tests)
+Run: `cd apps/api && go test ./internal/api/...` Expected: PASS (22 tests)
 
 - [ ] **Step 10: Commit**
 
@@ -4282,6 +4327,7 @@ git commit -m "feat(auth): add Argon2id link passwords and the verify interstiti
 ## Task 12: JWKS verification and the Huma `/v1` surface
 
 **Files:**
+
 - Create: `apps/api/internal/auth/jwt.go`
 - Create: `apps/api/internal/api/v1.go`
 - Modify: `apps/api/internal/api/api.go` (add the `Verifier` field)
@@ -4289,6 +4335,7 @@ git commit -m "feat(auth): add Argon2id link passwords and the verify interstiti
 - Test: `apps/api/internal/api/v1_test.go`
 
 **Interfaces:**
+
 - Consumes: `config.Config.JWKSURL/JWTIssuer/JWTAudience` (T1), `Deps` (T10)
 - Produces:
   - `auth.Claims` struct: `UserID uuid.UUID`, `Email string`
@@ -4486,8 +4533,7 @@ func TestVerifyRejectsANonUUIDSubject(t *testing.T) {
 
 - [ ] **Step 3: Run it to verify it fails**
 
-Run: `cd apps/api && go test ./internal/auth/...`
-Expected: FAIL — `undefined: auth.NewVerifier`
+Run: `cd apps/api && go test ./internal/auth/...` Expected: FAIL — `undefined: auth.NewVerifier`
 
 - [ ] **Step 4: Implement the verifier**
 
@@ -4583,8 +4629,7 @@ func (v *Verifier) Verify(ctx context.Context, rawToken string) (Claims, error) 
 
 - [ ] **Step 5: Run the JWT tests**
 
-Run: `cd apps/api && go test ./internal/auth/...`
-Expected: PASS (13 tests)
+Run: `cd apps/api && go test ./internal/auth/...` Expected: PASS (13 tests)
 
 - [ ] **Step 6: Add the verifier to Deps**
 
@@ -4680,11 +4725,9 @@ func TestHealthIsUnauthenticated(t *testing.T) {
 }
 ```
 
-
 - [ ] **Step 8: Run it to verify it fails**
 
-Run: `cd apps/api && go test ./internal/api/...`
-Expected: FAIL — `undefined: api.NewHumaConfig`
+Run: `cd apps/api && go test ./internal/api/...` Expected: FAIL — `undefined: api.NewHumaConfig`
 
 - [ ] **Step 9: Implement the `/v1` surface**
 
@@ -4843,8 +4886,7 @@ cd apps/api && go get github.com/danielgtaylor/huma/v2/adapters/humachi && go mo
 
 - [ ] **Step 10: Run the tests**
 
-Run: `cd apps/api && go test ./internal/...`
-Expected: PASS
+Run: `cd apps/api && go test ./internal/...` Expected: PASS
 
 - [ ] **Step 11: Commit**
 
@@ -4858,6 +4900,7 @@ git commit -m "feat(api): verify Supabase JWTs via JWKS and register the /v1 sur
 ## Task 13: Hostname routing, full wiring and the Vercel deployment config
 
 **Files:**
+
 - Create: `apps/api/internal/api/router.go`
 - Modify: `apps/api/cmd/api/main.go` (replace `run` and delete `healthHandler`)
 - Modify: `apps/api/cmd/api/main_test.go` (delete — the health route now lives in the router)
@@ -4867,6 +4910,7 @@ git commit -m "feat(api): verify Supabase JWTs via JWKS and register the /v1 sur
 - Test: `apps/api/internal/api/router_test.go`
 
 **Interfaces:**
+
 - Consumes: everything from Tasks 1–12
 - Produces: `api.NewRouter(deps Deps) http.Handler` — dispatches on the request's Host
 
@@ -4957,8 +5001,7 @@ func TestRouterServesHealthOnEveryHostname(t *testing.T) {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `cd apps/api && go test ./internal/api/...`
-Expected: FAIL — `undefined: api.NewRouter`
+Run: `cd apps/api && go test ./internal/api/...` Expected: FAIL — `undefined: api.NewRouter`
 
 - [ ] **Step 3: Implement the router**
 
@@ -5020,8 +5063,7 @@ func plainHealth(w http.ResponseWriter, _ *http.Request) {
 
 - [ ] **Step 4: Run the router tests**
 
-Run: `cd apps/api && go test ./internal/api/...`
-Expected: PASS
+Run: `cd apps/api && go test ./internal/api/...` Expected: PASS
 
 - [ ] **Step 5: Wire everything together in main.go**
 
@@ -5233,10 +5275,10 @@ Create `apps/api/vercel.json`:
 
 ```json
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": null,
-  "buildCommand": "go build -o bin/api ./cmd/api",
-  "regions": ["fra1"]
+	"$schema": "https://openapi.vercel.sh/vercel.json",
+	"framework": null,
+	"buildCommand": "go build -o bin/api ./cmd/api",
+	"regions": ["fra1"]
 }
 ```
 
@@ -5249,7 +5291,7 @@ Two settings that cannot live in this file and must be set in the Vercel project
 
 Append to `README.md`:
 
-```markdown
+````markdown
 ## Running the API locally
 
 Prerequisites: Go 1.27+, Docker, the [Supabase CLI](https://supabase.com/docs/guides/cli), and [sqlc](https://sqlc.dev).
@@ -5266,6 +5308,7 @@ supabase db reset
 cp apps/api/.env.example apps/api/.env   # then set VISITOR_SALT
 cd apps/api && go run ./cmd/api
 ```
+````
 
 The seed creates a verified `short.test` domain with a `hello` link, so:
 
@@ -5279,7 +5322,8 @@ Regenerate the database layer after changing a migration or a query:
 ```bash
 cd apps/api && sqlc generate
 ```
-```
+
+````
 
 - [ ] **Step 10: Run the whole suite, vet and lint**
 
@@ -5295,7 +5339,8 @@ curl -si -H 'Host: short.test' http://localhost:8080/hello | head -3
 curl -si http://localhost:8080/v1/health | head -3
 curl -si http://localhost:8080/openapi.json | head -3
 kill %1
-```
+````
+
 Expected: `HTTP/1.1 302 Found` with `Location: https://example.org/hello`; `HTTP/1.1 200 OK` for both others.
 
 - [ ] **Step 12: Commit**

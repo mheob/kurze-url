@@ -7,7 +7,7 @@ Status: draft, reflecting decisions made through 2026-09-01. Intended to be refi
 ## Decided
 
 | Concern | Choice | Notes |
-|---|---|---|
+| --- | --- | --- |
 | License | **MIT** (decided 2026-09-01) | Permissive; AGPL explicitly ruled out — no plan to protect against a competing hosted fork |
 | Database | Supabase (Postgres), free tier | Managed/SaaS, not self-hosted |
 | Cache | Upstash Redis, free tier | In MVP scope; fronts the redirect path |
@@ -77,14 +77,14 @@ No Go backend code is involved — this is purely a Supabase project setting. Th
 
 Two-stage thresholds (warning at 70%, critical at 90%) on every known free-tier ceiling, so there's a real lead window to upgrade before anything actually breaks:
 
-| Resource | Cap | Warning (70%) | Critical (90%) |
-|---|---|---|---|
-| Supabase DB storage | 500 MB | 350 MB | 450 MB |
-| Supabase MAU | 50,000 | 35,000 | 45,000 |
-| Supabase egress | 5 GB/mo | 3.5 GB | 4.5 GB |
-| Upstash Redis storage | 256 MB | 180 MB | 230 MB |
+| Resource               | Cap                  | Warning (70%)        | Critical (90%)     |
+| ---------------------- | -------------------- | -------------------- | ------------------ |
+| Supabase DB storage    | 500 MB               | 350 MB               | 450 MB             |
+| Supabase MAU           | 50,000               | 35,000               | 45,000             |
+| Supabase egress        | 5 GB/mo              | 3.5 GB               | 4.5 GB             |
+| Upstash Redis storage  | 256 MB               | 180 MB               | 230 MB             |
 | Upstash Redis commands | 500K/mo (~16.7K/day) | 350K/mo (~11.7K/day) | 450K/mo (~15K/day) |
-| Upstash bandwidth | 10 GB/mo | 7 GB | 9 GB |
+| Upstash bandwidth      | 10 GB/mo             | 7 GB                 | 9 GB               |
 
 **Redis commands is the one most likely to bind first in practice**, not the others: every redirect costs at least one Redis GET (plus a SET on cache misses), so command volume scales directly with redirect traffic — the ~16.7K/day cap corresponds to roughly 500-700 redirects/hour sustained. Worth watching this one closest once the instance has multiple active Vereine.
 

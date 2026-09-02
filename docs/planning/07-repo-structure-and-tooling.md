@@ -7,7 +7,7 @@ Project context: monorepo housing the Go API (`04-backend-architecture.md`), the
 ## Decided
 
 | Concern | Choice | Notes |
-|---|---|---|
+| --- | --- | --- |
 | Repo shape | **Single monorepo** | Not separate repos per app — see "Repo layout" below |
 | JS/TS workspace tooling | **pnpm workspaces** | Standard for the TanStack ecosystem, efficient with a generated-client package shared between apps |
 | Go module structure | **Separate `go.mod` per Go app** (`apps/api`, `apps/cli`), no `go.work` yet | CLI is a thin HTTP client — no shared Go code to justify a workspace yet; add `go.work` if that changes |
@@ -53,8 +53,8 @@ Vercel's monorepo support is exactly the "one Git repo, N Vercel projects, each 
 import { withRelatedProject } from '@vercel/related-projects';
 
 const apiBaseUrl = withRelatedProject({
-  projectName: 'url-shortener-api',
-  defaultHost: process.env.API_HOST, // fallback for local dev / non-Vercel builds
+	projectName: 'url-shortener-api',
+	defaultHost: process.env.API_HOST, // fallback for local dev / non-Vercel builds
 });
 ```
 
