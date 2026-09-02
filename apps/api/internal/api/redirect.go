@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -88,7 +89,7 @@ func (d Deps) HandleRedirect(w http.ResponseWriter, r *http.Request) {
 // Redis is unreachable the redirect still works, because availability of the
 // redirect is the product. The failure is logged loudly instead.
 func (d Deps) allowRedirect(ctx context.Context, ip string) bool {
-	allowed, _, err := d.Cache.Allow(ctx, "rl:redirect:"+ip,
+	allowed, _, err := d.Cache.Allow(ctx, "rl:redirect:"+analytics.RateLimitKey(d.Config.VisitorSalt, ip),
 		d.Config.RedirectRateLimitPerMin, time.Minute)
 	if err != nil {
 		d.Log.Error("redirect rate limit unavailable, failing open", "error", err)
@@ -132,10 +133,15 @@ func (d Deps) resolveFromDatabase(
 	}
 
 	// The lookup script had no link id to deduplicate against on a miss, so
-	// the visitor is recorded here instead.
-	unique, err := d.Cache.MarkUniqueVisit(ctx, resolved.ID.String(), day, visitor, d.Config.UniqueVisitorTTL)
-	if err != nil {
-		d.Log.Error("unique-visitor dedup failed", "error", err)
+	// the visitor is recorded here instead — unless the link is password
+	// protected, in which case the click (and its uniqueness) is only ever
+	// recorded once the password verifies.
+	var unique bool
+	if !resolved.HasPassword {
+		unique, err = d.Cache.MarkUniqueVisit(ctx, resolved.ID.String(), day, visitor, d.Config.UniqueVisitorTTL)
+		if err != nil {
+			d.Log.Error("unique-visitor dedup failed", "error", err)
+		}
 	}
 
 	return resolved, unique, nil
@@ -161,7 +167,26 @@ func unavailable(l link.Cached, now time.Time) (int, pages.Kind, bool) {
 	}
 }
 
+// isSafeRedirectTarget is read-side defence in depth. Creation-time
+// validation (the HTTPS-only allowlist, SSRF guards) belongs to the next
+// plan and is correctly absent here — but a stored destination must never be
+// handed to the browser unless it is at least an absolute http or https URL.
+func isSafeRedirectTarget(destination string) bool {
+	parsed, err := url.Parse(destination)
+	if err != nil || !parsed.IsAbs() {
+		return false
+	}
+	return parsed.Scheme == "http" || parsed.Scheme == "https"
+}
+
 func (d Deps) writeRedirect(w http.ResponseWriter, r *http.Request, l link.Cached) {
+	if !isSafeRedirectTarget(l.DestinationURL) {
+		d.Log.Error("stored destination is not a safe absolute http(s) URL", "link_id", l.ID)
+		locale := pages.Negotiate(r.Header.Get("Accept-Language"))
+		pages.RenderError(w, http.StatusInternalServerError, locale, pages.KindServerError)
+		return
+	}
+
 	status := http.StatusFound
 	if l.RedirectType == http.StatusMovedPermanently {
 		status = http.StatusMovedPermanently

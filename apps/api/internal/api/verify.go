@@ -17,9 +17,20 @@ import (
 
 // HandleVerifyForm serves GET /{slug}/verify. It exists so a bookmarked or
 // reloaded interstitial still works; GET /{slug} renders the same form.
+//
+// It shares the redirect path's per-IP rate limit: without it, this is an
+// unauthenticated, unmetered Postgres query generator on the public surface.
 func (d Deps) HandleVerifyForm(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	locale := pages.Negotiate(r.Header.Get("Accept-Language"))
 	slug := chi.URLParam(r, "slug")
+	ip := ClientIP(r)
+
+	if !d.allowRedirect(ctx, ip) {
+		w.Header().Set("Retry-After", "60")
+		pages.RenderError(w, http.StatusTooManyRequests, locale, pages.KindRateLimited)
+		return
+	}
 
 	if _, _, ok := d.loadProtectedLink(w, r, locale, slug); !ok {
 		return
@@ -40,7 +51,7 @@ func (d Deps) HandleVerifySubmit(w http.ResponseWriter, r *http.Request) {
 	ip := ClientIP(r)
 	now := d.now()
 
-	rateKey := "rl:pwverify:" + hostname + ":" + slug + ":" + ip
+	rateKey := "rl:pwverify:" + hostname + ":" + slug + ":" + analytics.RateLimitKey(d.Config.VisitorSalt, ip)
 	allowed, _, err := d.Cache.Allow(ctx, rateKey, d.Config.PasswordRateLimitPerMin, time.Minute)
 	if err != nil {
 		// Unlike the redirect path this fails closed: an unbounded number of

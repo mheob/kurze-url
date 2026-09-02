@@ -79,9 +79,18 @@ func run(log *slog.Logger) error {
 		log.Warn("SUPABASE_JWKS_URL is unset — authenticated /v1 operations will reject all requests")
 	}
 
+	// The recorder gets its own context, independent of the signal-cancelled
+	// one everything else uses. If it shared ctx, SIGTERM would cancel it
+	// immediately — the recorder would perform its final flush and exit
+	// before srv.Shutdown finishes draining in-flight redirects, so those
+	// requests' Record calls would land in a buffer nothing ever flushes.
+	// recorderCtx is cancelled only once srv.Shutdown has returned, below.
+	recorderCtx, cancelRecorder := context.WithCancel(context.Background())
+	defer cancelRecorder()
+
 	recorderDone := make(chan struct{})
 	go func() {
-		recorder.Run(ctx)
+		recorder.Run(recorderCtx)
 		close(recorderDone)
 	}()
 
@@ -110,8 +119,13 @@ func run(log *slog.Logger) error {
 
 	shutdownErr := srv.Shutdown(shutdownCtx)
 
-	// The recorder flushes whatever is still buffered when ctx is cancelled;
-	// wait for that before the process exits, or those clicks are lost.
+	// Only now, with every in-flight redirect's Record call already made, is
+	// it safe to let the recorder perform its final flush.
+	cancelRecorder()
+
+	// The recorder flushes whatever is still buffered when recorderCtx is
+	// cancelled; wait for that before the process exits, or those clicks are
+	// lost.
 	select {
 	case <-recorderDone:
 	case <-shutdownCtx.Done():

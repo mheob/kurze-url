@@ -190,6 +190,19 @@ func TestRedirectRateLimitsPerClientIP(t *testing.T) {
 	require.Equal(t, http.StatusFound, otherRec.Code, "a different IP has its own budget")
 }
 
+func TestRedirectRefusesAStoredNonHTTPDestination(t *testing.T) {
+	// Creation-time validation (the HTTPS-only allowlist) is out of scope
+	// here, so this seeds a link the way a pre-validation bug or a direct
+	// database edit could, and checks the read-side guard catches it.
+	f := newFixture(t, withDestination("javascript:alert(1)"))
+
+	rec := get(t, f, "/hello", nil)
+
+	require.Equal(t, http.StatusInternalServerError, rec.Code)
+	require.Empty(t, rec.Header().Get("Location"),
+		"an unsafe destination must never be handed to the browser")
+}
+
 func TestRedirectRespondsInGermanWhenPreferred(t *testing.T) {
 	f := newFixture(t)
 

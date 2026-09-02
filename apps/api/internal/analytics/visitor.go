@@ -34,3 +34,17 @@ func VisitorHash(secret, ip, userAgent string, at time.Time) string {
 func Day(at time.Time) string {
 	return at.UTC().Format(time.DateOnly)
 }
+
+// RateLimitKey derives a non-reversible identifier for rate-limit bucketing.
+//
+// Unlike VisitorHash it deliberately does NOT rotate daily — a budget that
+// reset at midnight would be trivially gameable — and deliberately does NOT
+// include the User-Agent, or an attacker could reset their budget by changing
+// it. The raw address never leaves this function.
+func RateLimitKey(secret, ip string) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte("ratelimit"))
+	mac.Write([]byte{0})
+	mac.Write([]byte(ip))
+	return hex.EncodeToString(mac.Sum(nil)[:16])
+}

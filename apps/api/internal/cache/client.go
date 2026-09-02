@@ -109,7 +109,11 @@ func (c *Client) LookupForRedirect(
 		return Lookup{NegativelyCached: true}, nil
 	}
 
-	_, payload, found := strings.Cut(raw, "|")
+	_, rest, found := strings.Cut(raw, "|")
+	if !found {
+		return Lookup{}, fmt.Errorf("cache: redirect lookup: malformed cached value")
+	}
+	_, payload, found := strings.Cut(rest, "|")
 	if !found {
 		return Lookup{}, fmt.Errorf("cache: redirect lookup: malformed cached value")
 	}
@@ -123,14 +127,21 @@ func (c *Client) LookupForRedirect(
 	return Lookup{Found: true, Link: cached, UniqueVisit: unique == 1}, nil
 }
 
-// PutLink caches a link record. The stored value is "<link id>|<json>" so the
-// lookup script can extract the id without parsing JSON.
+// PutLink caches a link record. The stored value is
+// "<link id>|<0 or 1>|<json>" so the lookup script can extract the id and the
+// has-password flag without parsing JSON. The flag lets the script skip
+// marking a visitor unique for a password-protected link, whose click is only
+// ever recorded once the password verifies.
 func (c *Client) PutLink(ctx context.Context, cacheKey string, l link.Cached, ttl time.Duration) error {
 	payload, err := json.Marshal(l)
 	if err != nil {
 		return fmt.Errorf("cache: encode link: %w", err)
 	}
-	value := l.ID.String() + "|" + string(payload)
+	hasPassword := "0"
+	if l.HasPassword {
+		hasPassword = "1"
+	}
+	value := l.ID.String() + "|" + hasPassword + "|" + string(payload)
 	if err := c.rdb.Set(ctx, cacheKey, value, ttl).Err(); err != nil {
 		return fmt.Errorf("cache: put link: %w", err)
 	}

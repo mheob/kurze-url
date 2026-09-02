@@ -2,7 +2,7 @@
 
 A multi-tenant URL shortener for German non-profit associations ("Vereine"), run as one shared, open-source instance.
 
-> **Status:** planning. The design is documented, but no application code exists yet.
+> **Status:** early development. The API foundation and the redirect hot path (`GET /<slug>`, password-protected links, rate limiting, analytics rollups) exist; the rest of the design is documented in `docs/planning/`.
 
 ## What it does
 

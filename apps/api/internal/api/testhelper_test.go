@@ -173,6 +173,9 @@ func (o linkOptions) verification() string {
 }
 
 func withState(s string) func(*linkOptions) { return func(o *linkOptions) { o.state = s } }
+func withDestination(d string) func(*linkOptions) {
+	return func(o *linkOptions) { o.destination = d }
+}
 func withRedirectType(t int) func(*linkOptions) {
 	return func(o *linkOptions) { o.redirectType = t }
 }

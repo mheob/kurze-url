@@ -53,6 +53,30 @@ func TestVerifyFormRendersThePrompt(t *testing.T) {
 	require.Contains(t, rec.Body.String(), `action="/hello/verify"`)
 }
 
+func TestVerifyFormIsRateLimitedPerIP(t *testing.T) {
+	f := protectedFixture(t, "hunter2")
+	f.deps.Config.RedirectRateLimitPerMin = 2
+
+	get := func(ip string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/hello/verify", nil)
+		req.Host = f.hostname
+		req.Header.Set("X-Forwarded-For", ip)
+		rec := httptest.NewRecorder()
+		verifyRouter(f).ServeHTTP(rec, req)
+		return rec
+	}
+
+	require.Equal(t, http.StatusOK, get("203.0.113.1").Code)
+	require.Equal(t, http.StatusOK, get("203.0.113.1").Code)
+
+	rec := get("203.0.113.1")
+	require.Equal(t, http.StatusTooManyRequests, rec.Code)
+	require.NotEmpty(t, rec.Header().Get("Retry-After"))
+
+	require.Equal(t, http.StatusOK, get("198.51.100.9").Code,
+		"a different IP has its own budget")
+}
+
 func TestVerifySubmitRedirectsOnTheCorrectPassword(t *testing.T) {
 	f := protectedFixture(t, "hunter2")
 
@@ -65,7 +89,7 @@ func TestVerifySubmitRedirectsOnTheCorrectPassword(t *testing.T) {
 func TestVerifySubmitRecordsTheClickOnlyOnSuccess(t *testing.T) {
 	f := protectedFixture(t, "hunter2")
 
-	postPassword(t, f, "hello", "wrong", "203.0.113.1")
+	require.Equal(t, http.StatusUnauthorized, postPassword(t, f, "hello", "wrong", "203.0.113.1").Code)
 	require.NoError(t, f.deps.Recorder.Flush(context.Background()))
 	require.Empty(t, *f.rows, "a failed attempt is not a click")
 
@@ -116,6 +140,47 @@ func TestVerifySubmitRateLimitsTightlyPerLinkAndIP(t *testing.T) {
 	require.Equal(t, http.StatusUnauthorized,
 		postPassword(t, f, "hello", "wrong", "198.51.100.9").Code,
 		"a different IP has its own budget")
+}
+
+func TestVerifiedPasswordProtectedLinkStillCountsAsUniqueVisitor(t *testing.T) {
+	f := protectedFixture(t, "hunter2")
+
+	getInterstitial := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/hello", nil)
+		req.Host = f.hostname
+		req.Header.Set("X-Forwarded-For", "203.0.113.1")
+		rec := httptest.NewRecorder()
+		verifyRouter(f).ServeHTTP(rec, req)
+		return rec
+	}
+
+	// Cache miss, then cache hit — both must leave the visitor's uniqueness
+	// untouched, since neither is a click yet.
+	require.Equal(t, http.StatusOK, getInterstitial().Code)
+	require.Equal(t, http.StatusOK, getInterstitial().Code)
+
+	rec := postPassword(t, f, "hello", "hunter2", "203.0.113.1")
+	require.Equal(t, http.StatusFound, rec.Code)
+
+	require.NoError(t, f.deps.Recorder.Flush(context.Background()))
+
+	var total *struct {
+		clicks int64
+		unique int64
+	}
+	for _, row := range *f.rows {
+		if row.DimType == "total" {
+			total = &struct {
+				clicks int64
+				unique int64
+			}{row.Clicks, row.Unique}
+		}
+	}
+
+	require.NotNil(t, total)
+	require.EqualValues(t, 1, total.clicks)
+	require.EqualValues(t, 1, total.unique,
+		"the interstitial views must not have consumed the visitor's uniqueness")
 }
 
 func TestVerifyOnAnUnprotectedLinkIsNotFound(t *testing.T) {

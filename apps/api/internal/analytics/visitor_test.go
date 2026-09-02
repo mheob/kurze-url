@@ -79,3 +79,33 @@ func TestDayIsUTCDateOnly(t *testing.T) {
 	require.Equal(t, "2026-09-01",
 		analytics.Day(time.Date(2026, 9, 2, 0, 30, 0, 0, berlin)))
 }
+
+func TestRateLimitKeyIsStableForTheSameIP(t *testing.T) {
+	require.Equal(t,
+		analytics.RateLimitKey(secret, ip),
+		analytics.RateLimitKey(secret, ip),
+	)
+}
+
+func TestRateLimitKeySeparatesDifferentIPs(t *testing.T) {
+	require.NotEqual(t,
+		analytics.RateLimitKey(secret, ip),
+		analytics.RateLimitKey(secret, "198.51.100.7"),
+	)
+}
+
+func TestRateLimitKeyRevealsNothingAboutTheIP(t *testing.T) {
+	key := analytics.RateLimitKey(secret, ip)
+
+	require.NotContains(t, key, ip)
+}
+
+func TestRateLimitKeyDoesNotRotateDaily(t *testing.T) {
+	// Unlike VisitorHash, a rate-limit budget must not reset at midnight, or
+	// it would be trivially gameable.
+	require.Equal(t,
+		analytics.RateLimitKey(secret, ip),
+		analytics.RateLimitKey(secret, ip),
+		"RateLimitKey takes no time input at all — this pins that contract",
+	)
+}
