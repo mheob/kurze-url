@@ -69,7 +69,7 @@ Decided 2026-08-14 that these ship with the very first publicly reachable versio
 
 - No full IP addresses stored, ever.
 - Unique-visitor counting: daily-rotating salted hash of IP + User-Agent, not reversible (Plausible/Fathom-style approach).
-- GeoIP resolved locally, no third-party geolocation API call per request.
+- GeoIP resolved locally, no third-party geolocation API call per request. **Mechanism decided 2026-09-02**: the country comes from Vercel's `x-vercel-ip-country` request header, which the platform sets at the edge. That satisfies the intent — no per-request third-party call, no data leaving the deployment — without shipping and updating a MaxMind database. Off Vercel the value is `unknown`.
 - Retention: 90-day automatic deletion, confirmed.
 - Storage strategy: aggregate into rollups (hourly/daily counts by dimension — browser, OS, device, country, referrer, bot/human, QR vs. regular) rather than storing one row per click indefinitely. This is needed both to respect the 90-day retention policy cleanly and to stay within Supabase's 500 MB free-tier database cap.
 - No cookies, no fingerprinting beyond the hash above. Analytics collection must be possible to disable per link or per account.
