@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/mheob/kurze-url/apps/api/internal/analytics"
+	"github.com/mheob/kurze-url/apps/api/internal/auth"
 	"github.com/mheob/kurze-url/apps/api/internal/cache"
 	"github.com/mheob/kurze-url/apps/api/internal/config"
 	"github.com/mheob/kurze-url/apps/api/internal/db"
@@ -19,6 +20,7 @@ type Deps struct {
 	Queries  *db.Queries
 	Cache    *cache.Client
 	Recorder *analytics.Recorder
+	Verifier *auth.Verifier
 	Log      *slog.Logger
 
 	// Now is injectable so tests can pin expiry behaviour. Defaults to
