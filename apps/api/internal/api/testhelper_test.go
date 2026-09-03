@@ -4,10 +4,12 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
@@ -81,6 +83,14 @@ type fixture struct {
 	hostname string
 	linkID   uuid.UUID
 	rows     *[]analytics.Row
+}
+
+// router mounts the redirect handler the way the real router does, so chi's
+// {slug} URL parameter resolves.
+func (f *fixture) router() http.Handler {
+	r := chi.NewRouter()
+	r.Get("/{slug}", f.deps.HandleRedirect)
+	return r
 }
 
 // newFixture builds a fully wired Deps against a real Postgres and Redis, plus

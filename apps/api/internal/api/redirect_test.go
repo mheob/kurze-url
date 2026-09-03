@@ -210,3 +210,39 @@ func TestRedirectRespondsInGermanWhenPreferred(t *testing.T) {
 
 	require.Contains(t, rec.Body.String(), "nicht gefunden")
 }
+
+func TestRedirectIsCaseInsensitiveInTheSlug(t *testing.T) {
+	f := newFixture(t) // seeds slug "hello"
+
+	for _, requested := range []string{"hello", "HELLO", "HeLLo"} {
+		t.Run(requested, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "http://"+f.hostname+"/"+requested, nil)
+			f.router().ServeHTTP(rec, req)
+
+			require.Equal(t, http.StatusFound, rec.Code,
+				"a link printed on a flyer must resolve however its case was typed")
+			require.Equal(t, "https://example.org/hello", rec.Header().Get("Location"))
+		})
+	}
+}
+
+func TestRedirectCaseFoldingSharesOneCacheEntry(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	rec := httptest.NewRecorder()
+	f.router().ServeHTTP(rec,
+		httptest.NewRequest(http.MethodGet, "http://"+f.hostname+"/HELLO", nil))
+	require.Equal(t, http.StatusFound, rec.Code)
+
+	// The uppercase request must have populated the lowercase key, not a
+	// second one: two cache entries for one link would double the hot path's
+	// memory and let them disagree after an update.
+	value, err := f.deps.Cache.Raw().Get(ctx, link.CacheKey(f.hostname, "hello")).Result()
+	require.NoError(t, err, "the lowercase key must be the one that got populated")
+	require.NotEmpty(t, value)
+
+	_, err = f.deps.Cache.Raw().Get(ctx, link.CacheKey(f.hostname, "HELLO")).Result()
+	require.Error(t, err, "no uppercase key may exist")
+}

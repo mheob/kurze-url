@@ -13,6 +13,7 @@ import (
 	"github.com/mheob/kurze-url/apps/api/internal/db"
 	"github.com/mheob/kurze-url/apps/api/internal/link"
 	"github.com/mheob/kurze-url/apps/api/internal/pages"
+	slugpkg "github.com/mheob/kurze-url/apps/api/internal/slug"
 )
 
 // HandleVerifyForm serves GET /{slug}/verify. It exists so a bookmarked or
@@ -23,7 +24,11 @@ import (
 func (d Deps) HandleVerifyForm(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	locale := pages.Negotiate(r.Header.Get("Accept-Language"))
-	slug := chi.URLParam(r, "slug")
+	// Slugs are case-insensitive: they are stored lowercase, so the incoming
+	// one is folded before it becomes a cache key or a query parameter. This
+	// is a string operation on a short string — no extra Redis command, no
+	// extra query, so the hot path's cost is unchanged.
+	slug := slugpkg.Normalize(chi.URLParam(r, "slug"))
 	ip := ClientIP(r)
 
 	if !d.allowRedirect(ctx, ip) {
@@ -46,7 +51,11 @@ func (d Deps) HandleVerifyForm(w http.ResponseWriter, r *http.Request) {
 func (d Deps) HandleVerifySubmit(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	locale := pages.Negotiate(r.Header.Get("Accept-Language"))
-	slug := chi.URLParam(r, "slug")
+	// Slugs are case-insensitive: they are stored lowercase, so the incoming
+	// one is folded before it becomes a cache key or a query parameter. This
+	// is a string operation on a short string — no extra Redis command, no
+	// extra query, so the hot path's cost is unchanged.
+	slug := slugpkg.Normalize(chi.URLParam(r, "slug"))
 	hostname := Hostname(r.Host)
 	ip := ClientIP(r)
 	now := d.now()
