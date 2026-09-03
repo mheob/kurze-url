@@ -126,6 +126,21 @@ func resolveScope(ctx huma.Context, teamID uuid.UUID, required Role, out *Member
 		return []error{huma.Error401Unauthorized("not authenticated")}
 	}
 
+	// Huma runs every Resolver unconditionally, even when its own parameter
+	// binding already failed — and if that binding failed, TeamID above is
+	// left at its zero value (uuid.UUID.UnmarshalText leaves the receiver
+	// untouched on error), not the malformed input. Worse, huma picks the
+	// *last* error's status code when several are present, so this
+	// resolver's error would otherwise silently overrule the binder's 422
+	// and report a malformed team_id as a plain 404. Re-checking the raw
+	// path value here keeps a malformed ID a 422 (its actual defect)
+	// instead of masking it as "team not found".
+	if raw := ctx.Param("team_id"); raw != "" {
+		if _, err := uuid.Parse(raw); err != nil {
+			return []error{huma.Error422UnprocessableEntity("team_id must be a valid UUID")}
+		}
+	}
+
 	resolver, ok := resolverFromContext(ctx.Context())
 	if !ok {
 		// Refusing is the only safe answer: without a resolver there is no way
