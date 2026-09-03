@@ -42,6 +42,7 @@ func (q *Queries) CreateTag(ctx context.Context, arg CreateTagParams) (Tag, erro
 
 const deleteLinkTags = `-- name: DeleteLinkTags :exec
 
+
 delete from link_tag where link_id = $1
 `
 
@@ -49,6 +50,12 @@ delete from link_tag where link_id = $1
 // link write's own transaction. The delete is unconditional rather than a
 // computed diff: the set is at most ten rows, and a diff would be more code
 // for no measurable gain.
+// DeleteLinkTags filters only by link_id because the link_tag table has no
+// team_id column. Its safety is contingent on the caller: the link_id must
+// already be the resolved link from a LinkEditorScope (which checked the
+// caller's membership in the link's owning team) and this query runs inside
+// the handler's transaction. If an invalid link_id arrives, the statement
+// silently deletes nothing — the caller must validate the link exists first.
 func (q *Queries) DeleteLinkTags(ctx context.Context, linkID uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteLinkTags, linkID)
 	return err
@@ -93,12 +100,14 @@ type GetTagScopeRow struct {
 	TeamID uuid.UUID
 }
 
-// Tag CRUD and the link_tag join. There is no RLS: every query here except
-// GetTagScope filters by team_id, because Postgres enforces nothing about
-// tenancy.
-// GetTagScope is the one deliberate exception to the team_id rule. It is what
-// the TagEditorScope resolver calls to *discover* which team a tag belongs to,
-// so it cannot filter by the answer.
+// Tag CRUD and the link_tag join. There is no RLS: most queries here filter by
+// team_id because Postgres enforces nothing about tenancy. Three queries do not:
+// GetTagScope deliberately discovers the team (so it cannot filter by the answer),
+// and DeleteLinkTags and InsertLinkTags cannot filter by team_id because the
+// link_tag table has no team_id column — their safety rests entirely on the caller.
+// GetTagScope discovers the owning team from a tag ID alone. It is what the
+// TagEditorScope resolver calls to learn which team a tag belongs to, so it
+// cannot filter by the answer and is the only query that takes only an id.
 func (q *Queries) GetTagScope(ctx context.Context, id uuid.UUID) (GetTagScopeRow, error) {
 	row := q.db.QueryRow(ctx, getTagScope, id)
 	var i GetTagScopeRow
@@ -107,6 +116,7 @@ func (q *Queries) GetTagScope(ctx context.Context, id uuid.UUID) (GetTagScopeRow
 }
 
 const insertLinkTags = `-- name: InsertLinkTags :exec
+
 insert into link_tag (link_id, tag_id)
 select $1, unnest($2::uuid[])
 `
@@ -116,6 +126,13 @@ type InsertLinkTagsParams struct {
 	TagIds []uuid.UUID
 }
 
+// InsertLinkTags also cannot filter by team_id: the link_tag table stores only
+// link_id and tag_id. Like DeleteLinkTags, it enforces nothing itself and relies
+// on the caller. The link_id must be the resolved link (checked by LinkEditorScope),
+// and every tag_id must have already been validated through ListTagsByIDs, which
+// filters by the requesting team. If an invalid tag_id arrives, the foreign key
+// constraint fails; if a tag from a different team arrives, the handler should
+// not have passed it, but ListTagsByIDs ensures it never will.
 func (q *Queries) InsertLinkTags(ctx context.Context, arg InsertLinkTagsParams) error {
 	_, err := q.db.Exec(ctx, insertLinkTags, arg.LinkID, arg.TagIds)
 	return err
