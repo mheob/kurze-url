@@ -672,8 +672,9 @@ type UpdateLinkInput struct {
 // bodyHasKey reports whether the request body carried this key at all, which
 // is the difference between "leave it alone" and "set it to null". Used only
 // for folder_id: expires_at has the identical *time.Time limitation but is
-// deliberately left alone here — fixing it changes an endpoint plan 3 already
-// shipped and belongs in its own task.
+// deliberately left alone here — fixing it would change already-shipped
+// behavior on that field, which is a separate, self-contained change from
+// this one.
 func bodyHasKey(raw []byte, key string) bool {
 	var keys map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &keys); err != nil {

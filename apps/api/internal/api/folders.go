@@ -113,9 +113,9 @@ func (d Deps) registerFolders(api huma.API) {
 }
 
 // errFolderCapReached travels out of the transaction so the cap becomes a 422
-// rather than a 500. It never reaches the client. Its tag counterpart is
-// added in the plan's tag task, alongside the code that would actually use
-// it — an unused sibling declared here now would just be dead code.
+// rather than a 500. It never reaches the client. Its tag counterpart lives in
+// tags.go, declared alongside the code that actually uses it — an unused
+// sibling declared here would just be dead code.
 var errFolderCapReached = errors.New("api: folder cap reached")
 
 func (d Deps) createFolder(ctx context.Context, in *CreateFolderInput) (*FolderOutput, error) {

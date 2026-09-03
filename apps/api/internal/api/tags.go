@@ -111,9 +111,9 @@ func (d Deps) registerTags(api huma.API) {
 }
 
 // errTagCapReached travels out of the transaction so the cap becomes a 422
-// rather than a 500. It never reaches the client. It is folder.go's
-// errFolderCapReached's sibling, added here — alongside the code that
-// actually uses it — rather than in that earlier task.
+// rather than a 500. It never reaches the client. It is folders.go's
+// errFolderCapReached's sibling, declared here alongside the code that
+// actually uses it rather than up front next to its counterpart.
 var errTagCapReached = errors.New("api: tag cap reached")
 
 func (d Deps) createTag(ctx context.Context, in *CreateTagInput) (*TagOutput, error) {
