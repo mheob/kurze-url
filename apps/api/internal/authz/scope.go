@@ -148,6 +148,10 @@ func resolveScope(ctx huma.Context, teamID uuid.UUID, required Role, out *Member
 // team-path scopes and the entity scopes. notFound is the message used when
 // the caller is not a member: the wording differs per route so a 404 never
 // says "team not found" on a link route.
+//
+// The membership travels out through out rather than the context because
+// Resolve returns only errors — it cannot replace the context the handler
+// receives — but it can mutate the input struct it is part of.
 func resolveMembership(
 	ctx huma.Context, teamID uuid.UUID, required Role, notFound string, out *Membership,
 ) []error {

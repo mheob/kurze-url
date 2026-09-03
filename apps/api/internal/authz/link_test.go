@@ -123,9 +123,15 @@ func TestLinkScopeReturns404ForAMissingLink(t *testing.T) {
 }
 
 func TestLinkScopeReturns422ForAMalformedID(t *testing.T) {
+	// The membership resolver is configured to fail (ErrNotMember, which
+	// would otherwise produce 404) so a resolver-produced error is actually
+	// in play here. Without that, this test would pass whether or not the
+	// link_id re-parse guard exists at all: with both fakes succeeding,
+	// nothing competes with Huma's own path-binder 422, and the binder's
+	// status stands unopposed regardless of the guard.
 	rec := linkScopeCase(t,
 		fakeLinkResolver{link: authz.ResolvedLink{}},
-		fakeMembershipResolver{membership: authz.Membership{Role: authz.RoleOwner}},
+		fakeMembershipResolver{err: authz.ErrNotMember},
 		uuid.New(), "not-a-uuid")
 
 	require.Equal(t, http.StatusUnprocessableEntity, rec.Code,
