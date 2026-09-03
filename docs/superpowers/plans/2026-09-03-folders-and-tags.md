@@ -22,7 +22,7 @@ These bind every task. They are the project's rules, restated so you do not have
 - Pagination is offset/limit with the existing `api.Page[T]` envelope and `api.PageParams`, `per_page` capped at 100. Never pagination headers.
 - Filtering uses flat, explicitly typed query parameters per endpoint. Not a generic `filter=field:op:value` scheme.
 - Operations that need authentication declare `Security: []map[string][]string{{"bearerAuth": {}}}`.
-- Migrations are owned by the Supabase CLI: `supabase migration new <name>`, then `supabase db push`. No golang-migrate, no Atlas, no hand-written migration files.
+- Migrations are owned by the Supabase CLI: `supabase migration new <name>`, applied locally with `supabase migration up` (or `supabase db reset`), and reaching the remote project via `supabase db push` on merge to `main`. No golang-migrate, no Atlas, no hand-written migration files.
 - Database access is sqlc-generated from raw SQL in `apps/api/internal/db/queries/`. Run `sqlc generate` from `apps/api` after editing any `.sql` file. No ORM.
 - Go tests run against real Postgres and Redis, as plans 2 and 3 do. Mocks are for external HTTP only. No skips.
 - Conventional Commits, checked in CI.
@@ -116,9 +116,11 @@ alter table tag drop constraint tag_team_id_name_key;
 create unique index tag_team_id_name_lower_idx on tag (team_id, lower(name));
 ```
 
-- [ ] **Step 3: Apply it**
+- [ ] **Step 3: Apply it to the local stack**
 
-Run: `supabase db push` Expected: the migration applies with no error.
+Run: `supabase migration up` Expected: the migration applies with no error.
+
+`supabase db push` is **not** the command here: it targets the linked remote project, and this checkout has none linked (`supabase status` reports `"linked_project": null`). Pushing to the remote is the deploy step that happens on merge to `main`, not part of this task. If `migration up` refuses because the local stack's history is out of step, `supabase db reset` rebuilds it from every migration plus `supabase/seed.sql` — which is also what CI does via `supabase start`, so a migration that survives a reset is one CI will accept.
 
 - [ ] **Step 4: Verify both halves took effect**
 
