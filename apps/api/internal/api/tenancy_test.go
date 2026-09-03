@@ -27,18 +27,32 @@ import (
 // fakeInviter stands in for Supabase's Admin API. It records what it was asked
 // to send so a test can assert an email was or was not triggered.
 type fakeInviter struct {
-	calls  []string
-	userID uuid.UUID
-	err    error
+	calls    []string
+	metadata []map[string]any
+	userID   uuid.UUID
+	err      error
+
+	// t and pool let a successful InviteUser seed the auth.users row for the
+	// invited address itself, exactly as the real Supabase Admin API would
+	// as a side effect of accepting an invite. That row has to exist by the
+	// time the handler inserts the team_member row (the foreign key demands
+	// it), and it must NOT exist any earlier than that: seeding it upfront,
+	// before the request, would make the address indistinguishable from one
+	// that already had an account, and GetUserIDByEmail runs before this
+	// call — so an early seed would short-circuit the invite entirely.
+	t    *testing.T
+	pool *pgxpool.Pool
 }
 
 func (f *fakeInviter) InviteUser(
-	_ context.Context, email string, _ map[string]any,
+	ctx context.Context, email string, data map[string]any,
 ) (uuid.UUID, error) {
 	f.calls = append(f.calls, email)
+	f.metadata = append(f.metadata, data)
 	if f.err != nil {
 		return uuid.Nil, f.err
 	}
+	seedAuthUserWithID(ctx, f.t, f.pool, f.userID, email)
 	return f.userID, nil
 }
 
@@ -81,6 +95,34 @@ func seedAuthUser(ctx context.Context, t *testing.T, pool *pgxpool.Pool, email s
 	return testUser{id: id, email: email}
 }
 
+// seedAuthUserWithID seeds an auth user under a caller-chosen ID, for the
+// invite path where the fake inviter decides the new user's ID.
+func seedAuthUserWithID(
+	ctx context.Context, t *testing.T, pool *pgxpool.Pool, id uuid.UUID, email string,
+) testUser {
+	t.Helper()
+
+	_, err := pool.Exec(ctx,
+		`insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+		                         email_confirmed_at, created_at, updated_at)
+		 values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated',
+		         'authenticated', $2, '', now(), now(), now())`, id, email)
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `delete from auth.users where id = $1`, id)
+	})
+
+	return testUser{id: id, email: email}
+}
+
+// rebuildRouter re-registers /v1 after a test mutated f.deps.Config.
+func (f *tenancyFixture) rebuildRouter() {
+	router := chi.NewRouter()
+	f.deps.RegisterV1(humachi.New(router, api.NewHumaConfig()))
+	f.router = router
+}
+
 func newTenancyFixture(t *testing.T) *tenancyFixture {
 	t.Helper()
 	ctx := context.Background()
@@ -120,7 +162,7 @@ func newTenancyFixture(t *testing.T) *tenancyFixture {
 	cfg.MaintainerUserIDs = []uuid.UUID{members[authz.RoleOwner].id}
 	cfg.InviteRateLimitPerHour = 20
 
-	invites := &fakeInviter{userID: uuid.New()}
+	invites := &fakeInviter{userID: uuid.New(), t: t, pool: pool}
 
 	f := &tenancyFixture{
 		pool:     pool,
