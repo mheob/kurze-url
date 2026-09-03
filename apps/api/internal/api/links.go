@@ -580,7 +580,7 @@ func (d Deps) updateLink(ctx context.Context, in *UpdateLinkInput) (*LinkOutput,
 		if in.Body.ExpiresAt != nil && (before.ExpiresAt == nil || !before.ExpiresAt.Equal(*in.Body.ExpiresAt)) {
 			params.ExpiresAt = in.Body.ExpiresAt
 			changed = append(changed, "expires_at")
-			metadata["expires_at"] = map[string]any{"to": in.Body.ExpiresAt}
+			metadata["expires_at"] = map[string]any{"from": before.ExpiresAt, "to": in.Body.ExpiresAt}
 		}
 		if in.Body.AnalyticsEnabled != nil && *in.Body.AnalyticsEnabled != before.AnalyticsEnabled {
 			params.AnalyticsEnabled = *in.Body.AnalyticsEnabled
@@ -637,11 +637,24 @@ func (d Deps) updateLink(ctx context.Context, in *UpdateLinkInput) (*LinkOutput,
 
 func (d Deps) deleteLink(ctx context.Context, in *DeleteLinkInput) (*DeleteLinkOutput, error) {
 	member := in.Member()
-	resolved := in.Link()
+
+	// Re-read the row inside the transaction, the same way updateLink does,
+	// rather than trusting in.Link()'s scope-resolution snapshot. A concurrent
+	// rename between scope resolution and this commit would otherwise leave
+	// invalidation targeting a hostname/slug pair the rename already replaced.
+	var deleted linkRow
 
 	err := db.InTx(ctx, d.Pool, func(q *db.Queries) error {
+		before, err := q.GetLinkForAPI(ctx, db.GetLinkForAPIParams{
+			ID: in.Link().ID, TeamID: member.TeamID,
+		})
+		if err != nil {
+			return err
+		}
+		deleted = rowFromGet(before)
+
 		affected, err := q.DeleteLink(ctx, db.DeleteLinkParams{
-			ID: resolved.ID, TeamID: member.TeamID,
+			ID: before.ID, TeamID: member.TeamID,
 		})
 		if err != nil {
 			return err
@@ -655,10 +668,10 @@ func (d Deps) deleteLink(ctx context.Context, in *DeleteLinkInput) (*DeleteLinkO
 			ActorUserID: member.UserID,
 			Action:      audit.ActionLinkDeleted,
 			EntityType:  audit.EntityLink,
-			EntityID:    resolved.ID,
+			EntityID:    before.ID,
 			Metadata: map[string]any{
-				"slug":     resolved.Slug,
-				"hostname": resolved.Hostname,
+				"slug":     before.Slug,
+				"hostname": before.Hostname,
 			},
 		})
 	})
@@ -670,7 +683,7 @@ func (d Deps) deleteLink(ctx context.Context, in *DeleteLinkInput) (*DeleteLinkO
 		return nil, huma.Error500InternalServerError("could not delete the link")
 	}
 
-	d.invalidateLink(ctx, resolved.Hostname, resolved.Slug)
+	d.invalidateLink(ctx, deleted.Hostname, deleted.Slug)
 
 	return &DeleteLinkOutput{Status: http.StatusNoContent}, nil
 }

@@ -2,6 +2,8 @@ package api_test
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -443,6 +445,43 @@ func TestUpdateLinkWritesOneAuditRowNamingWhatChanged(t *testing.T) {
 	require.Contains(t, metadata, "redirect_type")
 	require.Contains(t, metadata, "changed")
 	require.NotContains(t, metadata, "slug", "a field the request did not change must not be listed")
+}
+
+func TestUpdateLinkAuditRecordsBothHalvesOfExpiresAt(t *testing.T) {
+	f := newTenancyFixture(t)
+	created := f.createLink(t, "ablaufdatum", "https://example.org/ablauf")
+	require.Nil(t, created.ExpiresAt, "the fixture link starts with no expiry")
+
+	future := time.Now().Add(24 * time.Hour).UTC().Truncate(time.Second)
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPatch, "/v1/links/"+created.ID.String(),
+		map[string]any{"expires_at": future.Format(time.RFC3339)})
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+
+	var raw []byte
+	require.NoError(t, f.pool.QueryRow(context.Background(),
+		`select metadata from audit_log
+		 where team_id = $1 and action = 'link.updated' and entity_id = $2`,
+		f.teamID, created.ID).Scan(&raw))
+
+	var metadata map[string]any
+	require.NoError(t, json.Unmarshal(raw, &metadata))
+
+	expiresAt, ok := metadata["expires_at"].(map[string]any)
+	require.True(t, ok, "expires_at metadata: %s", raw)
+
+	// Map keys, not just decoded values: an absent "from" key and an explicit
+	// JSON null both decode to a nil interface, so checking presence is the
+	// only way to prove the key was actually written, matching its siblings.
+	fromValue, hasFrom := expiresAt["from"]
+	require.True(t, hasFrom, "expires_at.from must be present, siblings all write it: %s", raw)
+	require.Nil(t, fromValue,
+		"from must be null for a link that had no expiry before this PATCH")
+
+	toValue, hasTo := expiresAt["to"]
+	require.True(t, hasTo, "expires_at.to must be present: %s", raw)
+	toTime, err := time.Parse(time.RFC3339, fmt.Sprint(toValue))
+	require.NoError(t, err)
+	require.WithinDuration(t, future, toTime, time.Second)
 }
 
 func TestUpdateLinkWritesNoAuditRowWhenNothingChanged(t *testing.T) {
