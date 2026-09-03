@@ -28,6 +28,14 @@ where tm.user_id = $1
 order by t.name, t.id
 limit $2 offset $3;
 
+-- count(*) over () above is only readable off a returned row, so a page past
+-- the end has nothing to read it from. This plain count is the fallback for
+-- that case only; the paginated query above remains the source of truth for
+-- every in-range page.
+
+-- name: CountTeamsForUser :one
+select count(*) from team_member tm where tm.user_id = $1;
+
 -- Unpaginated on purpose: this drives the frontend's team switcher, and a
 -- person belongs to a handful of Vereine.
 
@@ -52,6 +60,11 @@ join auth.users u on u.id = tm.user_id
 where tm.team_id = $1
 order by u.email, tm.user_id
 limit $2 offset $3;
+
+-- Fallback for a page past the end; see CountTeamsForUser.
+
+-- name: CountTeamMembers :one
+select count(*) from team_member tm where tm.team_id = $1;
 
 -- name: UpdateTeamMemberRole :exec
 update team_member set role = $3 where team_id = $1 and user_id = $2;

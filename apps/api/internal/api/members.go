@@ -115,8 +115,10 @@ func (d Deps) registerMembers(api huma.API) {
 }
 
 func (d Deps) listMembers(ctx context.Context, in *ListMembersInput) (*ListMembersOutput, error) {
+	member := in.Member()
+
 	rows, err := d.Queries.ListTeamMembers(ctx, db.ListTeamMembersParams{
-		TeamID: in.TeamID,
+		TeamID: member.TeamID,
 		Limit:  in.Limit(),
 		Offset: in.Offset(),
 	})
@@ -135,6 +137,14 @@ func (d Deps) listMembers(ctx context.Context, in *ListMembersInput) (*ListMembe
 			Role:      row.Role,
 			CreatedAt: row.CreatedAt,
 		})
+	}
+
+	if NeedsTotalFallback(in.PageParams, len(rows)) {
+		total, err = d.Queries.CountTeamMembers(ctx, member.TeamID)
+		if err != nil {
+			d.Log.Error("count team members", "error", err, "team_id", in.TeamID)
+			return nil, huma.Error500InternalServerError("could not list the team's members")
+		}
 	}
 
 	return &ListMembersOutput{Body: NewPage(items, in.PageParams, total)}, nil
@@ -175,7 +185,7 @@ func (d Deps) addMember(ctx context.Context, in *AddMemberInput) (*MemberOutput,
 	}
 
 	if _, err := d.Queries.GetTeamMembership(ctx, db.GetTeamMembershipParams{
-		TeamID: in.TeamID,
+		TeamID: actor.TeamID,
 		UserID: userID,
 	}); err == nil {
 		return nil, huma.Error409Conflict("that person is already a member of this team")
@@ -192,7 +202,7 @@ func (d Deps) addMember(ctx context.Context, in *AddMemberInput) (*MemberOutput,
 	var createdAt time.Time
 	if err := db.InTx(ctx, d.Pool, func(q *db.Queries) error {
 		created, err := q.InsertTeamMember(ctx, db.InsertTeamMemberParams{
-			TeamID: in.TeamID,
+			TeamID: actor.TeamID,
 			UserID: userID,
 			Role:   role.String(),
 		})
@@ -202,7 +212,7 @@ func (d Deps) addMember(ctx context.Context, in *AddMemberInput) (*MemberOutput,
 		createdAt = created
 
 		return audit.Log(ctx, q, audit.Entry{
-			TeamID:      in.TeamID,
+			TeamID:      actor.TeamID,
 			ActorUserID: actor.UserID,
 			Action:      action,
 			EntityType:  audit.EntityTeamMember,
@@ -279,7 +289,7 @@ func (d Deps) updateMember(ctx context.Context, in *UpdateMemberInput) (*struct{
 
 	err = db.InTx(ctx, d.Pool, func(q *db.Queries) error {
 		current, err := q.GetTeamMembership(ctx, db.GetTeamMembershipParams{
-			TeamID: in.TeamID,
+			TeamID: actor.TeamID,
 			UserID: in.UserID,
 		})
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -302,7 +312,7 @@ func (d Deps) updateMember(ctx context.Context, in *UpdateMemberInput) (*struct{
 		}
 
 		if currentRole == authz.RoleOwner && newRole != authz.RoleOwner {
-			if err := d.refuseLastOwner(ctx, q, in.TeamID); err != nil {
+			if err := d.refuseLastOwner(ctx, q, actor.TeamID); err != nil {
 				return err
 			}
 		}
@@ -312,7 +322,7 @@ func (d Deps) updateMember(ctx context.Context, in *UpdateMemberInput) (*struct{
 		}
 
 		if err := q.UpdateTeamMemberRole(ctx, db.UpdateTeamMemberRoleParams{
-			TeamID: in.TeamID,
+			TeamID: actor.TeamID,
 			UserID: in.UserID,
 			Role:   newRole.String(),
 		}); err != nil {
@@ -320,7 +330,7 @@ func (d Deps) updateMember(ctx context.Context, in *UpdateMemberInput) (*struct{
 		}
 
 		return audit.Log(ctx, q, audit.Entry{
-			TeamID:      in.TeamID,
+			TeamID:      actor.TeamID,
 			ActorUserID: actor.UserID,
 			Action:      audit.ActionMemberRoleChanged,
 			EntityType:  audit.EntityTeamMember,
@@ -345,7 +355,7 @@ func (d Deps) removeMember(ctx context.Context, in *RemoveMemberInput) (*struct{
 
 	err := db.InTx(ctx, d.Pool, func(q *db.Queries) error {
 		current, err := q.GetTeamMembership(ctx, db.GetTeamMembershipParams{
-			TeamID: in.TeamID,
+			TeamID: actor.TeamID,
 			UserID: in.UserID,
 		})
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -364,20 +374,20 @@ func (d Deps) removeMember(ctx context.Context, in *RemoveMemberInput) (*struct{
 			if !actor.Role.AtLeast(authz.RoleOwner) {
 				return huma.Error403Forbidden("removing an owner requires the owner role")
 			}
-			if err := d.refuseLastOwner(ctx, q, in.TeamID); err != nil {
+			if err := d.refuseLastOwner(ctx, q, actor.TeamID); err != nil {
 				return err
 			}
 		}
 
 		if err := q.DeleteTeamMember(ctx, db.DeleteTeamMemberParams{
-			TeamID: in.TeamID,
+			TeamID: actor.TeamID,
 			UserID: in.UserID,
 		}); err != nil {
 			return err
 		}
 
 		return audit.Log(ctx, q, audit.Entry{
-			TeamID:      in.TeamID,
+			TeamID:      actor.TeamID,
 			ActorUserID: actor.UserID,
 			Action:      audit.ActionMemberRemoved,
 			EntityType:  audit.EntityTeamMember,

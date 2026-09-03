@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"context"
 	"net/http"
 	"testing"
 	"time"
@@ -86,6 +87,36 @@ func TestListTeamsIsEmptyForAStranger(t *testing.T) {
 	require.Zero(t, page.TotalCount)
 }
 
+// count(*) over () is only readable off a row the paginated query actually
+// returns, so a page past the end has nothing to read it from without a
+// fallback. This asserts the fallback recovers the true total rather than
+// reporting 0, as it would before the fix.
+func TestListTeamsOutOfRangePageReportsTheTrueTotal(t *testing.T) {
+	f := newTenancyFixture(t)
+	viewer := f.members[authz.RoleViewer]
+
+	// The fixture's viewer already belongs to f.teamID; add a second team so
+	// there is more than one page to run past the end of.
+	var secondTeamID uuid.UUID
+	require.NoError(t, f.pool.QueryRow(t.Context(),
+		`insert into team (name) values ('Zweiter Verein') returning id`).Scan(&secondTeamID))
+	t.Cleanup(func() {
+		_, _ = f.pool.Exec(context.Background(), `delete from team where id = $1`, secondTeamID)
+	})
+	_, err := f.pool.Exec(t.Context(),
+		`insert into team_member (team_id, user_id, role) values ($1, $2, 'viewer')`,
+		secondTeamID, viewer.id)
+	require.NoError(t, err)
+
+	rec := f.do(t, viewer, http.MethodGet, "/v1/teams?page=99&per_page=1", nil)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	page := decode[api.Page[api.Team]](t, rec)
+	require.Empty(t, page.Items, "page 99 is well past the last page of 2 teams at 1 per page")
+	require.Equal(t, 2, page.TotalCount,
+		"the true total must still be reported even though this page is empty")
+}
+
 func TestListTeamsRejectsAnOversizedPerPage(t *testing.T) {
 	f := newTenancyFixture(t)
 
@@ -157,6 +188,30 @@ func TestRenameTeamAuditsTheOldAndNewName(t *testing.T) {
 		f.teamID).Scan(&action, &metadata))
 	require.Contains(t, string(metadata), before)
 	require.Contains(t, string(metadata), "Umbenannt")
+}
+
+// TestRenameTeamIsANoOpWhenTheNameIsUnchanged mirrors updateMember's early
+// return on a no-op role change: team mutations carry no rate limit, so an
+// admin looping PATCH with the same name would otherwise grow audit_log
+// without bound.
+func TestRenameTeamIsANoOpWhenTheNameIsUnchanged(t *testing.T) {
+	f := newTenancyFixture(t)
+
+	var currentName string
+	require.NoError(t, f.pool.QueryRow(t.Context(),
+		`select name from team where id = $1`, f.teamID).Scan(&currentName))
+
+	rec := f.do(t, f.members[authz.RoleAdmin], http.MethodPatch,
+		"/v1/teams/"+f.teamID.String(), map[string]string{"name": currentName})
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	require.Equal(t, currentName, decode[api.Team](t, rec).Name)
+
+	var count int
+	require.NoError(t, f.pool.QueryRow(t.Context(),
+		`select count(*) from audit_log where team_id = $1 and action = 'team.renamed'`,
+		f.teamID).Scan(&count))
+	require.Zero(t, count, "a no-op rename must not write a misleading audit entry")
 }
 
 func TestRenameTeamIs404ForAStranger(t *testing.T) {

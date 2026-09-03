@@ -73,3 +73,15 @@ func NewPage[T any](items []T, params PageParams, total int64) Page[T] {
 		TotalCount: int(total),
 	}
 }
+
+// NeedsTotalFallback reports whether a list handler must fall back to a plain
+// count query to recover the true total_count. count(*) over () is only
+// readable off a row the paginated query actually returned, so a page past
+// the last one comes back with zero rows and nothing to read it from — the
+// handler must issue a separate plain count in that case. It is never needed
+// for the first page: an empty first page means the collection itself is
+// empty, and 0 is already the correct total.
+func NeedsTotalFallback(params PageParams, rowCount int) bool {
+	page, _ := params.Normalized()
+	return rowCount == 0 && page > 1
+}

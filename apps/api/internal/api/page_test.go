@@ -2,10 +2,10 @@ package api_test
 
 import (
 	"math"
-	"reflect"
 	"testing"
 
-	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/adapters/humachi"
+	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/require"
 
 	"github.com/mheob/kurze-url/apps/api/internal/api"
@@ -73,9 +73,20 @@ func TestNewPageNeverEmitsANullItemsArray(t *testing.T) {
 }
 
 // The generated TypeScript client in plan 4 inherits these schema names, so a
-// mangled generic name would propagate into the frontend's types.
+// mangled generic name would propagate into the frontend's types. This reads
+// the names off the actual generated OpenAPI document — the DoD's real
+// assertion — rather than calling huma.DefaultSchemaNamer directly, which
+// would only prove the namer behaves as expected in isolation, not that the
+// three list endpoints' response schemas actually end up named that way in
+// the document a generated client would consume.
 func TestGenericEnvelopeSchemaNamesAreReadable(t *testing.T) {
-	name := huma.DefaultSchemaNamer(reflect.TypeOf(api.Page[api.Team]{}), "")
+	router := chi.NewRouter()
+	humaAPI := humachi.New(router, api.NewHumaConfig())
+	api.Deps{}.RegisterV1(humaAPI)
 
-	require.Equal(t, "PageTeam", name)
+	schemas := humaAPI.OpenAPI().Components.Schemas.Map()
+
+	for _, name := range []string{"PageTeam", "PageMember", "PageAuditEntry"} {
+		require.Contains(t, schemas, name)
+	}
 }

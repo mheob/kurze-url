@@ -58,8 +58,10 @@ func (d Deps) registerAuditLog(api huma.API) {
 func (d Deps) listAuditLog(
 	ctx context.Context, in *ListAuditLogInput,
 ) (*ListAuditLogOutput, error) {
+	member := in.Member()
+
 	params := db.ListAuditLogParams{
-		TeamID:       in.TeamID,
+		TeamID:       member.TeamID,
 		ResultLimit:  in.Limit(),
 		ResultOffset: in.Offset(),
 	}
@@ -107,6 +109,21 @@ func (d Deps) listAuditLog(
 			Metadata:    json.RawMessage(row.Metadata),
 			CreatedAt:   row.CreatedAt,
 		})
+	}
+
+	if NeedsTotalFallback(in.PageParams, len(rows)) {
+		total, err = d.Queries.CountAuditLog(ctx, db.CountAuditLogParams{
+			TeamID:      params.TeamID,
+			EntityType:  params.EntityType,
+			Action:      params.Action,
+			ActorUserID: params.ActorUserID,
+			From:        params.From,
+			To:          params.To,
+		})
+		if err != nil {
+			d.Log.Error("count audit log", "error", err, "team_id", in.TeamID)
+			return nil, huma.Error500InternalServerError("could not read the audit log")
+		}
 	}
 
 	return &ListAuditLogOutput{Body: NewPage(items, in.PageParams, total)}, nil

@@ -12,6 +12,35 @@ import (
 	"github.com/google/uuid"
 )
 
+const countTeamMembers = `-- name: CountTeamMembers :one
+
+select count(*) from team_member tm where tm.team_id = $1
+`
+
+// Fallback for a page past the end; see CountTeamsForUser.
+func (q *Queries) CountTeamMembers(ctx context.Context, teamID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countTeamMembers, teamID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countTeamsForUser = `-- name: CountTeamsForUser :one
+
+select count(*) from team_member tm where tm.user_id = $1
+`
+
+// count(*) over () above is only readable off a returned row, so a page past
+// the end has nothing to read it from. This plain count is the fallback for
+// that case only; the paginated query above remains the source of truth for
+// every in-range page.
+func (q *Queries) CountTeamsForUser(ctx context.Context, userID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countTeamsForUser, userID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createTeam = `-- name: CreateTeam :one
 insert into team (name) values ($1)
 returning id, name, created_at

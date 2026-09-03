@@ -22,3 +22,17 @@ where team_id = sqlc.arg('team_id')::uuid
   and (sqlc.narg('to')::timestamptz is null or created_at <= sqlc.narg('to')::timestamptz)
 order by created_at desc, id desc
 limit sqlc.arg('result_limit') offset sqlc.arg('result_offset');
+
+-- Fallback for a page past the end; see CountTeamsForUser in team.sql. Mirrors
+-- ListAuditLog's filters exactly so the recovered total matches the same set
+-- of rows the paginated query would have counted.
+
+-- name: CountAuditLog :one
+select count(*)
+from audit_log
+where team_id = sqlc.arg('team_id')::uuid
+  and (sqlc.narg('entity_type')::text is null or entity_type = sqlc.narg('entity_type')::text)
+  and (sqlc.narg('action')::text is null or action = sqlc.narg('action')::text)
+  and (sqlc.narg('actor_user_id')::uuid is null or actor_user_id = sqlc.narg('actor_user_id')::uuid)
+  and (sqlc.narg('from')::timestamptz is null or created_at >= sqlc.narg('from')::timestamptz)
+  and (sqlc.narg('to')::timestamptz is null or created_at <= sqlc.narg('to')::timestamptz);

@@ -43,6 +43,23 @@ func TestListMembersPaginates(t *testing.T) {
 	require.Equal(t, 4, page.TotalCount)
 }
 
+// count(*) over () is only readable off a row the paginated query actually
+// returns, so a page past the end has nothing to read it from without a
+// fallback. This asserts the fallback recovers the true total rather than
+// reporting 0, as it would before the fix.
+func TestListMembersOutOfRangePageReportsTheTrueTotal(t *testing.T) {
+	f := newTenancyFixture(t)
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		"/v1/teams/"+f.teamID.String()+"/members?page=99&per_page=2", nil)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	page := decode[api.Page[api.Member]](t, rec)
+	require.Empty(t, page.Items, "page 99 is well past the last page of 4 members at 2 per page")
+	require.Equal(t, 4, page.TotalCount,
+		"the true total must still be reported even though this page is empty")
+}
+
 func TestListMembersHidesTheTeamFromAStranger(t *testing.T) {
 	f := newTenancyFixture(t)
 

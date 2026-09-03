@@ -12,6 +12,44 @@ import (
 	"github.com/google/uuid"
 )
 
+const countAuditLog = `-- name: CountAuditLog :one
+
+select count(*)
+from audit_log
+where team_id = $1::uuid
+  and ($2::text is null or entity_type = $2::text)
+  and ($3::text is null or action = $3::text)
+  and ($4::uuid is null or actor_user_id = $4::uuid)
+  and ($5::timestamptz is null or created_at >= $5::timestamptz)
+  and ($6::timestamptz is null or created_at <= $6::timestamptz)
+`
+
+type CountAuditLogParams struct {
+	TeamID      uuid.UUID
+	EntityType  *string
+	Action      *string
+	ActorUserID *uuid.UUID
+	From        *time.Time
+	To          *time.Time
+}
+
+// Fallback for a page past the end; see CountTeamsForUser in team.sql. Mirrors
+// ListAuditLog's filters exactly so the recovered total matches the same set
+// of rows the paginated query would have counted.
+func (q *Queries) CountAuditLog(ctx context.Context, arg CountAuditLogParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countAuditLog,
+		arg.TeamID,
+		arg.EntityType,
+		arg.Action,
+		arg.ActorUserID,
+		arg.From,
+		arg.To,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const insertAuditLog = `-- name: InsertAuditLog :exec
 
 insert into audit_log (team_id, actor_user_id, action, entity_type, entity_id, metadata)

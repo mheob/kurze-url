@@ -174,11 +174,21 @@ func (d Deps) listTeams(ctx context.Context, in *ListTeamsInput) (*ListTeamsOutp
 		})
 	}
 
+	if NeedsTotalFallback(in.PageParams, len(rows)) {
+		total, err = d.Queries.CountTeamsForUser(ctx, claims.UserID)
+		if err != nil {
+			d.Log.Error("count teams", "error", err)
+			return nil, huma.Error500InternalServerError("could not list teams")
+		}
+	}
+
 	return &ListTeamsOutput{Body: NewPage(items, in.PageParams, total)}, nil
 }
 
 func (d Deps) getTeam(ctx context.Context, in *GetTeamInput) (*TeamOutput, error) {
-	team, err := d.Queries.GetTeam(ctx, in.TeamID)
+	member := in.Member()
+
+	team, err := d.Queries.GetTeam(ctx, member.TeamID)
 	if err != nil {
 		d.Log.Error("get team", "error", err, "team_id", in.TeamID)
 		return nil, huma.Error500InternalServerError("could not load the team")
@@ -188,7 +198,7 @@ func (d Deps) getTeam(ctx context.Context, in *GetTeamInput) (*TeamOutput, error
 		ID:        team.ID,
 		Name:      team.Name,
 		CreatedAt: team.CreatedAt,
-		Role:      in.Member().Role.String(),
+		Role:      member.Role.String(),
 	}}, nil
 }
 
@@ -197,23 +207,28 @@ func (d Deps) updateTeam(ctx context.Context, in *UpdateTeamInput) (*TeamOutput,
 
 	var renamed db.Team
 	err := db.InTx(ctx, d.Pool, func(q *db.Queries) error {
-		before, err := q.GetTeam(ctx, in.TeamID)
+		before, err := q.GetTeam(ctx, member.TeamID)
 		if err != nil {
 			return err
 		}
 
-		after, err := q.RenameTeam(ctx, db.RenameTeamParams{ID: in.TeamID, Name: in.Body.Name})
+		if before.Name == in.Body.Name {
+			renamed = before
+			return nil // Nothing changed; do not write a misleading audit entry.
+		}
+
+		after, err := q.RenameTeam(ctx, db.RenameTeamParams{ID: member.TeamID, Name: in.Body.Name})
 		if err != nil {
 			return err
 		}
 		renamed = after
 
 		return audit.Log(ctx, q, audit.Entry{
-			TeamID:      in.TeamID,
+			TeamID:      member.TeamID,
 			ActorUserID: member.UserID,
 			Action:      audit.ActionTeamRenamed,
 			EntityType:  audit.EntityTeam,
-			EntityID:    in.TeamID,
+			EntityID:    member.TeamID,
 			Metadata:    map[string]any{"from": before.Name, "to": after.Name},
 		})
 	})

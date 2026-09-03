@@ -45,6 +45,28 @@ func TestAuditLogListsEntriesForAnAdmin(t *testing.T) {
 	require.NotEmpty(t, page.Items[0].Metadata)
 }
 
+// count(*) over () is only readable off a row the paginated query actually
+// returns, so a page past the end has nothing to read it from without a
+// fallback. This asserts the fallback recovers the true total rather than
+// reporting 0, as it would before the fix.
+func TestAuditLogOutOfRangePageReportsTheTrueTotal(t *testing.T) {
+	f := newTenancyFixture(t)
+
+	require.Equal(t, http.StatusOK, f.do(t, f.members[authz.RoleAdmin], http.MethodPatch,
+		"/v1/teams/"+f.teamID.String(), map[string]string{"name": "Erst"}).Code)
+	require.Equal(t, http.StatusOK, f.do(t, f.members[authz.RoleAdmin], http.MethodPatch,
+		"/v1/teams/"+f.teamID.String(), map[string]string{"name": "Zweit"}).Code)
+
+	rec := f.do(t, f.members[authz.RoleAdmin], http.MethodGet,
+		auditLogPath(f)+"?page=99&per_page=1", nil)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	page := decode[api.Page[api.AuditEntry]](t, rec)
+	require.Empty(t, page.Items, "page 99 is well past the last page of 2 entries at 1 per page")
+	require.Equal(t, 2, page.TotalCount,
+		"the true total must still be reported even though this page is empty")
+}
+
 func TestAuditLogFiltersByAction(t *testing.T) {
 	f := newTenancyFixture(t)
 
