@@ -27,12 +27,15 @@ type Inviter interface {
 
 // Deps is everything the handlers need, constructed once in cmd/api.
 type Deps struct {
-	Config   config.Config
-	Queries  *db.Queries
-	Cache    *cache.Client
-	Recorder *analytics.Recorder
-	Verifier *auth.Verifier
-	Log      *slog.Logger
+	Config config.Config
+	// SharedDomain is the instance's own short hostname. A link created with
+	// no explicit domain_id lands here.
+	SharedDomain SharedDomain
+	Queries      *db.Queries
+	Cache        *cache.Client
+	Recorder     *analytics.Recorder
+	Verifier     *auth.Verifier
+	Log          *slog.Logger
 
 	// Pool backs db.InTx. Queries above is pool-backed too, but a transaction
 	// needs the pool itself.

@@ -126,6 +126,9 @@ Grouped by resource. All under `/v1` and Bearer-authenticated unless noted other
 - `POST /v1/teams/{team_id}/links` — create.
 - `GET /v1/teams/{team_id}/links` — list; filter/sort/paginate per "Pagination"/"Filtering" above.
 - `GET /v1/links/{link_id}` — includes the latest `link_scan_result` verdict as a nested field (no separate scan-status endpoint — folding it into the main resource is simpler than a second round-trip).
+
+  As of 2026-09-03 this ships without the nested `link_scan_result` verdict: scanning does not exist yet, so there is nothing to nest. The field arrives with Safe Browsing scanning.
+
 - `PATCH /v1/links/{link_id}` — general edit (destination, `redirect_type`, `state`, folder, tags, `expires_at`, QR defaults). Deliberately **excludes** `password_hash` — see next.
 - `DELETE /v1/links/{link_id}`
 - `PUT /v1/links/{link_id}/password` — set or change the password (body: new plaintext password; server hashes with Argon2id per `05-database-schema.md`). Kept as its own endpoint, separate from the general `PATCH`, so it maps to its own distinct, auditable `audit_log` action (`link.password_set`/`link.password_changed`) and so the tighter rate limit on password-related mutations (per `05-database-schema.md`) can be scoped to exactly this route.

@@ -25,9 +25,12 @@ type matrixCase struct {
 	minRole     authz.Role
 }
 
-// teamScopedCases is the enforced contract. Every team-scoped operation must
-// appear here, and TestEveryOperationIsAccountedFor fails the build if a new
-// one is added without a row.
+// teamScopedCases is the enforced contract. It holds every operation whose
+// authorization depends on the caller's role in a team, whether that team
+// comes from the path (team-scoped) or is discovered from the entity
+// (entity-scoped, e.g. get-link/update-link/delete-link via LinkPath).
+// TestEveryOperationIsAccountedFor fails the build if a new one is added
+// without a row.
 var teamScopedCases = []matrixCase{
 	{"get-team", http.MethodGet, "/v1/teams/{team}", nil, authz.RoleViewer},
 	{"update-team", http.MethodPatch, "/v1/teams/{team}",
@@ -40,6 +43,13 @@ var teamScopedCases = []matrixCase{
 	{"remove-team-member", http.MethodDelete, "/v1/teams/{team}/members/{member}",
 		nil, authz.RoleAdmin},
 	{"list-audit-log", http.MethodGet, "/v1/teams/{team}/audit-log", nil, authz.RoleAdmin},
+	{"create-link", http.MethodPost, "/v1/teams/{team}/links",
+		map[string]string{"destination_url": "https://example.org/matrix"}, authz.RoleEditor},
+	{"list-links", http.MethodGet, "/v1/teams/{team}/links", nil, authz.RoleViewer},
+	{"get-link", http.MethodGet, "/v1/links/{link}", nil, authz.RoleViewer},
+	{"update-link", http.MethodPatch, "/v1/links/{link}",
+		map[string]string{"state": "disabled"}, authz.RoleEditor},
+	{"delete-link", http.MethodDelete, "/v1/links/{link}", nil, authz.RoleEditor},
 }
 
 // notTeamScoped names the authenticated operations that legitimately carry no
@@ -65,6 +75,7 @@ func renderPath(f *tenancyFixture, template string) string {
 	path := template
 	path = strings.ReplaceAll(path, "{team}", f.teamID.String())
 	path = strings.ReplaceAll(path, "{member}", f.members[authz.RoleViewer].id.String())
+	path = strings.ReplaceAll(path, "{link}", f.linkID.String())
 	return path
 }
 

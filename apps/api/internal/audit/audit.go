@@ -30,12 +30,22 @@ const (
 	ActionMemberAdded       Action = "team_member.added"
 	ActionMemberRoleChanged Action = "team_member.role_changed"
 	ActionMemberRemoved     Action = "team_member.removed"
+
+	// One row per PATCH, not one per changed field. doc 05 sketches a
+	// link.destination_changed action, but a single PATCH can change several
+	// fields atomically, and splitting that into several rows would
+	// misrepresent one request as several. Which fields moved lives in
+	// metadata.changed.
+	ActionLinkCreated Action = "link.created"
+	ActionLinkUpdated Action = "link.updated"
+	ActionLinkDeleted Action = "link.deleted"
 )
 
 // Entity types match the table names.
 const (
 	EntityTeam       = "team"
 	EntityTeamMember = "team_member"
+	EntityLink       = "link"
 )
 
 var (
@@ -55,6 +65,9 @@ var knownActions = map[Action]struct{}{
 	ActionMemberAdded:       {},
 	ActionMemberRoleChanged: {},
 	ActionMemberRemoved:     {},
+	ActionLinkCreated:       {},
+	ActionLinkUpdated:       {},
+	ActionLinkDeleted:       {},
 }
 
 // forbiddenMetadataKeys are the canonical, lowercase, singular words a
@@ -88,12 +101,21 @@ type Entry struct {
 	Metadata    map[string]any
 }
 
+// CheckAction reports whether an action is part of the taxonomy. Log applies
+// the same check; this exists so callers and tests can ask without writing.
+func CheckAction(a Action) error {
+	if _, ok := knownActions[a]; !ok {
+		return fmt.Errorf("%w: %q", ErrUnknownAction, a)
+	}
+	return nil
+}
+
 // Log writes the entry through q. Pass the *db.Queries that db.InTx handed to
 // the callback, never the pool-backed one, or the entry will not share the
 // mutation's transaction.
 func Log(ctx context.Context, q *db.Queries, e Entry) error {
-	if _, ok := knownActions[e.Action]; !ok {
-		return fmt.Errorf("%w: %q", ErrUnknownAction, e.Action)
+	if err := CheckAction(e.Action); err != nil {
+		return err
 	}
 	if err := checkMetadata(e.Metadata); err != nil {
 		return err

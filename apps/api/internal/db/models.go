@@ -28,7 +28,7 @@ type AuthUser struct {
 
 type Domain struct {
 	ID                 uuid.UUID
-	TeamID             uuid.UUID
+	TeamID             *uuid.UUID
 	Hostname           string
 	VerificationStatus string
 	VercelDomainRef    *string

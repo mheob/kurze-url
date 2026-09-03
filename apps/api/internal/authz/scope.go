@@ -118,14 +118,11 @@ func (s *AdminScope) Member() Membership { return s.member }
 // querying team_member a second time.
 func (s *OwnerScope) Member() Membership { return s.member }
 
-// resolveScope is the whole authorization decision, in one place. The
-// membership travels out through the scope struct rather than the context
-// because Resolve returns only errors — it cannot replace the context the
-// handler receives — but it can mutate the input it is part of. The parameter
-// is named "required" rather than "min" because "min" shadows a Go builtin.
+// resolveScope is the team-path entry point: it guards the path parameter,
+// then defers the actual decision to resolveMembership. The parameter is
+// named "required" rather than "min" because "min" shadows a Go builtin.
 func resolveScope(ctx huma.Context, teamID uuid.UUID, required Role, out *Membership) []error {
-	claims, ok := auth.ClaimsFromContext(ctx.Context())
-	if !ok {
+	if _, ok := auth.ClaimsFromContext(ctx.Context()); !ok {
 		return []error{huma.Error401Unauthorized("not authenticated")}
 	}
 
@@ -144,6 +141,20 @@ func resolveScope(ctx huma.Context, teamID uuid.UUID, required Role, out *Member
 		}
 	}
 
+	return resolveMembership(ctx, teamID, required, "team not found", out)
+}
+
+// resolveMembership is the whole authorization decision, shared by the
+// team-path scopes and the entity scopes. notFound is the message used when
+// the caller is not a member: the wording differs per route so a 404 never
+// says "team not found" on a link route.
+//
+// The membership travels out through out rather than the context because
+// Resolve returns only errors — it cannot replace the context the handler
+// receives — but it can mutate the input struct it is part of.
+func resolveMembership(
+	ctx huma.Context, teamID uuid.UUID, required Role, notFound string, out *Membership,
+) []error {
 	resolver, ok := resolverFromContext(ctx.Context())
 	if !ok {
 		// Refusing is the only safe answer: without a resolver there is no way
@@ -151,10 +162,10 @@ func resolveScope(ctx huma.Context, teamID uuid.UUID, required Role, out *Member
 		return []error{huma.Error500InternalServerError("authorization is not configured")}
 	}
 
-	membership, err := resolver.Membership(ctx.Context(), teamID, claims.UserID)
+	membership, err := resolver.Membership(ctx.Context(), teamID, claimsUserID(ctx))
 	switch {
 	case errors.Is(err, ErrNotMember):
-		return []error{huma.Error404NotFound("team not found")}
+		return []error{huma.Error404NotFound(notFound)}
 	case err != nil:
 		return []error{huma.Error500InternalServerError("could not resolve team membership")}
 	}
@@ -166,4 +177,11 @@ func resolveScope(ctx huma.Context, teamID uuid.UUID, required Role, out *Member
 
 	*out = membership
 	return nil
+}
+
+// claimsUserID reads the caller's user ID from the verified claims. Both
+// resolveScope's callers and resolveLinkScope read the caller this same way.
+func claimsUserID(ctx huma.Context) uuid.UUID {
+	claims, _ := auth.ClaimsFromContext(ctx.Context())
+	return claims.UserID
 }

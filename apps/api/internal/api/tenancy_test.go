@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
@@ -19,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 	tcredis "github.com/testcontainers/testcontainers-go/modules/redis"
 
+	"github.com/mheob/kurze-url/apps/api/internal/analytics"
 	"github.com/mheob/kurze-url/apps/api/internal/api"
 	"github.com/mheob/kurze-url/apps/api/internal/auth"
 	"github.com/mheob/kurze-url/apps/api/internal/authz"
@@ -108,6 +110,11 @@ type tenancyFixture struct {
 	members  map[authz.Role]testUser
 	stranger testUser
 	invites  *fakeInviter
+
+	sharedDomainID uuid.UUID
+	teamDomainID   uuid.UUID
+	teamHostname   string
+	linkID         uuid.UUID
 }
 
 // seedAuthUser inserts a Supabase auth user. The column list mirrors
@@ -187,6 +194,28 @@ func newTenancyFixture(t *testing.T) *tenancyFixture {
 		require.NoError(t, err)
 	}
 
+	sharedHostname := "shared-" + suffix + ".test"
+	var sharedDomainID uuid.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`insert into domain (team_id, hostname, verification_status, verified_at)
+		 values (null, $1, 'verified', now()) returning id`, sharedHostname).Scan(&sharedDomainID))
+	// A team-less domain is not reached by the team cascade, so it needs its
+	// own cleanup or the suite leaks a row per fixture.
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `delete from domain where id = $1`, sharedDomainID)
+	})
+
+	teamHostname := "team-" + suffix + ".test"
+	var teamDomainID, linkID uuid.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`insert into domain (team_id, hostname, verification_status, verified_at)
+		 values ($1, $2, 'verified', now()) returning id`,
+		teamID, teamHostname).Scan(&teamDomainID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`insert into link (domain_id, team_id, slug, destination_url, created_by)
+		 values ($1, $2, 'fixture', 'https://example.org/fixture', $3) returning id`,
+		teamDomainID, teamID, members[authz.RoleOwner].id).Scan(&linkID))
+
 	key, jwksURL := startAuthenticatedJWKSServer(t)
 	verifier, err := auth.NewVerifier(ctx, jwksURL, meTestIssuer, meTestAudience)
 	require.NoError(t, err)
@@ -197,24 +226,41 @@ func newTenancyFixture(t *testing.T) *tenancyFixture {
 	// must be refused by POST /v1/teams.
 	cfg.MaintainerUserIDs = []uuid.UUID{members[authz.RoleOwner].id}
 	cfg.InviteRateLimitPerHour = 20
+	cfg.SharedDomainHostname = sharedHostname
+	cfg.LinkCreateRateLimitPerMin = 100
 
 	invites := &fakeInviter{userID: uuid.New(), t: t, pool: pool}
 
+	// The redirect helper below exercises the real HandleRedirect, which
+	// records a click on every successful redirect — so this fixture needs a
+	// working Recorder too, not only the /v1 surface's dependencies.
+	recorder := analytics.NewRecorder(
+		func(_ context.Context, _ []analytics.Row) error { return nil },
+		time.Hour, 100000,
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+	)
+
 	f := &tenancyFixture{
-		pool:     pool,
-		key:      key,
-		teamID:   teamID,
-		members:  members,
-		stranger: stranger,
-		invites:  invites,
+		pool:           pool,
+		key:            key,
+		teamID:         teamID,
+		members:        members,
+		stranger:       stranger,
+		invites:        invites,
+		sharedDomainID: sharedDomainID,
+		teamDomainID:   teamDomainID,
+		teamHostname:   teamHostname,
+		linkID:         linkID,
 		deps: api.Deps{
-			Config:   cfg,
-			Queries:  db.New(pool),
-			Pool:     pool,
-			Cache:    redis,
-			Verifier: verifier,
-			Admin:    invites,
-			Log:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+			Config:       cfg,
+			SharedDomain: api.SharedDomain{ID: sharedDomainID, Hostname: sharedHostname},
+			Queries:      db.New(pool),
+			Pool:         pool,
+			Cache:        redis,
+			Verifier:     verifier,
+			Admin:        invites,
+			Recorder:     recorder,
+			Log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
 		},
 	}
 
@@ -250,6 +296,20 @@ func (f *tenancyFixture) do(
 
 	rec := httptest.NewRecorder()
 	f.router.ServeHTTP(rec, req)
+	return rec
+}
+
+// redirect issues a request to the public redirect surface on a short-link
+// hostname, using the same router the API serves.
+func (f *tenancyFixture) redirect(t *testing.T, hostname, slug string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	router := chi.NewRouter()
+	router.Get("/{slug}", f.deps.HandleRedirect)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://"+hostname+"/"+slug, nil)
+	router.ServeHTTP(rec, req)
 	return rec
 }
 

@@ -48,6 +48,10 @@ func (c *Client) Close() error {
 	return c.rdb.Close()
 }
 
+// Raw exposes the underlying client. It exists for tests that need to assert
+// on exact keys; handlers must use the methods above.
+func (c *Client) Raw() *redis.Client { return c.rdb }
+
 // Allow applies a sliding-window rate limit to key. Costs one Redis command
 // (a single EVAL, regardless of how many operations the script performs).
 func (c *Client) Allow(ctx context.Context, key string, limit int, window time.Duration) (bool, int, error) {

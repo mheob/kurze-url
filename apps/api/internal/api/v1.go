@@ -55,6 +55,7 @@ func (d Deps) RegisterV1(api huma.API) {
 	d.registerTeams(api)
 	d.registerMembers(api)
 	d.registerAuditLog(api)
+	d.registerLinks(api)
 }
 
 // authMiddleware enforces the bearer scheme on exactly the operations that
@@ -91,6 +92,7 @@ func (d Deps) authMiddleware(api huma.API) func(huma.Context, func(huma.Context)
 		inner := auth.WithClaims(ctx.Context(), claims)
 		if d.Queries != nil {
 			inner = authz.WithResolver(inner, authz.NewQueryResolver(d.Queries))
+			inner = authz.WithLinkResolver(inner, authz.NewQueryLinkResolver(d.Queries))
 		}
 		next(huma.WithContext(ctx, inner))
 	}
