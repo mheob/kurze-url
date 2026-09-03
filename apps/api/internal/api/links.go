@@ -195,11 +195,11 @@ func isUniqueViolation(err error) bool {
 // caller's team. The team comes from the authorization scope, never from the
 // request, so a folder belonging to another team simply returns no row.
 //
-// The 422 is the exact same response body whether the folder does not exist
-// or belongs to someone else — and, deliberately, whichever folder_id was
-// supplied: the message never echoes the id back, so two different guessed
-// ids that both miss produce byte-identical responses. An attacker learns
-// only that an id they guessed is not theirs, which they already knew.
+// The 422 names the id and is byte-identical whether the folder does not
+// exist or belongs to someone else — an attacker learns only that an id they
+// guessed is not theirs, which they already knew. Naming the id still matters
+// for tag_ids (up to ten entries): the caller needs to know which one was
+// rejected.
 func (d Deps) resolveFolderRef(
 	ctx context.Context, q *db.Queries, teamID uuid.UUID, folderID *uuid.UUID,
 ) (*uuid.UUID, error) {
@@ -211,7 +211,8 @@ func (d Deps) resolveFolderRef(
 		TeamID: teamID, ID: *folderID,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, huma.Error422UnprocessableEntity("no such folder in this team")
+		return nil, huma.Error422UnprocessableEntity(
+			fmt.Sprintf("no folder %s in this team", folderID))
 	}
 	if err != nil {
 		return nil, fmt.Errorf("resolve folder reference: %w", err)
@@ -222,9 +223,10 @@ func (d Deps) resolveFolderRef(
 
 // resolveTagRefs validates tag_ids from a request body against the caller's
 // team and returns the tags in the order the response will carry them. A
-// missing id — nonexistent, or another team's — produces the same 422 without
-// echoing which id was the problem, for the same reason resolveFolderRef's
-// message omits the id: the caller already knows which ids it sent.
+// missing id — nonexistent, or another team's — is a 422 naming it, for the
+// same reason resolveFolderRef's message names the id: the response must not
+// reveal whether an id exists in another team or does not exist at all, but
+// which of several ids was rejected is not secret and the client needs it.
 func (d Deps) resolveTagRefs(
 	ctx context.Context, q *db.Queries, teamID uuid.UUID, tagIDs []uuid.UUID,
 ) ([]Tag, error) {
@@ -247,7 +249,8 @@ func (d Deps) resolveTagRefs(
 	}
 	for _, id := range tagIDs {
 		if _, ok := found[id]; !ok {
-			return nil, huma.Error422UnprocessableEntity("no such tag in this team")
+			return nil, huma.Error422UnprocessableEntity(
+				fmt.Sprintf("no tag %s in this team", id))
 		}
 	}
 

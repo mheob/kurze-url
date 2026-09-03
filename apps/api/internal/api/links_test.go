@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -582,12 +583,33 @@ func TestCreateLinkRejectsAnotherTeamsFolder(t *testing.T) {
 	require.Equal(t, 1, count, "no link must have been created")
 }
 
+// normalizeID replaces every occurrence of id's text in body with a fixed
+// placeholder, so responses that legitimately embed different ids can still
+// be compared for everything *but* the id.
+func normalizeID(body string, id uuid.UUID) string {
+	return strings.ReplaceAll(body, id.String(), "<id>")
+}
+
+// TestAnotherTeamsFolderIsIndistinguishableFromAMissingOne asserts the
+// property the security review actually calls for: for any given folder_id,
+// the response must not reveal whether that id exists in another team or
+// does not exist at all. It does NOT assert that the two responses are
+// byte-identical — they can't be, since foreign and missingID are two
+// different ids and the message deliberately names the id it was given
+// (resolveFolderRef's doc comment explains why: tag_ids can carry up to ten
+// entries, and a client needs to know which one was rejected). What must
+// never vary is the message *template* around the id. If the not-found case
+// used a different template than the wrong-team case — e.g. "no such folder"
+// vs. "that folder belongs to another team" — an attacker could submit a
+// candidate id and learn from the wording alone whether it exists at all,
+// which is exactly the leak this test guards against. Substituting each
+// response's own id for a fixed placeholder before comparing proves the
+// template is shared without demanding the impossible.
 func TestAnotherTeamsFolderIsIndistinguishableFromAMissingOne(t *testing.T) {
-	// The two must be byte-identical, or folder IDs become probeable through
-	// the link endpoint after being hidden on the folder endpoint.
 	f := newTenancyFixture(t)
 	other := newTenancyFixture(t)
 	foreign := other.createFolder(t, "Fremd")
+	missingID := uuid.New()
 
 	foreignResp := f.do(t, f.members[authz.RoleEditor], http.MethodPost,
 		"/v1/teams/"+f.teamID.String()+"/links",
@@ -599,11 +621,14 @@ func TestAnotherTeamsFolderIsIndistinguishableFromAMissingOne(t *testing.T) {
 		"/v1/teams/"+f.teamID.String()+"/links",
 		map[string]any{
 			"destination_url": "https://example.org/x",
-			"folder_id":       uuid.New().String(),
+			"folder_id":       missingID.String(),
 		})
 
 	require.Equal(t, foreignResp.Code, missingResp.Code, "status must not differ")
-	require.Equal(t, foreignResp.Body.String(), missingResp.Body.String(), "body must not differ")
+	require.Equal(t,
+		normalizeID(foreignResp.Body.String(), foreign.ID),
+		normalizeID(missingResp.Body.String(), missingID),
+		"message template must not differ, once each response's own id is normalized away")
 }
 
 func TestCreateLinkAttachesTags(t *testing.T) {
@@ -649,6 +674,36 @@ func TestCreateLinkRejectsAnotherTeamsTag(t *testing.T) {
 	require.NoError(t, f.pool.QueryRow(context.Background(),
 		`select count(*) from link_tag where tag_id = $1`, foreign.ID).Scan(&joins))
 	require.Zero(t, joins, "no link_tag row must have been created")
+}
+
+// TestAnotherTeamsTagIsIndistinguishableFromAMissingOne is the tag_ids
+// equivalent of TestAnotherTeamsFolderIsIndistinguishableFromAMissingOne
+// above: same normalized-template property (see that test's comment for the
+// full reasoning), applied to resolveTagRefs instead of resolveFolderRef.
+func TestAnotherTeamsTagIsIndistinguishableFromAMissingOne(t *testing.T) {
+	f := newTenancyFixture(t)
+	other := newTenancyFixture(t)
+	foreign := other.createTag(t, "Fremd")
+	missingID := uuid.New()
+
+	foreignResp := f.do(t, f.members[authz.RoleEditor], http.MethodPost,
+		"/v1/teams/"+f.teamID.String()+"/links",
+		map[string]any{
+			"destination_url": "https://example.org/x",
+			"tag_ids":         []string{foreign.ID.String()},
+		})
+	missingResp := f.do(t, f.members[authz.RoleEditor], http.MethodPost,
+		"/v1/teams/"+f.teamID.String()+"/links",
+		map[string]any{
+			"destination_url": "https://example.org/x",
+			"tag_ids":         []string{missingID.String()},
+		})
+
+	require.Equal(t, foreignResp.Code, missingResp.Code, "status must not differ")
+	require.Equal(t,
+		normalizeID(foreignResp.Body.String(), foreign.ID),
+		normalizeID(missingResp.Body.String(), missingID),
+		"message template must not differ, once each response's own id is normalized away")
 }
 
 func TestCreateLinkEnforcesTheTagsPerLinkCap(t *testing.T) {
