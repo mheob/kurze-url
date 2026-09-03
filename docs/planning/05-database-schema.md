@@ -144,6 +144,8 @@ Notes:
 - `auth.users` is Supabase-managed (created by the OAuth 2.1 Server flow, see `01-architecture.md`). A `public.profile` table synced from it via a Postgres trigger is standard Supabase practice if app-specific display fields (name, avatar) are needed beyond what `auth.users` carries — not included above since nothing currently requires it, easy to add later.
 - `link.team_id` is denormalized from `link.domain_id → domain.team_id` rather than requiring a join for every authorization check in the Go backend (which does its own `WHERE team_id = ?` filtering, see "RLS" below). This assumes a link's domain never gets reassigned to a different team — reasonable given nothing in the feature list suggests that should be possible, but worth keeping in mind if that assumption ever changes.
 
+  Amended 2026-09-03 (see `docs/superpowers/specs/2026-09-03-links-and-shared-domain-design.md`): `domain.team_id` is nullable, and a row with `team_id IS NULL` is the instance's shared hostname that every team may use. So `link.team_id` equals `domain.team_id` only for custom domains; on a shared domain it is simply the creating team. The invariant that matters is unchanged: `link.team_id` never moves, and no authorization check needs a join.
+
 ## Password protection
 
 Decided 2026-09-01: this stays in MVP scope rather than being deferred, based on the concern that omitting it isn't neutral — it's a Core-tier item in the original feature list ("Optional password protection, expiration dates, and geotargeting" under Security & Privacy by Default), and a half-considered retrofit later is a worse security position than designing it properly now.
@@ -176,6 +178,8 @@ To count a click as a "unique visitor" without ever storing a raw visitor identi
 ## Audit log
 
 Generic rather than per-entity: one `audit_log` table with `action`/`entity_type`/`entity_id`/`metadata` covers link changes, domain additions, membership/role changes, and anything added later, instead of a separate history table per entity type. `metadata` (jsonb) carries the specifics of each action (e.g. old/new destination URL on a `link.destination_changed` event) — schemaless on purpose, since the shape of "what changed" differs per action type. See "Password protection" above for the one explicit exception to logging full before/after values.
+
+Amended 2026-09-03: the example action `link.destination_changed` is superseded by `link.updated`. One PATCH can change several fields atomically, and one row per request keeps the log a faithful record of what was asked; which fields moved lives in `metadata.changed`.
 
 Indexes: `(team_id, created_at desc)` for a team's activity feed, `(entity_type, entity_id)` for a specific entity's history.
 

@@ -89,6 +89,7 @@ Tables: `team`, `team_member`, `domain`, `folder`, `tag`, `link`, `link_tag`, `l
 - UUID PKs for entities; `bigint identity` for `link_click_stats` and `audit_log`.
 - Slug uniqueness is **`(domain_id, slug)`**, never `slug` alone.
 - `link.team_id` is denormalized from `domain.team_id` so every authorization check avoids a join.
+- `domain.team_id` is nullable; `NULL` means the shared instance hostname.
 - Analytics is a generic rollup: `(link_id, bucket_start /*date*/, dimension_type, dimension_value) → clicks, unique_visitors`. **Daily** granularity. No raw click table exists, and none should be added.
 - `link.password_hash` nullable, Argon2id. Never log the plaintext or the hash into `audit_log.metadata`.
 
@@ -105,6 +106,10 @@ Tables: `team`, `team_member`, `domain`, `folder`, `tag`, `link`, `link_tag`, `l
 - **301 vs 302 is per-link and defaults to 302.** Warn users inline when they pick 301: browsers cache it, so clicks go uncounted and destination changes stop taking effect.
 - **QR codes always encode the short URL**, never the destination — that's what makes changing a destination safe.
 - `piglig/go-qr` is the QR library; validate the centered-logo size against the chosen error-correction budget.
+- **The shared default hostname is a `domain` row with `team_id IS NULL`**, upserted at boot from `SHARED_DOMAIN_HOSTNAME`. Any team may create links on it; slugs there are one global, first-come-first-served namespace.
+- **Slugs are case-insensitive**: stored lowercase, folded on the redirect path. Generated slugs are 8 characters from `23456789abcdefghijkmnpqrstuvwxyz`.
+- **Entity-scoped routes** (`/v1/links/{link_id}` and, later, domains, folders and tags) authorize through per-entity scope structs in `internal/authz` that resolve the entity, then reuse the membership check. A non-member gets 404, never 403.
+- **Creating a link must invalidate the redirect cache**, not only updating one — a probe may have cached the not-found sentinel under the new slug's key.
 
 ---
 
