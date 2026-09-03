@@ -6,14 +6,10 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/google/uuid"
 
 	"github.com/mheob/kurze-url/apps/api/internal/auth"
+	"github.com/mheob/kurze-url/apps/api/internal/authz"
 )
-
-type contextKey struct{}
-
-var userContextKey = contextKey{}
 
 // NewHumaConfig builds the OpenAPI 3.1 document config. The bearer scheme is
 // declared once here; individual operations opt in via Security, and the
@@ -29,14 +25,6 @@ func NewHumaConfig() huma.Config {
 		},
 	}
 	return config
-}
-
-// MeOutput is the body of GET /v1/me. Team memberships join it in plan 2.
-type MeOutput struct {
-	Body struct {
-		UserID uuid.UUID `json:"user_id"`
-		Email  string    `json:"email"`
-	}
 }
 
 // HealthOutput is the body of GET /v1/health.
@@ -63,23 +51,10 @@ func (d Deps) RegisterV1(api huma.API) {
 		return out, nil
 	})
 
-	huma.Register(api, huma.Operation{
-		OperationID: "get-me",
-		Method:      http.MethodGet,
-		Path:        "/v1/me",
-		Summary:     "The authenticated user",
-		Tags:        []string{"Session"},
-		Security:    []map[string][]string{{"bearerAuth": {}}},
-	}, func(ctx context.Context, _ *struct{}) (*MeOutput, error) {
-		claims, ok := UserFromContext(ctx)
-		if !ok {
-			return nil, huma.Error401Unauthorized("not authenticated")
-		}
-		out := &MeOutput{}
-		out.Body.UserID = claims.UserID
-		out.Body.Email = claims.Email
-		return out, nil
-	})
+	d.registerMe(api)
+	d.registerTeams(api)
+	d.registerMembers(api)
+	d.registerAuditLog(api)
 }
 
 // authMiddleware enforces the bearer scheme on exactly the operations that
@@ -113,7 +88,11 @@ func (d Deps) authMiddleware(api huma.API) func(huma.Context, func(huma.Context)
 			return
 		}
 
-		next(huma.WithValue(ctx, userContextKey, claims))
+		inner := auth.WithClaims(ctx.Context(), claims)
+		if d.Queries != nil {
+			inner = authz.WithResolver(inner, authz.NewQueryResolver(d.Queries))
+		}
+		next(huma.WithContext(ctx, inner))
 	}
 }
 
@@ -135,8 +114,8 @@ func bearerToken(header string) string {
 }
 
 // UserFromContext returns the verified claims a bearer-authenticated operation
-// was called with.
+// was called with. It is a thin wrapper over auth.ClaimsFromContext so handlers
+// need not import internal/auth for this one call.
 func UserFromContext(ctx context.Context) (auth.Claims, bool) {
-	claims, ok := ctx.Value(userContextKey).(auth.Claims)
-	return claims, ok
+	return auth.ClaimsFromContext(ctx)
 }

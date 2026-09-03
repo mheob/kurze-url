@@ -4,5 +4,8 @@
 create schema if not exists auth;
 
 create table auth.users (
-  id uuid primary key
+  id     uuid primary key,
+  -- Nullable, matching Supabase: an account created by phone has no email.
+  -- Reads must handle nil.
+  email  text
 );

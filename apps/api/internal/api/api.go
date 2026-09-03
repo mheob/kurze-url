@@ -4,8 +4,12 @@
 package api
 
 import (
+	"context"
 	"log/slog"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mheob/kurze-url/apps/api/internal/analytics"
 	"github.com/mheob/kurze-url/apps/api/internal/auth"
@@ -13,6 +17,13 @@ import (
 	"github.com/mheob/kurze-url/apps/api/internal/config"
 	"github.com/mheob/kurze-url/apps/api/internal/db"
 )
+
+// Inviter is the slice of Supabase's Admin API this package needs. It is
+// declared here, next to its consumer, so handler tests can fake it without
+// touching HTTP.
+type Inviter interface {
+	InviteUser(ctx context.Context, email string, data map[string]any) (uuid.UUID, error)
+}
 
 // Deps is everything the handlers need, constructed once in cmd/api.
 type Deps struct {
@@ -22,6 +33,14 @@ type Deps struct {
 	Recorder *analytics.Recorder
 	Verifier *auth.Verifier
 	Log      *slog.Logger
+
+	// Pool backs db.InTx. Queries above is pool-backed too, but a transaction
+	// needs the pool itself.
+	Pool *pgxpool.Pool
+
+	// Admin sends team invitation emails. Nil disables the invite branch of
+	// POST /v1/teams/{team_id}/members, which then refuses unknown addresses.
+	Admin Inviter
 
 	// Now is injectable so tests can pin expiry behaviour. Defaults to
 	// time.Now when nil.

@@ -22,7 +22,8 @@ type AuditLog struct {
 }
 
 type AuthUser struct {
-	ID uuid.UUID
+	ID    uuid.UUID
+	Email *string
 }
 
 type Domain struct {

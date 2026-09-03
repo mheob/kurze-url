@@ -79,3 +79,20 @@ func (v *Verifier) Verify(ctx context.Context, rawToken string) (Claims, error) 
 
 	return Claims{UserID: userID, Email: claims.Email}, nil
 }
+
+// claimsKey is the context key the verified claims travel under. It lives in
+// this package rather than internal/api because internal/authz needs to read
+// the caller's identity and must not import the HTTP layer.
+type claimsKey struct{}
+
+// WithClaims returns a context carrying the verified claims.
+func WithClaims(ctx context.Context, c Claims) context.Context {
+	return context.WithValue(ctx, claimsKey{}, c)
+}
+
+// ClaimsFromContext returns the claims a bearer-authenticated request was
+// verified with.
+func ClaimsFromContext(ctx context.Context) (Claims, bool) {
+	claims, ok := ctx.Value(claimsKey{}).(Claims)
+	return claims, ok
+}
