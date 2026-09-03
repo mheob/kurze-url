@@ -193,6 +193,7 @@ type CreateLinkInput struct {
 	}
 }
 
+// LinkOutput wraps a single link resource.
 type LinkOutput struct {
 	Status int
 	Body   Link
@@ -392,6 +393,7 @@ type ListLinksInput struct {
 	Sort     string `query:"sort" enum:"created_at,-created_at" default:"-created_at" doc:"Newest first by default."`
 }
 
+// ListLinksOutput wraps a paginated list of links.
 type ListLinksOutput struct {
 	Body Page[Link]
 }
@@ -445,6 +447,8 @@ func (d Deps) listLinks(ctx context.Context, in *ListLinksInput) (*ListLinksOutp
 	return &ListLinksOutput{Body: NewPage(items, in.PageParams, total)}, nil
 }
 
+// GetLinkInput declares its authorization in its type: LinkViewerScope
+// resolves which team owns the link and requires at least the viewer role.
 type GetLinkInput struct {
 	authz.LinkViewerScope
 }
@@ -467,10 +471,13 @@ type UpdateLinkInput struct {
 	}
 }
 
+// DeleteLinkInput declares its authorization in its type: LinkEditorScope
+// resolves which team owns the link and requires at least the editor role.
 type DeleteLinkInput struct {
 	authz.LinkEditorScope
 }
 
+// DeleteLinkOutput carries no body: a successful delete is 204 No Content.
 type DeleteLinkOutput struct {
 	Status int
 }

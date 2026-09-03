@@ -44,7 +44,7 @@ func Validate(raw string, selfHostnames []string) error {
 
 	parsed, err := url.Parse(raw)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrMalformed, err)
+		return fmt.Errorf("%w: %w", ErrMalformed, err)
 	}
 
 	// The scheme is checked by allowlist, never by blocklist. A blocklist is a

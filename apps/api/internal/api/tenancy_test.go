@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
@@ -19,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 	tcredis "github.com/testcontainers/testcontainers-go/modules/redis"
 
+	"github.com/mheob/kurze-url/apps/api/internal/analytics"
 	"github.com/mheob/kurze-url/apps/api/internal/api"
 	"github.com/mheob/kurze-url/apps/api/internal/auth"
 	"github.com/mheob/kurze-url/apps/api/internal/authz"
@@ -229,6 +231,15 @@ func newTenancyFixture(t *testing.T) *tenancyFixture {
 
 	invites := &fakeInviter{userID: uuid.New(), t: t, pool: pool}
 
+	// The redirect helper below exercises the real HandleRedirect, which
+	// records a click on every successful redirect — so this fixture needs a
+	// working Recorder too, not only the /v1 surface's dependencies.
+	recorder := analytics.NewRecorder(
+		func(_ context.Context, _ []analytics.Row) error { return nil },
+		time.Hour, 100000,
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+	)
+
 	f := &tenancyFixture{
 		pool:           pool,
 		key:            key,
@@ -248,6 +259,7 @@ func newTenancyFixture(t *testing.T) *tenancyFixture {
 			Cache:        redis,
 			Verifier:     verifier,
 			Admin:        invites,
+			Recorder:     recorder,
 			Log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
 		},
 	}
@@ -284,6 +296,20 @@ func (f *tenancyFixture) do(
 
 	rec := httptest.NewRecorder()
 	f.router.ServeHTTP(rec, req)
+	return rec
+}
+
+// redirect issues a request to the public redirect surface on a short-link
+// hostname, using the same router the API serves.
+func (f *tenancyFixture) redirect(t *testing.T, hostname, slug string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	router := chi.NewRouter()
+	router.Get("/{slug}", f.deps.HandleRedirect)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://"+hostname+"/"+slug, nil)
+	router.ServeHTTP(rec, req)
 	return rec
 }
 
