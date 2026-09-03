@@ -74,12 +74,8 @@ func TestNewPageNeverEmitsANullItemsArray(t *testing.T) {
 
 // The generated TypeScript client in plan 4 inherits these schema names, so a
 // mangled generic name would propagate into the frontend's types.
-//
-// api.Team is defined in Task 8; until then this asserts against
-// api.Page[string] ("PageString") per the task-6 brief's fallback. Switch to
-// api.Page[api.Team] / "PageTeam" once Task 8 lands.
 func TestGenericEnvelopeSchemaNamesAreReadable(t *testing.T) {
-	name := huma.DefaultSchemaNamer(reflect.TypeOf(api.Page[string]{}), "")
+	name := huma.DefaultSchemaNamer(reflect.TypeOf(api.Page[api.Team]{}), "")
 
-	require.Equal(t, "PageString", name)
+	require.Equal(t, "PageTeam", name)
 }

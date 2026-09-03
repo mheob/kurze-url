@@ -52,6 +52,7 @@ func (d Deps) RegisterV1(api huma.API) {
 	})
 
 	d.registerMe(api)
+	d.registerTeams(api)
 }
 
 // authMiddleware enforces the bearer scheme on exactly the operations that
