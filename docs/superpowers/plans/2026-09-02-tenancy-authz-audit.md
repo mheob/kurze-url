@@ -4,7 +4,7 @@
 
 **Goal:** Build the tenancy core of the `/v1` API — a reusable authorization layer, an atomic audit-log write path, the paginated list envelope, and the team and team-member endpoints — so every later resource can answer "is the caller a member of this team, with a sufficient role?" in one place.
 
-**Architecture:** Authorization is declared in the handler's *input type*. Each team-scoped operation embeds one of four scope structs (`ViewerScope`, `EditorScope`, `AdminScope`, `OwnerScope`); Huma calls the scope's `Resolve` before the handler body, which loads the caller's `team_member` row and rejects with 404 (non-member) or 403 (insufficient role). Mutations run through `db.InTx`, which performs the mutation and its `audit_log` insert in one pgx transaction. Identity data is read from `auth.users` by SQL; Supabase's Admin API is called only to send an invitation email.
+**Architecture:** Authorization is declared in the handler's _input type_. Each team-scoped operation embeds one of four scope structs (`ViewerScope`, `EditorScope`, `AdminScope`, `OwnerScope`); Huma calls the scope's `Resolve` before the handler body, which loads the caller's `team_member` row and rejects with 404 (non-member) or 403 (insufficient role). Mutations run through `db.InTx`, which performs the mutation and its `audit_log` insert in one pgx transaction. Identity data is read from `auth.users` by SQL; Supabase's Admin API is called only to send an invitation email.
 
 **Tech Stack:** Go 1.27 · chi v5 · Huma v2.39 · pgx/v5 + sqlc v1.31 · go-redis v9 · testify · local Supabase Postgres for query tests
 
@@ -31,15 +31,15 @@ Every task's requirements implicitly include this section.
 
 This table is the contract. Task 14 turns it into an executable test.
 
-| Action | viewer | editor | admin | owner |
-| --- | --- | --- | --- | --- |
-| Read team | yes | yes | yes | yes |
-| Rename team | no | no | yes | yes |
-| List members | yes | yes | yes | yes |
-| Invite or add member | no | no | yes | yes |
-| Change member role | no | no | yes | yes |
-| Remove member | no | no | yes | yes |
-| Read audit log | no | no | yes | yes |
+| Action               | viewer | editor | admin | owner |
+| -------------------- | ------ | ------ | ----- | ----- |
+| Read team            | yes    | yes    | yes   | yes   |
+| Rename team          | no     | no     | yes   | yes   |
+| List members         | yes    | yes    | yes   | yes   |
+| Invite or add member | no     | no     | yes   | yes   |
+| Change member role   | no     | no     | yes   | yes   |
+| Remove member        | no     | no     | yes   | yes   |
+| Read audit log       | no     | no     | yes   | yes   |
 
 Extra rules that are not role comparisons:
 
@@ -101,11 +101,13 @@ Fourteen tasks. Each ends with a green test run and one commit. Tasks 1–6 buil
 ## Task 1: Configuration for the maintainer allowlist, Supabase Admin API and invite limit
 
 **Files:**
+
 - Modify: `internal/config/config.go`
 - Test: `internal/config/config_test.go`
 - Modify: `.env.example`
 
 **Interfaces:**
+
 - Consumes: nothing from earlier tasks.
 - Produces: `config.Config` gains `MaintainerUserIDs []uuid.UUID`, `SupabaseAuthURL string`, `SupabaseServiceRoleKey string`, `InviteRateLimitPerHour int`, and the method `func (c Config) IsMaintainer(id uuid.UUID) bool`.
 
@@ -193,8 +195,7 @@ Add `"github.com/google/uuid"` to the test file's imports.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `go test ./internal/config/ -run 'Maintainer|SupabaseAuthURL|InviteRateLimit' -v`
-Expected: FAIL — compilation errors, `cfg.MaintainerUserIDs undefined`.
+Run: `go test ./internal/config/ -run 'Maintainer|SupabaseAuthURL|InviteRateLimit' -v` Expected: FAIL — compilation errors, `cfg.MaintainerUserIDs undefined`.
 
 - [ ] **Step 3: Extend the Config struct**
 
@@ -289,8 +290,7 @@ func (c Config) IsMaintainer(id uuid.UUID) bool {
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `go test ./internal/config/ -v`
-Expected: PASS, including the pre-existing tests.
+Run: `go test ./internal/config/ -v` Expected: PASS, including the pre-existing tests.
 
 - [ ] **Step 6: Document the variables in `.env.example`**
 
@@ -327,10 +327,12 @@ git commit -m "feat(api): configure maintainer allowlist and invite settings"
 ## Task 2: The role type and its ordering
 
 **Files:**
+
 - Create: `internal/authz/roles.go`
 - Test: `internal/authz/roles_test.go`
 
 **Interfaces:**
+
 - Consumes: nothing.
 - Produces: `authz.Role` (a `string` type) with constants `RoleViewer`, `RoleEditor`, `RoleAdmin`, `RoleOwner`; `func ParseRole(string) (Role, error)`; `func (r Role) AtLeast(min Role) bool`; `func (r Role) String() string`; `var ErrInvalidRole error`.
 
@@ -385,8 +387,7 @@ func TestParseRoleRejectsAnythingElse(t *testing.T) {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `go test ./internal/authz/ -v`
-Expected: FAIL — `no Go files in .../internal/authz`.
+Run: `go test ./internal/authz/ -v` Expected: FAIL — `no Go files in .../internal/authz`.
 
 - [ ] **Step 3: Implement the role type**
 
@@ -447,8 +448,7 @@ func (r Role) String() string { return string(r) }
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `go test ./internal/authz/ -v`
-Expected: PASS.
+Run: `go test ./internal/authz/ -v` Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -462,12 +462,14 @@ git commit -m "feat(api): add the team role type and ordering"
 ## Task 3: Scope types, the membership resolver and the claims-context move
 
 **Files:**
+
 - Create: `internal/authz/scope.go`
 - Test: `internal/authz/scope_test.go`
 - Modify: `internal/auth/jwt.go` (claims context helpers move here)
 - Modify: `internal/api/v1.go` (use the moved helpers)
 
 **Interfaces:**
+
 - Consumes: `authz.Role` and `authz.RoleViewer`…`RoleOwner` from Task 2; `auth.Claims` from plan 1.
 - Produces:
   - `auth.WithClaims(ctx context.Context, c Claims) context.Context` and `auth.ClaimsFromContext(ctx context.Context) (Claims, bool)`.
@@ -519,8 +521,7 @@ func UserFromContext(ctx context.Context) (auth.Claims, bool) {
 
 - [ ] **Step 2: Run the existing suite to prove the move changed no behaviour**
 
-Run: `go test ./internal/api/ ./internal/auth/`
-Expected: PASS — the `/v1/me` tests from plan 1 still pass. If Postgres or Docker is unavailable, some tests skip; that is expected, but nothing may fail.
+Run: `go test ./internal/api/ ./internal/auth/` Expected: PASS — the `/v1/me` tests from plan 1 still pass. If Postgres or Docker is unavailable, some tests skip; that is expected, but nothing may fail.
 
 - [ ] **Step 3: Write the failing scope test**
 
@@ -668,8 +669,7 @@ func TestScopeSurfacesAResolverFailureAs500(t *testing.T) {
 
 - [ ] **Step 4: Run it to verify it fails**
 
-Run: `go test ./internal/authz/ -run Scope -v`
-Expected: FAIL — `undefined: authz.AdminScope`.
+Run: `go test ./internal/authz/ -run Scope -v` Expected: FAIL — `undefined: authz.AdminScope`.
 
 - [ ] **Step 5: Implement the scopes**
 
@@ -819,8 +819,7 @@ Run: `go get github.com/danielgtaylor/huma/v2/adapters/humago@v2.39.1 && go mod 
 
 - [ ] **Step 7: Run the tests to verify they pass**
 
-Run: `go test ./internal/authz/ -v`
-Expected: PASS, all six scope tests plus Task 2's role tests.
+Run: `go test ./internal/authz/ -v` Expected: PASS, all six scope tests plus Task 2's role tests.
 
 - [ ] **Step 8: Commit**
 
@@ -834,6 +833,7 @@ git commit -m "feat(api): add team scope resolution for /v1 operations"
 ## Task 4: Tenancy queries, the auth stub's email column and the transaction helper
 
 **Files:**
+
 - Modify: `internal/db/schema/0000_auth_stub.sql`
 - Create: `internal/db/queries/team.sql`
 - Create: `internal/db/queries/audit.sql`
@@ -842,6 +842,7 @@ git commit -m "feat(api): add team scope resolution for /v1 operations"
 - Generated (do not hand-edit): `internal/db/team.sql.go`, `internal/db/audit.sql.go`, `internal/db/models.go`
 
 **Interfaces:**
+
 - Consumes: nothing from earlier tasks.
 - Produces (sqlc-generated method names later tasks call): `GetTeamMembership`, `CreateTeam`, `GetTeam`, `RenameTeam`, `ListTeamsForUser`, `ListMembershipsForUser`, `InsertTeamMember`, `ListTeamMembers`, `UpdateTeamMemberRole`, `DeleteTeamMember`, `LockTeamOwners`, `GetUserIDByEmail`, `InsertAuditLog`, `ListAuditLog`. Plus hand-written `db.InTx(ctx, pool, func(*db.Queries) error) error`.
 
@@ -1006,8 +1007,7 @@ func InTx(ctx context.Context, pool *pgxpool.Pool, fn func(*Queries) error) erro
 
 - [ ] **Step 5: Generate and check it compiles**
 
-Run: `sqlc generate && go build ./...`
-Expected: no output from either. If sqlc errors on `auth.users`, the stub edit in Step 1 was not saved.
+Run: `sqlc generate && go build ./...` Expected: no output from either. If sqlc errors on `auth.users`, the stub edit in Step 1 was not saved.
 
 Inspect the generated `ListAuditLogParams` and `ListTeamMembersRow` in `internal/db/`. Note the exact field names and types now — later tasks reference them, and sqlc's naming (`ResultLimit`, `ResultOffset`, `TotalCount`, `Email *string`) must match what those tasks assume.
 
@@ -1281,15 +1281,14 @@ Add `var errTest = errors.New("test failure")` and the `errors` import at the to
 
 - [ ] **Step 7: Run the query tests**
 
-Run: `supabase start` (if it is not already running), then `go test ./internal/db/ -v`
-Expected: PASS. Tests skip — never fail — when Postgres is unavailable.
+Run: `supabase start` (if it is not already running), then `go test ./internal/db/ -v` Expected: PASS. Tests skip — never fail — when Postgres is unavailable.
 
-If a generated field name differs from what the test assumes (for example `Limit` versus `ResultLimit`), fix the *test* to match the generated code, or rename the sqlc parameter in the `.sql` file and regenerate. Do not hand-edit generated Go.
+If a generated field name differs from what the test assumes (for example `Limit` versus `ResultLimit`), fix the _test_ to match the generated code, or rename the sqlc parameter in the `.sql` file and regenerate. Do not hand-edit generated Go.
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add internal/db/ 
+git add internal/db/
 git commit -m "feat(api): add tenancy and audit queries with a tx helper"
 ```
 
@@ -1298,10 +1297,12 @@ git commit -m "feat(api): add tenancy and audit queries with a tx helper"
 ## Task 5: The audit writer and its action taxonomy
 
 **Files:**
+
 - Create: `internal/audit/audit.go`
 - Test: `internal/audit/audit_test.go`
 
 **Interfaces:**
+
 - Consumes: `db.InsertAuditLog` and `db.InTx` from Task 4.
 - Produces: `audit.Action` with constants `ActionTeamCreated`, `ActionTeamRenamed`, `ActionMemberInvited`, `ActionMemberAdded`, `ActionMemberRoleChanged`, `ActionMemberRemoved`; `audit.EntityTeam`, `audit.EntityTeamMember`; `audit.Entry`; `audit.Log(ctx context.Context, q *db.Queries, e Entry) error`; `audit.ErrForbiddenMetadata`; `audit.ErrUnknownAction`.
 
@@ -1489,8 +1490,7 @@ func TestLogRollsBackWithItsTransaction(t *testing.T) {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `go test ./internal/audit/ -v`
-Expected: FAIL — `no Go files in .../internal/audit`.
+Run: `go test ./internal/audit/ -v` Expected: FAIL — `no Go files in .../internal/audit`.
 
 - [ ] **Step 3: Implement the audit writer**
 
@@ -1617,8 +1617,7 @@ func checkMetadata(metadata map[string]any) error {
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `go test ./internal/audit/ -v`
-Expected: PASS (or skip if Postgres is down).
+Run: `go test ./internal/audit/ -v` Expected: PASS (or skip if Postgres is down).
 
 - [ ] **Step 5: Commit**
 
@@ -1632,10 +1631,12 @@ git commit -m "feat(api): add the audit log writer and action taxonomy"
 ## Task 6: The pagination envelope
 
 **Files:**
+
 - Create: `internal/api/page.go`
 - Test: `internal/api/page_test.go`
 
 **Interfaces:**
+
 - Consumes: nothing.
 - Produces: `api.Page[T]` with fields `Items []T`, `Page int`, `PerPage int`, `TotalCount int`; `api.PageParams` with `Page`/`PerPage` query fields plus `Limit() int32`, `Offset() int32`, `Normalized() (page, perPage int)`; `api.NewPage[T](items []T, params PageParams, total int64) Page[T]`.
 
@@ -1713,8 +1714,7 @@ func TestGenericEnvelopeSchemaNamesAreReadable(t *testing.T) {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `go test ./internal/api/ -run 'Page' -v`
-Expected: FAIL — `undefined: api.PageParams`.
+Run: `go test ./internal/api/ -run 'Page' -v` Expected: FAIL — `undefined: api.PageParams`.
 
 - [ ] **Step 3: Implement the envelope**
 
@@ -1793,8 +1793,7 @@ If Task 4's generated queries take `int64` for `Limit`/`Offset` rather than `int
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `go test ./internal/api/ -run 'Page' -v`
-Expected: PASS.
+Run: `go test ./internal/api/ -run 'Page' -v` Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -1808,6 +1807,7 @@ git commit -m "feat(api): add the paginated list envelope"
 ## Task 7: The db-backed resolver, Deps wiring and `/v1/me` memberships
 
 **Files:**
+
 - Create: `internal/authz/resolver.go`
 - Create: `internal/api/me.go`
 - Create: `internal/api/tenancy_test.go` (shared helpers for tasks 7–14)
@@ -1815,6 +1815,7 @@ git commit -m "feat(api): add the paginated list envelope"
 - Modify: `internal/api/v1.go` (install the resolver; move `/v1/me` out)
 
 **Interfaces:**
+
 - Consumes: `authz.Membership`, `authz.Resolver`, `authz.ErrNotMember`, `authz.ParseRole` (Tasks 2–3); `db.GetTeamMembership`, `db.ListMembershipsForUser` (Task 4).
 - Produces:
   - `authz.NewQueryResolver(q *db.Queries) QueryResolver`, implementing `authz.Resolver`.
@@ -2166,8 +2167,7 @@ Delete the `var _ = cache.Client{}` line if the `cache` import ends up used by `
 
 - [ ] **Step 5: Run it to verify it fails**
 
-Run: `go test ./internal/api/ -run 'TestMeLists|TestMeReturnsAnEmpty' -v`
-Expected: FAIL — `d.registerMe undefined` or a missing `memberships` field.
+Run: `go test ./internal/api/ -run 'TestMeLists|TestMeReturnsAnEmpty' -v` Expected: FAIL — `d.registerMe undefined` or a missing `memberships` field.
 
 - [ ] **Step 6: Implement `/v1/me`**
 
@@ -2241,8 +2241,7 @@ func (d Deps) registerMe(api huma.API) {
 
 - [ ] **Step 7: Run the API suite**
 
-Run: `go test ./internal/api/ -v`
-Expected: PASS, including plan 1's redirect, verify, router and `/v1/me` tests. The pre-existing `TestMeReturnsTheVerifiedClaimsForAValidBearerToken` signs a token for a random UUID that has no `auth.users` row; `ListMembershipsForUser` returns no rows for it, so it still passes with an empty membership list.
+Run: `go test ./internal/api/ -v` Expected: PASS, including plan 1's redirect, verify, router and `/v1/me` tests. The pre-existing `TestMeReturnsTheVerifiedClaimsForAValidBearerToken` signs a token for a random UUID that has no `auth.users` row; `ListMembershipsForUser` returns no rows for it, so it still passes with an empty membership list.
 
 - [ ] **Step 8: Commit**
 
@@ -2256,11 +2255,13 @@ git commit -m "feat(api): resolve memberships and return them from /v1/me"
 ## Task 8: Team endpoints
 
 **Files:**
+
 - Create: `internal/api/teams.go`
 - Test: `internal/api/teams_test.go`
 - Modify: `internal/api/v1.go` (call `d.registerTeams(api)`)
 
 **Interfaces:**
+
 - Consumes: `authz.ViewerScope`, `authz.AdminScope` (Task 3); `db.InTx`, `db.CreateTeam`, `db.GetTeam`, `db.RenameTeam`, `db.ListTeamsForUser`, `db.InsertTeamMember` (Task 4); `audit.Log` and the team actions (Task 5); `Page[T]`, `PageParams`, `NewPage` (Task 6); `config.Config.IsMaintainer` (Task 1).
 - Produces: `api.Team{ID uuid.UUID, Name string, CreatedAt time.Time, Role string}`; `(d Deps) registerTeams(api huma.API)`.
 
@@ -2451,8 +2452,7 @@ func TestGetTeamRejectsAMalformedTeamID(t *testing.T) {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `go test ./internal/api/ -run 'Team' -v`
-Expected: FAIL — `undefined: api.Team`.
+Run: `go test ./internal/api/ -run 'Team' -v` Expected: FAIL — `undefined: api.Team`.
 
 - [ ] **Step 3: Implement the team handlers**
 
@@ -2692,15 +2692,13 @@ The generated row types may be named `db.CreateTeamRow`/`db.RenameTeamRow` or ju
 
 - [ ] **Step 4: Run the team tests**
 
-Run: `go test ./internal/api/ -run 'Team' -v`
-Expected: PASS.
+Run: `go test ./internal/api/ -run 'Team' -v` Expected: PASS.
 
 - [ ] **Step 5: Switch the schema-name assertion to the real type**
 
 In `internal/api/page_test.go`, change `TestGenericEnvelopeSchemaNamesAreReadable` to use `api.Page[api.Team]{}` and expect `"PageTeam"` (if you used the `string` placeholder in Task 6).
 
-Run: `go test ./internal/api/ -run 'Page' -v`
-Expected: PASS.
+Run: `go test ./internal/api/ -run 'Page' -v` Expected: PASS.
 
 - [ ] **Step 6: Commit**
 
@@ -2714,11 +2712,13 @@ git commit -m "feat(api): add team endpoints"
 ## Task 9: Member listing
 
 **Files:**
+
 - Create: `internal/api/members.go`
 - Test: `internal/api/members_test.go`
 - Modify: `internal/api/v1.go` (call `d.registerMembers(api)`)
 
 **Interfaces:**
+
 - Consumes: `authz.ViewerScope` (Task 3); `db.ListTeamMembers` (Task 4); `Page[T]`, `PageParams`, `NewPage` (Task 6).
 - Produces: `api.Member{UserID uuid.UUID, Email string, Role string, CreatedAt time.Time}`; `(d Deps) registerMembers(api huma.API)` — tasks 11 and 12 add operations to this same function.
 
@@ -2783,8 +2783,7 @@ func TestListMembersHidesTheTeamFromAStranger(t *testing.T) {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `go test ./internal/api/ -run 'ListMembers' -v`
-Expected: FAIL — `undefined: api.Member`.
+Run: `go test ./internal/api/ -run 'ListMembers' -v` Expected: FAIL — `undefined: api.Member`.
 
 - [ ] **Step 3: Implement the listing**
 
@@ -2875,8 +2874,7 @@ Register it: add `d.registerMembers(api)` to `RegisterV1`.
 
 - [ ] **Step 4: Run the member tests**
 
-Run: `go test ./internal/api/ -run 'ListMembers' -v`
-Expected: PASS.
+Run: `go test ./internal/api/ -run 'ListMembers' -v` Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -2890,10 +2888,12 @@ git commit -m "feat(api): add team member listing"
 ## Task 10: The Supabase Admin API client
 
 **Files:**
+
 - Create: `internal/supabase/admin.go`
 - Test: `internal/supabase/admin_test.go`
 
 **Interfaces:**
+
 - Consumes: nothing from earlier tasks.
 - Produces: `supabase.NewClient(baseURL, serviceRoleKey string) (*Client, error)`; `(*Client) InviteUser(ctx context.Context, email string, data map[string]any) (uuid.UUID, error)`, satisfying `api.Inviter`; `supabase.ErrUserExists`; `supabase.ErrNotConfigured`.
 
@@ -3016,8 +3016,7 @@ func TestInviteUserDoesNotLeakTheServiceRoleKeyIntoErrors(t *testing.T) {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `go test ./internal/supabase/ -v`
-Expected: FAIL — `no Go files in .../internal/supabase`.
+Run: `go test ./internal/supabase/ -v` Expected: FAIL — `no Go files in .../internal/supabase`.
 
 - [ ] **Step 3: Implement the client**
 
@@ -3168,8 +3167,7 @@ func truncate(s string, max int) string {
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `go test ./internal/supabase/ -v`
-Expected: PASS.
+Run: `go test ./internal/supabase/ -v` Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -3183,10 +3181,12 @@ git commit -m "feat(api): add the Supabase invite client"
 ## Task 11: Adding and inviting members
 
 **Files:**
+
 - Modify: `internal/api/members.go`
 - Test: `internal/api/members_test.go`
 
 **Interfaces:**
+
 - Consumes: `authz.AdminScope`, `authz.ParseRole` (Tasks 2–3); `db.GetUserIDByEmail`, `db.GetTeamMembership`, `db.InsertTeamMember` (Task 4); `audit.ActionMemberAdded`, `audit.ActionMemberInvited` (Task 5); `Inviter` (Task 7); `supabase.ErrUserExists` (Task 10); `cache.Client.Allow` from plan 1.
 - Produces: `(d Deps) addMember(...)` registered as `add-team-member`, returning 201 with a `Member` body.
 
@@ -3363,8 +3363,7 @@ func (f *tenancyFixture) rebuildRouter() {
 
 - [ ] **Step 3: Run the tests to verify they fail**
 
-Run: `go test ./internal/api/ -run 'AddMember' -v`
-Expected: FAIL — 404 from chi, because the route does not exist yet.
+Run: `go test ./internal/api/ -run 'AddMember' -v` Expected: FAIL — 404 from chi, because the route does not exist yet.
 
 - [ ] **Step 4: Implement the handler**
 
@@ -3528,8 +3527,7 @@ Task 4 declared the query as `:one … returning created_at`, so `createdAt` abo
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `go test ./internal/api/ -run 'Member|Team' -v`
-Expected: PASS.
+Run: `go test ./internal/api/ -run 'Member|Team' -v` Expected: PASS.
 
 - [ ] **Step 7: Commit**
 
@@ -3543,10 +3541,12 @@ git commit -m "feat(api): add and invite team members"
 ## Task 12: Role changes, removal and the last-owner invariant
 
 **Files:**
+
 - Modify: `internal/api/members.go`
 - Test: `internal/api/members_test.go`
 
 **Interfaces:**
+
 - Consumes: `db.LockTeamOwners`, `db.UpdateTeamMemberRole`, `db.DeleteTeamMember`, `db.GetTeamMembership` (Task 4); `audit.ActionMemberRoleChanged`, `audit.ActionMemberRemoved` (Task 5).
 - Produces: `(d Deps) updateMember(...)` and `(d Deps) removeMember(...)`, registered as `update-team-member` and `remove-team-member`, both returning 204.
 
@@ -3709,8 +3709,7 @@ func TestRemoveMemberRefusesRemovingTheLastOwner(t *testing.T) {
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `go test ./internal/api/ -run 'UpdateMember|RemoveMember' -v`
-Expected: FAIL — the routes are not registered.
+Run: `go test ./internal/api/ -run 'UpdateMember|RemoveMember' -v` Expected: FAIL — the routes are not registered.
 
 - [ ] **Step 3: Implement both handlers**
 
@@ -3907,8 +3906,7 @@ func (d Deps) mutationError(err error, message, operation string, teamID uuid.UU
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `go test ./internal/api/ -run 'UpdateMember|RemoveMember' -v`
-Expected: PASS.
+Run: `go test ./internal/api/ -run 'UpdateMember|RemoveMember' -v` Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -3922,11 +3920,13 @@ git commit -m "feat(api): change and remove team members safely"
 ## Task 13: The audit-log endpoint
 
 **Files:**
+
 - Create: `internal/api/auditlog.go`
 - Test: `internal/api/auditlog_test.go`
 - Modify: `internal/api/v1.go` (call `d.registerAuditLog(api)`)
 
 **Interfaces:**
+
 - Consumes: `authz.AdminScope` (Task 3); `db.ListAuditLog` (Task 4); `Page[T]`, `PageParams` (Task 6).
 - Produces: `api.AuditEntry`; `(d Deps) registerAuditLog(api huma.API)` registering `list-audit-log`.
 
@@ -4017,8 +4017,7 @@ func TestAuditLogIs404ForAStranger(t *testing.T) {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `go test ./internal/api/ -run 'AuditLog' -v`
-Expected: FAIL — `undefined: api.AuditEntry`.
+Run: `go test ./internal/api/ -run 'AuditLog' -v` Expected: FAIL — `undefined: api.AuditEntry`.
 
 - [ ] **Step 3: Implement the endpoint**
 
@@ -4142,8 +4141,7 @@ If `row.Metadata` generated as `[]byte`, the conversion above is right. If sqlc 
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `go test ./internal/api/ -run 'AuditLog' -v`
-Expected: PASS.
+Run: `go test ./internal/api/ -run 'AuditLog' -v` Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -4157,12 +4155,14 @@ git commit -m "feat(api): add the team audit log endpoint"
 ## Task 14: The executable permission matrix, full wiring and docs
 
 **Files:**
+
 - Create: `internal/api/matrix_test.go`
 - Modify: `internal/api/tenancy_test.go` (share one Redis container across the package)
 - Modify: `cmd/api/main.go` (wire `Pool` and `Admin`)
 - Modify: `README.md`
 
 **Interfaces:**
+
 - Consumes: every endpoint from Tasks 7–13.
 - Produces: no new production interfaces. The matrix table in `matrix_test.go` becomes the enforced contract for later plans.
 
@@ -4401,8 +4401,7 @@ Use `strings.ReplaceAll` instead of the hand-rolled `replaceAll`/`replaceOnce` h
 
 - [ ] **Step 3: Run the matrix**
 
-Run: `go test ./internal/api/ -run 'Matrix|EveryAuthenticated|OpenAPIExcludes' -v`
-Expected: PASS. Each subtest builds a fixture; with the shared Redis container the whole matrix should finish in well under a minute.
+Run: `go test ./internal/api/ -run 'Matrix|EveryAuthenticated|OpenAPIExcludes' -v` Expected: PASS. Each subtest builds a fixture; with the shared Redis container the whole matrix should finish in well under a minute.
 
 If `add-team-member` fails for an allowed role because the fixture's invite quota is exhausted, note that each subtest gets a fresh team ID, so the per-team key differs — no shared quota. If it fails with 409, the case's email collided with a seeded member; change the case's email.
 
@@ -4445,30 +4444,29 @@ Add the import `"github.com/mheob/kurze-url/apps/api/internal/supabase"` (and `"
 
 In `README.md`, under the "Running the API locally" section plan 1 added, append:
 
-```markdown
+````markdown
 ### Teams and invitations
 
-`POST /v1/teams` is restricted to the maintainer allowlist. To create the first
-team locally, put your own Supabase user ID in `MAINTAINER_USER_IDS`:
+`POST /v1/teams` is restricted to the maintainer allowlist. To create the first team locally, put your own Supabase user ID in `MAINTAINER_USER_IDS`:
 
 ```bash
 psql "$DATABASE_URL" -c "select id, email from auth.users;"
 # then, in apps/api/.env
 MAINTAINER_USER_IDS=<the id you just read>
 ```
+````
 
-Invitation emails need `SUPABASE_SERVICE_ROLE_KEY` (and `SUPABASE_AUTH_URL`, if
-the project's auth URL differs from `SUPABASE_JWT_ISSUER`). Without it the API
-still runs: adding an address that already has an account works, and an unknown
-address is refused with 503.
-```
+Invitation emails need `SUPABASE_SERVICE_ROLE_KEY` (and `SUPABASE_AUTH_URL`, if the project's auth URL differs from `SUPABASE_JWT_ISSUER`). Without it the API still runs: adding an address that already has an account works, and an unknown address is refused with 503.
+
+````
 
 - [ ] **Step 6: Run the whole suite, vet and lint**
 
 Run:
 ```bash
 go vet ./... && go test ./... && golangci-lint run
-```
+````
+
 Expected: all clean. Tests that need Postgres or Docker skip when unavailable; nothing may fail.
 
 - [ ] **Step 7: Verify the OpenAPI document by hand**

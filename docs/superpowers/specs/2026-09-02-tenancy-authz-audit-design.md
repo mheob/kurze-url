@@ -1,8 +1,6 @@
 # Tenancy, Authorization and Audit — Design
 
-**Status:** approved 2026-09-02
-**Plan:** 2 of the implementation sequence (plan 1 = foundation and redirect path, shipped in PR #3)
-**Spec sources:** `docs/planning/05-database-schema.md`, `06-api-design.md`, and `CLAUDE.md`
+**Status:** approved 2026-09-02 **Plan:** 2 of the implementation sequence (plan 1 = foundation and redirect path, shipped in PR #3) **Spec sources:** `docs/planning/05-database-schema.md`, `06-api-design.md`, and `CLAUDE.md`
 
 ## Goal
 
@@ -44,23 +42,23 @@ This closes the "signup gate" open item in `CLAUDE.md`.
 
 Roles are the four already in the schema's check constraint, ordered `viewer < editor < admin < owner`:
 
-| Action | viewer | editor | admin | owner |
-| --- | --- | --- | --- | --- |
-| Read team | yes | yes | yes | yes |
-| Rename team | no | no | yes | yes |
-| List members | yes | yes | yes | yes |
-| Invite member | no | no | yes | yes |
-| Change member role | no | no | yes | yes |
-| Remove member | no | no | yes | yes |
-| Read domains | yes | yes | yes | yes |
-| Create or verify domain | no | no | yes | yes |
-| Delete domain | no | no | yes | yes |
-| Write folders and tags | no | yes | yes | yes |
-| Read links | yes | yes | yes | yes |
-| Write or delete any link in the team | no | yes | yes | yes |
-| Set or remove a link password | no | yes | yes | yes |
-| Read stats | yes | yes | yes | yes |
-| Read audit log | no | no | yes | yes |
+| Action                               | viewer | editor | admin | owner |
+| ------------------------------------ | ------ | ------ | ----- | ----- |
+| Read team                            | yes    | yes    | yes   | yes   |
+| Rename team                          | no     | no     | yes   | yes   |
+| List members                         | yes    | yes    | yes   | yes   |
+| Invite member                        | no     | no     | yes   | yes   |
+| Change member role                   | no     | no     | yes   | yes   |
+| Remove member                        | no     | no     | yes   | yes   |
+| Read domains                         | yes    | yes    | yes   | yes   |
+| Create or verify domain              | no     | no     | yes   | yes   |
+| Delete domain                        | no     | no     | yes   | yes   |
+| Write folders and tags               | no     | yes    | yes   | yes   |
+| Read links                           | yes    | yes    | yes   | yes   |
+| Write or delete any link in the team | no     | yes    | yes   | yes   |
+| Set or remove a link password        | no     | yes    | yes   | yes   |
+| Read stats                           | yes    | yes    | yes   | yes   |
+| Read audit log                       | no     | no     | yes   | yes   |
 
 Two qualifications on member management:
 
@@ -127,14 +125,14 @@ The helper lives in `internal/db/tx.go`. sqlc rewrites only its own outputs (`db
 
 Actions are `entity.verb`, one action per mutating endpoint. `entity_type` values match the table names. Plan 2 defines:
 
-| Action | entity_type | entity_id | metadata |
-| --- | --- | --- | --- |
-| `team.created` | `team` | team ID | `{"name": …}` |
-| `team.renamed` | `team` | team ID | `{"from": …, "to": …}` |
-| `team_member.invited` | `team_member` | invited user ID | `{"email": …, "role": …}` |
-| `team_member.added` | `team_member` | added user ID | `{"email": …, "role": …}` |
-| `team_member.role_changed` | `team_member` | target user ID | `{"from": …, "to": …}` |
-| `team_member.removed` | `team_member` | target user ID | `{"role": …}` |
+| Action                     | entity_type   | entity_id       | metadata                  |
+| -------------------------- | ------------- | --------------- | ------------------------- |
+| `team.created`             | `team`        | team ID         | `{"name": …}`             |
+| `team.renamed`             | `team`        | team ID         | `{"from": …, "to": …}`    |
+| `team_member.invited`      | `team_member` | invited user ID | `{"email": …, "role": …}` |
+| `team_member.added`        | `team_member` | added user ID   | `{"email": …, "role": …}` |
+| `team_member.role_changed` | `team_member` | target user ID  | `{"from": …, "to": …}`    |
+| `team_member.removed`      | `team_member` | target user ID  | `{"role": …}`             |
 
 `team_member.invited` is the new-user path, where an email was sent. `team_member.added` is the existing-user path, where no email was sent. They are distinct actions because the observable side effect differs.
 
@@ -238,18 +236,18 @@ Demotion and removal both check the owner count inside the transaction with `sel
 
 RFC 9457 `application/problem+json`, Huma's default model. No custom error type.
 
-| Condition | Status |
-| --- | --- |
-| Missing or invalid bearer token | 401 |
-| Caller is not a member of the team in the path | 404 |
-| Role insufficient for the operation | 403 |
+| Condition                                                            | Status                 |
+| -------------------------------------------------------------------- | ---------------------- |
+| Missing or invalid bearer token                                      | 401                    |
+| Caller is not a member of the team in the path                       | 404                    |
+| Role insufficient for the operation                                  | 403                    |
 | Rule violation (admin granting owner, last owner demoted or removed) | 403, distinct `detail` |
-| Team, member or audit entry not found | 404 |
-| Address already a member of the team | 409 |
-| Validation failure (bad role, malformed email, `per_page` over 100) | 422 |
-| Invite rate limit exceeded | 429 |
-| Supabase Admin API unreachable or failing | 502 |
-| An unknown address is invited but no service-role key is configured | 503 |
+| Team, member or audit entry not found                                | 404                    |
+| Address already a member of the team                                 | 409                    |
+| Validation failure (bad role, malformed email, `per_page` over 100)  | 422                    |
+| Invite rate limit exceeded                                           | 429                    |
+| Supabase Admin API unreachable or failing                            | 502                    |
+| An unknown address is invited but no service-role key is configured  | 503                    |
 
 ## Testing
 
