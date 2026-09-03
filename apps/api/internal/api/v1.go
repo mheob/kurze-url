@@ -11,10 +11,6 @@ import (
 	"github.com/mheob/kurze-url/apps/api/internal/auth"
 )
 
-type contextKey struct{}
-
-var userContextKey = contextKey{}
-
 // NewHumaConfig builds the OpenAPI 3.1 document config. The bearer scheme is
 // declared once here; individual operations opt in via Security, and the
 // middleware enforces it only where declared.
@@ -113,7 +109,7 @@ func (d Deps) authMiddleware(api huma.API) func(huma.Context, func(huma.Context)
 			return
 		}
 
-		next(huma.WithValue(ctx, userContextKey, claims))
+		next(huma.WithContext(ctx, auth.WithClaims(ctx.Context(), claims)))
 	}
 }
 
@@ -135,8 +131,8 @@ func bearerToken(header string) string {
 }
 
 // UserFromContext returns the verified claims a bearer-authenticated operation
-// was called with.
+// was called with. It is a thin wrapper over auth.ClaimsFromContext so handlers
+// need not import internal/auth for this one call.
 func UserFromContext(ctx context.Context) (auth.Claims, bool) {
-	claims, ok := ctx.Value(userContextKey).(auth.Claims)
-	return claims, ok
+	return auth.ClaimsFromContext(ctx)
 }
