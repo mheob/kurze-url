@@ -173,3 +173,36 @@ func TestLogRollsBackWithItsTransaction(t *testing.T) {
 	require.Zero(t, count,
 		"an audited action either happened and is recorded, or neither")
 }
+
+func TestLinkActionsAreInTheTaxonomy(t *testing.T) {
+	for _, action := range []audit.Action{
+		audit.ActionLinkCreated,
+		audit.ActionLinkUpdated,
+		audit.ActionLinkDeleted,
+	} {
+		t.Run(string(action), func(t *testing.T) {
+			require.NotErrorIs(t, audit.CheckAction(action), audit.ErrUnknownAction)
+		})
+	}
+}
+
+func TestLinkActionNamesFollowTheEntityDotVerbShape(t *testing.T) {
+	require.Equal(t, audit.Action("link.created"), audit.ActionLinkCreated)
+	require.Equal(t, audit.Action("link.updated"), audit.ActionLinkUpdated)
+	require.Equal(t, audit.Action("link.deleted"), audit.ActionLinkDeleted)
+	require.Equal(t, "link", audit.EntityLink)
+}
+
+func TestLinkUpdateMetadataMayNotCarryAPassword(t *testing.T) {
+	err := audit.Log(context.Background(), nil, audit.Entry{
+		Action:     audit.ActionLinkUpdated,
+		EntityType: audit.EntityLink,
+		Metadata: map[string]any{
+			"changed":  []any{"password"},
+			"password": "hunter2",
+		},
+	})
+
+	require.ErrorIs(t, err, audit.ErrForbiddenMetadata,
+		"the denylist must still fire for a link entry, not only a team one")
+}
