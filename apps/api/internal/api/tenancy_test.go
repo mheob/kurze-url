@@ -319,9 +319,12 @@ func (f *tenancyFixture) do(
 	return rec
 }
 
-// doRaw is do's raw-body counterpart, for a test that must send bytes a typed
-// map cannot express — e.g. an explicit JSON null, which is indistinguishable
-// from an omitted key once decoded into a Go map.
+// doRaw is do's raw-body counterpart, for a test that must send a body that
+// is not built from a Go map, so it can transmit exact JSON text — e.g.
+// `{"folder_id": null}` written out literally, rather than relying on
+// map[string]any{"folder_id": nil} (which does marshal to the same bytes, but
+// leaves the literal the test cares about implicit in a Go value instead of
+// visible in the test itself).
 func (f *tenancyFixture) doRaw(
 	t *testing.T, as testUser, method, path, rawBody string,
 ) *httptest.ResponseRecorder {

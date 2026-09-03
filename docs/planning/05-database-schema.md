@@ -52,7 +52,7 @@ domain (
 folder (
   id                uuid primary key default gen_random_uuid(),
   team_id           uuid not null references team(id),
-  parent_folder_id  uuid references folder(id),          -- nullable, allows nesting
+  parent_folder_id  uuid references folder(id),          -- nullable; unused, see below
   name              text not null,
   created_at        timestamptz not null default now()
 )
@@ -145,6 +145,8 @@ Notes:
 - `link.team_id` is denormalized from `link.domain_id → domain.team_id` rather than requiring a join for every authorization check in the Go backend (which does its own `WHERE team_id = ?` filtering, see "RLS" below). This assumes a link's domain never gets reassigned to a different team — reasonable given nothing in the feature list suggests that should be possible, but worth keeping in mind if that assumption ever changes.
 
   Amended 2026-09-03 (see `docs/superpowers/specs/2026-09-03-links-and-shared-domain-design.md`): `domain.team_id` is nullable, and a row with `team_id IS NULL` is the instance's shared hostname that every team may use. So `link.team_id` equals `domain.team_id` only for custom domains; on a shared domain it is simply the creating team. The invariant that matters is unchanged: `link.team_id` never moves, and no authorization check needs a join.
+
+- **Folders are flat.** `parent_folder_id` is present but never written by the API. The original annotation above ("nullable, allows nesting") described the schema's capacity, not a requirement anyone had actually written down, and shipping a real tree would add four obligations none of which earn their cost yet: cycle prevention on every parent change (no constraint can express "this chain does not return to me"), a depth cap and the recursion it implies on every read, a recursion decision for `?folder_id=` filtering (whether it includes descendants), and delete semantics for a folder with children. The reasoning and the rejected alternative — dropping the column outright — are in `docs/superpowers/specs/2026-09-03-folders-and-tags-design.md`. Keeping the column costs nothing and means nesting arrives later as an API change rather than a migration.
 
 ## Password protection
 
