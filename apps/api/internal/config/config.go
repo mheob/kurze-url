@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -22,6 +23,18 @@ type Config struct {
 	// header is treated as a short-link domain and routed to the redirect
 	// surface.
 	APIHostname string
+
+	// SharedDomainHostname is the instance's own short hostname — the domain
+	// every team's links use until that team brings its own. It is
+	// configuration rather than a seeded migration because it differs per
+	// environment: localhost in a checkout, a preview hostname on Vercel, the
+	// real short domain in production.
+	SharedDomainHostname string
+
+	// ShortURLScheme is the scheme used to compose a link's short_url. It is
+	// derived from the hostname unless set explicitly, so a local checkout
+	// does not advertise https:// URLs it cannot serve.
+	ShortURLScheme string
 
 	JWKSURL     string
 	JWTIssuer   string
@@ -63,6 +76,7 @@ func Load() (Config, error) {
 		DatabaseURL: os.Getenv("DATABASE_URL"),
 		RedisURL:    os.Getenv("REDIS_URL"),
 		APIHostname: env("API_HOSTNAME", "localhost"),
+		SharedDomainHostname: env("SHARED_DOMAIN_HOSTNAME", "localhost"),
 		JWKSURL:     os.Getenv("SUPABASE_JWKS_URL"),
 		JWTIssuer:   os.Getenv("SUPABASE_JWT_ISSUER"),
 		JWTAudience: env("SUPABASE_JWT_AUDIENCE", "authenticated"),
@@ -94,6 +108,12 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	cfg.MaintainerUserIDs = maintainers
+
+	cfg.ShortURLScheme = env("SHORT_URL_SCHEME", defaultShortURLScheme(cfg.SharedDomainHostname))
+	if cfg.ShortURLScheme != "http" && cfg.ShortURLScheme != "https" {
+		return Config{}, fmt.Errorf(
+			"config: SHORT_URL_SCHEME must be http or https, got %q", cfg.ShortURLScheme)
+	}
 
 	if cfg.RedirectRateLimitPerMin, err = envInt("RATE_LIMIT_REDIRECT_PER_MIN", 60); err != nil {
 		return Config{}, err
@@ -161,4 +181,19 @@ func (c Config) IsMaintainer(id uuid.UUID) bool {
 		}
 	}
 	return false
+}
+
+// defaultShortURLScheme picks http for a local hostname and https everywhere
+// else. Advertising an https:// short URL from a checkout that only serves
+// http produces links nobody can open.
+func defaultShortURLScheme(hostname string) string {
+	host := hostname
+	if h, _, err := net.SplitHostPort(hostname); err == nil {
+		host = h
+	}
+	switch host {
+	case "localhost", "127.0.0.1", "::1":
+		return "http"
+	}
+	return "https"
 }

@@ -138,3 +138,51 @@ func TestInviteRateLimitDefaultsAndOverrides(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 5, cfg.InviteRateLimitPerHour)
 }
+
+func withRequiredEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+	t.Setenv("REDIS_URL", "redis://localhost:6379")
+	t.Setenv("VISITOR_SALT", "test-salt")
+}
+
+func TestSharedDomainHostnameDefaultsToLocalhost(t *testing.T) {
+	withRequiredEnv(t)
+
+	cfg, err := config.Load()
+	require.NoError(t, err)
+
+	require.Equal(t, "localhost", cfg.SharedDomainHostname)
+	require.Equal(t, "http", cfg.ShortURLScheme,
+		"a local checkout must produce http:// short URLs, not https://")
+}
+
+func TestSharedDomainHostnameComesFromTheEnvironment(t *testing.T) {
+	withRequiredEnv(t)
+	t.Setenv("SHARED_DOMAIN_HOSTNAME", "kurze.url")
+
+	cfg, err := config.Load()
+	require.NoError(t, err)
+
+	require.Equal(t, "kurze.url", cfg.SharedDomainHostname)
+	require.Equal(t, "https", cfg.ShortURLScheme)
+}
+
+func TestShortURLSchemeCanBeOverridden(t *testing.T) {
+	withRequiredEnv(t)
+	t.Setenv("SHARED_DOMAIN_HOSTNAME", "kurze.url")
+	t.Setenv("SHORT_URL_SCHEME", "http")
+
+	cfg, err := config.Load()
+	require.NoError(t, err)
+
+	require.Equal(t, "http", cfg.ShortURLScheme)
+}
+
+func TestShortURLSchemeRejectsAnythingElse(t *testing.T) {
+	withRequiredEnv(t)
+	t.Setenv("SHORT_URL_SCHEME", "javascript")
+
+	_, err := config.Load()
+	require.Error(t, err)
+}
