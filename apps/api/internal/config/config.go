@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // Config holds every runtime setting the API needs. It is loaded once at
@@ -28,9 +31,22 @@ type Config struct {
 	// never logged and never leaves the process.
 	VisitorSalt string
 
+	// Only these user IDs may create teams. Empty means nobody can: this is a
+	// shared instance, and an open POST /v1/teams is the classic URL-shortener
+	// abuse vector. A misconfigured deployment must close team creation, not
+	// open it, so this is deliberately not a required variable.
+	MaintainerUserIDs []uuid.UUID
+
+	// Supabase's auth base URL and service-role key, used for exactly one
+	// call: POST {SupabaseAuthURL}/invite. Both empty means invitations are
+	// unavailable and the members endpoint refuses the new-address branch.
+	SupabaseAuthURL        string
+	SupabaseServiceRoleKey string
+
 	RedirectRateLimitPerMin   int
 	PasswordRateLimitPerMin   int
 	LinkCreateRateLimitPerMin int
+	InviteRateLimitPerHour    int
 
 	LinkCacheTTL     time.Duration
 	NotFoundCacheTTL time.Duration
@@ -70,7 +86,15 @@ func Load() (Config, error) {
 		}
 	}
 
-	var err error
+	cfg.SupabaseAuthURL = env("SUPABASE_AUTH_URL", cfg.JWTIssuer)
+	cfg.SupabaseServiceRoleKey = os.Getenv("SUPABASE_SERVICE_ROLE_KEY")
+
+	maintainers, err := envUUIDs("MAINTAINER_USER_IDS")
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.MaintainerUserIDs = maintainers
+
 	if cfg.RedirectRateLimitPerMin, err = envInt("RATE_LIMIT_REDIRECT_PER_MIN", 60); err != nil {
 		return Config{}, err
 	}
@@ -78,6 +102,9 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	if cfg.LinkCreateRateLimitPerMin, err = envInt("RATE_LIMIT_LINK_CREATE_PER_MIN", 20); err != nil {
+		return Config{}, err
+	}
+	if cfg.InviteRateLimitPerHour, err = envInt("RATE_LIMIT_INVITE_PER_HOUR", 20); err != nil {
 		return Config{}, err
 	}
 
@@ -101,4 +128,37 @@ func envInt(name string, fallback int) (int, error) {
 		return 0, fmt.Errorf("config: %s must be an integer: %w", name, err)
 	}
 	return v, nil
+}
+
+// envUUIDs parses a comma-separated list of UUIDs. A malformed entry fails
+// startup: silently dropping it would quietly change who may create teams.
+func envUUIDs(name string) ([]uuid.UUID, error) {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return nil, nil
+	}
+
+	var ids []uuid.UUID
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		id, err := uuid.Parse(part)
+		if err != nil {
+			return nil, fmt.Errorf("config: %s contains an invalid uuid %q: %w", name, part, err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
+// IsMaintainer reports whether the user may create teams.
+func (c Config) IsMaintainer(id uuid.UUID) bool {
+	for _, allowed := range c.MaintainerUserIDs {
+		if allowed == id {
+			return true
+		}
+	}
+	return false
 }
