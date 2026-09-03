@@ -115,6 +115,7 @@ type tenancyFixture struct {
 	teamDomainID   uuid.UUID
 	teamHostname   string
 	linkID         uuid.UUID
+	folderID       uuid.UUID
 }
 
 // seedAuthUser inserts a Supabase auth user. The column list mirrors
@@ -216,6 +217,11 @@ func newTenancyFixture(t *testing.T) *tenancyFixture {
 		 values ($1, $2, 'fixture', 'https://example.org/fixture', $3) returning id`,
 		teamDomainID, teamID, members[authz.RoleOwner].id).Scan(&linkID))
 
+	var folderID uuid.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`insert into folder (team_id, name) values ($1, 'fixture') returning id`,
+		teamID).Scan(&folderID))
+
 	key, jwksURL := startAuthenticatedJWKSServer(t)
 	verifier, err := auth.NewVerifier(ctx, jwksURL, meTestIssuer, meTestAudience)
 	require.NoError(t, err)
@@ -251,6 +257,7 @@ func newTenancyFixture(t *testing.T) *tenancyFixture {
 		teamDomainID:   teamDomainID,
 		teamHostname:   teamHostname,
 		linkID:         linkID,
+		folderID:       folderID,
 		deps: api.Deps{
 			Config:       cfg,
 			SharedDomain: api.SharedDomain{ID: sharedDomainID, Hostname: sharedHostname},

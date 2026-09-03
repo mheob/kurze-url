@@ -161,7 +161,7 @@ const listFoldersForTeam = `-- name: ListFoldersForTeam :many
 select id, team_id, name, created_at, count(*) over () as total_count
 from folder
 where team_id = $1
-order by name
+order by name, id
 limit $2 offset $3
 `
 
@@ -181,7 +181,10 @@ type ListFoldersForTeamRow struct {
 
 // Paginated. count(*) over () gives the total in the same scan, so the list and
 // its total_count cannot disagree the way two separate queries can. Ordered by
-// name because a folder list is something a human reads alphabetically.
+// name because a folder list is something a human reads alphabetically, then
+// by id: unlike tag, folder has no unique constraint on (team_id, name), so
+// two folders sharing a name would otherwise tie-break non-deterministically —
+// a client paging through the list could see one twice and miss another.
 func (q *Queries) ListFoldersForTeam(ctx context.Context, arg ListFoldersForTeamParams) ([]ListFoldersForTeamRow, error) {
 	rows, err := q.db.Query(ctx, listFoldersForTeam, arg.TeamID, arg.Limit, arg.Offset)
 	if err != nil {

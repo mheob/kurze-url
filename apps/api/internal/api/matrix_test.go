@@ -50,6 +50,12 @@ var teamScopedCases = []matrixCase{
 	{"update-link", http.MethodPatch, "/v1/links/{link}",
 		map[string]string{"state": "disabled"}, authz.RoleEditor},
 	{"delete-link", http.MethodDelete, "/v1/links/{link}", nil, authz.RoleEditor},
+	{"create-folder", http.MethodPost, "/v1/teams/{team}/folders",
+		map[string]string{"name": "Matrix"}, authz.RoleEditor},
+	{"list-folders", http.MethodGet, "/v1/teams/{team}/folders", nil, authz.RoleViewer},
+	{"update-folder", http.MethodPatch, "/v1/folders/{folder}",
+		map[string]string{"name": "Matrix umbenannt"}, authz.RoleEditor},
+	{"delete-folder", http.MethodDelete, "/v1/folders/{folder}", nil, authz.RoleEditor},
 }
 
 // notTeamScoped names the authenticated operations that legitimately carry no
@@ -76,6 +82,7 @@ func renderPath(f *tenancyFixture, template string) string {
 	path = strings.ReplaceAll(path, "{team}", f.teamID.String())
 	path = strings.ReplaceAll(path, "{member}", f.members[authz.RoleViewer].id.String())
 	path = strings.ReplaceAll(path, "{link}", f.linkID.String())
+	path = strings.ReplaceAll(path, "{folder}", f.folderID.String())
 	return path
 }
 
