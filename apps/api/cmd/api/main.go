@@ -58,15 +58,23 @@ func run(log *slog.Logger) error {
 	defer func() { _ = redis.Close() }()
 
 	queries := db.New(pool)
+
+	sharedDomain, err := api.ProvisionSharedDomain(ctx, queries, cfg.SharedDomainHostname)
+	if err != nil {
+		return err
+	}
+	log.Info("shared domain ready", "hostname", sharedDomain.Hostname, "domain_id", sharedDomain.ID)
+
 	recorder := analytics.NewRecorder(clickStatsFlush(queries), clickFlushInterval, clickBufferMax, log)
 
 	deps := api.Deps{
-		Config:   cfg,
-		Queries:  queries,
-		Pool:     pool,
-		Cache:    redis,
-		Recorder: recorder,
-		Log:      log,
+		Config:       cfg,
+		SharedDomain: sharedDomain,
+		Queries:      queries,
+		Pool:         pool,
+		Cache:        redis,
+		Recorder:     recorder,
+		Log:          log,
 	}
 
 	// Authentication is optional at startup so the redirect surface stays
