@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -19,6 +20,7 @@ import (
 	"github.com/mheob/kurze-url/apps/api/internal/cache"
 	"github.com/mheob/kurze-url/apps/api/internal/config"
 	"github.com/mheob/kurze-url/apps/api/internal/db"
+	"github.com/mheob/kurze-url/apps/api/internal/supabase"
 )
 
 const (
@@ -61,6 +63,7 @@ func run(log *slog.Logger) error {
 	deps := api.Deps{
 		Config:   cfg,
 		Queries:  queries,
+		Pool:     pool,
 		Cache:    redis,
 		Recorder: recorder,
 		Log:      log,
@@ -77,6 +80,29 @@ func run(log *slog.Logger) error {
 		deps.Verifier = verifier
 	} else {
 		log.Warn("SUPABASE_JWKS_URL is unset — authenticated /v1 operations will reject all requests")
+	}
+
+	// Invitations are optional at startup, like authentication: without a
+	// service-role key the API runs, and only the invite branch of
+	// POST /v1/teams/{team_id}/members refuses.
+	if cfg.SupabaseServiceRoleKey != "" {
+		admin, err := supabase.NewClient(cfg.SupabaseAuthURL, cfg.SupabaseServiceRoleKey)
+		switch {
+		case errors.Is(err, supabase.ErrNotConfigured):
+			// SUPABASE_SERVICE_ROLE_KEY is set but SUPABASE_AUTH_URL (and its
+			// SUPABASE_JWT_ISSUER fallback) is not — an incomplete but
+			// recoverable configuration. Disabling invitations, like the
+			// unset-key branch below, keeps the rest of the API usable
+			// instead of refusing to start over one optional feature.
+			log.Warn("supabase auth url is unset — team invitations are disabled")
+		case err != nil:
+			return fmt.Errorf("configure the supabase admin client: %w", err)
+		default:
+			deps.Admin = admin
+			log.Info("supabase invitations enabled")
+		}
+	} else {
+		log.Warn("SUPABASE_SERVICE_ROLE_KEY is unset — team invitations are disabled")
 	}
 
 	// The recorder gets its own context, independent of the signal-cancelled

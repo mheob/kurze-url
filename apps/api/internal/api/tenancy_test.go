@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
@@ -16,13 +17,48 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
+	tcredis "github.com/testcontainers/testcontainers-go/modules/redis"
 
 	"github.com/mheob/kurze-url/apps/api/internal/api"
 	"github.com/mheob/kurze-url/apps/api/internal/auth"
 	"github.com/mheob/kurze-url/apps/api/internal/authz"
+	"github.com/mheob/kurze-url/apps/api/internal/cache"
 	"github.com/mheob/kurze-url/apps/api/internal/config"
 	"github.com/mheob/kurze-url/apps/api/internal/db"
 )
+
+var (
+	tenancyCacheOnce   sync.Once
+	tenancyCacheClient *cache.Client
+	tenancyCacheErr    error
+)
+
+// tenancyCache starts one Redis container for the whole package. The tenancy
+// suite builds many fixtures, and a container per fixture would dominate the
+// suite's runtime.
+func tenancyCache(t *testing.T) *cache.Client {
+	t.Helper()
+
+	tenancyCacheOnce.Do(func() {
+		ctx := context.Background()
+		container, err := tcredis.Run(ctx, "redis:7-alpine")
+		if err != nil {
+			tenancyCacheErr = err
+			return
+		}
+		url, err := container.ConnectionString(ctx)
+		if err != nil {
+			tenancyCacheErr = err
+			return
+		}
+		tenancyCacheClient, tenancyCacheErr = cache.New(url)
+	})
+
+	if tenancyCacheErr != nil {
+		t.Skipf("Docker unavailable (%v) — cannot start a Redis container", tenancyCacheErr)
+	}
+	return tenancyCacheClient
+}
 
 // fakeInviter stands in for Supabase's Admin API. It records what it was asked
 // to send so a test can assert an email was or was not triggered.
@@ -128,7 +164,7 @@ func newTenancyFixture(t *testing.T) *tenancyFixture {
 	ctx := context.Background()
 
 	pool := testPool(t)
-	redis := testCache(t)
+	redis := tenancyCache(t)
 
 	suffix := uuid.NewString()[:8]
 	members := map[authz.Role]testUser{}

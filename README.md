@@ -73,3 +73,15 @@ Regenerate the database layer after changing a migration or a query:
 ```bash
 cd apps/api && sqlc generate
 ```
+
+### Teams and invitations
+
+`POST /v1/teams` is restricted to the maintainer allowlist. To create the first team locally, put your own Supabase user ID in `MAINTAINER_USER_IDS`:
+
+```bash
+psql "$DATABASE_URL" -c "select id, email from auth.users;"
+# then, in apps/api/.env
+MAINTAINER_USER_IDS=<the id you just read>
+```
+
+Invitation emails need `SUPABASE_SERVICE_ROLE_KEY` (and `SUPABASE_AUTH_URL`, if the project's auth URL differs from `SUPABASE_JWT_ISSUER`). Without it the API still runs: adding an address that already has an account works, and an unknown address is refused with 503.

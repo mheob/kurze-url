@@ -52,8 +52,11 @@ type TeamPath struct {
 // The four scopes below are what an operation embeds to declare the role it
 // requires. Huma calls Resolve before the handler body runs, so a handler can
 // never execute without the check having passed. Embedding one of these is the
-// only way a team-scoped operation is allowed to reach team data; the registry
-// test in internal/api fails the build if an authenticated operation omits it.
+// only way a team-scoped operation is allowed to reach team data;
+// TestEveryOperationIsAccountedFor in internal/api fails the build if a new
+// operation is registered that is neither authenticated-with-a-matrix-row
+// nor named as deliberately public, which is the closest thing to a
+// build-time guarantee that it embeds one of these scopes.
 
 // ViewerScope is embedded by operations that any team member may call.
 type ViewerScope struct {
