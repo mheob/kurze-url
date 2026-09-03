@@ -77,11 +77,13 @@ Copied from the spec. Every task's requirements implicitly include this section.
 ### Task 1: Shared-domain schema and queries
 
 **Files:**
+
 - Create: `supabase/migrations/<timestamp>_shared_domain.sql`
 - Create: `apps/api/internal/db/queries/domain.sql`
 - Test: `apps/api/internal/db/shared_domain_test.go`
 
 **Interfaces:**
+
 - Consumes: nothing from earlier tasks.
 - Produces: `db.UpsertSharedDomain(ctx, hostname string) (UpsertSharedDomainRow, error)` with fields `ID uuid.UUID`, `Hostname string`; `db.GetLinkableDomain(ctx, GetLinkableDomainParams{ID uuid.UUID, TeamID uuid.UUID}) (GetLinkableDomainRow, error)` with fields `ID uuid.UUID`, `Hostname string`.
 
@@ -101,8 +103,7 @@ alter table domain alter column team_id drop not null;
 
 - [ ] **Step 2: Apply it**
 
-Run: `supabase db push`
-Expected: the migration applies with no error.
+Run: `supabase db push` Expected: the migration applies with no error.
 
 - [ ] **Step 3: Write the failing database test**
 
@@ -234,8 +235,7 @@ func TestGetLinkableDomainAcceptsSharedAndOwnRejectsOthers(t *testing.T) {
 
 - [ ] **Step 4: Run it and watch it fail**
 
-Run: `cd apps/api && go test ./internal/db/ -run 'SharedDomain|LinkableDomain'`
-Expected: FAIL — `queries.UpsertSharedDomain` and `queries.GetLinkableDomain` are undefined.
+Run: `cd apps/api && go test ./internal/db/ -run 'SharedDomain|LinkableDomain'` Expected: FAIL — `queries.UpsertSharedDomain` and `queries.GetLinkableDomain` are undefined.
 
 - [ ] **Step 5: Write the queries**
 
@@ -276,18 +276,15 @@ where id = $1
 
 - [ ] **Step 6: Regenerate sqlc**
 
-Run: `cd apps/api && sqlc generate`
-Expected: `internal/db/domain.sql.go` appears; `git status` shows no unexpected churn in the other generated files.
+Run: `cd apps/api && sqlc generate` Expected: `internal/db/domain.sql.go` appears; `git status` shows no unexpected churn in the other generated files.
 
 - [ ] **Step 7: Run the tests**
 
-Run: `cd apps/api && go test ./internal/db/ -run 'SharedDomain|LinkableDomain' -v`
-Expected: PASS, all subtests.
+Run: `cd apps/api && go test ./internal/db/ -run 'SharedDomain|LinkableDomain' -v` Expected: PASS, all subtests.
 
 - [ ] **Step 8: Run the whole db package**
 
-Run: `cd apps/api && go test ./internal/db/`
-Expected: PASS — the nullable column must not have broken plan 1's or plan 2's queries.
+Run: `cd apps/api && go test ./internal/db/` Expected: PASS — the nullable column must not have broken plan 1's or plan 2's queries.
 
 - [ ] **Step 9: Commit**
 
@@ -300,10 +297,12 @@ feat(db): allow a team-less shared domain
 ### Task 2: Configuration for the shared hostname
 
 **Files:**
+
 - Modify: `apps/api/internal/config/config.go`
 - Test: `apps/api/internal/config/config_test.go`
 
 **Interfaces:**
+
 - Consumes: nothing.
 - Produces: `config.Config.SharedDomainHostname string`, `config.Config.ShortURLScheme string`.
 
@@ -367,8 +366,7 @@ func withRequiredEnv(t *testing.T) {
 
 - [ ] **Step 2: Run it and watch it fail**
 
-Run: `cd apps/api && go test ./internal/config/ -run 'SharedDomain|ShortURLScheme'`
-Expected: FAIL — `cfg.SharedDomainHostname` undefined.
+Run: `cd apps/api && go test ./internal/config/ -run 'SharedDomain|ShortURLScheme'` Expected: FAIL — `cfg.SharedDomainHostname` undefined.
 
 - [ ] **Step 3: Add the fields**
 
@@ -429,8 +427,7 @@ Add `"net"` to the imports.
 
 - [ ] **Step 5: Run the tests**
 
-Run: `cd apps/api && go test ./internal/config/ -v`
-Expected: PASS.
+Run: `cd apps/api && go test ./internal/config/ -v` Expected: PASS.
 
 - [ ] **Step 6: Commit**
 
@@ -443,12 +440,14 @@ feat(config): add the shared domain hostname
 ### Task 3: Provision the shared domain at boot
 
 **Files:**
+
 - Create: `apps/api/internal/api/bootstrap.go`
 - Create: `apps/api/internal/api/bootstrap_test.go`
 - Modify: `apps/api/internal/api/api.go`
 - Modify: `apps/api/cmd/api/main.go`
 
 **Interfaces:**
+
 - Consumes: `db.UpsertSharedDomain` from Task 1; `config.Config.SharedDomainHostname` from Task 2.
 - Produces: `api.SharedDomain{ID uuid.UUID; Hostname string}`; `api.ProvisionSharedDomain(ctx context.Context, queries *db.Queries, hostname string) (SharedDomain, error)`; the field `api.Deps.SharedDomain SharedDomain`.
 
@@ -519,8 +518,7 @@ func TestProvisionSharedDomainRejectsAnEmptyHostname(t *testing.T) {
 
 - [ ] **Step 2: Run it and watch it fail**
 
-Run: `cd apps/api && go test ./internal/api/ -run ProvisionSharedDomain`
-Expected: FAIL — `api.ProvisionSharedDomain` undefined.
+Run: `cd apps/api && go test ./internal/api/ -run ProvisionSharedDomain` Expected: FAIL — `api.ProvisionSharedDomain` undefined.
 
 - [ ] **Step 3: Write the implementation**
 
@@ -589,8 +587,7 @@ In `apps/api/internal/api/api.go`, inside `Deps`, after `Config`:
 
 - [ ] **Step 5: Run the tests**
 
-Run: `cd apps/api && go test ./internal/api/ -run ProvisionSharedDomain -v`
-Expected: PASS.
+Run: `cd apps/api && go test ./internal/api/ -run ProvisionSharedDomain -v` Expected: PASS.
 
 - [ ] **Step 6: Wire it into main**
 
@@ -612,8 +609,7 @@ and add the field to the literal:
 
 - [ ] **Step 7: Build and start the binary against the local stack**
 
-Run: `cd apps/api && go build ./... && go run ./cmd/api`
-Expected: the log line `shared domain ready` appears with `hostname=localhost`. Stop the process.
+Run: `cd apps/api && go build ./... && go run ./cmd/api` Expected: the log line `shared domain ready` appears with `hostname=localhost`. Stop the process.
 
 - [ ] **Step 8: Commit**
 
@@ -626,10 +622,12 @@ feat(api): provision the shared domain at boot
 ### Task 4: The slug package
 
 **Files:**
+
 - Create: `apps/api/internal/slug/slug.go`
 - Test: `apps/api/internal/slug/slug_test.go`
 
 **Interfaces:**
+
 - Consumes: nothing.
 - Produces: `slug.Alphabet` (const string), `slug.Length` (const int), `slug.Generate() (string, error)`, `slug.Normalize(raw string) string`, `slug.Validate(normalized string) error`, `slug.ErrMalformed`, `slug.ErrReserved`.
 
@@ -747,8 +745,7 @@ func TestGeneratedSlugsAreAlwaysValid(t *testing.T) {
 
 - [ ] **Step 2: Run it and watch it fail**
 
-Run: `cd apps/api && go test ./internal/slug/`
-Expected: FAIL — the package does not exist.
+Run: `cd apps/api && go test ./internal/slug/` Expected: FAIL — the package does not exist.
 
 - [ ] **Step 3: Write the implementation**
 
@@ -844,14 +841,11 @@ func Validate(normalized string) error {
 }
 ```
 
-Note the ordering inside `Validate`: the reserved check runs first, so
-`robots.txt` and `.well-known` — which the pattern would reject anyway — report
-the accurate reason rather than a shape complaint.
+Note the ordering inside `Validate`: the reserved check runs first, so `robots.txt` and `.well-known` — which the pattern would reject anyway — report the accurate reason rather than a shape complaint.
 
 - [ ] **Step 4: Run the tests**
 
-Run: `cd apps/api && go test ./internal/slug/ -v`
-Expected: PASS.
+Run: `cd apps/api && go test ./internal/slug/ -v` Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -864,10 +858,12 @@ feat(slug): add slug generation and validation
 ### Task 5: Destination URL validation
 
 **Files:**
+
 - Create: `apps/api/internal/destination/destination.go`
 - Test: `apps/api/internal/destination/destination_test.go`
 
 **Interfaces:**
+
 - Consumes: nothing.
 - Produces: `destination.MaxLength` (const int, 2048), `destination.Validate(raw string, selfHostnames []string) error`, `destination.ErrScheme`, `destination.ErrPrivateAddress`, `destination.ErrSelfReference`, `destination.ErrTooLong`, `destination.ErrMalformed`.
 
@@ -966,8 +962,7 @@ func TestValidateAcceptsAPublicIPLiteral(t *testing.T) {
 
 - [ ] **Step 2: Run it and watch it fail**
 
-Run: `cd apps/api && go test ./internal/destination/`
-Expected: FAIL — the package does not exist.
+Run: `cd apps/api && go test ./internal/destination/` Expected: FAIL — the package does not exist.
 
 - [ ] **Step 3: Write the implementation**
 
@@ -1072,8 +1067,7 @@ func isPublic(ip net.IP) bool {
 
 - [ ] **Step 4: Run the tests**
 
-Run: `cd apps/api && go test ./internal/destination/ -v`
-Expected: PASS.
+Run: `cd apps/api && go test ./internal/destination/ -v` Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -1086,16 +1080,17 @@ feat(api): validate link destination urls
 ### Task 6: Case-insensitive slugs on the redirect path
 
 **Files:**
+
 - Modify: `apps/api/internal/api/redirect.go:28`
 - Modify: `apps/api/internal/api/verify.go:26`, `apps/api/internal/api/verify.go:49`
 - Test: `apps/api/internal/api/redirect_test.go`
 
 **Interfaces:**
+
 - Consumes: `slug.Normalize` from Task 4.
 - Produces: nothing new; changes behaviour of the existing handlers.
 
-This is the only task in the plan that touches the hot path. It must add no
-Redis command and no query — only a `strings.ToLower` on a short string.
+This is the only task in the plan that touches the hot path. It must add no Redis command and no query — only a `strings.ToLower` on a short string.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1139,10 +1134,7 @@ func TestRedirectCaseFoldingSharesOneCacheEntry(t *testing.T) {
 }
 ```
 
-If `fixture` has no `router()` helper and no way to reach the raw Redis client,
-add both. `router()` builds the same chi router the existing redirect tests
-build; copy that construction out of the nearest existing test into a method.
-For the Redis client, add to `apps/api/internal/cache/client.go`:
+If `fixture` has no `router()` helper and no way to reach the raw Redis client, add both. `router()` builds the same chi router the existing redirect tests build; copy that construction out of the nearest existing test into a method. For the Redis client, add to `apps/api/internal/cache/client.go`:
 
 ```go
 // Raw exposes the underlying client. It exists for tests that need to assert
@@ -1152,8 +1144,7 @@ func (c *Client) Raw() *redis.Client { return c.rdb }
 
 - [ ] **Step 2: Run it and watch it fail**
 
-Run: `cd apps/api && go test ./internal/api/ -run 'CaseInsensitive|CaseFolding' -v`
-Expected: FAIL — the uppercase request 404s, because `HELLO` matches no row.
+Run: `cd apps/api && go test ./internal/api/ -run 'CaseInsensitive|CaseFolding' -v` Expected: FAIL — the uppercase request 404s, because `HELLO` matches no row.
 
 - [ ] **Step 3: Normalize in the redirect handler**
 
@@ -1173,8 +1164,7 @@ with:
 	slug := slugpkg.Normalize(chi.URLParam(r, "slug"))
 ```
 
-Import the package under an alias, because `slug` is already a local variable
-name in these handlers:
+Import the package under an alias, because `slug` is already a local variable name in these handlers:
 
 ```go
 	slugpkg "github.com/mheob/kurze-url/apps/api/internal/slug"
@@ -1182,22 +1172,15 @@ name in these handlers:
 
 - [ ] **Step 4: Normalize in both verify handlers**
 
-Apply the identical change at `apps/api/internal/api/verify.go:26` and
-`apps/api/internal/api/verify.go:49`. The interstitial must resolve the same
-link the redirect did, or a password-protected link would 404 when its slug was
-typed in a different case.
+Apply the identical change at `apps/api/internal/api/verify.go:26` and `apps/api/internal/api/verify.go:49`. The interstitial must resolve the same link the redirect did, or a password-protected link would 404 when its slug was typed in a different case.
 
 - [ ] **Step 5: Run the redirect and verify suites**
 
-Run: `cd apps/api && go test ./internal/api/ -run 'Redirect|Verify' -v`
-Expected: PASS, including plan 1's existing cases.
+Run: `cd apps/api && go test ./internal/api/ -run 'Redirect|Verify' -v` Expected: PASS, including plan 1's existing cases.
 
 - [ ] **Step 6: Confirm the hot path's command count is unchanged**
 
-Run: `cd apps/api && go test ./internal/api/ -run 'CommandCount|Redis' -v`
-Expected: PASS. If no such test exists in the package, run the full redirect
-suite instead and confirm no new Redis call was introduced by reading the diff:
-the change must be one function call on a string, nothing else.
+Run: `cd apps/api && go test ./internal/api/ -run 'CommandCount|Redis' -v` Expected: PASS. If no such test exists in the package, run the full redirect suite instead and confirm no new Redis call was introduced by reading the diff: the change must be one function call on a string, nothing else.
 
 - [ ] **Step 7: Commit**
 
@@ -1210,10 +1193,12 @@ feat(api): make slugs case-insensitive
 ### Task 7: Link CRUD queries
 
 **Files:**
+
 - Create: `apps/api/internal/db/queries/link_crud.sql`
 - Test: `apps/api/internal/db/link_crud_test.go`
 
 **Interfaces:**
+
 - Consumes: the nullable `domain.team_id` from Task 1.
 - Produces, all on `*db.Queries`:
   - `GetLinkScope(ctx, id uuid.UUID) (GetLinkScopeRow, error)` — fields `ID`, `TeamID`, `DomainID uuid.UUID`, `Hostname string`, `Slug string`
@@ -1488,8 +1473,7 @@ func TestDeleteLinkFiltersByTeam(t *testing.T) {
 
 - [ ] **Step 2: Run it and watch it fail**
 
-Run: `cd apps/api && go test ./internal/db/ -run 'Link' `
-Expected: FAIL — `db.CreateLinkParams` and the rest are undefined.
+Run: `cd apps/api && go test ./internal/db/ -run 'Link' ` Expected: FAIL — `db.CreateLinkParams` and the rest are undefined.
 
 - [ ] **Step 3: Write the queries**
 
@@ -1604,27 +1588,19 @@ delete from link where id = $1 and team_id = $2;
 
 - [ ] **Step 4: Regenerate sqlc**
 
-Run: `cd apps/api && sqlc generate`
-Expected: `internal/db/link_crud.sql.go` appears.
+Run: `cd apps/api && sqlc generate` Expected: `internal/db/link_crud.sql.go` appears.
 
-If sqlc reports that `sqlc.arg('limit')` collides with a reserved word or that
-`ListLinksForTeamParams` fields are not named as this task's Interfaces block
-promises, rename the SQL arguments rather than the Go call sites — the
-Interfaces block is the contract later tasks were written against.
+If sqlc reports that `sqlc.arg('limit')` collides with a reserved word or that `ListLinksForTeamParams` fields are not named as this task's Interfaces block promises, rename the SQL arguments rather than the Go call sites — the Interfaces block is the contract later tasks were written against.
 
 - [ ] **Step 5: Run the tests**
 
-Run: `cd apps/api && go test ./internal/db/ -run 'Link' -v`
-Expected: PASS.
+Run: `cd apps/api && go test ./internal/db/ -run 'Link' -v` Expected: PASS.
 
 - [ ] **Step 6: Falsify the tenancy filter**
 
-Temporarily delete `and l.team_id = $2` from `GetLinkForAPI`, run
-`sqlc generate`, and run `go test ./internal/db/ -run GetLinkForAPIFiltersByTeam`.
-Expected: FAIL. Restore the filter, regenerate, and confirm PASS.
+Temporarily delete `and l.team_id = $2` from `GetLinkForAPI`, run `sqlc generate`, and run `go test ./internal/db/ -run GetLinkForAPIFiltersByTeam`. Expected: FAIL. Restore the filter, regenerate, and confirm PASS.
 
-A tenancy test that passes with the filter removed is testing nothing. Record
-in the task report that this falsification was performed and what it showed.
+A tenancy test that passes with the filter removed is testing nothing. Record in the task report that this falsification was performed and what it showed.
 
 - [ ] **Step 7: Commit**
 
@@ -1637,12 +1613,14 @@ feat(db): add link crud queries
 ### Task 8: Link-scoped authorization
 
 **Files:**
+
 - Create: `apps/api/internal/authz/link.go`
 - Create: `apps/api/internal/authz/link_test.go`
 - Modify: `apps/api/internal/authz/scope.go`
 - Modify: `apps/api/internal/api/v1.go:91-94`
 
 **Interfaces:**
+
 - Consumes: `db.GetLinkScope` from Task 7; `authz.Membership`, `authz.Role`, `authz.RoleViewer`, `authz.RoleEditor` from plan 2.
 - Produces:
   - `authz.LinkPath{LinkID uuid.UUID}`
@@ -1655,9 +1633,7 @@ feat(db): add link crud queries
 
 - [ ] **Step 1: Extract the membership half of resolveScope**
 
-In `apps/api/internal/authz/scope.go`, split `resolveScope` so the link scopes
-can reuse the membership decision without re-checking a `team_id` path
-parameter that link routes do not have. Keep the existing behaviour exactly:
+In `apps/api/internal/authz/scope.go`, split `resolveScope` so the link scopes can reuse the membership decision without re-checking a `team_id` path parameter that link routes do not have. Keep the existing behaviour exactly:
 
 ```go
 // resolveScope is the team-path entry point: it guards the path parameter,
@@ -1699,8 +1675,7 @@ func resolveMembership(
 }
 ```
 
-Add the small helper the split needs, so both entry points read the caller the
-same way:
+Add the small helper the split needs, so both entry points read the caller the same way:
 
 ```go
 func claimsUserID(ctx huma.Context) uuid.UUID {
@@ -1711,9 +1686,7 @@ func claimsUserID(ctx huma.Context) uuid.UUID {
 
 - [ ] **Step 2: Confirm plan 2's scope tests still pass**
 
-Run: `cd apps/api && go test ./internal/authz/ -v`
-Expected: PASS. This step is a refactor; a red test here means the split changed
-behaviour, which it must not.
+Run: `cd apps/api && go test ./internal/authz/ -v` Expected: PASS. This step is a refactor; a red test here means the split changed behaviour, which it must not.
 
 - [ ] **Step 3: Write the failing test**
 
@@ -1872,17 +1845,11 @@ func TestLinkScopeRefusesAnUnauthenticatedCaller(t *testing.T) {
 }
 ```
 
-`humatest.New` returns a router and a `humatest.TestAPI`; `TestAPI` embeds
-`huma.API`, so `UseMiddleware` and `huma.Register` work on it directly, and
-`api.Get(path)` returns the `*httptest.ResponseRecorder` these assertions read.
-If the pinned Huma version's `humatest` differs, build the same thing with chi
-plus `humachi.New`, exactly as `tenancy_test.go` does. The assertions are what
-matter; the transport is not.
+`humatest.New` returns a router and a `humatest.TestAPI`; `TestAPI` embeds `huma.API`, so `UseMiddleware` and `huma.Register` work on it directly, and `api.Get(path)` returns the `*httptest.ResponseRecorder` these assertions read. If the pinned Huma version's `humatest` differs, build the same thing with chi plus `humachi.New`, exactly as `tenancy_test.go` does. The assertions are what matter; the transport is not.
 
 - [ ] **Step 4: Run it and watch it fail**
 
-Run: `cd apps/api && go test ./internal/authz/ -run LinkScope`
-Expected: FAIL — `authz.LinkEditorScope` undefined.
+Run: `cd apps/api && go test ./internal/authz/ -run LinkScope` Expected: FAIL — `authz.LinkEditorScope` undefined.
 
 - [ ] **Step 5: Write the implementation**
 
@@ -2079,8 +2046,7 @@ with:
 
 - [ ] **Step 7: Run the tests**
 
-Run: `cd apps/api && go test ./internal/authz/ ./internal/api/ -v`
-Expected: PASS.
+Run: `cd apps/api && go test ./internal/authz/ ./internal/api/ -v` Expected: PASS.
 
 - [ ] **Step 8: Commit**
 
@@ -2093,10 +2059,12 @@ feat(authz): add link-scoped authorization
 ### Task 9: Link audit actions
 
 **Files:**
+
 - Modify: `apps/api/internal/audit/audit.go:26-57`
 - Test: `apps/api/internal/audit/audit_test.go`
 
 **Interfaces:**
+
 - Consumes: the existing `audit.Action`, `audit.Entry`, `audit.Log`.
 - Produces: `audit.ActionLinkCreated`, `audit.ActionLinkUpdated`, `audit.ActionLinkDeleted`, `audit.EntityLink`.
 
@@ -2139,8 +2107,7 @@ func TestLinkUpdateMetadataMayNotCarryAPassword(t *testing.T) {
 }
 ```
 
-If `audit.CheckAction` does not exist, add it — a tiny exported predicate so a
-test can ask the taxonomy a question without writing a row:
+If `audit.CheckAction` does not exist, add it — a tiny exported predicate so a test can ask the taxonomy a question without writing a row:
 
 ```go
 // CheckAction reports whether an action is part of the taxonomy. Log applies
@@ -2157,8 +2124,7 @@ and have `Log` call it instead of repeating the map lookup.
 
 - [ ] **Step 2: Run it and watch it fail**
 
-Run: `cd apps/api && go test ./internal/audit/ -run Link`
-Expected: FAIL — `audit.ActionLinkCreated` undefined.
+Run: `cd apps/api && go test ./internal/audit/ -run Link` Expected: FAIL — `audit.ActionLinkCreated` undefined.
 
 - [ ] **Step 3: Add the actions**
 
@@ -2184,8 +2150,7 @@ In `knownActions`:
 	ActionLinkDeleted: {},
 ```
 
-Add a comment above the three actions recording the decision, so the next
-reader does not "fix" it back:
+Add a comment above the three actions recording the decision, so the next reader does not "fix" it back:
 
 ```go
 	// One row per PATCH, not one per changed field. doc 05 sketches a
@@ -2197,8 +2162,7 @@ reader does not "fix" it back:
 
 - [ ] **Step 4: Run the tests**
 
-Run: `cd apps/api && go test ./internal/audit/ -v`
-Expected: PASS.
+Run: `cd apps/api && go test ./internal/audit/ -v` Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -2211,6 +2175,7 @@ feat(audit): add the link action taxonomy
 ### Task 10: Create a link
 
 **Files:**
+
 - Create: `apps/api/internal/api/links.go`
 - Create: `apps/api/internal/api/links_test.go`
 - Modify: `apps/api/internal/api/v1.go:52-57`
@@ -2218,6 +2183,7 @@ feat(audit): add the link action taxonomy
 - Modify: `apps/api/internal/api/matrix_test.go`
 
 **Interfaces:**
+
 - Consumes: `slug.Generate`, `slug.Normalize`, `slug.Validate` (Task 4); `destination.Validate`, `destination.MaxLength` (Task 5); `db.CreateLink`, `db.GetLinkableDomain` (Tasks 1 and 7); `audit.ActionLinkCreated`, `audit.EntityLink` (Task 9); `api.SharedDomain` (Task 3); `cache.Client.InvalidateLink`, `cache.Client.Allow`; `link.CacheKey`.
 - Produces: `api.Link` (the JSON representation), `api.LinkOutput`, `Deps.registerLinks(api huma.API)`, and the unexported helpers `Deps.linkResponse`, `Deps.invalidateLink`, `Deps.selfHostnames`, `Deps.resolveLinkDomain` that Tasks 11 and 12 reuse.
 
@@ -2232,8 +2198,7 @@ In `apps/api/internal/api/tenancy_test.go`, add three fields to `tenancyFixture`
 	linkID         uuid.UUID
 ```
 
-and, in `newTenancyFixture`, after the team and members exist and before the
-`api.Deps` literal is built:
+and, in `newTenancyFixture`, after the team and members exist and before the `api.Deps` literal is built:
 
 ```go
 	sharedHostname := "shared-" + suffix + ".test"
@@ -2461,8 +2426,7 @@ func TestCreateLinkIsRefusedForAViewer(t *testing.T) {
 
 - [ ] **Step 3: Run it and watch it fail**
 
-Run: `cd apps/api && go test ./internal/api/ -run CreateLink`
-Expected: FAIL — 404, because no create operation is registered.
+Run: `cd apps/api && go test ./internal/api/ -run CreateLink` Expected: FAIL — 404, because no create operation is registered.
 
 - [ ] **Step 4: Write the representation and the shared helpers**
 
@@ -2830,19 +2794,15 @@ In `apps/api/internal/api/matrix_test.go`, append to `teamScopedCases`:
 		map[string]string{"destination_url": "https://example.org/matrix"}, authz.RoleEditor},
 ```
 
-Without this row `TestEveryOperationIsAccountedFor` fails the moment the
-operation is registered — which is the guard working as intended.
+Without this row `TestEveryOperationIsAccountedFor` fails the moment the operation is registered — which is the guard working as intended.
 
 - [ ] **Step 8: Run the tests**
 
-Run: `cd apps/api && go test ./internal/api/ -run 'CreateLink|Matrix|AccountedFor' -v`
-Expected: PASS.
+Run: `cd apps/api && go test ./internal/api/ -run 'CreateLink|Matrix|AccountedFor' -v` Expected: PASS.
 
 - [ ] **Step 9: Falsify the create-path invalidation**
 
-Comment out the `d.invalidateLink(...)` call in the success branch and run
-`go test ./internal/api/ -run CreateLinkClearsANegativeCacheEntry`.
-Expected: FAIL. Restore it and confirm PASS. Record the result in the report.
+Comment out the `d.invalidateLink(...)` call in the success branch and run `go test ./internal/api/ -run CreateLinkClearsANegativeCacheEntry`. Expected: FAIL. Restore it and confirm PASS. Record the result in the report.
 
 - [ ] **Step 10: Commit**
 
@@ -2855,11 +2815,13 @@ feat(api): add link creation
 ### Task 11: List a team's links
 
 **Files:**
+
 - Modify: `apps/api/internal/api/links.go`
 - Modify: `apps/api/internal/api/links_test.go`
 - Modify: `apps/api/internal/api/matrix_test.go`
 
 **Interfaces:**
+
 - Consumes: `db.ListLinksForTeam`, `db.CountLinksForTeam` (Task 7); `PageParams`, `NewPage`, `NeedsTotalFallback`, `Page[T]`; `Deps.linkResponse`, `rowFromList` (Task 10).
 - Produces: `api.ListLinksInput`, `api.ListLinksOutput` with `Body Page[Link]`, operation ID `list-links`.
 
@@ -2996,8 +2958,7 @@ func TestListLinksReportsATotalPastTheLastPage(t *testing.T) {
 
 - [ ] **Step 2: Run it and watch it fail**
 
-Run: `cd apps/api && go test ./internal/api/ -run ListLinks`
-Expected: FAIL — 404, no list operation registered.
+Run: `cd apps/api && go test ./internal/api/ -run ListLinks` Expected: FAIL — 404, no list operation registered.
 
 - [ ] **Step 3: Write the handler**
 
@@ -3066,10 +3027,7 @@ func (d Deps) listLinks(ctx context.Context, in *ListLinksInput) (*ListLinksOutp
 }
 ```
 
-`in.Sort` carries the direction; `SortAsc` is the only thing the query needs,
-because `created_at` is the only sortable column this plan supports. Huma's
-`enum` tag is what refuses `sort=clicks` with a 422 — there is no extra check to
-write, and no silent fallback to a default the caller did not ask for.
+`in.Sort` carries the direction; `SortAsc` is the only thing the query needs, because `created_at` is the only sortable column this plan supports. Huma's `enum` tag is what refuses `sort=clicks` with a 422 — there is no extra check to write, and no silent fallback to a default the caller did not ask for.
 
 - [ ] **Step 4: Register it**
 
@@ -3096,8 +3054,7 @@ Append to `teamScopedCases`:
 
 - [ ] **Step 6: Run the tests**
 
-Run: `cd apps/api && go test ./internal/api/ -run 'ListLinks|AccountedFor' -v`
-Expected: PASS.
+Run: `cd apps/api && go test ./internal/api/ -run 'ListLinks|AccountedFor' -v` Expected: PASS.
 
 - [ ] **Step 7: Commit**
 
@@ -3110,11 +3067,13 @@ feat(api): add the link list endpoint
 ### Task 12: Read, update and delete a link
 
 **Files:**
+
 - Modify: `apps/api/internal/api/links.go`
 - Modify: `apps/api/internal/api/links_test.go`
 - Modify: `apps/api/internal/api/matrix_test.go`
 
 **Interfaces:**
+
 - Consumes: `authz.LinkViewerScope`, `authz.LinkEditorScope` (Task 8); `db.GetLinkForAPI`, `db.UpdateLink`, `db.DeleteLink` (Task 7); `audit.ActionLinkUpdated`, `audit.ActionLinkDeleted` (Task 9); the helpers from Task 10.
 - Produces: operation IDs `get-link`, `update-link`, `delete-link`; `api.DeleteLinkOutput` with `Status int`.
 
@@ -3309,8 +3268,7 @@ func TestUpdateAndDeleteAreRefusedForAViewer(t *testing.T) {
 
 - [ ] **Step 2: Run it and watch it fail**
 
-Run: `cd apps/api && go test ./internal/api/ -run 'GetLink|UpdateLink|DeleteLink'`
-Expected: FAIL — 404, none of the three operations are registered.
+Run: `cd apps/api && go test ./internal/api/ -run 'GetLink|UpdateLink|DeleteLink'` Expected: FAIL — 404, none of the three operations are registered.
 
 - [ ] **Step 3: Write the three handlers**
 
@@ -3541,11 +3499,7 @@ func (d Deps) deleteLink(ctx context.Context, in *DeleteLinkInput) (*DeleteLinkO
 }
 ```
 
-An unknown body field such as `password` or `domain_id` is refused with 422
-because Huma emits `additionalProperties: false` for a struct body schema. If
-the pinned Huma version does not, add an explicit rejection rather than letting
-the field be silently ignored — silently ignoring `password` would be the worst
-of the three possible behaviours.
+An unknown body field such as `password` or `domain_id` is refused with 422 because Huma emits `additionalProperties: false` for a struct body schema. If the pinned Huma version does not, add an explicit rejection rather than letting the field be silently ignored — silently ignoring `password` would be the worst of the three possible behaviours.
 
 - [ ] **Step 4: Register all three**
 
@@ -3598,14 +3552,11 @@ and append three rows to `teamScopedCases`:
 	{"delete-link", http.MethodDelete, "/v1/links/{link}", nil, authz.RoleEditor},
 ```
 
-The non-member subtest expects 404 for these rows, which is exactly what the
-link scope produces: the link resolves, the membership does not, and a 404 is
-returned so link IDs cannot be probed.
+The non-member subtest expects 404 for these rows, which is exactly what the link scope produces: the link resolves, the membership does not, and a 404 is returned so link IDs cannot be probed.
 
 - [ ] **Step 6: Run the tests**
 
-Run: `cd apps/api && go test ./internal/api/ -v`
-Expected: PASS, including every plan 1 and plan 2 test.
+Run: `cd apps/api && go test ./internal/api/ -v` Expected: PASS, including every plan 1 and plan 2 test.
 
 - [ ] **Step 7: Commit**
 
@@ -3618,12 +3569,14 @@ feat(api): add link read, update and delete
 ### Task 13: Isolation, falsification and the documentation amendments
 
 **Files:**
+
 - Create: `apps/api/internal/api/links_isolation_test.go`
 - Modify: `docs/planning/05-database-schema.md`
 - Modify: `docs/planning/06-api-design.md`
 - Modify: `CLAUDE.md`
 
 **Interfaces:**
+
 - Consumes: everything the previous twelve tasks produced.
 - Produces: no new code interface. This task's deliverable is the evidence that the tenancy boundary holds, and the documentation that stops the next plan from re-litigating settled decisions.
 
@@ -3714,8 +3667,7 @@ func TestDeletedLinkStopsResolving(t *testing.T) {
 }
 ```
 
-Add the `redirect` helper to `tenancyFixture` in `tenancy_test.go` — the fixture
-currently only speaks to `/v1`, and these two tests need the public surface:
+Add the `redirect` helper to `tenancyFixture` in `tenancy_test.go` — the fixture currently only speaks to `/v1`, and these two tests need the public surface:
 
 ```go
 // redirect issues a request to the public redirect surface on a short-link
@@ -3735,62 +3687,38 @@ func (f *tenancyFixture) redirect(t *testing.T, hostname, slug string) *httptest
 
 - [ ] **Step 2: Run them**
 
-Run: `cd apps/api && go test ./internal/api/ -run 'Invisible|Stranger|ResolvesThrough|StopsResolving' -v`
-Expected: PASS.
+Run: `cd apps/api && go test ./internal/api/ -run 'Invisible|Stranger|ResolvesThrough|StopsResolving' -v` Expected: PASS.
 
 - [ ] **Step 3: Falsify the reserved-slug list**
 
-Comment out the reserved-map lookup in `slug.Validate` and run
-`go test ./internal/api/ -run CreateLinkRejectsAReservedAlias` and
-`go test ./internal/slug/ -run Reserved`.
-Expected: both FAIL. Restore and confirm both PASS.
+Comment out the reserved-map lookup in `slug.Validate` and run `go test ./internal/api/ -run CreateLinkRejectsAReservedAlias` and `go test ./internal/slug/ -run Reserved`. Expected: both FAIL. Restore and confirm both PASS.
 
 - [ ] **Step 4: Falsify the link scope's tenancy decision**
 
-In `resolveLinkScope`, temporarily replace the `resolveMembership` call with
-`*member = Membership{TeamID: resolved.TeamID, Role: RoleOwner}` — the shape of
-the bug where a resolver authorizes nothing — and run
-`go test ./internal/api/ -run Invisible`.
-Expected: FAIL, with another team's link readable. Restore and confirm PASS.
+In `resolveLinkScope`, temporarily replace the `resolveMembership` call with `*member = Membership{TeamID: resolved.TeamID, Role: RoleOwner}` — the shape of the bug where a resolver authorizes nothing — and run `go test ./internal/api/ -run Invisible`. Expected: FAIL, with another team's link readable. Restore and confirm PASS.
 
-This is the single most valuable falsification in the plan. The permission
-matrix cannot catch this class of bug, because the operation still declares a
-scope and still returns a plausible status.
+This is the single most valuable falsification in the plan. The permission matrix cannot catch this class of bug, because the operation still declares a scope and still returns a plausible status.
 
 - [ ] **Step 5: Run the whole suite**
 
-Run: `cd apps/api && go test ./... && go vet ./... && golangci-lint run`
-Expected: PASS, zero issues, zero skips. A skipped test means Docker or the
-local Supabase stack is not running — start them rather than accepting the skip.
+Run: `cd apps/api && go test ./... && go vet ./... && golangci-lint run` Expected: PASS, zero issues, zero skips. A skipped test means Docker or the local Supabase stack is not running — start them rather than accepting the skip.
 
 - [ ] **Step 6: Exercise the binary by hand**
 
-Run: `cd apps/api && go run ./cmd/api` and, against it, create a link, read it
-back, change its destination, follow the short URL, and delete it. Confirm the
-redirect follows the new destination immediately after the change rather than an
-hour later. A green suite is not the same as a working binary.
+Run: `cd apps/api && go run ./cmd/api` and, against it, create a link, read it back, change its destination, follow the short URL, and delete it. Confirm the redirect follows the new destination immediately after the change rather than an hour later. A green suite is not the same as a working binary.
 
 - [ ] **Step 7: Amend doc 05**
 
-In `docs/planning/05-database-schema.md`, next to the `link.team_id`
-denormalization note, add:
+In `docs/planning/05-database-schema.md`, next to the `link.team_id` denormalization note, add:
 
 ```markdown
-Amended 2026-09-03 (see `docs/superpowers/specs/2026-09-03-links-and-shared-domain-design.md`):
-`domain.team_id` is nullable, and a row with `team_id IS NULL` is the instance's
-shared hostname that every team may use. So `link.team_id` equals
-`domain.team_id` only for custom domains; on a shared domain it is simply the
-creating team. The invariant that matters is unchanged: `link.team_id` never
-moves, and no authorization check needs a join.
+Amended 2026-09-03 (see `docs/superpowers/specs/2026-09-03-links-and-shared-domain-design.md`): `domain.team_id` is nullable, and a row with `team_id IS NULL` is the instance's shared hostname that every team may use. So `link.team_id` equals `domain.team_id` only for custom domains; on a shared domain it is simply the creating team. The invariant that matters is unchanged: `link.team_id` never moves, and no authorization check needs a join.
 ```
 
 And next to the audit-action example:
 
 ```markdown
-Amended 2026-09-03: the example action `link.destination_changed` is superseded
-by `link.updated`. One PATCH can change several fields atomically, and one row
-per request keeps the log a faithful record of what was asked; which fields
-moved lives in `metadata.changed`.
+Amended 2026-09-03: the example action `link.destination_changed` is superseded by `link.updated`. One PATCH can change several fields atomically, and one row per request keeps the log a faithful record of what was asked; which fields moved lives in `metadata.changed`.
 ```
 
 - [ ] **Step 8: Amend doc 06**
@@ -3798,9 +3726,7 @@ moved lives in `metadata.changed`.
 In `docs/planning/06-api-design.md`, under the `GET /v1/links/{link_id}` bullet:
 
 ```markdown
-As of 2026-09-03 this ships without the nested `link_scan_result` verdict:
-scanning does not exist yet, so there is nothing to nest. The field arrives with
-Safe Browsing scanning.
+As of 2026-09-03 this ships without the nested `link_scan_result` verdict: scanning does not exist yet, so there is nothing to nest. The field arrives with Safe Browsing scanning.
 ```
 
 - [ ] **Step 9: Update CLAUDE.md**
@@ -3822,10 +3748,7 @@ Add to the "Data model (summary)" section:
 
 - [ ] **Step 10: Regenerate and check the OpenAPI-derived client**
 
-Run: `pnpm format:check && pnpm lint && pnpm typecheck`
-Expected: PASS. If `packages/api-client` is generated from the OpenAPI document
-in this repository, regenerate it so the five new operations appear, and run
-the three checks again.
+Run: `pnpm format:check && pnpm lint && pnpm typecheck` Expected: PASS. If `packages/api-client` is generated from the OpenAPI document in this repository, regenerate it so the five new operations appear, and run the three checks again.
 
 - [ ] **Step 11: Commit**
 
@@ -3843,23 +3766,10 @@ docs: record the shared domain decisions
 
 ## Notes for the executor
 
-**What the permission matrix cannot see.** It observes HTTP status per
-operation and role. A handler with the correct scope whose SQL forgot its
-`team_id` filter passes it. This plan is almost entirely new queries, so every
-task review must read the SQL and confirm the filter, and Task 13's step 4 is
-the falsification that proves the scope itself is load-bearing.
+**What the permission matrix cannot see.** It observes HTTP status per operation and role. A handler with the correct scope whose SQL forgot its `team_id` filter passes it. This plan is almost entirely new queries, so every task review must read the SQL and confirm the filter, and Task 13's step 4 is the falsification that proves the scope itself is load-bearing.
 
-**Order matters in two places.** Task 6 must land before Task 10, or a link
-created with a lowercase slug will not resolve when its slug is typed in mixed
-case. Each endpoint task must add its matrix row in the same commit that
-registers the operation, or `TestEveryOperationIsAccountedFor` fails the build
-— which is the guard working, not a problem to route around.
+**Order matters in two places.** Task 6 must land before Task 10, or a link created with a lowercase slug will not resolve when its slug is typed in mixed case. Each endpoint task must add its matrix row in the same commit that registers the operation, or `TestEveryOperationIsAccountedFor` fails the build — which is the guard working, not a problem to route around.
 
-**A skipped test is a failed test here.** The suite skips when Docker or the
-local Supabase stack is unavailable. Start both (`supabase start`, Docker
-running) before reporting a task done, and state the skip count in the report.
+**A skipped test is a failed test here.** The suite skips when Docker or the local Supabase stack is unavailable. Start both (`supabase start`, Docker running) before reporting a task done, and state the skip count in the report.
 
-**What this plan deliberately leaves for later.** Folders and tags, and the list
-filters that depend on them, are plan 4. Custom domains, the domain endpoints,
-the Vercel Domain API and DNS verification are plan 5. Password endpoints, Safe
-Browsing scanning, QR codes and the stats endpoint are plan 6.
+**What this plan deliberately leaves for later.** Folders and tags, and the list filters that depend on them, are plan 4. Custom domains, the domain endpoints, the Vercel Domain API and DNS verification are plan 5. Password endpoints, Safe Browsing scanning, QR codes and the stats endpoint are plan 6.
