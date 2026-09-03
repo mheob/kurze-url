@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -29,8 +30,17 @@ type linkBody struct {
 	ExpiresAt        *time.Time `json:"expires_at"`
 	HasPassword      bool       `json:"has_password"`
 	AnalyticsEnabled bool       `json:"analytics_enabled"`
+	FolderID         *uuid.UUID `json:"folder_id"`
+	Tags             []tagBody  `json:"tags"`
 	CreatedBy        uuid.UUID  `json:"created_by"`
 }
+
+// maxTagsPerLinkForTests mirrors maxTagsPerLink in internal/api/limits.go.
+// This file runs in api_test, not api, so it cannot see that unexported
+// constant directly; a drift between the two would only ever loosen this
+// test (the cap enforcement itself is exercised against whatever the real
+// constant says), the same tradeoff folderCapForTests and tagCapForTests make.
+const maxTagsPerLinkForTests = 10
 
 func TestCreateLinkGeneratesASlugOnTheSharedDomain(t *testing.T) {
 	f := newTenancyFixture(t)
@@ -533,4 +543,479 @@ func TestUpdateAndDeleteAreRefusedForAViewer(t *testing.T) {
 			map[string]any{"state": "disabled"}).Code)
 	require.Equal(t, http.StatusForbidden,
 		f.do(t, f.members[authz.RoleViewer], http.MethodDelete, path, nil).Code)
+}
+
+func TestCreateLinkFilesItInAFolder(t *testing.T) {
+	f := newTenancyFixture(t)
+	folder := f.createFolder(t, "Sommerfest")
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPost,
+		"/v1/teams/"+f.teamID.String()+"/links",
+		map[string]any{
+			"destination_url": "https://example.org/fest",
+			"folder_id":       folder.ID.String(),
+		})
+
+	require.Equal(t, http.StatusCreated, rec.Code, "body: %s", rec.Body.String())
+	body := decode[linkBody](t, rec)
+	require.NotNil(t, body.FolderID)
+	require.Equal(t, folder.ID, *body.FolderID)
+}
+
+func TestCreateLinkRejectsAnotherTeamsFolder(t *testing.T) {
+	f := newTenancyFixture(t)
+	other := newTenancyFixture(t)
+	foreign := other.createFolder(t, "Fremd")
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPost,
+		"/v1/teams/"+f.teamID.String()+"/links",
+		map[string]any{
+			"destination_url": "https://example.org/x",
+			"folder_id":       foreign.ID.String(),
+		})
+
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code, "body: %s", rec.Body.String())
+
+	// The fixture itself seeds one link ("fixture"); nothing else must exist.
+	var count int
+	require.NoError(t, f.pool.QueryRow(context.Background(),
+		`select count(*) from link where team_id = $1`, f.teamID).Scan(&count))
+	require.Equal(t, 1, count, "no link must have been created")
+}
+
+// normalizeID replaces every occurrence of id's text in body with a fixed
+// placeholder, so responses that legitimately embed different ids can still
+// be compared for everything *but* the id.
+func normalizeID(body string, id uuid.UUID) string {
+	return strings.ReplaceAll(body, id.String(), "<id>")
+}
+
+// TestAnotherTeamsFolderIsIndistinguishableFromAMissingOne asserts the
+// property the security review actually calls for: for any given folder_id,
+// the response must not reveal whether that id exists in another team or
+// does not exist at all. It does NOT assert that the two responses are
+// byte-identical — they can't be, since foreign and missingID are two
+// different ids and the message deliberately names the id it was given
+// (resolveFolderRef's doc comment explains why: tag_ids can carry up to ten
+// entries, and a client needs to know which one was rejected). What must
+// never vary is the message *template* around the id. If the not-found case
+// used a different template than the wrong-team case — e.g. "no such folder"
+// vs. "that folder belongs to another team" — an attacker could submit a
+// candidate id and learn from the wording alone whether it exists at all,
+// which is exactly the leak this test guards against. Substituting each
+// response's own id for a fixed placeholder before comparing proves the
+// template is shared without demanding the impossible.
+func TestAnotherTeamsFolderIsIndistinguishableFromAMissingOne(t *testing.T) {
+	f := newTenancyFixture(t)
+	other := newTenancyFixture(t)
+	foreign := other.createFolder(t, "Fremd")
+	missingID := uuid.New()
+
+	foreignResp := f.do(t, f.members[authz.RoleEditor], http.MethodPost,
+		"/v1/teams/"+f.teamID.String()+"/links",
+		map[string]any{
+			"destination_url": "https://example.org/x",
+			"folder_id":       foreign.ID.String(),
+		})
+	missingResp := f.do(t, f.members[authz.RoleEditor], http.MethodPost,
+		"/v1/teams/"+f.teamID.String()+"/links",
+		map[string]any{
+			"destination_url": "https://example.org/x",
+			"folder_id":       missingID.String(),
+		})
+
+	require.Equal(t, foreignResp.Code, missingResp.Code, "status must not differ")
+	require.Equal(t,
+		normalizeID(foreignResp.Body.String(), foreign.ID),
+		normalizeID(missingResp.Body.String(), missingID),
+		"message template must not differ, once each response's own id is normalized away")
+}
+
+func TestCreateLinkAttachesTags(t *testing.T) {
+	f := newTenancyFixture(t)
+	presse := f.createTag(t, "Presse")
+	fest := f.createTag(t, "Sommerfest")
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPost,
+		"/v1/teams/"+f.teamID.String()+"/links",
+		map[string]any{
+			"destination_url": "https://example.org/pm",
+			"tag_ids":         []string{presse.ID.String(), fest.ID.String()},
+		})
+
+	require.Equal(t, http.StatusCreated, rec.Code, "body: %s", rec.Body.String())
+	body := decode[linkBody](t, rec)
+	require.Len(t, body.Tags, 2)
+	// Tags come back ordered by name, so the response is stable.
+	require.Equal(t, "Presse", body.Tags[0].Name)
+	require.Equal(t, "Sommerfest", body.Tags[1].Name)
+}
+
+func TestCreateLinkRejectsAnotherTeamsTag(t *testing.T) {
+	f := newTenancyFixture(t)
+	other := newTenancyFixture(t)
+	foreign := other.createTag(t, "Fremd")
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPost,
+		"/v1/teams/"+f.teamID.String()+"/links",
+		map[string]any{
+			"destination_url": "https://example.org/x",
+			"tag_ids":         []string{foreign.ID.String()},
+		})
+
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code, "body: %s", rec.Body.String())
+
+	var linkCount int
+	require.NoError(t, f.pool.QueryRow(context.Background(),
+		`select count(*) from link where team_id = $1`, f.teamID).Scan(&linkCount))
+	require.Equal(t, 1, linkCount, "no link must have been created")
+
+	var joins int
+	require.NoError(t, f.pool.QueryRow(context.Background(),
+		`select count(*) from link_tag where tag_id = $1`, foreign.ID).Scan(&joins))
+	require.Zero(t, joins, "no link_tag row must have been created")
+}
+
+// TestAnotherTeamsTagIsIndistinguishableFromAMissingOne is the tag_ids
+// equivalent of TestAnotherTeamsFolderIsIndistinguishableFromAMissingOne
+// above: same normalized-template property (see that test's comment for the
+// full reasoning), applied to resolveTagRefs instead of resolveFolderRef.
+func TestAnotherTeamsTagIsIndistinguishableFromAMissingOne(t *testing.T) {
+	f := newTenancyFixture(t)
+	other := newTenancyFixture(t)
+	foreign := other.createTag(t, "Fremd")
+	missingID := uuid.New()
+
+	foreignResp := f.do(t, f.members[authz.RoleEditor], http.MethodPost,
+		"/v1/teams/"+f.teamID.String()+"/links",
+		map[string]any{
+			"destination_url": "https://example.org/x",
+			"tag_ids":         []string{foreign.ID.String()},
+		})
+	missingResp := f.do(t, f.members[authz.RoleEditor], http.MethodPost,
+		"/v1/teams/"+f.teamID.String()+"/links",
+		map[string]any{
+			"destination_url": "https://example.org/x",
+			"tag_ids":         []string{missingID.String()},
+		})
+
+	require.Equal(t, foreignResp.Code, missingResp.Code, "status must not differ")
+	require.Equal(t,
+		normalizeID(foreignResp.Body.String(), foreign.ID),
+		normalizeID(missingResp.Body.String(), missingID),
+		"message template must not differ, once each response's own id is normalized away")
+}
+
+func TestUpdateLinkReplacesTheWholeTagSet(t *testing.T) {
+	f := newTenancyFixture(t)
+	a := f.createTag(t, "Alpha")
+	b := f.createTag(t, "Beta")
+	c := f.createTag(t, "Gamma")
+	linkID := f.createLinkWithTags(t, "https://example.org/x", a.ID, b.ID)
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPatch, "/v1/links/"+linkID.String(),
+		map[string]any{"tag_ids": []string{a.ID.String(), c.ID.String()}})
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	body := decode[linkBody](t, rec)
+	require.Len(t, body.Tags, 2)
+	// Tags come back ordered by name, so the response is stable.
+	require.Equal(t, "Alpha", body.Tags[0].Name)
+	require.Equal(t, "Gamma", body.Tags[1].Name)
+}
+
+func TestUpdateLinkWithEmptyTagIDsDetachesEverything(t *testing.T) {
+	f := newTenancyFixture(t)
+	tag := f.createTag(t, "Presse")
+	linkID := f.createLinkWithTags(t, "https://example.org/x", tag.ID)
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPatch, "/v1/links/"+linkID.String(),
+		map[string]any{"tag_ids": []string{}})
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+
+	var joins int
+	require.NoError(t, f.pool.QueryRow(context.Background(),
+		`select count(*) from link_tag where link_id = $1`, linkID).Scan(&joins))
+	require.Zero(t, joins)
+}
+
+func TestUpdateLinkWithoutTagIDsLeavesTagsAlone(t *testing.T) {
+	f := newTenancyFixture(t)
+	tag := f.createTag(t, "Presse")
+	linkID := f.createLinkWithTags(t, "https://example.org/x", tag.ID)
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPatch, "/v1/links/"+linkID.String(),
+		map[string]any{"destination_url": "https://example.org/y"})
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+
+	var joins int
+	require.NoError(t, f.pool.QueryRow(context.Background(),
+		`select count(*) from link_tag where link_id = $1`, linkID).Scan(&joins))
+	require.Equal(t, 1, joins, "a PATCH that never mentions tag_ids must leave tags untouched")
+
+	// The database join surviving is not enough: a client doing an ordinary
+	// read-modify-write PATCHes destination_url and writes this response
+	// object back, so the response itself must report the tag the link
+	// actually has, not the empty default.
+	body := decode[linkBody](t, rec)
+	require.Len(t, body.Tags, 1, "response must report the link's actual tags, not []")
+	require.Equal(t, tag.ID, body.Tags[0].ID)
+	require.Equal(t, "Presse", body.Tags[0].Name)
+}
+
+func TestUpdateLinkWithNullFolderIDUnfilesIt(t *testing.T) {
+	// The distinction this asserts is why the handler reads RawBody: an
+	// omitted folder_id and an explicit null are both a nil pointer.
+	f := newTenancyFixture(t)
+	folder := f.createFolder(t, "Sommerfest")
+	linkID := f.createLinkInFolder(t, "https://example.org/x", folder.ID)
+
+	rec := f.doRaw(t, f.members[authz.RoleEditor], http.MethodPatch,
+		"/v1/links/"+linkID.String(), `{"folder_id": null}`)
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	require.Nil(t, decode[linkBody](t, rec).FolderID)
+}
+
+func TestUpdateLinkWithoutFolderIDLeavesItFiled(t *testing.T) {
+	f := newTenancyFixture(t)
+	folder := f.createFolder(t, "Sommerfest")
+	linkID := f.createLinkInFolder(t, "https://example.org/x", folder.ID)
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPatch, "/v1/links/"+linkID.String(),
+		map[string]any{"destination_url": "https://example.org/y"})
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	body := decode[linkBody](t, rec)
+	require.NotNil(t, body.FolderID, "a PATCH that never mentions folder_id must leave it filed")
+	require.Equal(t, folder.ID, *body.FolderID)
+}
+
+func TestUpdateLinkRecordsFolderAndTagChangesInOneAuditRow(t *testing.T) {
+	// One row per PATCH, not one per changed field: a single request is a
+	// single request, and metadata.changed says which fields moved.
+	f := newTenancyFixture(t)
+	folder := f.createFolder(t, "Sommerfest")
+	tag := f.createTag(t, "Presse")
+	created := f.createLink(t, "audit-folder-tags", "https://example.org/x")
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPatch, "/v1/links/"+created.ID.String(),
+		map[string]any{
+			"folder_id": folder.ID.String(),
+			"tag_ids":   []string{tag.ID.String()},
+		})
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+
+	var rows int
+	require.NoError(t, f.pool.QueryRow(context.Background(),
+		`select count(*) from audit_log where entity_id = $1 and action = 'link.updated'`,
+		created.ID).Scan(&rows))
+	require.Equal(t, 1, rows, "one PATCH is one audit row, however many fields it touched")
+
+	var changed []string
+	require.NoError(t, f.pool.QueryRow(context.Background(),
+		`select array(select jsonb_array_elements_text(metadata->'changed'))
+		 from audit_log where entity_id = $1 and action = 'link.updated'`,
+		created.ID).Scan(&changed))
+	require.Contains(t, changed, "folder_id")
+	require.Contains(t, changed, "tags")
+}
+
+// TestUpdateLinkNeverWritesATagNameIntoAuditMetadata guards the count-not-names
+// rule in updateLink: a tag name is user-supplied free text, and the audit
+// metadata denylist exists precisely to keep unvetted strings out of that
+// column. The tag names here are deliberately distinctive so a regression that
+// leaked either one into metadata could not hide behind a coincidental
+// substring match.
+func TestUpdateLinkNeverWritesATagNameIntoAuditMetadata(t *testing.T) {
+	f := newTenancyFixture(t)
+	oldTag := f.createTag(t, "AuditCanaryOldTagName")
+	newTag := f.createTag(t, "AuditCanaryNewTagName")
+	linkID := f.createLinkWithTags(t, "https://example.org/x", oldTag.ID)
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPatch, "/v1/links/"+linkID.String(),
+		map[string]any{"tag_ids": []string{newTag.ID.String()}})
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+
+	var metadata string
+	require.NoError(t, f.pool.QueryRow(context.Background(),
+		`select metadata::text from audit_log where entity_id = $1 and action = 'link.updated'`,
+		linkID).Scan(&metadata))
+
+	require.NotContains(t, metadata, "AuditCanaryOldTagName",
+		"a tag name must never reach audit_log.metadata — only a count may")
+	require.NotContains(t, metadata, "AuditCanaryNewTagName",
+		"a tag name must never reach audit_log.metadata — only a count may")
+	require.Contains(t, metadata, `"tags"`,
+		"the tags key must still be present in metadata.changed, just without names")
+}
+
+// TestUpdateLinkChangingOnlyFolderOrTagsLeavesTheRedirectCacheAlone proves the
+// hot-path constraint by exercising it, not only by reading the code: neither
+// folder_id nor tag_ids appears in link.Cached, so a PATCH that touches only
+// those must not cost a single Redis command on the redirect path.
+func TestUpdateLinkChangingOnlyFolderOrTagsLeavesTheRedirectCacheAlone(t *testing.T) {
+	f := newTenancyFixture(t)
+	ctx := context.Background()
+	created := f.createLink(t, "nur-organisatorisch", "https://example.org/x")
+	folder := f.createFolder(t, "Sommerfest")
+	tag := f.createTag(t, "Presse")
+
+	cacheKey := link.CacheKey(created.Hostname, created.Slug)
+	require.NoError(t, f.deps.Cache.PutLink(ctx, cacheKey, link.Cached{
+		ID: created.ID, TeamID: created.TeamID, DestinationURL: created.DestinationURL,
+		RedirectType: 302, State: "active", AnalyticsEnabled: true,
+	}, time.Hour))
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPatch, "/v1/links/"+created.ID.String(),
+		map[string]any{
+			"folder_id": folder.ID.String(),
+			"tag_ids":   []string{tag.ID.String()},
+		})
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+
+	_, err := f.deps.Cache.Raw().Get(ctx, cacheKey).Result()
+	require.NoError(t, err,
+		"an organizational-only change must not invalidate the redirect cache")
+}
+
+func TestCreateLinkEnforcesTheTagsPerLinkCap(t *testing.T) {
+	f := newTenancyFixture(t)
+
+	ids := make([]string, 0, maxTagsPerLinkForTests+1)
+	for i := range maxTagsPerLinkForTests + 1 {
+		tag := f.createTag(t, fmt.Sprintf("tag-%02d", i))
+		ids = append(ids, tag.ID.String())
+	}
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPost,
+		"/v1/teams/"+f.teamID.String()+"/links",
+		map[string]any{
+			"destination_url": "https://example.org/x",
+			"tag_ids":         ids,
+		})
+
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code, "body: %s", rec.Body.String())
+}
+
+func TestListLinksFiltersByFolder(t *testing.T) {
+	f := newTenancyFixture(t)
+	folder := f.createFolder(t, "Sommerfest")
+	filed := f.createLinkInFolder(t, "https://example.org/in", folder.ID)
+	f.createLink(t, "unfiled", "https://example.org/out")
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		"/v1/teams/"+f.teamID.String()+"/links?folder_id="+folder.ID.String(), nil)
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	page := decode[linkPage](t, rec)
+	require.Len(t, page.Items, 1, "only the filed link must match")
+	require.Equal(t, filed, page.Items[0].ID)
+	require.Equal(t, 1, page.TotalCount, "the count must respect the filter")
+}
+
+func TestListLinksRejectsAMalformedFolderFilter(t *testing.T) {
+	f := newTenancyFixture(t)
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		"/v1/teams/"+f.teamID.String()+"/links?folder_id=not-a-uuid", nil)
+
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+}
+
+func TestListLinksFiltersByTag(t *testing.T) {
+	f := newTenancyFixture(t)
+	tag := f.createTag(t, "Presse")
+	tagged := f.createLinkWithTags(t, "https://example.org/in", tag.ID)
+	f.createLink(t, "untagged", "https://example.org/out")
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		"/v1/teams/"+f.teamID.String()+"/links?tag_id="+tag.ID.String(), nil)
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	page := decode[linkPage](t, rec)
+	require.Len(t, page.Items, 1, "only the tagged link must match")
+	require.Equal(t, tagged, page.Items[0].ID)
+	require.Equal(t, 1, page.TotalCount, "the count must respect the filter")
+}
+
+func TestListLinksRejectsAMalformedTagFilter(t *testing.T) {
+	f := newTenancyFixture(t)
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		"/v1/teams/"+f.teamID.String()+"/links?tag_id=not-a-uuid", nil)
+
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+}
+
+// TestListLinksDoesNotMultiplyRowsForMultipleTags is the reason the tag read
+// is a second query and the tag_id filter is an exists subquery rather than a
+// join: a left join onto the list query itself would multiply this link once
+// per tag it carries, and LIMIT would then hide other links behind the
+// duplicates. The fixture seeds one link of its own ("fixture", untagged), so
+// a correct implementation reports exactly two links, not four.
+func TestListLinksDoesNotMultiplyRowsForMultipleTags(t *testing.T) {
+	f := newTenancyFixture(t)
+	a := f.createTag(t, "Alpha")
+	b := f.createTag(t, "Beta")
+	c := f.createTag(t, "Gamma")
+	tagged := f.createLinkWithTags(t, "https://example.org/x", a.ID, b.ID, c.ID)
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		"/v1/teams/"+f.teamID.String()+"/links", nil)
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	page := decode[linkPage](t, rec)
+
+	require.Equal(t, 2, page.TotalCount, "a join would inflate this by the tag count")
+	require.Len(t, page.Items, 2)
+
+	var found *linkBody
+	for i := range page.Items {
+		if page.Items[i].ID == tagged {
+			found = &page.Items[i]
+		}
+	}
+	require.NotNil(t, found, "the tagged link must appear exactly once")
+	require.Len(t, found.Tags, 3)
+}
+
+// TestListLinksReturnsEachLinksOwnTags exists because the stitch must key by
+// link_id: a bug that assigned every tag to every link would pass a
+// single-link test.
+func TestListLinksReturnsEachLinksOwnTags(t *testing.T) {
+	f := newTenancyFixture(t)
+	a := f.createTag(t, "Alpha")
+	b := f.createTag(t, "Beta")
+	first := f.createLinkWithTags(t, "https://example.org/1", a.ID)
+	second := f.createLinkWithTags(t, "https://example.org/2", b.ID)
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		"/v1/teams/"+f.teamID.String()+"/links", nil)
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	page := decode[linkPage](t, rec)
+
+	byID := map[uuid.UUID][]tagBody{}
+	for _, item := range page.Items {
+		byID[item.ID] = item.Tags
+	}
+	require.Len(t, byID[first], 1)
+	require.Equal(t, "Alpha", byID[first][0].Name)
+	require.Len(t, byID[second], 1)
+	require.Equal(t, "Beta", byID[second][0].Name)
+}
+
+func TestGetLinkReturnsItsTags(t *testing.T) {
+	f := newTenancyFixture(t)
+	tag := f.createTag(t, "Presse")
+	linkID := f.createLinkWithTags(t, "https://example.org/x", tag.ID)
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet, "/v1/links/"+linkID.String(), nil)
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	body := decode[linkBody](t, rec)
+	require.Len(t, body.Tags, 1)
+	require.Equal(t, "Presse", body.Tags[0].Name)
 }

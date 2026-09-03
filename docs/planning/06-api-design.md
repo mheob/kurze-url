@@ -121,6 +121,8 @@ Grouped by resource. All under `/v1` and Bearer-authenticated unless noted other
 - `POST /v1/teams/{team_id}/tags`, `GET /v1/teams/{team_id}/tags`
 - `PATCH /v1/tags/{tag_id}`, `DELETE /v1/tags/{tag_id}`
 
+  A tag attaches to a link through `tag_ids` on `POST`/`PATCH /v1/links` rather than through a subresource of its own — there is no `PUT`/`DELETE /v1/links/{link_id}/tags/{tag_id}`. `tag_ids` is a whole-set replacement, not a delta: an omitted array leaves the link's tags untouched, `[]` detaches every tag, and any other array replaces the set exactly as given. The rejected subresource pair would have been idempotent per tag, but three tag changes become three requests instead of one, and the client has to diff old against new to know which calls to make; the precedent it would follow — the password subresource splitting off from the general `PATCH` — earned that split with its own audit action and its own rate limit, and tags have neither. The full reasoning is in `docs/superpowers/specs/2026-09-03-folders-and-tags-design.md`.
+
 **Links**
 
 - `POST /v1/teams/{team_id}/links` — create.

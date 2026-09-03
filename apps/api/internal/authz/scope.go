@@ -149,20 +149,33 @@ func resolveScope(ctx huma.Context, teamID uuid.UUID, required Role, out *Member
 // the caller is not a member: the wording differs per route so a 404 never
 // says "team not found" on a link route.
 //
+// It checks for verified claims itself. Callers check too — earlier, so that an
+// unauthenticated request with a malformed path parameter is a 401 rather than
+// a 422 — but correctness does not depend on their doing so.
+//
 // The membership travels out through out rather than the context because
 // Resolve returns only errors — it cannot replace the context the handler
 // receives — but it can mutate the input struct it is part of.
 func resolveMembership(
 	ctx huma.Context, teamID uuid.UUID, required Role, notFound string, out *Membership,
 ) []error {
-	resolver, ok := resolverFromContext(ctx.Context())
+	// The precondition — callers check claims first — is enforced here rather
+	// than documented. Without it a caller that forgot would look up membership
+	// for uuid.Nil, get ErrNotMember and answer 404: the wrong defect, and one
+	// that hides an authentication bug behind a plausible-looking response.
+	userID, ok := claimsUserID(ctx)
 	if !ok {
+		return []error{huma.Error401Unauthorized("not authenticated")}
+	}
+
+	resolver, found := resolverFromContext(ctx.Context())
+	if !found {
 		// Refusing is the only safe answer: without a resolver there is no way
 		// to know whether this caller belongs to the team.
 		return []error{huma.Error500InternalServerError("authorization is not configured")}
 	}
 
-	membership, err := resolver.Membership(ctx.Context(), teamID, claimsUserID(ctx))
+	membership, err := resolver.Membership(ctx.Context(), teamID, userID)
 	switch {
 	case errors.Is(err, ErrNotMember):
 		return []error{huma.Error404NotFound(notFound)}
@@ -179,9 +192,14 @@ func resolveMembership(
 	return nil
 }
 
-// claimsUserID reads the caller's user ID from the verified claims. Both
-// resolveScope's callers and resolveLinkScope read the caller this same way.
-func claimsUserID(ctx huma.Context) uuid.UUID {
-	claims, _ := auth.ClaimsFromContext(ctx.Context())
-	return claims.UserID
+// claimsUserID reads the caller's user ID from the verified claims, reporting
+// whether any were present. Both resolveScope's callers and the entity scopes
+// check claims themselves before they get here; the ok flag is what lets
+// resolveMembership enforce that rather than trust it.
+func claimsUserID(ctx huma.Context) (uuid.UUID, bool) {
+	claims, ok := auth.ClaimsFromContext(ctx.Context())
+	if !ok {
+		return uuid.Nil, false
+	}
+	return claims.UserID, true
 }

@@ -39,6 +39,18 @@ const (
 	ActionLinkCreated Action = "link.created"
 	ActionLinkUpdated Action = "link.updated"
 	ActionLinkDeleted Action = "link.deleted"
+
+	// Folder and tag changes made through a link write do not get their own
+	// action: they are part of that write's link.updated row, with the
+	// affected fields in metadata.changed. The rule above — one row per PATCH,
+	// not one per changed field — governs those too.
+	ActionFolderCreated Action = "folder.created"
+	ActionFolderUpdated Action = "folder.updated"
+	ActionFolderDeleted Action = "folder.deleted"
+
+	ActionTagCreated Action = "tag.created"
+	ActionTagUpdated Action = "tag.updated"
+	ActionTagDeleted Action = "tag.deleted"
 )
 
 // Entity types match the table names.
@@ -46,6 +58,8 @@ const (
 	EntityTeam       = "team"
 	EntityTeamMember = "team_member"
 	EntityLink       = "link"
+	EntityFolder     = "folder"
+	EntityTag        = "tag"
 )
 
 var (
@@ -68,6 +82,12 @@ var knownActions = map[Action]struct{}{
 	ActionLinkCreated:       {},
 	ActionLinkUpdated:       {},
 	ActionLinkDeleted:       {},
+	ActionFolderCreated:     {},
+	ActionFolderUpdated:     {},
+	ActionFolderDeleted:     {},
+	ActionTagCreated:        {},
+	ActionTagUpdated:        {},
+	ActionTagDeleted:        {},
 }
 
 // forbiddenMetadataKeys are the canonical, lowercase, singular words a

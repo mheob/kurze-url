@@ -261,6 +261,188 @@ func TestListAuditLogNeverCrossesTeams(t *testing.T) {
 	require.Empty(t, rows, "an audit entry belonging to another team must never be listed")
 }
 
+// TestCountFoldersForTeamOnlyCountsTheCallersFolders and
+// TestCountTagsForTeamOnlyCountsTheCallersTags exercise CountFoldersForTeam
+// and CountTagsForTeam directly, the same way the tests below exercise
+// UpdateFolder and friends: an HTTP-level test cannot tell a per-team count
+// from a global one, because CountFoldersForTeam/CountTagsForTeam feed both
+// the per-team creation cap (where a global count still refuses new rows,
+// just for the wrong reason) and the ListXForTeam pagination fallback (which
+// no folder or tag test reaches). Calling the query directly against rows
+// seeded in two different teams is the only way to see the team_id filter
+// actually doing something.
+func TestCountFoldersForTeamOnlyCountsTheCallersFolders(t *testing.T) {
+	ctx := context.Background()
+	tx, err := testPool(t).Begin(ctx)
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	teamID, _ := seedTeamWithOwner(ctx, t, tx)
+
+	var otherTeamID uuid.UUID
+	require.NoError(t, tx.QueryRow(ctx,
+		`insert into team (name) values ('other') returning id`).Scan(&otherTeamID))
+
+	_, err = tx.Exec(ctx,
+		`insert into folder (team_id, name) values ($1, 'Mine A'), ($1, 'Mine B')`, teamID)
+	require.NoError(t, err)
+	_, err = tx.Exec(ctx,
+		`insert into folder (team_id, name) values ($1, 'Theirs A'), ($1, 'Theirs B'), ($1, 'Theirs C')`,
+		otherTeamID)
+	require.NoError(t, err)
+
+	q := db.New(tx)
+	count, err := q.CountFoldersForTeam(ctx, teamID)
+
+	require.NoError(t, err)
+	require.EqualValues(t, 2, count,
+		"the count must include only this team's own folders, not every team's")
+}
+
+func TestCountTagsForTeamOnlyCountsTheCallersTags(t *testing.T) {
+	ctx := context.Background()
+	tx, err := testPool(t).Begin(ctx)
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	teamID, _ := seedTeamWithOwner(ctx, t, tx)
+
+	var otherTeamID uuid.UUID
+	require.NoError(t, tx.QueryRow(ctx,
+		`insert into team (name) values ('other') returning id`).Scan(&otherTeamID))
+
+	_, err = tx.Exec(ctx,
+		`insert into tag (team_id, name) values ($1, 'Mine A'), ($1, 'Mine B')`, teamID)
+	require.NoError(t, err)
+	_, err = tx.Exec(ctx,
+		`insert into tag (team_id, name) values ($1, 'Theirs A'), ($1, 'Theirs B'), ($1, 'Theirs C')`,
+		otherTeamID)
+	require.NoError(t, err)
+
+	q := db.New(tx)
+	count, err := q.CountTagsForTeam(ctx, teamID)
+
+	require.NoError(t, err)
+	require.EqualValues(t, 2, count,
+		"the count must include only this team's own tags, not every team's")
+}
+
+// The four tests below exercise UpdateFolder, DeleteFolder, UpdateTag and
+// DeleteTag directly against a team_id that does not own the row, bypassing
+// internal/api entirely. That bypass is deliberate: FolderEditorScope and
+// TagEditorScope discover a resource's real team from its ID alone (via
+// GetFolderScope / GetTagScope) and then require the caller to be a member of
+// exactly that team, so by the time either handler calls one of these four
+// queries, member.TeamID is already guaranteed to equal the row's own
+// team_id — an HTTP request that reached the handler with a mismatched
+// team_id is not constructible. That makes the queries' own "and team_id =
+// $2" clause pure defense in depth from the API's perspective, and no
+// isolation test that goes through the router can ever observe it being
+// dropped: TestAnotherTeamsFolderCannotBeRenamed and its three siblings in
+// internal/api all still pass with that clause deleted, because the entity
+// scope already turned the attempt into a 404 before either query ran. These
+// four tests are the equivalent property at the layer where it is actually
+// decided, so a regression here is caught even if a future authorization path
+// ever reaches one of these queries without having already checked the team.
+
+func TestUpdateFolderRefusesAnotherTeamsID(t *testing.T) {
+	ctx := context.Background()
+	tx, err := testPool(t).Begin(ctx)
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	teamID, _ := seedTeamWithOwner(ctx, t, tx)
+	var folderID uuid.UUID
+	require.NoError(t, tx.QueryRow(ctx,
+		`insert into folder (team_id, name) values ($1, 'Fremd') returning id`,
+		teamID).Scan(&folderID))
+
+	q := db.New(tx)
+	_, err = q.UpdateFolder(ctx, db.UpdateFolderParams{
+		ID: folderID, TeamID: uuid.New(), Name: "Gekapert",
+	})
+
+	require.ErrorIs(t, err, pgx.ErrNoRows,
+		"a folder must not be renamed through a team_id that does not own it")
+
+	var name string
+	require.NoError(t, tx.QueryRow(ctx,
+		`select name from folder where id = $1`, folderID).Scan(&name))
+	require.Equal(t, "Fremd", name, "the row must be unchanged")
+}
+
+func TestDeleteFolderRefusesAnotherTeamsID(t *testing.T) {
+	ctx := context.Background()
+	tx, err := testPool(t).Begin(ctx)
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	teamID, _ := seedTeamWithOwner(ctx, t, tx)
+	var folderID uuid.UUID
+	require.NoError(t, tx.QueryRow(ctx,
+		`insert into folder (team_id, name) values ($1, 'Fremd') returning id`,
+		teamID).Scan(&folderID))
+
+	q := db.New(tx)
+	_, err = q.DeleteFolder(ctx, db.DeleteFolderParams{ID: folderID, TeamID: uuid.New()})
+
+	require.ErrorIs(t, err, pgx.ErrNoRows,
+		"a folder must not be deleted through a team_id that does not own it")
+
+	var exists bool
+	require.NoError(t, tx.QueryRow(ctx,
+		`select exists(select 1 from folder where id = $1)`, folderID).Scan(&exists))
+	require.True(t, exists, "the row must still exist")
+}
+
+func TestUpdateTagRefusesAnotherTeamsID(t *testing.T) {
+	ctx := context.Background()
+	tx, err := testPool(t).Begin(ctx)
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	teamID, _ := seedTeamWithOwner(ctx, t, tx)
+	var tagID uuid.UUID
+	require.NoError(t, tx.QueryRow(ctx,
+		`insert into tag (team_id, name) values ($1, 'Fremd') returning id`,
+		teamID).Scan(&tagID))
+
+	q := db.New(tx)
+	_, err = q.UpdateTag(ctx, db.UpdateTagParams{ID: tagID, TeamID: uuid.New(), Name: "Gekapert"})
+
+	require.ErrorIs(t, err, pgx.ErrNoRows,
+		"a tag must not be renamed through a team_id that does not own it")
+
+	var name string
+	require.NoError(t, tx.QueryRow(ctx,
+		`select name from tag where id = $1`, tagID).Scan(&name))
+	require.Equal(t, "Fremd", name, "the row must be unchanged")
+}
+
+func TestDeleteTagRefusesAnotherTeamsID(t *testing.T) {
+	ctx := context.Background()
+	tx, err := testPool(t).Begin(ctx)
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	teamID, _ := seedTeamWithOwner(ctx, t, tx)
+	var tagID uuid.UUID
+	require.NoError(t, tx.QueryRow(ctx,
+		`insert into tag (team_id, name) values ($1, 'Fremd') returning id`,
+		teamID).Scan(&tagID))
+
+	q := db.New(tx)
+	_, err = q.DeleteTag(ctx, db.DeleteTagParams{ID: tagID, TeamID: uuid.New()})
+
+	require.ErrorIs(t, err, pgx.ErrNoRows,
+		"a tag must not be deleted through a team_id that does not own it")
+
+	var exists bool
+	require.NoError(t, tx.QueryRow(ctx,
+		`select exists(select 1 from tag where id = $1)`, tagID).Scan(&exists))
+	require.True(t, exists, "the row must still exist")
+}
+
 // TestLockTeamOwnersSerializesConcurrentDemotions is the reason LockTeamOwners
 // exists rather than a plain COUNT(*): two simultaneous demotions must not
 // both observe two owners and both proceed, leaving the team ownerless. This

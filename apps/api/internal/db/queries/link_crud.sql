@@ -16,14 +16,14 @@ where l.id = $1;
 -- name: CreateLink :one
 with inserted as (
   insert into link (domain_id, team_id, slug, destination_url, redirect_type,
-                    expires_at, analytics_enabled, created_by)
-  values ($1, $2, $3, $4, $5, $6, $7, $8)
+                    expires_at, analytics_enabled, created_by, folder_id)
+  values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
   returning *
 )
 select i.id, i.domain_id, i.team_id, d.hostname, i.slug, i.destination_url,
        i.redirect_type, i.state, i.expires_at,
        (i.password_hash is not null)::boolean as has_password,
-       i.analytics_enabled, i.created_by, i.created_at, i.updated_at
+       i.analytics_enabled, i.folder_id, i.created_by, i.created_at, i.updated_at
 from inserted i
 join domain d on d.id = i.domain_id;
 
@@ -31,7 +31,7 @@ join domain d on d.id = i.domain_id;
 select l.id, l.domain_id, l.team_id, d.hostname, l.slug, l.destination_url,
        l.redirect_type, l.state, l.expires_at,
        (l.password_hash is not null)::boolean as has_password,
-       l.analytics_enabled, l.created_by, l.created_at, l.updated_at
+       l.analytics_enabled, l.folder_id, l.created_by, l.created_at, l.updated_at
 from link l
 join domain d on d.id = l.domain_id
 where l.id = $1 and l.team_id = $2;
@@ -46,7 +46,7 @@ where l.id = $1 and l.team_id = $2;
 select l.id, l.domain_id, l.team_id, d.hostname, l.slug, l.destination_url,
        l.redirect_type, l.state, l.expires_at,
        (l.password_hash is not null)::boolean as has_password,
-       l.analytics_enabled, l.created_by, l.created_at, l.updated_at,
+       l.analytics_enabled, l.folder_id, l.created_by, l.created_at, l.updated_at,
        count(*) over () as total_count
 from link l
 join domain d on d.id = l.domain_id
@@ -56,6 +56,10 @@ where l.team_id = sqlc.arg('team_id')
   and (sqlc.narg('q')::text is null
        or l.slug ilike '%' || sqlc.narg('q')::text || '%'
        or l.destination_url ilike '%' || sqlc.narg('q')::text || '%')
+  and (sqlc.narg('folder_id')::uuid is null or l.folder_id = sqlc.narg('folder_id')::uuid)
+  and (sqlc.narg('tag_id')::uuid is null or exists (
+        select 1 from link_tag lt
+        where lt.link_id = l.id and lt.tag_id = sqlc.narg('tag_id')::uuid))
 order by
   case when sqlc.arg('sort_asc')::boolean then l.created_at end asc,
   case when not sqlc.arg('sort_asc')::boolean then l.created_at end desc,
@@ -73,7 +77,11 @@ where l.team_id = sqlc.arg('team_id')
   and (sqlc.narg('domain_id')::uuid is null or l.domain_id = sqlc.narg('domain_id')::uuid)
   and (sqlc.narg('q')::text is null
        or l.slug ilike '%' || sqlc.narg('q')::text || '%'
-       or l.destination_url ilike '%' || sqlc.narg('q')::text || '%');
+       or l.destination_url ilike '%' || sqlc.narg('q')::text || '%')
+  and (sqlc.narg('folder_id')::uuid is null or l.folder_id = sqlc.narg('folder_id')::uuid)
+  and (sqlc.narg('tag_id')::uuid is null or exists (
+        select 1 from link_tag lt
+        where lt.link_id = l.id and lt.tag_id = sqlc.narg('tag_id')::uuid));
 
 -- UpdateLink writes every mutable column. The handler reads the row first,
 -- inside the same transaction, merges the request onto it, and passes the
@@ -89,6 +97,7 @@ with updated as (
     state = $6,
     expires_at = $7,
     analytics_enabled = $8,
+    folder_id = $9,
     updated_at = now()
   where link.id = $1 and link.team_id = $2
   returning *
@@ -96,7 +105,7 @@ with updated as (
 select u.id, u.domain_id, u.team_id, d.hostname, u.slug, u.destination_url,
        u.redirect_type, u.state, u.expires_at,
        (u.password_hash is not null)::boolean as has_password,
-       u.analytics_enabled, u.created_by, u.created_at, u.updated_at
+       u.analytics_enabled, u.folder_id, u.created_by, u.created_at, u.updated_at
 from updated u
 join domain d on d.id = u.domain_id;
 

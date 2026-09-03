@@ -56,6 +56,8 @@ func (d Deps) RegisterV1(api huma.API) {
 	d.registerMembers(api)
 	d.registerAuditLog(api)
 	d.registerLinks(api)
+	d.registerFolders(api)
+	d.registerTags(api)
 }
 
 // authMiddleware enforces the bearer scheme on exactly the operations that
@@ -93,6 +95,8 @@ func (d Deps) authMiddleware(api huma.API) func(huma.Context, func(huma.Context)
 		if d.Queries != nil {
 			inner = authz.WithResolver(inner, authz.NewQueryResolver(d.Queries))
 			inner = authz.WithLinkResolver(inner, authz.NewQueryLinkResolver(d.Queries))
+			inner = authz.WithFolderResolver(inner, authz.NewQueryFolderResolver(d.Queries))
+			inner = authz.WithTagResolver(inner, authz.NewQueryTagResolver(d.Queries))
 		}
 		next(huma.WithContext(ctx, inner))
 	}

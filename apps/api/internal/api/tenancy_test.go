@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -115,6 +116,8 @@ type tenancyFixture struct {
 	teamDomainID   uuid.UUID
 	teamHostname   string
 	linkID         uuid.UUID
+	folderID       uuid.UUID
+	tagID          uuid.UUID
 }
 
 // seedAuthUser inserts a Supabase auth user. The column list mirrors
@@ -216,6 +219,21 @@ func newTenancyFixture(t *testing.T) *tenancyFixture {
 		 values ($1, $2, 'fixture', 'https://example.org/fixture', $3) returning id`,
 		teamDomainID, teamID, members[authz.RoleOwner].id).Scan(&linkID))
 
+	var folderID uuid.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`insert into folder (team_id, name) values ($1, 'fixture') returning id`,
+		teamID).Scan(&folderID))
+
+	// Named "fixture", deliberately not "Matrix": the create-tag matrix case
+	// posts a tag named "Matrix" against a fresh fixture for every role, and a
+	// seeded tag of the same name would make that create collide on the
+	// unique-name index (409) rather than succeed — a false read as an
+	// authorization failure instead of the cap/uniqueness bug it would be.
+	var tagID uuid.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`insert into tag (team_id, name) values ($1, 'fixture') returning id`,
+		teamID).Scan(&tagID))
+
 	key, jwksURL := startAuthenticatedJWKSServer(t)
 	verifier, err := auth.NewVerifier(ctx, jwksURL, meTestIssuer, meTestAudience)
 	require.NoError(t, err)
@@ -251,6 +269,8 @@ func newTenancyFixture(t *testing.T) *tenancyFixture {
 		teamDomainID:   teamDomainID,
 		teamHostname:   teamHostname,
 		linkID:         linkID,
+		folderID:       folderID,
+		tagID:          tagID,
 		deps: api.Deps{
 			Config:       cfg,
 			SharedDomain: api.SharedDomain{ID: sharedDomainID, Hostname: sharedHostname},
@@ -289,6 +309,29 @@ func (f *tenancyFixture) do(
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	if as.id != uuid.Nil {
+		req.Header.Set("Authorization",
+			"Bearer "+signMeToken(t, f.key, as.id.String(), as.email))
+	}
+
+	rec := httptest.NewRecorder()
+	f.router.ServeHTTP(rec, req)
+	return rec
+}
+
+// doRaw is do's raw-body counterpart, for a test that must send a body that
+// is not built from a Go map, so it can transmit exact JSON text — e.g.
+// `{"folder_id": null}` written out literally, rather than relying on
+// map[string]any{"folder_id": nil} (which does marshal to the same bytes, but
+// leaves the literal the test cares about implicit in a Go value instead of
+// visible in the test itself).
+func (f *tenancyFixture) doRaw(
+	t *testing.T, as testUser, method, path, rawBody string,
+) *httptest.ResponseRecorder {
+	t.Helper()
+
+	req := httptest.NewRequest(method, path, strings.NewReader(rawBody))
+	req.Header.Set("Content-Type", "application/json")
 	if as.id != uuid.Nil {
 		req.Header.Set("Authorization",
 			"Bearer "+signMeToken(t, f.key, as.id.String(), as.email))
