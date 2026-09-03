@@ -42,6 +42,7 @@ var teamScopedCases = []matrixCase{
 	{"list-audit-log", http.MethodGet, "/v1/teams/{team}/audit-log", nil, authz.RoleAdmin},
 	{"create-link", http.MethodPost, "/v1/teams/{team}/links",
 		map[string]string{"destination_url": "https://example.org/matrix"}, authz.RoleEditor},
+	{"list-links", http.MethodGet, "/v1/teams/{team}/links", nil, authz.RoleViewer},
 }
 
 // notTeamScoped names the authenticated operations that legitimately carry no

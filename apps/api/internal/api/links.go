@@ -208,6 +208,15 @@ func (d Deps) registerLinks(api huma.API) {
 		DefaultStatus: http.StatusCreated,
 		Security:      []map[string][]string{{"bearerAuth": {}}},
 	}, d.createLink)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-links",
+		Method:      http.MethodGet,
+		Path:        "/v1/teams/{team_id}/links",
+		Summary:     "List a team's links",
+		Tags:        []string{"Links"},
+		Security:    []map[string][]string{{"bearerAuth": {}}},
+	}, d.listLinks)
 }
 
 func (d Deps) createLink(ctx context.Context, in *CreateLinkInput) (*LinkOutput, error) {
@@ -336,4 +345,74 @@ func (d Deps) allowLinkCreate(ctx context.Context, userID uuid.UUID) error {
 		return huma.Error429TooManyRequests("too many links created; try again shortly")
 	}
 	return nil
+}
+
+// ListLinksInput takes flat, explicitly typed filters — not a generic
+// filter=field:op:value scheme, which is impossible to type in OpenAPI and
+// impossible to index for.
+//
+// DomainID is a string, not a *uuid.UUID: Huma v2 panics ("pointers are not
+// supported for form/header/path/query parameters") on a pointer-typed query
+// field, so it is parsed by hand in the handler — the same pattern
+// ListAuditLogInput.ActorUserID already uses in auditlog.go.
+type ListLinksInput struct {
+	authz.ViewerScope
+	PageParams
+	Q        string `query:"q" maxLength:"200" doc:"Substring match across the slug and the destination URL."`
+	State    string `query:"state" enum:"active,disabled,expired,flagged" doc:"Restrict to one state."`
+	DomainID string `query:"domain_id" doc:"Restrict to one domain, as a UUID."`
+	Sort     string `query:"sort" enum:"created_at,-created_at" default:"-created_at" doc:"Newest first by default."`
+}
+
+type ListLinksOutput struct {
+	Body Page[Link]
+}
+
+func (d Deps) listLinks(ctx context.Context, in *ListLinksInput) (*ListLinksOutput, error) {
+	member := in.Member()
+
+	params := db.ListLinksForTeamParams{
+		TeamID:  member.TeamID,
+		SortAsc: in.Sort == "created_at",
+		Limit:   in.Limit(),
+		Offset:  in.Offset(),
+	}
+	countParams := db.CountLinksForTeamParams{TeamID: member.TeamID}
+
+	if in.Q != "" {
+		params.Q, countParams.Q = &in.Q, &in.Q
+	}
+	if in.State != "" {
+		params.State, countParams.State = &in.State, &in.State
+	}
+	if in.DomainID != "" {
+		domainID, err := uuid.Parse(in.DomainID)
+		if err != nil {
+			return nil, huma.Error422UnprocessableEntity("domain_id must be a UUID")
+		}
+		params.DomainID, countParams.DomainID = &domainID, &domainID
+	}
+
+	rows, err := d.Queries.ListLinksForTeam(ctx, params)
+	if err != nil {
+		d.Log.Error("list links", "error", err, "team_id", member.TeamID)
+		return nil, huma.Error500InternalServerError("could not list links")
+	}
+
+	items := make([]Link, 0, len(rows))
+	var total int64
+	for _, row := range rows {
+		total = row.TotalCount
+		items = append(items, d.linkResponse(rowFromList(row)))
+	}
+
+	if NeedsTotalFallback(in.PageParams, len(rows)) {
+		total, err = d.Queries.CountLinksForTeam(ctx, countParams)
+		if err != nil {
+			d.Log.Error("count links", "error", err, "team_id", member.TeamID)
+			return nil, huma.Error500InternalServerError("could not list links")
+		}
+	}
+
+	return &ListLinksOutput{Body: NewPage(items, in.PageParams, total)}, nil
 }

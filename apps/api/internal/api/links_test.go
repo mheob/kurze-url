@@ -178,3 +178,128 @@ func TestCreateLinkIsRefusedForAViewer(t *testing.T) {
 
 	require.Equal(t, http.StatusForbidden, rec.Code)
 }
+
+func (f *tenancyFixture) createLink(t *testing.T, slug, dest string) linkBody {
+	t.Helper()
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPost,
+		"/v1/teams/"+f.teamID.String()+"/links",
+		map[string]any{"destination_url": dest, "slug": slug})
+	require.Equal(t, http.StatusCreated, rec.Code, "body: %s", rec.Body.String())
+	return decode[linkBody](t, rec)
+}
+
+type linkPage struct {
+	Items      []linkBody `json:"items"`
+	Page       int        `json:"page"`
+	PerPage    int        `json:"per_page"`
+	TotalCount int        `json:"total_count"`
+}
+
+func TestListLinksReturnsThePageEnvelope(t *testing.T) {
+	f := newTenancyFixture(t)
+	f.createLink(t, "eins", "https://example.org/eins")
+	f.createLink(t, "zwei", "https://example.org/zwei")
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		"/v1/teams/"+f.teamID.String()+"/links", nil)
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	page := decode[linkPage](t, rec)
+
+	// The fixture itself seeds one link, so two created here makes three.
+	require.Equal(t, 3, page.TotalCount)
+	require.Len(t, page.Items, 3)
+	require.Equal(t, 1, page.Page)
+	for _, item := range page.Items {
+		require.Equal(t, f.teamID, item.TeamID)
+		require.NotEmpty(t, item.ShortURL)
+	}
+}
+
+func TestListLinksDefaultsToNewestFirst(t *testing.T) {
+	f := newTenancyFixture(t)
+	f.createLink(t, "aelter", "https://example.org/a")
+	time.Sleep(10 * time.Millisecond)
+	newest := f.createLink(t, "neuer", "https://example.org/b")
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		"/v1/teams/"+f.teamID.String()+"/links", nil)
+
+	require.Equal(t, newest.ID, decode[linkPage](t, rec).Items[0].ID)
+}
+
+func TestListLinksSortsAscendingOnRequest(t *testing.T) {
+	f := newTenancyFixture(t)
+	f.createLink(t, "aelter", "https://example.org/a")
+	time.Sleep(10 * time.Millisecond)
+	f.createLink(t, "neuer", "https://example.org/b")
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		"/v1/teams/"+f.teamID.String()+"/links?sort=created_at", nil)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "fixture", decode[linkPage](t, rec).Items[0].Slug,
+		"ascending starts with the fixture's own, oldest link")
+}
+
+func TestListLinksFiltersBySubstring(t *testing.T) {
+	f := newTenancyFixture(t)
+	f.createLink(t, "sommerfest", "https://example.org/sommer")
+	f.createLink(t, "winterfeier", "https://example.org/winter")
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		"/v1/teams/"+f.teamID.String()+"/links?q=sommer", nil)
+
+	page := decode[linkPage](t, rec)
+	require.Len(t, page.Items, 1)
+	require.Equal(t, "sommerfest", page.Items[0].Slug)
+}
+
+func TestListLinksFiltersByDomain(t *testing.T) {
+	f := newTenancyFixture(t)
+	f.createLink(t, "aufshared", "https://example.org/s")
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		"/v1/teams/"+f.teamID.String()+"/links?domain_id="+f.sharedDomainID.String(), nil)
+
+	page := decode[linkPage](t, rec)
+	require.Len(t, page.Items, 1, "the fixture's own link is on the team domain, not the shared one")
+	require.Equal(t, "aufshared", page.Items[0].Slug)
+}
+
+func TestListLinksRejectsAnUnknownSort(t *testing.T) {
+	f := newTenancyFixture(t)
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		"/v1/teams/"+f.teamID.String()+"/links?sort=clicks", nil)
+
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code,
+		"click-count sorting needs a join this plan does not build; refuse rather than ignore")
+}
+
+func TestListLinksNeverShowsAnotherTeamsLinks(t *testing.T) {
+	f := newTenancyFixture(t)
+	other := newTenancyFixture(t)
+	other.createLink(t, "geheim", "https://example.org/geheim")
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		"/v1/teams/"+f.teamID.String()+"/links?per_page=100", nil)
+
+	for _, item := range decode[linkPage](t, rec).Items {
+		require.Equal(t, f.teamID, item.TeamID)
+		require.NotEqual(t, "geheim", item.Slug)
+	}
+}
+
+func TestListLinksReportsATotalPastTheLastPage(t *testing.T) {
+	f := newTenancyFixture(t)
+	f.createLink(t, "eins", "https://example.org/eins")
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		"/v1/teams/"+f.teamID.String()+"/links?page=9&per_page=10", nil)
+
+	page := decode[linkPage](t, rec)
+	require.Empty(t, page.Items)
+	require.Equal(t, 2, page.TotalCount,
+		"a page past the end still has to report how many there are")
+}
