@@ -1,0 +1,70 @@
+package api_test
+
+import (
+	"reflect"
+	"testing"
+
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/stretchr/testify/require"
+
+	"github.com/mheob/kurze-url/apps/api/internal/api"
+)
+
+func TestPageParamsClampsAndDefaults(t *testing.T) {
+	cases := []struct {
+		name        string
+		in          api.PageParams
+		wantLimit   int32
+		wantOffset  int32
+		wantPage    int
+		wantPerPage int
+	}{
+		{"defaults when zero", api.PageParams{}, 25, 0, 1, 25},
+		{"second page", api.PageParams{Page: 2, PerPage: 10}, 10, 10, 2, 10},
+		{"per_page is capped at 100", api.PageParams{Page: 1, PerPage: 5000}, 100, 0, 1, 100},
+		{"negative page is treated as the first", api.PageParams{Page: -3, PerPage: 10}, 10, 0, 1, 10},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.wantLimit, tc.in.Limit())
+			require.Equal(t, tc.wantOffset, tc.in.Offset())
+
+			page, perPage := tc.in.Normalized()
+			require.Equal(t, tc.wantPage, page)
+			require.Equal(t, tc.wantPerPage, perPage)
+		})
+	}
+}
+
+func TestNewPageReportsTheNormalisedParamsAndTotal(t *testing.T) {
+	page := api.NewPage([]string{"a", "b"}, api.PageParams{Page: 0, PerPage: 0}, 7)
+
+	require.Equal(t, []string{"a", "b"}, page.Items)
+	require.Equal(t, 1, page.Page)
+	require.Equal(t, 25, page.PerPage)
+	require.Equal(t, 7, page.TotalCount)
+}
+
+func TestNewPageNeverEmitsANullItemsArray(t *testing.T) {
+	// Explicit [string] instantiation: an untyped nil carries no type
+	// information for Go to infer T from, so the brief's literal
+	// api.NewPage(nil, ...) does not compile.
+	page := api.NewPage[string](nil, api.PageParams{}, 0)
+
+	require.NotNil(t, page.Items,
+		"a generated TypeScript client should get [], never null")
+	require.Empty(t, page.Items)
+}
+
+// The generated TypeScript client in plan 4 inherits these schema names, so a
+// mangled generic name would propagate into the frontend's types.
+//
+// api.Team is defined in Task 8; until then this asserts against
+// api.Page[string] ("PageString") per the task-6 brief's fallback. Switch to
+// api.Page[api.Team] / "PageTeam" once Task 8 lands.
+func TestGenericEnvelopeSchemaNamesAreReadable(t *testing.T) {
+	name := huma.DefaultSchemaNamer(reflect.TypeOf(api.Page[string]{}), "")
+
+	require.Equal(t, "PageString", name)
+}
