@@ -108,6 +108,11 @@ type tenancyFixture struct {
 	members  map[authz.Role]testUser
 	stranger testUser
 	invites  *fakeInviter
+
+	sharedDomainID uuid.UUID
+	teamDomainID   uuid.UUID
+	teamHostname   string
+	linkID         uuid.UUID
 }
 
 // seedAuthUser inserts a Supabase auth user. The column list mirrors
@@ -187,6 +192,28 @@ func newTenancyFixture(t *testing.T) *tenancyFixture {
 		require.NoError(t, err)
 	}
 
+	sharedHostname := "shared-" + suffix + ".test"
+	var sharedDomainID uuid.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`insert into domain (team_id, hostname, verification_status, verified_at)
+		 values (null, $1, 'verified', now()) returning id`, sharedHostname).Scan(&sharedDomainID))
+	// A team-less domain is not reached by the team cascade, so it needs its
+	// own cleanup or the suite leaks a row per fixture.
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `delete from domain where id = $1`, sharedDomainID)
+	})
+
+	teamHostname := "team-" + suffix + ".test"
+	var teamDomainID, linkID uuid.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`insert into domain (team_id, hostname, verification_status, verified_at)
+		 values ($1, $2, 'verified', now()) returning id`,
+		teamID, teamHostname).Scan(&teamDomainID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`insert into link (domain_id, team_id, slug, destination_url, created_by)
+		 values ($1, $2, 'fixture', 'https://example.org/fixture', $3) returning id`,
+		teamDomainID, teamID, members[authz.RoleOwner].id).Scan(&linkID))
+
 	key, jwksURL := startAuthenticatedJWKSServer(t)
 	verifier, err := auth.NewVerifier(ctx, jwksURL, meTestIssuer, meTestAudience)
 	require.NoError(t, err)
@@ -197,24 +224,31 @@ func newTenancyFixture(t *testing.T) *tenancyFixture {
 	// must be refused by POST /v1/teams.
 	cfg.MaintainerUserIDs = []uuid.UUID{members[authz.RoleOwner].id}
 	cfg.InviteRateLimitPerHour = 20
+	cfg.SharedDomainHostname = sharedHostname
+	cfg.LinkCreateRateLimitPerMin = 100
 
 	invites := &fakeInviter{userID: uuid.New(), t: t, pool: pool}
 
 	f := &tenancyFixture{
-		pool:     pool,
-		key:      key,
-		teamID:   teamID,
-		members:  members,
-		stranger: stranger,
-		invites:  invites,
+		pool:           pool,
+		key:            key,
+		teamID:         teamID,
+		members:        members,
+		stranger:       stranger,
+		invites:        invites,
+		sharedDomainID: sharedDomainID,
+		teamDomainID:   teamDomainID,
+		teamHostname:   teamHostname,
+		linkID:         linkID,
 		deps: api.Deps{
-			Config:   cfg,
-			Queries:  db.New(pool),
-			Pool:     pool,
-			Cache:    redis,
-			Verifier: verifier,
-			Admin:    invites,
-			Log:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+			Config:       cfg,
+			SharedDomain: api.SharedDomain{ID: sharedDomainID, Hostname: sharedHostname},
+			Queries:      db.New(pool),
+			Pool:         pool,
+			Cache:        redis,
+			Verifier:     verifier,
+			Admin:        invites,
+			Log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
 		},
 	}
 
