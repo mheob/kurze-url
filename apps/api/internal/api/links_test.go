@@ -823,6 +823,35 @@ func TestUpdateLinkRecordsFolderAndTagChangesInOneAuditRow(t *testing.T) {
 	require.Contains(t, changed, "tags")
 }
 
+// TestUpdateLinkNeverWritesATagNameIntoAuditMetadata guards the count-not-names
+// rule in updateLink: a tag name is user-supplied free text, and the audit
+// metadata denylist exists precisely to keep unvetted strings out of that
+// column. The tag names here are deliberately distinctive so a regression that
+// leaked either one into metadata could not hide behind a coincidental
+// substring match.
+func TestUpdateLinkNeverWritesATagNameIntoAuditMetadata(t *testing.T) {
+	f := newTenancyFixture(t)
+	oldTag := f.createTag(t, "AuditCanaryOldTagName")
+	newTag := f.createTag(t, "AuditCanaryNewTagName")
+	linkID := f.createLinkWithTags(t, "https://example.org/x", oldTag.ID)
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPatch, "/v1/links/"+linkID.String(),
+		map[string]any{"tag_ids": []string{newTag.ID.String()}})
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+
+	var metadata string
+	require.NoError(t, f.pool.QueryRow(context.Background(),
+		`select metadata::text from audit_log where entity_id = $1 and action = 'link.updated'`,
+		linkID).Scan(&metadata))
+
+	require.NotContains(t, metadata, "AuditCanaryOldTagName",
+		"a tag name must never reach audit_log.metadata — only a count may")
+	require.NotContains(t, metadata, "AuditCanaryNewTagName",
+		"a tag name must never reach audit_log.metadata — only a count may")
+	require.Contains(t, metadata, `"tags"`,
+		"the tags key must still be present in metadata.changed, just without names")
+}
+
 // TestUpdateLinkChangingOnlyFolderOrTagsLeavesTheRedirectCacheAlone proves the
 // hot-path constraint by exercising it, not only by reading the code: neither
 // folder_id nor tag_ids appears in link.Cached, so a PATCH that touches only
