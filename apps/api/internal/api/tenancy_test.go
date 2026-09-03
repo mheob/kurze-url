@@ -116,6 +116,7 @@ type tenancyFixture struct {
 	teamHostname   string
 	linkID         uuid.UUID
 	folderID       uuid.UUID
+	tagID          uuid.UUID
 }
 
 // seedAuthUser inserts a Supabase auth user. The column list mirrors
@@ -222,6 +223,16 @@ func newTenancyFixture(t *testing.T) *tenancyFixture {
 		`insert into folder (team_id, name) values ($1, 'fixture') returning id`,
 		teamID).Scan(&folderID))
 
+	// Named "fixture", deliberately not "Matrix": the create-tag matrix case
+	// posts a tag named "Matrix" against a fresh fixture for every role, and a
+	// seeded tag of the same name would make that create collide on the
+	// unique-name index (409) rather than succeed — a false read as an
+	// authorization failure instead of the cap/uniqueness bug it would be.
+	var tagID uuid.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`insert into tag (team_id, name) values ($1, 'fixture') returning id`,
+		teamID).Scan(&tagID))
+
 	key, jwksURL := startAuthenticatedJWKSServer(t)
 	verifier, err := auth.NewVerifier(ctx, jwksURL, meTestIssuer, meTestAudience)
 	require.NoError(t, err)
@@ -258,6 +269,7 @@ func newTenancyFixture(t *testing.T) *tenancyFixture {
 		teamHostname:   teamHostname,
 		linkID:         linkID,
 		folderID:       folderID,
+		tagID:          tagID,
 		deps: api.Deps{
 			Config:       cfg,
 			SharedDomain: api.SharedDomain{ID: sharedDomainID, Hostname: sharedHostname},
