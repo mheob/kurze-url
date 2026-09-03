@@ -320,7 +320,7 @@ git commit -m "feat(api): add shared name validation and count caps"
 **Files:**
 
 - Modify: `apps/api/internal/authz/scope.go`
-- Modify: `apps/api/internal/authz/scope_test.go`
+- Create: `apps/api/internal/authz/membership_internal_test.go`
 
 **Interfaces:**
 
@@ -685,7 +685,10 @@ func TestFolderScopeAllowsAnEditor(t *testing.T) {
 		}},
 		userID, folderID.String())
 
-	require.Equal(t, http.StatusOK, resp.Code)
+	// The probe handler returns an empty struct, which Huma answers with 204,
+	// so assert "not an error" the way link_test.go does rather than an exact
+	// 200.
+	require.Less(t, resp.Code, 400, "body: %s", resp.Body.String())
 }
 
 func TestFolderScopeRefusesAViewerWith403(t *testing.T) {
@@ -725,12 +728,19 @@ func TestFolderScopeHidesAnotherTeamsFolderWith404(t *testing.T) {
 }
 
 func TestFolderScopeReturns422ForAMalformedID(t *testing.T) {
+	// The membership resolver is configured to fail (ErrNotMember, which
+	// would otherwise produce 404) so a resolver-produced error is actually
+	// in play here. Without that, this test would pass whether or not the
+	// folder_id re-parse guard exists at all: with both fakes succeeding,
+	// nothing competes with Huma's own path-binder 422, and the binder's
+	// status stands unopposed regardless of the guard.
 	resp := folderScopeCase(t,
 		fakeFolderResolver{folder: authz.ResolvedFolder{}},
-		fakeMembershipResolver{membership: authz.Membership{Role: authz.RoleOwner}},
+		fakeMembershipResolver{err: authz.ErrNotMember},
 		uuid.New(), "not-a-uuid")
 
-	require.Equal(t, http.StatusUnprocessableEntity, resp.Code)
+	require.Equal(t, http.StatusUnprocessableEntity, resp.Code,
+		"a malformed ID is a malformed request, not a missing folder")
 }
 
 func TestFolderScopeRefusesAnUnauthenticatedCaller(t *testing.T) {
@@ -1528,9 +1538,11 @@ git commit -m "feat(api): add folder endpoints"
 Create `apps/api/internal/db/queries/tag.sql`:
 
 ```sql
--- Tag CRUD and the link_tag join. There is no RLS: every query here except
--- GetTagScope filters by team_id, because Postgres enforces nothing about
--- tenancy.
+-- Tag CRUD and the link_tag join. There is no RLS: most queries here filter by
+-- team_id because Postgres enforces nothing about tenancy. Three queries do not:
+-- GetTagScope deliberately discovers the team (so it cannot filter by the answer),
+-- and DeleteLinkTags and InsertLinkTags cannot filter by team_id because the
+-- link_tag table has no team_id column — their safety rests entirely on the caller.
 
 -- GetTagScope is the one deliberate exception to the team_id rule. It is what
 -- the TagEditorScope resolver calls to *discover* which team a tag belongs to,
@@ -1600,8 +1612,21 @@ order by t.name;
 -- computed diff: the set is at most ten rows, and a diff would be more code
 -- for no measurable gain.
 
+-- DeleteLinkTags filters only by link_id because the link_tag table has no
+-- team_id column. Its safety is contingent on the caller: the link_id must
+-- already be the resolved link from a LinkEditorScope (which checked the
+-- caller's membership in the link's owning team) and this query runs inside
+-- the handler's transaction. If an invalid link_id arrives, the statement
+-- silently deletes nothing — the caller must validate the link exists first.
+
 -- name: DeleteLinkTags :exec
 delete from link_tag where link_id = $1;
+
+-- InsertLinkTags also cannot filter by team_id: the link_tag table stores only
+-- link_id and tag_id. Like DeleteLinkTags, it enforces nothing itself and relies
+-- on the caller. The link_id must be the resolved link (checked by LinkEditorScope),
+-- and every tag_id must have already been validated through ListTagsByIDs, which
+-- filters by the requesting team.
 
 -- name: InsertLinkTags :exec
 insert into link_tag (link_id, tag_id)
@@ -1722,7 +1747,10 @@ func TestTagScopeAllowsAnEditor(t *testing.T) {
 		}},
 		userID, tagID.String())
 
-	require.Equal(t, http.StatusOK, resp.Code)
+	// The probe handler returns an empty struct, which Huma answers with 204,
+	// so assert "not an error" the way link_test.go does rather than an exact
+	// 200.
+	require.Less(t, resp.Code, 400, "body: %s", resp.Body.String())
 }
 
 func TestTagScopeRefusesAViewerWith403(t *testing.T) {
@@ -1758,12 +1786,19 @@ func TestTagScopeHidesAnotherTeamsTagWith404(t *testing.T) {
 }
 
 func TestTagScopeReturns422ForAMalformedID(t *testing.T) {
+	// The membership resolver is configured to fail (ErrNotMember, which
+	// would otherwise produce 404) so a resolver-produced error is actually
+	// in play here. Without that, this test would pass whether or not the
+	// tag_id re-parse guard exists at all: with both fakes succeeding,
+	// nothing competes with Huma's own path-binder 422, and the binder's
+	// status stands unopposed regardless of the guard.
 	resp := tagScopeCase(t,
 		fakeTagResolver{tag: authz.ResolvedTag{}},
-		fakeMembershipResolver{membership: authz.Membership{Role: authz.RoleOwner}},
+		fakeMembershipResolver{err: authz.ErrNotMember},
 		uuid.New(), "not-a-uuid")
 
-	require.Equal(t, http.StatusUnprocessableEntity, resp.Code)
+	require.Equal(t, http.StatusUnprocessableEntity, resp.Code,
+		"a malformed ID is a malformed request, not a missing tag")
 }
 
 func TestTagScopeRefusesAnUnauthenticatedCaller(t *testing.T) {
