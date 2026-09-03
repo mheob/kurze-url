@@ -329,50 +329,75 @@ git commit -m "feat(api): add shared name validation and count caps"
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `apps/api/internal/authz/scope_test.go`:
+Create `apps/api/internal/authz/membership_internal_test.go`.
+
+**This is the package's only in-package test, and that is deliberate.** Every other test file in `internal/authz` is `package authz_test`, driving the scopes through `humatest` the way Huma runs them. That harness cannot reach `resolveMembership`, because every exported path to it checks claims earlier and returns 401 first — a black-box test would pass without the guard existing. Testing an unexported guard that no exported path can reach is exactly what an in-package test is for. Keep this file to that one purpose; new scope tests still go in `authz_test`.
 
 ```go
+package authz
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/humatest"
+	"github.com/google/uuid"
+)
+
+// refusingResolver fails the test if it is ever consulted.
+type refusingResolver struct{ t *testing.T }
+
+func (r refusingResolver) Membership(
+	context.Context, uuid.UUID, uuid.UUID,
+) (Membership, error) {
+	r.t.Fatal("resolveMembership queried membership without verified claims")
+	return Membership{}, nil
+}
+
 func TestResolveMembershipRefusesWithoutClaims(t *testing.T) {
 	// The precondition is that callers check claims first. This asserts what
 	// happens when one does not: 401, not a membership lookup for the nil user
 	// that would surface as a misleading 404.
-	var out Membership
-	ctx := humatest.NewContext(nil, httptest.NewRequest(http.MethodGet, "/", nil), nil)
-	ctx = huma.WithValue(ctx, resolverKey{}, stubResolver{
-		t: t,
-		onCall: func() {
-			t.Fatal("resolveMembership queried membership without verified claims")
-		},
+	_, api := humatest.New(t, huma.DefaultConfig("test", "1.0.0"))
+
+	var got []error
+	huma.Register(api, huma.Operation{
+		OperationID: "probe",
+		Method:      http.MethodGet,
+		Path:        "/probe",
+	}, func(ctx context.Context, _ *struct{}) (*struct{}, error) {
+		return &struct{}{}, nil
 	})
 
-	errs := resolveMembership(ctx, uuid.New(), RoleViewer, "team not found", &out)
+	api.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
+		// No auth.WithClaims: the caller is unauthenticated. A resolver IS
+		// installed, so reaching it would be the bug.
+		inner := WithResolver(ctx.Context(), refusingResolver{t: t})
+		var out Membership
+		got = resolveMembership(huma.WithContext(ctx, inner),
+			uuid.New(), RoleViewer, "team not found", &out)
+		next(ctx)
+	})
 
-	if len(errs) != 1 {
-		t.Fatalf("got %d errors, want 1", len(errs))
+	api.Get("/probe")
+
+	if len(got) != 1 {
+		t.Fatalf("got %d errors, want 1", len(got))
 	}
 	var status huma.StatusError
-	if !errors.As(errs[0], &status) || status.GetStatus() != http.StatusUnauthorized {
-		t.Fatalf("got %v, want 401", errs[0])
+	if !errors.As(got[0], &status) || status.GetStatus() != http.StatusUnauthorized {
+		t.Fatalf("got %v, want 401", got[0])
 	}
 }
+
+var _ = httptest.NewRequest // keep the import if the harness above needs it; drop otherwise
 ```
 
-Add the stub beside the existing fakes in that file:
-
-```go
-// stubResolver fails the test if Membership is ever called.
-type stubResolver struct {
-	t      *testing.T
-	onCall func()
-}
-
-func (s stubResolver) Membership(context.Context, uuid.UUID, uuid.UUID) (Membership, error) {
-	s.onCall()
-	return Membership{}, nil
-}
-```
-
-Match the imports and the context-construction helper already used by the other tests in `scope_test.go` — if they build a `huma.Context` a different way, use theirs rather than the sketch above.
+If `humatest` proves awkward for constructing a bare `huma.Context` here, any construction that yields one works — the assertion is what matters: with no claims installed, `resolveMembership` returns exactly one 401 and never consults the resolver. Drop the trailing `var _ =` line and its import if unused.
 
 - [ ] **Step 2: Run it to verify it fails**
 
@@ -579,94 +604,154 @@ git commit -m "feat(db): add folder queries"
 
 - [ ] **Step 1: Write the failing test**
 
-Create `apps/api/internal/authz/folder_test.go`, mirroring the structure of `link_test.go` (copy its context-construction helpers exactly):
+Create `apps/api/internal/authz/folder_test.go` as **`package authz_test`** — every test file in this package is external, and this one must be too. It drives the scope through `humatest` exactly as `link_test.go` drives `LinkEditorScope`: register a probe operation whose input embeds the scope, install the fakes as middleware, and assert on the recorded HTTP status. Do not call `resolveFolderScope` directly; an external test cannot see it, and the point is to exercise the scope the way Huma runs it.
+
+`fakeMembershipResolver` already exists in `link_test.go` and is reused as-is. Add only `fakeFolderResolver`, the probe input, and `folderScopeCase` — modelled line-for-line on `linkScopeCase`.
 
 ```go
-package authz
+package authz_test
 
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/humatest"
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
+
+	"github.com/mheob/kurze-url/apps/api/internal/auth"
+	"github.com/mheob/kurze-url/apps/api/internal/authz"
 )
 
-// fakeFolderResolver answers with a canned folder or a canned error.
 type fakeFolderResolver struct {
-	folder ResolvedFolder
+	folder authz.ResolvedFolder
 	err    error
 }
 
-func (f fakeFolderResolver) Folder(context.Context, uuid.UUID) (ResolvedFolder, error) {
+func (f fakeFolderResolver) Folder(context.Context, uuid.UUID) (authz.ResolvedFolder, error) {
 	return f.folder, f.err
 }
 
-func TestFolderEditorScopeAllowsEditor(t *testing.T) {
+type folderEditorInput struct {
+	authz.FolderEditorScope
+}
+
+// folderScopeCase wires one request through a registered operation whose input
+// embeds FolderEditorScope, so the scope is exercised exactly as Huma runs it.
+func folderScopeCase(
+	t *testing.T, folders authz.FolderResolver, members authz.Resolver,
+	userID uuid.UUID, folderID string,
+) *httptest.ResponseRecorder {
+	t.Helper()
+
+	_, api := humatest.New(t, huma.DefaultConfig("test", "1.0.0"))
+	api.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
+		inner := ctx.Context()
+		if userID != uuid.Nil {
+			inner = auth.WithClaims(inner, auth.Claims{UserID: userID})
+		}
+		if members != nil {
+			inner = authz.WithResolver(inner, members)
+		}
+		if folders != nil {
+			inner = authz.WithFolderResolver(inner, folders)
+		}
+		next(huma.WithContext(ctx, inner))
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "probe",
+		Method:      http.MethodGet,
+		Path:        "/folders/{folder_id}",
+	}, func(_ context.Context, _ *folderEditorInput) (*struct{}, error) {
+		return &struct{}{}, nil
+	})
+
+	return api.Get("/folders/" + folderID)
+}
+
+func TestFolderScopeAllowsAnEditor(t *testing.T) {
 	teamID, folderID, userID := uuid.New(), uuid.New(), uuid.New()
 
-	var scope FolderEditorScope
-	scope.FolderID = folderID
-	errs := resolveFolderScopeForTest(t, &scope, folderID, userID,
-		fakeFolderResolver{folder: ResolvedFolder{ID: folderID, TeamID: teamID}},
-		fakeResolver{membership: Membership{TeamID: teamID, UserID: userID, Role: RoleEditor}},
-	)
+	resp := folderScopeCase(t,
+		fakeFolderResolver{folder: authz.ResolvedFolder{ID: folderID, TeamID: teamID}},
+		fakeMembershipResolver{membership: authz.Membership{
+			TeamID: teamID, UserID: userID, Role: authz.RoleEditor,
+		}},
+		userID, folderID.String())
 
-	if len(errs) != 0 {
-		t.Fatalf("editor must be allowed, got %v", errs)
-	}
-	if scope.Folder().TeamID != teamID {
-		t.Fatalf("scope did not carry the resolved folder")
-	}
+	require.Equal(t, http.StatusOK, resp.Code)
 }
 
-func TestFolderEditorScopeHidesAnotherTeamsFolder(t *testing.T) {
-	// A folder that does not exist and a folder owned by another team must be
-	// indistinguishable, so folder IDs cannot be probed.
-	folderID, userID := uuid.New(), uuid.New()
-
-	var missing FolderEditorScope
-	missing.FolderID = folderID
-	missingErrs := resolveFolderScopeForTest(t, &missing, folderID, userID,
-		fakeFolderResolver{err: ErrFolderNotFound},
-		fakeResolver{membership: Membership{Role: RoleOwner}},
-	)
-
-	var foreign FolderEditorScope
-	foreign.FolderID = folderID
-	foreignErrs := resolveFolderScopeForTest(t, &foreign, folderID, userID,
-		fakeFolderResolver{folder: ResolvedFolder{ID: folderID, TeamID: uuid.New()}},
-		fakeResolver{err: ErrNotMember},
-	)
-
-	assertSameStatusAndMessage(t, missingErrs, foreignErrs, http.StatusNotFound)
-}
-
-func TestFolderEditorScopeRefusesViewerWith403(t *testing.T) {
+func TestFolderScopeRefusesAViewerWith403(t *testing.T) {
 	// A member of the owning team whose role is too low gets 403, not 404:
 	// that caller already knows the folder exists.
 	teamID, folderID, userID := uuid.New(), uuid.New(), uuid.New()
 
-	var scope FolderEditorScope
-	scope.FolderID = folderID
-	errs := resolveFolderScopeForTest(t, &scope, folderID, userID,
-		fakeFolderResolver{folder: ResolvedFolder{ID: folderID, TeamID: teamID}},
-		fakeResolver{membership: Membership{TeamID: teamID, UserID: userID, Role: RoleViewer}},
-	)
+	resp := folderScopeCase(t,
+		fakeFolderResolver{folder: authz.ResolvedFolder{ID: folderID, TeamID: teamID}},
+		fakeMembershipResolver{membership: authz.Membership{
+			TeamID: teamID, UserID: userID, Role: authz.RoleViewer,
+		}},
+		userID, folderID.String())
 
-	assertStatus(t, errs, http.StatusForbidden)
+	require.Equal(t, http.StatusForbidden, resp.Code)
 }
 
-func TestFolderEditorScopeRejectsMalformedID(t *testing.T) {
-	// Huma runs every resolver even when its own binding failed, and picks the
-	// last error's status. Without the raw re-check a malformed folder_id would
-	// be reported as 404 — the wrong defect.
-	errs := resolveFolderScopeWithRawParam(t, "not-a-uuid")
-	assertStatus(t, errs, http.StatusUnprocessableEntity)
+func TestFolderScopeHidesAnotherTeamsFolderWith404(t *testing.T) {
+	// A folder owned by another team and a folder that does not exist must be
+	// indistinguishable, or folder IDs become probeable.
+	folderID, userID := uuid.New(), uuid.New()
+
+	foreign := folderScopeCase(t,
+		fakeFolderResolver{folder: authz.ResolvedFolder{ID: folderID, TeamID: uuid.New()}},
+		fakeMembershipResolver{err: authz.ErrNotMember},
+		userID, folderID.String())
+
+	missing := folderScopeCase(t,
+		fakeFolderResolver{err: authz.ErrFolderNotFound},
+		fakeMembershipResolver{membership: authz.Membership{Role: authz.RoleOwner}},
+		userID, folderID.String())
+
+	require.Equal(t, http.StatusNotFound, foreign.Code)
+	require.Equal(t, http.StatusNotFound, missing.Code)
+	require.Equal(t, missing.Body.String(), foreign.Body.String(),
+		"a foreign folder and a missing one must be byte-identical")
+}
+
+func TestFolderScopeReturns422ForAMalformedID(t *testing.T) {
+	resp := folderScopeCase(t,
+		fakeFolderResolver{folder: authz.ResolvedFolder{}},
+		fakeMembershipResolver{membership: authz.Membership{Role: authz.RoleOwner}},
+		uuid.New(), "not-a-uuid")
+
+	require.Equal(t, http.StatusUnprocessableEntity, resp.Code)
+}
+
+func TestFolderScopeRefusesAnUnauthenticatedCaller(t *testing.T) {
+	folderID := uuid.New()
+
+	resp := folderScopeCase(t,
+		fakeFolderResolver{folder: authz.ResolvedFolder{ID: folderID, TeamID: uuid.New()}},
+		fakeMembershipResolver{membership: authz.Membership{Role: authz.RoleOwner}},
+		uuid.Nil, folderID.String())
+
+	require.Equal(t, http.StatusUnauthorized, resp.Code)
+}
+
+func TestFolderScopeRefusesWhenNoResolverIsInstalled(t *testing.T) {
+	folderID := uuid.New()
+
+	resp := folderScopeCase(t, nil,
+		fakeMembershipResolver{membership: authz.Membership{Role: authz.RoleOwner}},
+		uuid.New(), folderID.String())
+
+	require.Equal(t, http.StatusInternalServerError, resp.Code)
 }
 ```
-
-`fakeResolver`, `assertStatus`, `assertSameStatusAndMessage`, `resolveFolderScopeForTest` and `resolveFolderScopeWithRawParam` follow the equivalents in `link_test.go`. Reuse the existing helpers where they exist and add only the folder-specific wrappers; do not duplicate a helper that is already in the package.
 
 - [ ] **Step 2: Run it to verify it fails**
 
@@ -1558,82 +1643,144 @@ This is Task 5 with `folder` replaced by `tag` throughout. Write it out rather t
 
 - [ ] **Step 1: Write the failing test**
 
-Create `apps/api/internal/authz/tag_test.go` with the same four tests as `folder_test.go`, substituting `Tag` for `Folder` and `tag_id` for `folder_id`:
+Create `apps/api/internal/authz/tag_test.go` as **`package authz_test`**, structured exactly like `folder_test.go` from Task 5: a `fakeTagResolver`, a `tagEditorInput` probe struct, a `tagScopeCase` helper modelled on `folderScopeCase`, and the same six cases. `fakeMembershipResolver` is reused from `link_test.go`.
 
 ```go
-package authz
+package authz_test
 
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/humatest"
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
+
+	"github.com/mheob/kurze-url/apps/api/internal/auth"
+	"github.com/mheob/kurze-url/apps/api/internal/authz"
 )
 
 type fakeTagResolver struct {
-	tag ResolvedTag
+	tag authz.ResolvedTag
 	err error
 }
 
-func (f fakeTagResolver) Tag(context.Context, uuid.UUID) (ResolvedTag, error) {
+func (f fakeTagResolver) Tag(context.Context, uuid.UUID) (authz.ResolvedTag, error) {
 	return f.tag, f.err
 }
 
-func TestTagEditorScopeAllowsEditor(t *testing.T) {
-	teamID, tagID, userID := uuid.New(), uuid.New(), uuid.New()
-
-	var scope TagEditorScope
-	scope.TagID = tagID
-	errs := resolveTagScopeForTest(t, &scope, tagID, userID,
-		fakeTagResolver{tag: ResolvedTag{ID: tagID, TeamID: teamID}},
-		fakeResolver{membership: Membership{TeamID: teamID, UserID: userID, Role: RoleEditor}},
-	)
-
-	if len(errs) != 0 {
-		t.Fatalf("editor must be allowed, got %v", errs)
-	}
-	if scope.Tag().TeamID != teamID {
-		t.Fatalf("scope did not carry the resolved tag")
-	}
+type tagEditorInput struct {
+	authz.TagEditorScope
 }
 
-func TestTagEditorScopeHidesAnotherTeamsTag(t *testing.T) {
+// tagScopeCase wires one request through a registered operation whose input
+// embeds TagEditorScope, so the scope is exercised exactly as Huma runs it.
+func tagScopeCase(
+	t *testing.T, tags authz.TagResolver, members authz.Resolver,
+	userID uuid.UUID, tagID string,
+) *httptest.ResponseRecorder {
+	t.Helper()
+
+	_, api := humatest.New(t, huma.DefaultConfig("test", "1.0.0"))
+	api.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
+		inner := ctx.Context()
+		if userID != uuid.Nil {
+			inner = auth.WithClaims(inner, auth.Claims{UserID: userID})
+		}
+		if members != nil {
+			inner = authz.WithResolver(inner, members)
+		}
+		if tags != nil {
+			inner = authz.WithTagResolver(inner, tags)
+		}
+		next(huma.WithContext(ctx, inner))
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "probe",
+		Method:      http.MethodGet,
+		Path:        "/tags/{tag_id}",
+	}, func(_ context.Context, _ *tagEditorInput) (*struct{}, error) {
+		return &struct{}{}, nil
+	})
+
+	return api.Get("/tags/" + tagID)
+}
+
+func TestTagScopeAllowsAnEditor(t *testing.T) {
+	teamID, tagID, userID := uuid.New(), uuid.New(), uuid.New()
+
+	resp := tagScopeCase(t,
+		fakeTagResolver{tag: authz.ResolvedTag{ID: tagID, TeamID: teamID}},
+		fakeMembershipResolver{membership: authz.Membership{
+			TeamID: teamID, UserID: userID, Role: authz.RoleEditor,
+		}},
+		userID, tagID.String())
+
+	require.Equal(t, http.StatusOK, resp.Code)
+}
+
+func TestTagScopeRefusesAViewerWith403(t *testing.T) {
+	teamID, tagID, userID := uuid.New(), uuid.New(), uuid.New()
+
+	resp := tagScopeCase(t,
+		fakeTagResolver{tag: authz.ResolvedTag{ID: tagID, TeamID: teamID}},
+		fakeMembershipResolver{membership: authz.Membership{
+			TeamID: teamID, UserID: userID, Role: authz.RoleViewer,
+		}},
+		userID, tagID.String())
+
+	require.Equal(t, http.StatusForbidden, resp.Code)
+}
+
+func TestTagScopeHidesAnotherTeamsTagWith404(t *testing.T) {
 	tagID, userID := uuid.New(), uuid.New()
 
-	var missing TagEditorScope
-	missing.TagID = tagID
-	missingErrs := resolveTagScopeForTest(t, &missing, tagID, userID,
-		fakeTagResolver{err: ErrTagNotFound},
-		fakeResolver{membership: Membership{Role: RoleOwner}},
-	)
+	foreign := tagScopeCase(t,
+		fakeTagResolver{tag: authz.ResolvedTag{ID: tagID, TeamID: uuid.New()}},
+		fakeMembershipResolver{err: authz.ErrNotMember},
+		userID, tagID.String())
 
-	var foreign TagEditorScope
-	foreign.TagID = tagID
-	foreignErrs := resolveTagScopeForTest(t, &foreign, tagID, userID,
-		fakeTagResolver{tag: ResolvedTag{ID: tagID, TeamID: uuid.New()}},
-		fakeResolver{err: ErrNotMember},
-	)
+	missing := tagScopeCase(t,
+		fakeTagResolver{err: authz.ErrTagNotFound},
+		fakeMembershipResolver{membership: authz.Membership{Role: authz.RoleOwner}},
+		userID, tagID.String())
 
-	assertSameStatusAndMessage(t, missingErrs, foreignErrs, http.StatusNotFound)
+	require.Equal(t, http.StatusNotFound, foreign.Code)
+	require.Equal(t, http.StatusNotFound, missing.Code)
+	require.Equal(t, missing.Body.String(), foreign.Body.String(),
+		"a foreign tag and a missing one must be byte-identical")
 }
 
-func TestTagEditorScopeRefusesViewerWith403(t *testing.T) {
-	teamID, tagID, userID := uuid.New(), uuid.New(), uuid.New()
+func TestTagScopeReturns422ForAMalformedID(t *testing.T) {
+	resp := tagScopeCase(t,
+		fakeTagResolver{tag: authz.ResolvedTag{}},
+		fakeMembershipResolver{membership: authz.Membership{Role: authz.RoleOwner}},
+		uuid.New(), "not-a-uuid")
 
-	var scope TagEditorScope
-	scope.TagID = tagID
-	errs := resolveTagScopeForTest(t, &scope, tagID, userID,
-		fakeTagResolver{tag: ResolvedTag{ID: tagID, TeamID: teamID}},
-		fakeResolver{membership: Membership{TeamID: teamID, UserID: userID, Role: RoleViewer}},
-	)
-
-	assertStatus(t, errs, http.StatusForbidden)
+	require.Equal(t, http.StatusUnprocessableEntity, resp.Code)
 }
 
-func TestTagEditorScopeRejectsMalformedID(t *testing.T) {
-	errs := resolveTagScopeWithRawParam(t, "not-a-uuid")
-	assertStatus(t, errs, http.StatusUnprocessableEntity)
+func TestTagScopeRefusesAnUnauthenticatedCaller(t *testing.T) {
+	tagID := uuid.New()
+
+	resp := tagScopeCase(t,
+		fakeTagResolver{tag: authz.ResolvedTag{ID: tagID, TeamID: uuid.New()}},
+		fakeMembershipResolver{membership: authz.Membership{Role: authz.RoleOwner}},
+		uuid.Nil, tagID.String())
+
+	require.Equal(t, http.StatusUnauthorized, resp.Code)
+}
+
+func TestTagScopeRefusesWhenNoResolverIsInstalled(t *testing.T) {
+	resp := tagScopeCase(t, nil,
+		fakeMembershipResolver{membership: authz.Membership{Role: authz.RoleOwner}},
+		uuid.New(), uuid.New().String())
+
+	require.Equal(t, http.StatusInternalServerError, resp.Code)
 }
 ```
 
@@ -2804,10 +2951,10 @@ git commit -m "feat(api): accept folder and tag changes on link update"
 In `ListLinksForTeam` and `CountLinksForTeam`, add two optional filters alongside the existing ones, following exactly how `$q`, `$state` and `$domain_id` are written there:
 
 ```sql
-  and (sqlc.narg('folder_id')::uuid is null or l.folder_id = sqlc.narg('folder_id'))
+  and (sqlc.narg('folder_id')::uuid is null or l.folder_id = sqlc.narg('folder_id')::uuid)
   and (sqlc.narg('tag_id')::uuid is null or exists (
         select 1 from link_tag lt
-        where lt.link_id = l.id and lt.tag_id = sqlc.narg('tag_id')))
+        where lt.link_id = l.id and lt.tag_id = sqlc.narg('tag_id')::uuid))
 ```
 
 The tag filter is an `exists` subquery rather than a join, for the same reason the tag read is a second query: a join multiplies rows before `LIMIT`.
