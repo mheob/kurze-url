@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/google/uuid"
 
@@ -56,20 +57,25 @@ var knownActions = map[Action]struct{}{
 	ActionMemberRemoved:     {},
 }
 
-// forbiddenMetadataKeys are the canonical, lowercase words a metadata key may
-// never carry. checkMetadata matches these case-insensitively, against the
-// whole key and against each "_"-separated segment of it, at every nesting
-// level — so "Password", "password_hash", "new_password_hash", and a
-// password buried inside a nested object are all caught, not just an exact
-// top-level "password". Segment-based matching (rather than a raw substring
-// check) deliberately keeps "ip" from also matching innocuous words that
-// merely contain those two letters, such as "recipient" or "description".
+// forbiddenMetadataKeys are the canonical, lowercase, singular words a
+// metadata key may never carry. isForbiddenKey matches these
+// case-insensitively against each word segment of a key (see keySegments),
+// tolerating a trailing-"s" plural on the segment (see isForbiddenSegment),
+// at every nesting level — so "Password", "password_hash",
+// "new_password_hash", "newPasswordHash", "userIPAddress", "credentials",
+// and a password buried inside a nested object or an array of objects are
+// all caught, not just an exact top-level "password". Segment-based
+// matching (rather than a raw substring check) deliberately keeps "ip" from
+// also matching innocuous words that merely contain those two letters, such
+// as "recipient" or "description".
 var forbiddenMetadataKeys = map[string]struct{}{
-	"password": {},
-	"hash":     {},
-	"secret":   {},
-	"token":    {},
-	"ip":       {},
+	"password":   {},
+	"pwd":        {},
+	"credential": {},
+	"hash":       {},
+	"secret":     {},
+	"token":      {},
+	"ip":         {},
 }
 
 // Entry is one audit record. Every field is required except Metadata.
@@ -148,17 +154,73 @@ func checkMetadataValue(value any) error {
 	return nil
 }
 
-// isForbiddenKey reports whether key is, or contains as a "_"-separated
-// segment, one of forbiddenMetadataKeys — matched case-insensitively.
+// isForbiddenKey reports whether key contains, as one of its word segments,
+// one of forbiddenMetadataKeys — matched case-insensitively, and tolerant of
+// a simple trailing-"s" plural. See keySegments for how a key is split into
+// segments.
 func isForbiddenKey(key string) bool {
-	lower := strings.ToLower(key)
-	if _, ok := forbiddenMetadataKeys[lower]; ok {
-		return true
-	}
-	for _, segment := range strings.Split(lower, "_") {
-		if _, ok := forbiddenMetadataKeys[segment]; ok {
+	for _, segment := range keySegments(key) {
+		if isForbiddenSegment(segment) {
 			return true
 		}
 	}
 	return false
+}
+
+// isForbiddenSegment reports whether segment (already lowercased by
+// keySegments) is itself a forbidden word, or becomes one after stripping a
+// single trailing "s". This catches the common plural of a forbidden word
+// (e.g. "credentials", "tokens") without having to enumerate every plural in
+// forbiddenMetadataKeys.
+func isForbiddenSegment(segment string) bool {
+	if _, ok := forbiddenMetadataKeys[segment]; ok {
+		return true
+	}
+	if singular, ok := strings.CutSuffix(segment, "s"); ok {
+		if _, ok := forbiddenMetadataKeys[singular]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// keySegments splits a metadata key into its lowercase word segments,
+// breaking on:
+//
+//   - "_" (snake_case);
+//   - a lower-or-digit-to-upper case boundary, i.e. the start of a
+//     capitalized word in camelCase/PascalCase ("newPassword" -> "new" +
+//     "Password");
+//   - an upper-to-upper-then-lower boundary, i.e. the end of a run of
+//     capitals that form an acronym immediately followed by a new
+//     capitalized word ("userIPAddress" -> "user" + "IP" + "Address", not
+//     "user" + "IPA" + "ddress" — the boundary lands one character before
+//     the next word starts, so the acronym keeps all of its own letters).
+//
+// This normalizes "new_password_hash", "newPasswordHash",
+// "NewPasswordHash" and "userIPAddress" to segment sets containing
+// "password"/"hash" or "ip" respectively, so isForbiddenKey cannot be
+// bypassed simply by writing a compound key in camelCase, PascalCase, or
+// with an acronym run, instead of the schema's own snake_case.
+func keySegments(key string) []string {
+	var normalized strings.Builder
+	runes := []rune(key)
+	for i, r := range runes {
+		switch {
+		case r == '_':
+			normalized.WriteByte('_')
+			continue
+		case i > 0 && unicode.IsUpper(r) && (unicode.IsLower(runes[i-1]) || unicode.IsDigit(runes[i-1])):
+			// lower/digit -> upper: the start of a new capitalized word.
+			normalized.WriteByte('_')
+		case i > 0 && unicode.IsUpper(r) && unicode.IsUpper(runes[i-1]) &&
+			i+1 < len(runes) && unicode.IsLower(runes[i+1]):
+			// upper -> upper, but the next rune is lowercase: r is the first
+			// letter of the *next* word, not the last letter of the acronym
+			// run, so the boundary goes before r.
+			normalized.WriteByte('_')
+		}
+		normalized.WriteRune(unicode.ToLower(r))
+	}
+	return strings.Split(normalized.String(), "_")
 }
