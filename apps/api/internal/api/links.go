@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -39,6 +41,8 @@ type Link struct {
 	ExpiresAt        *time.Time `json:"expires_at"`
 	HasPassword      bool       `json:"has_password"`
 	AnalyticsEnabled bool       `json:"analytics_enabled"`
+	FolderID         *uuid.UUID `json:"folder_id"`
+	Tags             []Tag      `json:"tags"`
 	CreatedBy        uuid.UUID  `json:"created_by"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
@@ -60,11 +64,17 @@ type linkRow struct {
 	ExpiresAt        *time.Time
 	HasPassword      bool
 	AnalyticsEnabled bool
+	FolderID         *uuid.UUID
 	CreatedBy        uuid.UUID
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 }
 
+// linkResponse defaults Tags to an empty slice rather than leaving it nil: a
+// client iterating tags should never have to nil-check. createLink overwrites
+// it with the tags it already resolved; the other handlers leave it at this
+// default until a later task wires a real per-link tags query onto the read
+// paths.
 func (d Deps) linkResponse(r linkRow) Link {
 	return Link{
 		ID:               r.ID,
@@ -79,6 +89,8 @@ func (d Deps) linkResponse(r linkRow) Link {
 		ExpiresAt:        r.ExpiresAt,
 		HasPassword:      r.HasPassword,
 		AnalyticsEnabled: r.AnalyticsEnabled,
+		FolderID:         r.FolderID,
+		Tags:             []Tag{},
 		CreatedBy:        r.CreatedBy,
 		CreatedAt:        r.CreatedAt,
 		UpdatedAt:        r.UpdatedAt,
@@ -90,7 +102,7 @@ func rowFromCreate(r db.CreateLinkRow) linkRow {
 		ID: r.ID, TeamID: r.TeamID, DomainID: r.DomainID, Hostname: r.Hostname,
 		Slug: r.Slug, DestinationURL: r.DestinationURL, RedirectType: r.RedirectType,
 		State: r.State, ExpiresAt: r.ExpiresAt, HasPassword: r.HasPassword,
-		AnalyticsEnabled: r.AnalyticsEnabled, CreatedBy: r.CreatedBy,
+		AnalyticsEnabled: r.AnalyticsEnabled, FolderID: r.FolderID, CreatedBy: r.CreatedBy,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	}
 }
@@ -100,7 +112,7 @@ func rowFromGet(r db.GetLinkForAPIRow) linkRow {
 		ID: r.ID, TeamID: r.TeamID, DomainID: r.DomainID, Hostname: r.Hostname,
 		Slug: r.Slug, DestinationURL: r.DestinationURL, RedirectType: r.RedirectType,
 		State: r.State, ExpiresAt: r.ExpiresAt, HasPassword: r.HasPassword,
-		AnalyticsEnabled: r.AnalyticsEnabled, CreatedBy: r.CreatedBy,
+		AnalyticsEnabled: r.AnalyticsEnabled, FolderID: r.FolderID, CreatedBy: r.CreatedBy,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	}
 }
@@ -110,7 +122,7 @@ func rowFromUpdate(r db.UpdateLinkRow) linkRow {
 		ID: r.ID, TeamID: r.TeamID, DomainID: r.DomainID, Hostname: r.Hostname,
 		Slug: r.Slug, DestinationURL: r.DestinationURL, RedirectType: r.RedirectType,
 		State: r.State, ExpiresAt: r.ExpiresAt, HasPassword: r.HasPassword,
-		AnalyticsEnabled: r.AnalyticsEnabled, CreatedBy: r.CreatedBy,
+		AnalyticsEnabled: r.AnalyticsEnabled, FolderID: r.FolderID, CreatedBy: r.CreatedBy,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	}
 }
@@ -120,7 +132,7 @@ func rowFromList(r db.ListLinksForTeamRow) linkRow {
 		ID: r.ID, TeamID: r.TeamID, DomainID: r.DomainID, Hostname: r.Hostname,
 		Slug: r.Slug, DestinationURL: r.DestinationURL, RedirectType: r.RedirectType,
 		State: r.State, ExpiresAt: r.ExpiresAt, HasPassword: r.HasPassword,
-		AnalyticsEnabled: r.AnalyticsEnabled, CreatedBy: r.CreatedBy,
+		AnalyticsEnabled: r.AnalyticsEnabled, FolderID: r.FolderID, CreatedBy: r.CreatedBy,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	}
 }
@@ -179,17 +191,89 @@ func isUniqueViolation(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
+// resolveFolderRef validates a folder_id from a request body against the
+// caller's team. The team comes from the authorization scope, never from the
+// request, so a folder belonging to another team simply returns no row.
+//
+// The 422 is the exact same response body whether the folder does not exist
+// or belongs to someone else — and, deliberately, whichever folder_id was
+// supplied: the message never echoes the id back, so two different guessed
+// ids that both miss produce byte-identical responses. An attacker learns
+// only that an id they guessed is not theirs, which they already knew.
+func (d Deps) resolveFolderRef(
+	ctx context.Context, q *db.Queries, teamID uuid.UUID, folderID *uuid.UUID,
+) (*uuid.UUID, error) {
+	if folderID == nil {
+		return nil, nil
+	}
+
+	row, err := q.GetFolderInTeam(ctx, db.GetFolderInTeamParams{
+		TeamID: teamID, ID: *folderID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, huma.Error422UnprocessableEntity("no such folder in this team")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("resolve folder reference: %w", err)
+	}
+
+	return &row.ID, nil
+}
+
+// resolveTagRefs validates tag_ids from a request body against the caller's
+// team and returns the tags in the order the response will carry them. A
+// missing id — nonexistent, or another team's — produces the same 422 without
+// echoing which id was the problem, for the same reason resolveFolderRef's
+// message omits the id: the caller already knows which ids it sent.
+func (d Deps) resolveTagRefs(
+	ctx context.Context, q *db.Queries, teamID uuid.UUID, tagIDs []uuid.UUID,
+) ([]Tag, error) {
+	if len(tagIDs) == 0 {
+		return nil, nil
+	}
+	if len(tagIDs) > maxTagsPerLink {
+		return nil, huma.Error422UnprocessableEntity(
+			fmt.Sprintf("a link may have at most %d tags", maxTagsPerLink))
+	}
+
+	rows, err := q.ListTagsByIDs(ctx, db.ListTagsByIDsParams{TeamID: teamID, Ids: tagIDs})
+	if err != nil {
+		return nil, fmt.Errorf("resolve tag references: %w", err)
+	}
+
+	found := make(map[uuid.UUID]string, len(rows))
+	for _, row := range rows {
+		found[row.ID] = row.Name
+	}
+	for _, id := range tagIDs {
+		if _, ok := found[id]; !ok {
+			return nil, huma.Error422UnprocessableEntity("no such tag in this team")
+		}
+	}
+
+	// Sorted by name so the response order is stable regardless of the order
+	// the caller sent, matching how ListTagsForLinks orders them on read.
+	tags := make([]Tag, 0, len(rows))
+	for _, row := range rows {
+		tags = append(tags, Tag{ID: row.ID, TeamID: teamID, Name: row.Name})
+	}
+	slices.SortFunc(tags, func(a, b Tag) int { return strings.Compare(a.Name, b.Name) })
+	return tags, nil
+}
+
 // CreateLinkInput declares its authorization in its type: EditorScope resolves
 // and checks the caller's role before this handler's body runs.
 type CreateLinkInput struct {
 	authz.EditorScope
 	Body struct {
-		DestinationURL   string     `json:"destination_url" maxLength:"2048" doc:"Where the link points. https:// only."`
-		Slug             string     `json:"slug,omitempty" maxLength:"64" doc:"Optional custom alias. Lowercased on input; generated when omitted."`
-		DomainID         *uuid.UUID `json:"domain_id,omitempty" doc:"Optional. Defaults to the instance's shared domain."`
-		RedirectType     int        `json:"redirect_type,omitempty" enum:"301,302" default:"302" doc:"301 is cached by browsers: clicks go uncounted and destination changes stop taking effect."`
-		ExpiresAt        *time.Time `json:"expires_at,omitempty" doc:"Must be in the future."`
-		AnalyticsEnabled *bool      `json:"analytics_enabled,omitempty" doc:"Defaults to true."`
+		DestinationURL   string      `json:"destination_url" maxLength:"2048" doc:"Where the link points. https:// only."`
+		Slug             string      `json:"slug,omitempty" maxLength:"64" doc:"Optional custom alias. Lowercased on input; generated when omitted."`
+		DomainID         *uuid.UUID  `json:"domain_id,omitempty" doc:"Optional. Defaults to the instance's shared domain."`
+		RedirectType     int         `json:"redirect_type,omitempty" enum:"301,302" default:"302" doc:"301 is cached by browsers: clicks go uncounted and destination changes stop taking effect."`
+		ExpiresAt        *time.Time  `json:"expires_at,omitempty" doc:"Must be in the future."`
+		AnalyticsEnabled *bool       `json:"analytics_enabled,omitempty" doc:"Defaults to true."`
+		FolderID         *uuid.UUID  `json:"folder_id,omitempty" doc:"Optional. Must be a folder in this team."`
+		TagIDs           []uuid.UUID `json:"tag_ids,omitempty" maxItems:"10" doc:"Optional. Tags must belong to this team."`
 	}
 }
 
@@ -288,7 +372,12 @@ func (d Deps) createLink(ctx context.Context, in *CreateLinkInput) (*LinkOutput,
 	}
 
 	var created db.CreateLinkRow
+	var createdTags []Tag
 	for attempt := range generatedSlugAttempts {
+		// Reset per attempt: a slug collision on this attempt must not leak
+		// tags resolved (but never persisted) into the next one.
+		createdTags = nil
+
 		candidate := custom
 		if candidate == "" {
 			candidate, err = slugpkg.Generate()
@@ -299,6 +388,15 @@ func (d Deps) createLink(ctx context.Context, in *CreateLinkInput) (*LinkOutput,
 		}
 
 		err = db.InTx(ctx, d.Pool, func(q *db.Queries) error {
+			folderID, err := d.resolveFolderRef(ctx, q, member.TeamID, in.Body.FolderID)
+			if err != nil {
+				return err
+			}
+			tags, err := d.resolveTagRefs(ctx, q, member.TeamID, in.Body.TagIDs)
+			if err != nil {
+				return err
+			}
+
 			row, err := q.CreateLink(ctx, db.CreateLinkParams{
 				DomainID:         domainID,
 				TeamID:           member.TeamID,
@@ -308,11 +406,25 @@ func (d Deps) createLink(ctx context.Context, in *CreateLinkInput) (*LinkOutput,
 				ExpiresAt:        in.Body.ExpiresAt,
 				AnalyticsEnabled: analyticsEnabled,
 				CreatedBy:        member.UserID,
+				FolderID:         folderID,
 			})
 			if err != nil {
 				return err
 			}
 			created = row
+
+			if len(tags) > 0 {
+				ids := make([]uuid.UUID, 0, len(tags))
+				for _, tag := range tags {
+					ids = append(ids, tag.ID)
+				}
+				if err := q.InsertLinkTags(ctx, db.InsertLinkTagsParams{
+					LinkID: row.ID, TagIds: ids,
+				}); err != nil {
+					return err
+				}
+			}
+			createdTags = tags
 
 			return audit.Log(ctx, q, audit.Entry{
 				TeamID:      member.TeamID,
@@ -329,13 +441,30 @@ func (d Deps) createLink(ctx context.Context, in *CreateLinkInput) (*LinkOutput,
 			})
 		})
 
+		var status huma.StatusError
 		switch {
 		case err == nil:
 			// Creating a link must clear the redirect cache, not only changing
 			// one: a probe of this slug before it existed may have stored the
 			// not-found sentinel under exactly this key.
 			d.invalidateLink(ctx, created.Hostname, created.Slug)
-			return &LinkOutput{Status: http.StatusCreated, Body: d.linkResponse(rowFromCreate(created))}, nil
+
+			body := d.linkResponse(rowFromCreate(created))
+			body.Tags = createdTags
+			if body.Tags == nil {
+				// Never null in JSON: a client iterating tags should not have
+				// to nil-check.
+				body.Tags = []Tag{}
+			}
+			return &LinkOutput{Status: http.StatusCreated, Body: body}, nil
+
+		case errors.As(err, &status):
+			// A 422 from reference validation, already shaped. Returning it
+			// unchanged keeps the message identical between create and update.
+			// This must come before the isUniqueViolation branches below: a
+			// validation 422 raised while retrying after a slug collision
+			// must not be misread as a second collision.
+			return nil, err
 
 		case isUniqueViolation(err) && custom != "":
 			// The caller asked for this exact slug, so there is nothing to

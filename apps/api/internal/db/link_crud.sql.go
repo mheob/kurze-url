@@ -48,14 +48,14 @@ func (q *Queries) CountLinksForTeam(ctx context.Context, arg CountLinksForTeamPa
 const createLink = `-- name: CreateLink :one
 with inserted as (
   insert into link (domain_id, team_id, slug, destination_url, redirect_type,
-                    expires_at, analytics_enabled, created_by)
-  values ($1, $2, $3, $4, $5, $6, $7, $8)
+                    expires_at, analytics_enabled, created_by, folder_id)
+  values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
   returning id, domain_id, team_id, slug, destination_url, redirect_type, state, folder_id, expires_at, password_hash, analytics_enabled, created_by, created_at, updated_at, qr_size, qr_error_correction, qr_margin, qr_logo_url, qr_fg_color, qr_bg_color
 )
 select i.id, i.domain_id, i.team_id, d.hostname, i.slug, i.destination_url,
        i.redirect_type, i.state, i.expires_at,
        (i.password_hash is not null)::boolean as has_password,
-       i.analytics_enabled, i.created_by, i.created_at, i.updated_at
+       i.analytics_enabled, i.folder_id, i.created_by, i.created_at, i.updated_at
 from inserted i
 join domain d on d.id = i.domain_id
 `
@@ -69,6 +69,7 @@ type CreateLinkParams struct {
 	ExpiresAt        *time.Time
 	AnalyticsEnabled bool
 	CreatedBy        uuid.UUID
+	FolderID         *uuid.UUID
 }
 
 type CreateLinkRow struct {
@@ -83,6 +84,7 @@ type CreateLinkRow struct {
 	ExpiresAt        *time.Time
 	HasPassword      bool
 	AnalyticsEnabled bool
+	FolderID         *uuid.UUID
 	CreatedBy        uuid.UUID
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
@@ -98,6 +100,7 @@ func (q *Queries) CreateLink(ctx context.Context, arg CreateLinkParams) (CreateL
 		arg.ExpiresAt,
 		arg.AnalyticsEnabled,
 		arg.CreatedBy,
+		arg.FolderID,
 	)
 	var i CreateLinkRow
 	err := row.Scan(
@@ -112,6 +115,7 @@ func (q *Queries) CreateLink(ctx context.Context, arg CreateLinkParams) (CreateL
 		&i.ExpiresAt,
 		&i.HasPassword,
 		&i.AnalyticsEnabled,
+		&i.FolderID,
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -140,7 +144,7 @@ const getLinkForAPI = `-- name: GetLinkForAPI :one
 select l.id, l.domain_id, l.team_id, d.hostname, l.slug, l.destination_url,
        l.redirect_type, l.state, l.expires_at,
        (l.password_hash is not null)::boolean as has_password,
-       l.analytics_enabled, l.created_by, l.created_at, l.updated_at
+       l.analytics_enabled, l.folder_id, l.created_by, l.created_at, l.updated_at
 from link l
 join domain d on d.id = l.domain_id
 where l.id = $1 and l.team_id = $2
@@ -163,6 +167,7 @@ type GetLinkForAPIRow struct {
 	ExpiresAt        *time.Time
 	HasPassword      bool
 	AnalyticsEnabled bool
+	FolderID         *uuid.UUID
 	CreatedBy        uuid.UUID
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
@@ -183,6 +188,7 @@ func (q *Queries) GetLinkForAPI(ctx context.Context, arg GetLinkForAPIParams) (G
 		&i.ExpiresAt,
 		&i.HasPassword,
 		&i.AnalyticsEnabled,
+		&i.FolderID,
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -232,7 +238,7 @@ const listLinksForTeam = `-- name: ListLinksForTeam :many
 select l.id, l.domain_id, l.team_id, d.hostname, l.slug, l.destination_url,
        l.redirect_type, l.state, l.expires_at,
        (l.password_hash is not null)::boolean as has_password,
-       l.analytics_enabled, l.created_by, l.created_at, l.updated_at,
+       l.analytics_enabled, l.folder_id, l.created_by, l.created_at, l.updated_at,
        count(*) over () as total_count
 from link l
 join domain d on d.id = l.domain_id
@@ -271,6 +277,7 @@ type ListLinksForTeamRow struct {
 	ExpiresAt        *time.Time
 	HasPassword      bool
 	AnalyticsEnabled bool
+	FolderID         *uuid.UUID
 	CreatedBy        uuid.UUID
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
@@ -311,6 +318,7 @@ func (q *Queries) ListLinksForTeam(ctx context.Context, arg ListLinksForTeamPara
 			&i.ExpiresAt,
 			&i.HasPassword,
 			&i.AnalyticsEnabled,
+			&i.FolderID,
 			&i.CreatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -343,7 +351,7 @@ with updated as (
 select u.id, u.domain_id, u.team_id, d.hostname, u.slug, u.destination_url,
        u.redirect_type, u.state, u.expires_at,
        (u.password_hash is not null)::boolean as has_password,
-       u.analytics_enabled, u.created_by, u.created_at, u.updated_at
+       u.analytics_enabled, u.folder_id, u.created_by, u.created_at, u.updated_at
 from updated u
 join domain d on d.id = u.domain_id
 `
@@ -371,6 +379,7 @@ type UpdateLinkRow struct {
 	ExpiresAt        *time.Time
 	HasPassword      bool
 	AnalyticsEnabled bool
+	FolderID         *uuid.UUID
 	CreatedBy        uuid.UUID
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
@@ -404,6 +413,7 @@ func (q *Queries) UpdateLink(ctx context.Context, arg UpdateLinkParams) (UpdateL
 		&i.ExpiresAt,
 		&i.HasPassword,
 		&i.AnalyticsEnabled,
+		&i.FolderID,
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,

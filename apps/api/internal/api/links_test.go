@@ -29,8 +29,17 @@ type linkBody struct {
 	ExpiresAt        *time.Time `json:"expires_at"`
 	HasPassword      bool       `json:"has_password"`
 	AnalyticsEnabled bool       `json:"analytics_enabled"`
+	FolderID         *uuid.UUID `json:"folder_id"`
+	Tags             []tagBody  `json:"tags"`
 	CreatedBy        uuid.UUID  `json:"created_by"`
 }
+
+// maxTagsPerLinkForTests mirrors maxTagsPerLink in internal/api/limits.go.
+// This file runs in api_test, not api, so it cannot see that unexported
+// constant directly; a drift between the two would only ever loosen this
+// test (the cap enforcement itself is exercised against whatever the real
+// constant says), the same tradeoff folderCapForTests and tagCapForTests make.
+const maxTagsPerLinkForTests = 10
 
 func TestCreateLinkGeneratesASlugOnTheSharedDomain(t *testing.T) {
 	f := newTenancyFixture(t)
@@ -533,4 +542,130 @@ func TestUpdateAndDeleteAreRefusedForAViewer(t *testing.T) {
 			map[string]any{"state": "disabled"}).Code)
 	require.Equal(t, http.StatusForbidden,
 		f.do(t, f.members[authz.RoleViewer], http.MethodDelete, path, nil).Code)
+}
+
+func TestCreateLinkFilesItInAFolder(t *testing.T) {
+	f := newTenancyFixture(t)
+	folder := f.createFolder(t, "Sommerfest")
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPost,
+		"/v1/teams/"+f.teamID.String()+"/links",
+		map[string]any{
+			"destination_url": "https://example.org/fest",
+			"folder_id":       folder.ID.String(),
+		})
+
+	require.Equal(t, http.StatusCreated, rec.Code, "body: %s", rec.Body.String())
+	body := decode[linkBody](t, rec)
+	require.NotNil(t, body.FolderID)
+	require.Equal(t, folder.ID, *body.FolderID)
+}
+
+func TestCreateLinkRejectsAnotherTeamsFolder(t *testing.T) {
+	f := newTenancyFixture(t)
+	other := newTenancyFixture(t)
+	foreign := other.createFolder(t, "Fremd")
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPost,
+		"/v1/teams/"+f.teamID.String()+"/links",
+		map[string]any{
+			"destination_url": "https://example.org/x",
+			"folder_id":       foreign.ID.String(),
+		})
+
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code, "body: %s", rec.Body.String())
+
+	// The fixture itself seeds one link ("fixture"); nothing else must exist.
+	var count int
+	require.NoError(t, f.pool.QueryRow(context.Background(),
+		`select count(*) from link where team_id = $1`, f.teamID).Scan(&count))
+	require.Equal(t, 1, count, "no link must have been created")
+}
+
+func TestAnotherTeamsFolderIsIndistinguishableFromAMissingOne(t *testing.T) {
+	// The two must be byte-identical, or folder IDs become probeable through
+	// the link endpoint after being hidden on the folder endpoint.
+	f := newTenancyFixture(t)
+	other := newTenancyFixture(t)
+	foreign := other.createFolder(t, "Fremd")
+
+	foreignResp := f.do(t, f.members[authz.RoleEditor], http.MethodPost,
+		"/v1/teams/"+f.teamID.String()+"/links",
+		map[string]any{
+			"destination_url": "https://example.org/x",
+			"folder_id":       foreign.ID.String(),
+		})
+	missingResp := f.do(t, f.members[authz.RoleEditor], http.MethodPost,
+		"/v1/teams/"+f.teamID.String()+"/links",
+		map[string]any{
+			"destination_url": "https://example.org/x",
+			"folder_id":       uuid.New().String(),
+		})
+
+	require.Equal(t, foreignResp.Code, missingResp.Code, "status must not differ")
+	require.Equal(t, foreignResp.Body.String(), missingResp.Body.String(), "body must not differ")
+}
+
+func TestCreateLinkAttachesTags(t *testing.T) {
+	f := newTenancyFixture(t)
+	presse := f.createTag(t, "Presse")
+	fest := f.createTag(t, "Sommerfest")
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPost,
+		"/v1/teams/"+f.teamID.String()+"/links",
+		map[string]any{
+			"destination_url": "https://example.org/pm",
+			"tag_ids":         []string{presse.ID.String(), fest.ID.String()},
+		})
+
+	require.Equal(t, http.StatusCreated, rec.Code, "body: %s", rec.Body.String())
+	body := decode[linkBody](t, rec)
+	require.Len(t, body.Tags, 2)
+	// Tags come back ordered by name, so the response is stable.
+	require.Equal(t, "Presse", body.Tags[0].Name)
+	require.Equal(t, "Sommerfest", body.Tags[1].Name)
+}
+
+func TestCreateLinkRejectsAnotherTeamsTag(t *testing.T) {
+	f := newTenancyFixture(t)
+	other := newTenancyFixture(t)
+	foreign := other.createTag(t, "Fremd")
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPost,
+		"/v1/teams/"+f.teamID.String()+"/links",
+		map[string]any{
+			"destination_url": "https://example.org/x",
+			"tag_ids":         []string{foreign.ID.String()},
+		})
+
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code, "body: %s", rec.Body.String())
+
+	var linkCount int
+	require.NoError(t, f.pool.QueryRow(context.Background(),
+		`select count(*) from link where team_id = $1`, f.teamID).Scan(&linkCount))
+	require.Equal(t, 1, linkCount, "no link must have been created")
+
+	var joins int
+	require.NoError(t, f.pool.QueryRow(context.Background(),
+		`select count(*) from link_tag where tag_id = $1`, foreign.ID).Scan(&joins))
+	require.Zero(t, joins, "no link_tag row must have been created")
+}
+
+func TestCreateLinkEnforcesTheTagsPerLinkCap(t *testing.T) {
+	f := newTenancyFixture(t)
+
+	ids := make([]string, 0, maxTagsPerLinkForTests+1)
+	for i := range maxTagsPerLinkForTests + 1 {
+		tag := f.createTag(t, fmt.Sprintf("tag-%02d", i))
+		ids = append(ids, tag.ID.String())
+	}
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPost,
+		"/v1/teams/"+f.teamID.String()+"/links",
+		map[string]any{
+			"destination_url": "https://example.org/x",
+			"tag_ids":         ids,
+		})
+
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code, "body: %s", rec.Body.String())
 }
