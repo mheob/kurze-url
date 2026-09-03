@@ -303,3 +303,195 @@ func TestListLinksReportsATotalPastTheLastPage(t *testing.T) {
 	require.Equal(t, 2, page.TotalCount,
 		"a page past the end still has to report how many there are")
 }
+
+func TestListLinksRejectsAMalformedDomainFilter(t *testing.T) {
+	f := newTenancyFixture(t)
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		"/v1/teams/"+f.teamID.String()+"/links?domain_id=not-a-uuid", nil)
+
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+}
+
+func TestGetLinkReturnsTheLink(t *testing.T) {
+	f := newTenancyFixture(t)
+	created := f.createLink(t, "lesen", "https://example.org/lesen")
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet, "/v1/links/"+created.ID.String(), nil)
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	require.Equal(t, created.ID, decode[linkBody](t, rec).ID)
+	require.NotContains(t, rec.Body.String(), "password_hash")
+}
+
+func TestGetLinkIs404ForAnUnknownID(t *testing.T) {
+	f := newTenancyFixture(t)
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet, "/v1/links/"+uuid.NewString(), nil)
+
+	require.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestGetLinkIs422ForAMalformedID(t *testing.T) {
+	f := newTenancyFixture(t)
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet, "/v1/links/not-a-uuid", nil)
+
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+}
+
+func TestUpdateLinkChangesTheDestinationAndInvalidatesTheCache(t *testing.T) {
+	f := newTenancyFixture(t)
+	ctx := context.Background()
+	created := f.createLink(t, "aendern", "https://example.org/alt")
+
+	// Warm the cache the way a real visit would.
+	cacheKey := link.CacheKey(created.Hostname, created.Slug)
+	require.NoError(t, f.deps.Cache.PutLink(ctx, cacheKey, link.Cached{
+		ID: created.ID, TeamID: created.TeamID, DestinationURL: created.DestinationURL,
+		RedirectType: 302, State: "active", AnalyticsEnabled: true,
+	}, time.Hour))
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPatch, "/v1/links/"+created.ID.String(),
+		map[string]any{"destination_url": "https://example.org/neu"})
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	require.Equal(t, "https://example.org/neu", decode[linkBody](t, rec).DestinationURL)
+
+	_, err := f.deps.Cache.Raw().Get(ctx, cacheKey).Result()
+	require.Error(t, err,
+		"a 302 promises destination changes take effect immediately, not after LinkCacheTTL")
+}
+
+func TestUpdateLinkChangingTheSlugInvalidatesBothKeys(t *testing.T) {
+	f := newTenancyFixture(t)
+	ctx := context.Background()
+	created := f.createLink(t, "alt", "https://example.org/x")
+
+	oldKey := link.CacheKey(created.Hostname, "alt")
+	newKey := link.CacheKey(created.Hostname, "neu")
+	require.NoError(t, f.deps.Cache.PutLink(ctx, oldKey, link.Cached{ID: created.ID}, time.Hour))
+	require.NoError(t, f.deps.Cache.PutNotFound(ctx, newKey, time.Minute))
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPatch, "/v1/links/"+created.ID.String(),
+		map[string]any{"slug": "NEU"})
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	require.Equal(t, "neu", decode[linkBody](t, rec).Slug)
+
+	_, err := f.deps.Cache.Raw().Get(ctx, oldKey).Result()
+	require.Error(t, err, "the old slug must stop resolving")
+	_, err = f.deps.Cache.Raw().Get(ctx, newKey).Result()
+	require.Error(t, err, "the new slug's cached not-found sentinel must be cleared too")
+}
+
+func TestUpdateLinkRefusesAPasswordField(t *testing.T) {
+	f := newTenancyFixture(t)
+	created := f.createLink(t, "kennwort", "https://example.org/x")
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPatch, "/v1/links/"+created.ID.String(),
+		map[string]any{"password": "hunter2"})
+
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code,
+		"passwords have their own endpoint, their own audit action and a tighter rate limit")
+}
+
+func TestUpdateLinkRefusesMovingItToAnotherDomain(t *testing.T) {
+	f := newTenancyFixture(t)
+	created := f.createLink(t, "umziehen", "https://example.org/x")
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPatch, "/v1/links/"+created.ID.String(),
+		map[string]any{"domain_id": f.teamDomainID.String()})
+
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code,
+		"moving a link changes its short URL, breaking every printed copy of it")
+}
+
+func TestUpdateLinkAcceptsOnlyActiveAndDisabled(t *testing.T) {
+	f := newTenancyFixture(t)
+	created := f.createLink(t, "zustand", "https://example.org/x")
+	path := "/v1/links/" + created.ID.String()
+
+	require.Equal(t, http.StatusOK,
+		f.do(t, f.members[authz.RoleEditor], http.MethodPatch, path,
+			map[string]any{"state": "disabled"}).Code)
+
+	for _, systemState := range []string{"flagged", "expired"} {
+		rec := f.do(t, f.members[authz.RoleEditor], http.MethodPatch, path,
+			map[string]any{"state": systemState})
+		require.Equal(t, http.StatusUnprocessableEntity, rec.Code,
+			"%q is set by the system, never by a caller", systemState)
+	}
+}
+
+func TestUpdateLinkWritesOneAuditRowNamingWhatChanged(t *testing.T) {
+	f := newTenancyFixture(t)
+	created := f.createLink(t, "protokoll", "https://example.org/alt")
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPatch, "/v1/links/"+created.ID.String(),
+		map[string]any{"destination_url": "https://example.org/neu", "redirect_type": 301})
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var count int
+	var metadata string
+	require.NoError(t, f.pool.QueryRow(context.Background(),
+		`select count(*), coalesce(max(metadata::text), '') from audit_log
+		 where team_id = $1 and action = 'link.updated' and entity_id = $2`,
+		f.teamID, created.ID).Scan(&count, &metadata))
+
+	require.Equal(t, 1, count, "one PATCH is one audit row, however many fields it touched")
+	require.Contains(t, metadata, "destination_url")
+	require.Contains(t, metadata, "redirect_type")
+	require.Contains(t, metadata, "changed")
+	require.NotContains(t, metadata, "slug", "a field the request did not change must not be listed")
+}
+
+func TestUpdateLinkWritesNoAuditRowWhenNothingChanged(t *testing.T) {
+	f := newTenancyFixture(t)
+	created := f.createLink(t, "unveraendert", "https://example.org/gleich")
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPatch, "/v1/links/"+created.ID.String(),
+		map[string]any{"destination_url": "https://example.org/gleich"})
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var count int
+	require.NoError(t, f.pool.QueryRow(context.Background(),
+		`select count(*) from audit_log where action = 'link.updated' and entity_id = $1`,
+		created.ID).Scan(&count))
+	require.Zero(t, count, "a no-op PATCH must not write a misleading audit entry")
+}
+
+func TestDeleteLinkRemovesItAndTheCacheEntry(t *testing.T) {
+	f := newTenancyFixture(t)
+	ctx := context.Background()
+	created := f.createLink(t, "weg", "https://example.org/weg")
+
+	cacheKey := link.CacheKey(created.Hostname, created.Slug)
+	require.NoError(t, f.deps.Cache.PutLink(ctx, cacheKey, link.Cached{ID: created.ID}, time.Hour))
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodDelete, "/v1/links/"+created.ID.String(), nil)
+	require.Equal(t, http.StatusNoContent, rec.Code)
+
+	require.Equal(t, http.StatusNotFound,
+		f.do(t, f.members[authz.RoleViewer], http.MethodGet, "/v1/links/"+created.ID.String(), nil).Code)
+
+	_, err := f.deps.Cache.Raw().Get(ctx, cacheKey).Result()
+	require.Error(t, err, "a deleted link must stop resolving immediately")
+
+	var count int
+	require.NoError(t, f.pool.QueryRow(ctx,
+		`select count(*) from audit_log where action = 'link.deleted' and entity_id = $1`,
+		created.ID).Scan(&count))
+	require.Equal(t, 1, count)
+}
+
+func TestUpdateAndDeleteAreRefusedForAViewer(t *testing.T) {
+	f := newTenancyFixture(t)
+	created := f.createLink(t, "nurlesen", "https://example.org/x")
+	path := "/v1/links/" + created.ID.String()
+
+	require.Equal(t, http.StatusForbidden,
+		f.do(t, f.members[authz.RoleViewer], http.MethodPatch, path,
+			map[string]any{"state": "disabled"}).Code)
+	require.Equal(t, http.StatusForbidden,
+		f.do(t, f.members[authz.RoleViewer], http.MethodDelete, path, nil).Code)
+}

@@ -43,6 +43,10 @@ var teamScopedCases = []matrixCase{
 	{"create-link", http.MethodPost, "/v1/teams/{team}/links",
 		map[string]string{"destination_url": "https://example.org/matrix"}, authz.RoleEditor},
 	{"list-links", http.MethodGet, "/v1/teams/{team}/links", nil, authz.RoleViewer},
+	{"get-link", http.MethodGet, "/v1/links/{link}", nil, authz.RoleViewer},
+	{"update-link", http.MethodPatch, "/v1/links/{link}",
+		map[string]string{"state": "disabled"}, authz.RoleEditor},
+	{"delete-link", http.MethodDelete, "/v1/links/{link}", nil, authz.RoleEditor},
 }
 
 // notTeamScoped names the authenticated operations that legitimately carry no
@@ -68,6 +72,7 @@ func renderPath(f *tenancyFixture, template string) string {
 	path := template
 	path = strings.ReplaceAll(path, "{team}", f.teamID.String())
 	path = strings.ReplaceAll(path, "{member}", f.members[authz.RoleViewer].id.String())
+	path = strings.ReplaceAll(path, "{link}", f.linkID.String())
 	return path
 }
 

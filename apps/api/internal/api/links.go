@@ -217,6 +217,34 @@ func (d Deps) registerLinks(api huma.API) {
 		Tags:        []string{"Links"},
 		Security:    []map[string][]string{{"bearerAuth": {}}},
 	}, d.listLinks)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-link",
+		Method:      http.MethodGet,
+		Path:        "/v1/links/{link_id}",
+		Summary:     "Get a link",
+		Tags:        []string{"Links"},
+		Security:    []map[string][]string{{"bearerAuth": {}}},
+	}, d.getLink)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "update-link",
+		Method:      http.MethodPatch,
+		Path:        "/v1/links/{link_id}",
+		Summary:     "Update a link",
+		Tags:        []string{"Links"},
+		Security:    []map[string][]string{{"bearerAuth": {}}},
+	}, d.updateLink)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "delete-link",
+		Method:        http.MethodDelete,
+		Path:          "/v1/links/{link_id}",
+		Summary:       "Delete a link",
+		Tags:          []string{"Links"},
+		DefaultStatus: http.StatusNoContent,
+		Security:      []map[string][]string{{"bearerAuth": {}}},
+	}, d.deleteLink)
 }
 
 func (d Deps) createLink(ctx context.Context, in *CreateLinkInput) (*LinkOutput, error) {
@@ -415,4 +443,227 @@ func (d Deps) listLinks(ctx context.Context, in *ListLinksInput) (*ListLinksOutp
 	}
 
 	return &ListLinksOutput{Body: NewPage(items, in.PageParams, total)}, nil
+}
+
+type GetLinkInput struct {
+	authz.LinkViewerScope
+}
+
+// UpdateLinkInput deliberately omits two fields the body might be expected to
+// carry. password has its own endpoint, so it maps to its own audit action and
+// its own tighter rate limit. domain_id is omitted because moving a link
+// between domains changes its short URL, silently breaking every printed copy,
+// and across teams it would break the link.team_id denormalization. Huma
+// rejects unknown body fields, so both are 422 rather than silently ignored.
+type UpdateLinkInput struct {
+	authz.LinkEditorScope
+	Body struct {
+		DestinationURL   *string    `json:"destination_url,omitempty" maxLength:"2048"`
+		Slug             *string    `json:"slug,omitempty" maxLength:"64"`
+		RedirectType     *int       `json:"redirect_type,omitempty" enum:"301,302"`
+		State            *string    `json:"state,omitempty" enum:"active,disabled" doc:"expired follows from expires_at and flagged is set by scanning; neither is a caller's to write."`
+		ExpiresAt        *time.Time `json:"expires_at,omitempty"`
+		AnalyticsEnabled *bool      `json:"analytics_enabled,omitempty"`
+	}
+}
+
+type DeleteLinkInput struct {
+	authz.LinkEditorScope
+}
+
+type DeleteLinkOutput struct {
+	Status int
+}
+
+func (d Deps) getLink(ctx context.Context, in *GetLinkInput) (*LinkOutput, error) {
+	member := in.Member()
+
+	// The scope already authorized this caller. The team filter is here anyway:
+	// it is what a reviewer can see, and the matrix test cannot see a missing one.
+	row, err := d.Queries.GetLinkForAPI(ctx, db.GetLinkForAPIParams{
+		ID: in.Link().ID, TeamID: member.TeamID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, huma.Error404NotFound("link not found")
+	}
+	if err != nil {
+		d.Log.Error("get link", "error", err, "link_id", in.LinkID)
+		return nil, huma.Error500InternalServerError("could not load the link")
+	}
+
+	return &LinkOutput{Status: http.StatusOK, Body: d.linkResponse(rowFromGet(row))}, nil
+}
+
+func (d Deps) updateLink(ctx context.Context, in *UpdateLinkInput) (*LinkOutput, error) {
+	member := in.Member()
+
+	if in.Body.DestinationURL != nil {
+		if err := destination.Validate(*in.Body.DestinationURL, d.selfHostnames()); err != nil {
+			return nil, huma.Error422UnprocessableEntity(err.Error())
+		}
+	}
+	if in.Body.ExpiresAt != nil && !in.Body.ExpiresAt.After(d.now()) {
+		return nil, huma.Error422UnprocessableEntity("expires_at must be in the future")
+	}
+
+	var newSlug string
+	if in.Body.Slug != nil {
+		newSlug = slugpkg.Normalize(*in.Body.Slug)
+		if err := slugpkg.Validate(newSlug); err != nil {
+			return nil, huma.Error422UnprocessableEntity(err.Error())
+		}
+	}
+
+	// updated is a linkRow rather than a db.UpdateLinkRow because the no-op
+	// branch below has only a db.GetLinkForAPIRow to offer. The two generated
+	// structs happen to have identical fields today, but converting between
+	// them would silently break the first time a column is added to one query
+	// and not the other.
+	var (
+		updated  linkRow
+		previous db.GetLinkForAPIRow
+		changed  []string
+	)
+
+	err := db.InTx(ctx, d.Pool, func(q *db.Queries) error {
+		before, err := q.GetLinkForAPI(ctx, db.GetLinkForAPIParams{
+			ID: in.Link().ID, TeamID: member.TeamID,
+		})
+		if err != nil {
+			return err
+		}
+		previous = before
+
+		params := db.UpdateLinkParams{
+			ID:               before.ID,
+			TeamID:           member.TeamID,
+			Slug:             before.Slug,
+			DestinationURL:   before.DestinationURL,
+			RedirectType:     before.RedirectType,
+			State:            before.State,
+			ExpiresAt:        before.ExpiresAt,
+			AnalyticsEnabled: before.AnalyticsEnabled,
+		}
+		metadata := map[string]any{}
+
+		if newSlug != "" && newSlug != before.Slug {
+			params.Slug = newSlug
+			changed = append(changed, "slug")
+			metadata["slug"] = map[string]any{"from": before.Slug, "to": newSlug}
+		}
+		if in.Body.DestinationURL != nil && *in.Body.DestinationURL != before.DestinationURL {
+			params.DestinationURL = *in.Body.DestinationURL
+			changed = append(changed, "destination_url")
+			metadata["destination_url"] = map[string]any{
+				"from": before.DestinationURL, "to": *in.Body.DestinationURL,
+			}
+		}
+		if in.Body.RedirectType != nil && int16(*in.Body.RedirectType) != before.RedirectType {
+			params.RedirectType = int16(*in.Body.RedirectType)
+			changed = append(changed, "redirect_type")
+			metadata["redirect_type"] = map[string]any{
+				"from": int(before.RedirectType), "to": *in.Body.RedirectType,
+			}
+		}
+		if in.Body.State != nil && *in.Body.State != before.State {
+			params.State = *in.Body.State
+			changed = append(changed, "state")
+			metadata["state"] = map[string]any{"from": before.State, "to": *in.Body.State}
+		}
+		if in.Body.ExpiresAt != nil && (before.ExpiresAt == nil || !before.ExpiresAt.Equal(*in.Body.ExpiresAt)) {
+			params.ExpiresAt = in.Body.ExpiresAt
+			changed = append(changed, "expires_at")
+			metadata["expires_at"] = map[string]any{"to": in.Body.ExpiresAt}
+		}
+		if in.Body.AnalyticsEnabled != nil && *in.Body.AnalyticsEnabled != before.AnalyticsEnabled {
+			params.AnalyticsEnabled = *in.Body.AnalyticsEnabled
+			changed = append(changed, "analytics_enabled")
+			metadata["analytics_enabled"] = map[string]any{
+				"from": before.AnalyticsEnabled, "to": *in.Body.AnalyticsEnabled,
+			}
+		}
+
+		if len(changed) == 0 {
+			// Nothing changed; do not write a misleading audit entry, and do
+			// not bump updated_at either.
+			updated = rowFromGet(before)
+			return nil
+		}
+
+		row, err := q.UpdateLink(ctx, params)
+		if err != nil {
+			return err
+		}
+		updated = rowFromUpdate(row)
+		metadata["changed"] = changed
+
+		return audit.Log(ctx, q, audit.Entry{
+			TeamID:      member.TeamID,
+			ActorUserID: member.UserID,
+			Action:      audit.ActionLinkUpdated,
+			EntityType:  audit.EntityLink,
+			EntityID:    row.ID,
+			Metadata:    metadata,
+		})
+	})
+
+	switch {
+	case isUniqueViolation(err):
+		return nil, huma.Error409Conflict("that slug is already taken on this domain")
+	case errors.Is(err, pgx.ErrNoRows):
+		return nil, huma.Error404NotFound("link not found")
+	case err != nil:
+		d.Log.Error("update link", "error", err, "link_id", in.LinkID)
+		return nil, huma.Error500InternalServerError("could not update the link")
+	}
+
+	if len(changed) > 0 {
+		d.invalidateLink(ctx, previous.Hostname, previous.Slug)
+		if updated.Slug != previous.Slug {
+			// The new key may hold a not-found sentinel from a probe.
+			d.invalidateLink(ctx, updated.Hostname, updated.Slug)
+		}
+	}
+
+	return &LinkOutput{Status: http.StatusOK, Body: d.linkResponse(updated)}, nil
+}
+
+func (d Deps) deleteLink(ctx context.Context, in *DeleteLinkInput) (*DeleteLinkOutput, error) {
+	member := in.Member()
+	resolved := in.Link()
+
+	err := db.InTx(ctx, d.Pool, func(q *db.Queries) error {
+		affected, err := q.DeleteLink(ctx, db.DeleteLinkParams{
+			ID: resolved.ID, TeamID: member.TeamID,
+		})
+		if err != nil {
+			return err
+		}
+		if affected == 0 {
+			return pgx.ErrNoRows
+		}
+
+		return audit.Log(ctx, q, audit.Entry{
+			TeamID:      member.TeamID,
+			ActorUserID: member.UserID,
+			Action:      audit.ActionLinkDeleted,
+			EntityType:  audit.EntityLink,
+			EntityID:    resolved.ID,
+			Metadata: map[string]any{
+				"slug":     resolved.Slug,
+				"hostname": resolved.Hostname,
+			},
+		})
+	})
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return nil, huma.Error404NotFound("link not found")
+	case err != nil:
+		d.Log.Error("delete link", "error", err, "link_id", in.LinkID)
+		return nil, huma.Error500InternalServerError("could not delete the link")
+	}
+
+	d.invalidateLink(ctx, resolved.Hostname, resolved.Slug)
+
+	return &DeleteLinkOutput{Status: http.StatusNoContent}, nil
 }
