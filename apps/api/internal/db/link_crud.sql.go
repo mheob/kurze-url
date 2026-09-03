@@ -22,6 +22,10 @@ where l.team_id = $1
   and ($4::text is null
        or l.slug ilike '%' || $4::text || '%'
        or l.destination_url ilike '%' || $4::text || '%')
+  and ($5::uuid is null or l.folder_id = $5::uuid)
+  and ($6::uuid is null or exists (
+        select 1 from link_tag lt
+        where lt.link_id = l.id and lt.tag_id = $6::uuid))
 `
 
 type CountLinksForTeamParams struct {
@@ -29,6 +33,8 @@ type CountLinksForTeamParams struct {
 	State    *string
 	DomainID *uuid.UUID
 	Q        *string
+	FolderID *uuid.UUID
+	TagID    *uuid.UUID
 }
 
 // CountLinksForTeam repeats the filters because the page-past-the-end fallback
@@ -39,6 +45,8 @@ func (q *Queries) CountLinksForTeam(ctx context.Context, arg CountLinksForTeamPa
 		arg.State,
 		arg.DomainID,
 		arg.Q,
+		arg.FolderID,
+		arg.TagID,
 	)
 	var count int64
 	err := row.Scan(&count)
@@ -248,11 +256,15 @@ where l.team_id = $1
   and ($4::text is null
        or l.slug ilike '%' || $4::text || '%'
        or l.destination_url ilike '%' || $4::text || '%')
+  and ($5::uuid is null or l.folder_id = $5::uuid)
+  and ($6::uuid is null or exists (
+        select 1 from link_tag lt
+        where lt.link_id = l.id and lt.tag_id = $6::uuid))
 order by
-  case when $5::boolean then l.created_at end asc,
-  case when not $5::boolean then l.created_at end desc,
+  case when $7::boolean then l.created_at end asc,
+  case when not $7::boolean then l.created_at end desc,
   l.id
-limit $7 offset $6
+limit $9 offset $8
 `
 
 type ListLinksForTeamParams struct {
@@ -260,6 +272,8 @@ type ListLinksForTeamParams struct {
 	State    *string
 	DomainID *uuid.UUID
 	Q        *string
+	FolderID *uuid.UUID
+	TagID    *uuid.UUID
 	SortAsc  bool
 	Offset   int32
 	Limit    int32
@@ -295,6 +309,8 @@ func (q *Queries) ListLinksForTeam(ctx context.Context, arg ListLinksForTeamPara
 		arg.State,
 		arg.DomainID,
 		arg.Q,
+		arg.FolderID,
+		arg.TagID,
 		arg.SortAsc,
 		arg.Offset,
 		arg.Limit,

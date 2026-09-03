@@ -72,10 +72,9 @@ type linkRow struct {
 }
 
 // linkResponse defaults Tags to an empty slice rather than leaving it nil: a
-// client iterating tags should never have to nil-check. createLink overwrites
-// it with the tags it already resolved; the other handlers leave it at this
-// default until a later task wires a real per-link tags query onto the read
-// paths.
+// client iterating tags should never have to nil-check. createLink and
+// updateLink overwrite it with the tags they already resolved; listLinks and
+// getLink overwrite it by calling attachTags right after.
 func (d Deps) linkResponse(r linkRow) Link {
 	return Link{
 		ID:               r.ID,
@@ -136,6 +135,44 @@ func rowFromList(r db.ListLinksForTeamRow) linkRow {
 		AnalyticsEnabled: r.AnalyticsEnabled, FolderID: r.FolderID, CreatedBy: r.CreatedBy,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	}
+}
+
+// attachTags fills in the Tags of a page of links with one extra query, not a
+// join. A left join onto the list query would multiply rows before LIMIT
+// applies, so a page of 20 links would silently return fewer.
+func (d Deps) attachTags(ctx context.Context, teamID uuid.UUID, links []Link) error {
+	if len(links) == 0 {
+		return nil
+	}
+
+	ids := make([]uuid.UUID, 0, len(links))
+	for _, l := range links {
+		ids = append(ids, l.ID)
+	}
+
+	rows, err := d.Queries.ListTagsForLinks(ctx, db.ListTagsForLinksParams{
+		LinkIds: ids, TeamID: teamID,
+	})
+	if err != nil {
+		return fmt.Errorf("load tags for links: %w", err)
+	}
+
+	byLink := make(map[uuid.UUID][]Tag, len(links))
+	for _, row := range rows {
+		byLink[row.LinkID] = append(byLink[row.LinkID], Tag{
+			ID: row.ID, TeamID: teamID, Name: row.Name,
+		})
+	}
+	for i := range links {
+		// A nil slice would marshal as null; an empty one as []. A client
+		// iterating tags should never have to nil-check.
+		if tags, ok := byLink[links[i].ID]; ok {
+			links[i].Tags = tags
+		} else {
+			links[i].Tags = []Tag{}
+		}
+	}
+	return nil
 }
 
 // selfHostnames is the set of hostnames a destination may not point at,
@@ -513,16 +550,18 @@ func (d Deps) allowLinkCreate(ctx context.Context, userID uuid.UUID) error {
 // filter=field:op:value scheme, which is impossible to type in OpenAPI and
 // impossible to index for.
 //
-// DomainID is a string, not a *uuid.UUID: Huma v2 panics ("pointers are not
-// supported for form/header/path/query parameters") on a pointer-typed query
-// field, so it is parsed by hand in the handler — the same pattern
-// ListAuditLogInput.ActorUserID already uses in auditlog.go.
+// DomainID, FolderID and TagID are strings, not *uuid.UUID: Huma v2 panics
+// ("pointers are not supported for form/header/path/query parameters") on a
+// pointer-typed query field, so each is parsed by hand in the handler — the
+// same pattern ListAuditLogInput.ActorUserID already uses in auditlog.go.
 type ListLinksInput struct {
 	authz.ViewerScope
 	PageParams
 	Q        string `query:"q" maxLength:"200" doc:"Substring match across the slug and the destination URL."`
 	State    string `query:"state" enum:"active,disabled,expired,flagged" doc:"Restrict to one state."`
 	DomainID string `query:"domain_id" doc:"Restrict to one domain, as a UUID."`
+	FolderID string `query:"folder_id" doc:"Restrict to one folder, as a UUID."`
+	TagID    string `query:"tag_id" doc:"Restrict to links carrying one tag, as a UUID."`
 	Sort     string `query:"sort" enum:"created_at,-created_at" default:"-created_at" doc:"Newest first by default."`
 }
 
@@ -555,6 +594,20 @@ func (d Deps) listLinks(ctx context.Context, in *ListLinksInput) (*ListLinksOutp
 		}
 		params.DomainID, countParams.DomainID = &domainID, &domainID
 	}
+	if in.FolderID != "" {
+		folderID, err := uuid.Parse(in.FolderID)
+		if err != nil {
+			return nil, huma.Error422UnprocessableEntity("folder_id must be a UUID")
+		}
+		params.FolderID, countParams.FolderID = &folderID, &folderID
+	}
+	if in.TagID != "" {
+		tagID, err := uuid.Parse(in.TagID)
+		if err != nil {
+			return nil, huma.Error422UnprocessableEntity("tag_id must be a UUID")
+		}
+		params.TagID, countParams.TagID = &tagID, &tagID
+	}
 
 	rows, err := d.Queries.ListLinksForTeam(ctx, params)
 	if err != nil {
@@ -567,6 +620,11 @@ func (d Deps) listLinks(ctx context.Context, in *ListLinksInput) (*ListLinksOutp
 	for _, row := range rows {
 		total = row.TotalCount
 		items = append(items, d.linkResponse(rowFromList(row)))
+	}
+
+	if err := d.attachTags(ctx, member.TeamID, items); err != nil {
+		d.Log.Error("attach tags to links", "error", err, "team_id", member.TeamID)
+		return nil, huma.Error500InternalServerError("could not list links")
 	}
 
 	if NeedsTotalFallback(in.PageParams, len(rows)) {
@@ -664,7 +722,13 @@ func (d Deps) getLink(ctx context.Context, in *GetLinkInput) (*LinkOutput, error
 		return nil, huma.Error500InternalServerError("could not load the link")
 	}
 
-	return &LinkOutput{Status: http.StatusOK, Body: d.linkResponse(rowFromGet(row))}, nil
+	items := []Link{d.linkResponse(rowFromGet(row))}
+	if err := d.attachTags(ctx, member.TeamID, items); err != nil {
+		d.Log.Error("attach tags to link", "error", err, "link_id", in.LinkID)
+		return nil, huma.Error500InternalServerError("could not load the link")
+	}
+
+	return &LinkOutput{Status: http.StatusOK, Body: items[0]}, nil
 }
 
 func (d Deps) updateLink(ctx context.Context, in *UpdateLinkInput) (*LinkOutput, error) {

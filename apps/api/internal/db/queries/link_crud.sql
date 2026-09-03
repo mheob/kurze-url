@@ -56,6 +56,10 @@ where l.team_id = sqlc.arg('team_id')
   and (sqlc.narg('q')::text is null
        or l.slug ilike '%' || sqlc.narg('q')::text || '%'
        or l.destination_url ilike '%' || sqlc.narg('q')::text || '%')
+  and (sqlc.narg('folder_id')::uuid is null or l.folder_id = sqlc.narg('folder_id')::uuid)
+  and (sqlc.narg('tag_id')::uuid is null or exists (
+        select 1 from link_tag lt
+        where lt.link_id = l.id and lt.tag_id = sqlc.narg('tag_id')::uuid))
 order by
   case when sqlc.arg('sort_asc')::boolean then l.created_at end asc,
   case when not sqlc.arg('sort_asc')::boolean then l.created_at end desc,
@@ -73,7 +77,11 @@ where l.team_id = sqlc.arg('team_id')
   and (sqlc.narg('domain_id')::uuid is null or l.domain_id = sqlc.narg('domain_id')::uuid)
   and (sqlc.narg('q')::text is null
        or l.slug ilike '%' || sqlc.narg('q')::text || '%'
-       or l.destination_url ilike '%' || sqlc.narg('q')::text || '%');
+       or l.destination_url ilike '%' || sqlc.narg('q')::text || '%')
+  and (sqlc.narg('folder_id')::uuid is null or l.folder_id = sqlc.narg('folder_id')::uuid)
+  and (sqlc.narg('tag_id')::uuid is null or exists (
+        select 1 from link_tag lt
+        where lt.link_id = l.id and lt.tag_id = sqlc.narg('tag_id')::uuid));
 
 -- UpdateLink writes every mutable column. The handler reads the row first,
 -- inside the same transaction, merges the request onto it, and passes the

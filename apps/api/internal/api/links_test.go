@@ -861,3 +861,123 @@ func TestCreateLinkEnforcesTheTagsPerLinkCap(t *testing.T) {
 
 	require.Equal(t, http.StatusUnprocessableEntity, rec.Code, "body: %s", rec.Body.String())
 }
+
+func TestListLinksFiltersByFolder(t *testing.T) {
+	f := newTenancyFixture(t)
+	folder := f.createFolder(t, "Sommerfest")
+	filed := f.createLinkInFolder(t, "https://example.org/in", folder.ID)
+	f.createLink(t, "unfiled", "https://example.org/out")
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		"/v1/teams/"+f.teamID.String()+"/links?folder_id="+folder.ID.String(), nil)
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	page := decode[linkPage](t, rec)
+	require.Len(t, page.Items, 1, "only the filed link must match")
+	require.Equal(t, filed, page.Items[0].ID)
+	require.Equal(t, 1, page.TotalCount, "the count must respect the filter")
+}
+
+func TestListLinksRejectsAMalformedFolderFilter(t *testing.T) {
+	f := newTenancyFixture(t)
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		"/v1/teams/"+f.teamID.String()+"/links?folder_id=not-a-uuid", nil)
+
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+}
+
+func TestListLinksFiltersByTag(t *testing.T) {
+	f := newTenancyFixture(t)
+	tag := f.createTag(t, "Presse")
+	tagged := f.createLinkWithTags(t, "https://example.org/in", tag.ID)
+	f.createLink(t, "untagged", "https://example.org/out")
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		"/v1/teams/"+f.teamID.String()+"/links?tag_id="+tag.ID.String(), nil)
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	page := decode[linkPage](t, rec)
+	require.Len(t, page.Items, 1, "only the tagged link must match")
+	require.Equal(t, tagged, page.Items[0].ID)
+	require.Equal(t, 1, page.TotalCount, "the count must respect the filter")
+}
+
+func TestListLinksRejectsAMalformedTagFilter(t *testing.T) {
+	f := newTenancyFixture(t)
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		"/v1/teams/"+f.teamID.String()+"/links?tag_id=not-a-uuid", nil)
+
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+}
+
+// TestListLinksDoesNotMultiplyRowsForMultipleTags is the reason the tag read
+// is a second query and the tag_id filter is an exists subquery rather than a
+// join: a left join onto the list query itself would multiply this link once
+// per tag it carries, and LIMIT would then hide other links behind the
+// duplicates. The fixture seeds one link of its own ("fixture", untagged), so
+// a correct implementation reports exactly two links, not four.
+func TestListLinksDoesNotMultiplyRowsForMultipleTags(t *testing.T) {
+	f := newTenancyFixture(t)
+	a := f.createTag(t, "Alpha")
+	b := f.createTag(t, "Beta")
+	c := f.createTag(t, "Gamma")
+	tagged := f.createLinkWithTags(t, "https://example.org/x", a.ID, b.ID, c.ID)
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		"/v1/teams/"+f.teamID.String()+"/links", nil)
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	page := decode[linkPage](t, rec)
+
+	require.Equal(t, 2, page.TotalCount, "a join would inflate this by the tag count")
+	require.Len(t, page.Items, 2)
+
+	var found *linkBody
+	for i := range page.Items {
+		if page.Items[i].ID == tagged {
+			found = &page.Items[i]
+		}
+	}
+	require.NotNil(t, found, "the tagged link must appear exactly once")
+	require.Len(t, found.Tags, 3)
+}
+
+// TestListLinksReturnsEachLinksOwnTags exists because the stitch must key by
+// link_id: a bug that assigned every tag to every link would pass a
+// single-link test.
+func TestListLinksReturnsEachLinksOwnTags(t *testing.T) {
+	f := newTenancyFixture(t)
+	a := f.createTag(t, "Alpha")
+	b := f.createTag(t, "Beta")
+	first := f.createLinkWithTags(t, "https://example.org/1", a.ID)
+	second := f.createLinkWithTags(t, "https://example.org/2", b.ID)
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		"/v1/teams/"+f.teamID.String()+"/links", nil)
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	page := decode[linkPage](t, rec)
+
+	byID := map[uuid.UUID][]tagBody{}
+	for _, item := range page.Items {
+		byID[item.ID] = item.Tags
+	}
+	require.Len(t, byID[first], 1)
+	require.Equal(t, "Alpha", byID[first][0].Name)
+	require.Len(t, byID[second], 1)
+	require.Equal(t, "Beta", byID[second][0].Name)
+}
+
+func TestGetLinkReturnsItsTags(t *testing.T) {
+	f := newTenancyFixture(t)
+	tag := f.createTag(t, "Presse")
+	linkID := f.createLinkWithTags(t, "https://example.org/x", tag.ID)
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet, "/v1/links/"+linkID.String(), nil)
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	body := decode[linkBody](t, rec)
+	require.Len(t, body.Tags, 1)
+	require.Equal(t, "Presse", body.Tags[0].Name)
+}
