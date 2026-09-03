@@ -115,12 +115,19 @@ func TestFolderScopeHidesAnotherTeamsFolderWith404(t *testing.T) {
 }
 
 func TestFolderScopeReturns422ForAMalformedID(t *testing.T) {
+	// The membership resolver is configured to fail (ErrNotMember, which
+	// would otherwise produce 404) so a resolver-produced error is actually
+	// in play here. Without that, this test would pass whether or not the
+	// folder_id re-parse guard exists at all: with both fakes succeeding,
+	// nothing competes with Huma's own path-binder 422, and the binder's
+	// status stands unopposed regardless of the guard.
 	resp := folderScopeCase(t,
 		fakeFolderResolver{folder: authz.ResolvedFolder{}},
-		fakeMembershipResolver{membership: authz.Membership{Role: authz.RoleOwner}},
+		fakeMembershipResolver{err: authz.ErrNotMember},
 		uuid.New(), "not-a-uuid")
 
-	require.Equal(t, http.StatusUnprocessableEntity, resp.Code)
+	require.Equal(t, http.StatusUnprocessableEntity, resp.Code,
+		"a malformed ID is a malformed request, not a missing folder")
 }
 
 func TestFolderScopeRefusesAnUnauthenticatedCaller(t *testing.T) {
