@@ -1,9 +1,11 @@
 package api_test
 
 import (
+	"context"
 	"net/http"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/mheob/kurze-url/apps/api/internal/api"
@@ -75,4 +77,53 @@ func TestAuditLogIs404ForAStranger(t *testing.T) {
 	rec := f.do(t, f.stranger, http.MethodGet, auditLogPath(f), nil)
 
 	require.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+// TestAuditLogNeverCrossesTeams closes the one gap the structural argument
+// ("team_id = $1::uuid is applied unconditionally, unlike the optional
+// filters") does not itself cover with a test: nothing previously proved
+// that a *second* team's rows are absent from the first team's feed over
+// this HTTP endpoint. The fixture only ever wires one team, so the second
+// team and its audit entry are seeded directly with the pool — the point
+// here is the assertion, not the setup route.
+func TestAuditLogNeverCrossesTeams(t *testing.T) {
+	f := newTenancyFixture(t)
+	ctx := context.Background()
+
+	// An entry for team one, through the real write path.
+	require.Equal(t, http.StatusOK, f.do(t, f.members[authz.RoleAdmin], http.MethodPatch,
+		"/v1/teams/"+f.teamID.String(), map[string]string{"name": "Team Eins"}).Code)
+
+	// A second, unrelated team with its own audit entry.
+	var otherTeamID uuid.UUID
+	require.NoError(t, f.pool.QueryRow(ctx,
+		`insert into team (name) values ($1) returning id`, "Anderer Verein").Scan(&otherTeamID))
+	t.Cleanup(func() {
+		_, _ = f.pool.Exec(context.Background(), `delete from team where id = $1`, otherTeamID)
+	})
+
+	const marker = "ONLY-IN-THE-OTHER-TEAM"
+	_, err := f.pool.Exec(ctx,
+		`insert into audit_log (team_id, actor_user_id, action, entity_type, entity_id, metadata)
+		 values ($1, $2, 'team.renamed', 'team', $1, $3)`,
+		otherTeamID, f.members[authz.RoleAdmin].id, []byte(`{"to":"`+marker+`"}`))
+	require.NoError(t, err)
+
+	// per_page=100 is well above the two entries now in play, so a dropped
+	// team_id predicate would surface the other team's row here rather than
+	// hide behind pagination.
+	rec := f.do(t, f.members[authz.RoleAdmin], http.MethodGet,
+		auditLogPath(f)+"?per_page=100", nil)
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	require.NotContains(t, rec.Body.String(), marker,
+		"the other team's audit entry must never appear in this team's feed")
+	require.NotContains(t, rec.Body.String(), otherTeamID.String(),
+		"the other team's id must never appear in this team's feed")
+
+	page := decode[api.Page[api.AuditEntry]](t, rec)
+	require.Equal(t, 1, page.TotalCount)
+	require.Len(t, page.Items, 1)
+	require.Equal(t, f.teamID, *page.Items[0].EntityID,
+		"the only entry returned must be the one belonging to team one, identified by its entity_id")
 }
