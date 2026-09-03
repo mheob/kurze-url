@@ -26,6 +26,11 @@ func TestAnUnknownRoleSatisfiesNothing(t *testing.T) {
 		"an unrecognised role must never pass a check — failing open is a data leak")
 }
 
+func TestAnUnknownRequirementIsNeverSatisfied(t *testing.T) {
+	require.False(t, authz.RoleOwner.AtLeast(authz.Role("typo")),
+		"an unknown requirement must deny, not admit — otherwise a typo'd constant would grant every role access")
+}
+
 func TestParseRoleAcceptsExactlyTheFourSchemaRoles(t *testing.T) {
 	for _, name := range []string{"viewer", "editor", "admin", "owner"} {
 		role, err := authz.ParseRole(name)

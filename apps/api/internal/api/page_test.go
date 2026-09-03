@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"math"
 	"reflect"
 	"testing"
 
@@ -23,6 +24,7 @@ func TestPageParamsClampsAndDefaults(t *testing.T) {
 		{"second page", api.PageParams{Page: 2, PerPage: 10}, 10, 10, 2, 10},
 		{"per_page is capped at 100", api.PageParams{Page: 1, PerPage: 5000}, 100, 0, 1, 100},
 		{"negative page is treated as the first", api.PageParams{Page: -3, PerPage: 10}, 10, 0, 1, 10},
+		{"negative per_page falls back to the default", api.PageParams{Page: 1, PerPage: -5}, 25, 0, 1, 25},
 	}
 
 	for _, tc := range cases {
@@ -35,6 +37,19 @@ func TestPageParamsClampsAndDefaults(t *testing.T) {
 			require.Equal(t, tc.wantPerPage, perPage)
 		})
 	}
+}
+
+func TestOffsetSaturatesInsteadOfOverflowingOnAnOversizedPage(t *testing.T) {
+	// PageParams is a plain struct: later tasks can build one directly without
+	// going through Huma's request validation (and hence without the
+	// PageParams.Page maximum tag ever being enforced), so Offset() itself
+	// must never produce a negative or wrapped-around SQL OFFSET.
+	params := api.PageParams{Page: 100_000_000, PerPage: 100}
+
+	offset := params.Offset()
+
+	require.GreaterOrEqual(t, offset, int32(0))
+	require.Equal(t, int32(math.MaxInt32), offset)
 }
 
 func TestNewPageReportsTheNormalisedParamsAndTotal(t *testing.T) {

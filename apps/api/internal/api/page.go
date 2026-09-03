@@ -1,5 +1,7 @@
 package api
 
+import "math"
+
 // Page is the envelope every list endpoint returns. Pagination metadata lives
 // in the body, not in headers: Huma's value is typed response bodies, and a
 // generated TypeScript client cannot see headers.
@@ -19,7 +21,7 @@ const (
 // default and range tags; the methods below normalise again so a value built
 // directly in a test behaves identically to one parsed from a request.
 type PageParams struct {
-	Page    int `query:"page" default:"1" minimum:"1" doc:"1-based page number."`
+	Page    int `query:"page" default:"1" minimum:"1" maximum:"1000000" doc:"1-based page number."`
 	PerPage int `query:"per_page" default:"25" minimum:"1" maximum:"100" doc:"Items per page, capped at 100."`
 }
 
@@ -44,10 +46,17 @@ func (p PageParams) Limit() int32 {
 	return int32(perPage)
 }
 
-// Offset is the SQL OFFSET for these params.
+// Offset is the SQL OFFSET for these params. It saturates at math.MaxInt32
+// rather than overflowing: PageParams is a plain struct that later tasks can
+// construct directly, bypassing Huma's request validation (and hence the
+// Page field's maximum tag), so this must stay safe on its own.
 func (p PageParams) Offset() int32 {
 	page, perPage := p.Normalized()
-	return int32((page - 1) * perPage)
+	offset := int64(page-1) * int64(perPage)
+	if offset > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	return int32(offset)
 }
 
 // NewPage wraps a query's rows. total comes from the count(*) over () column

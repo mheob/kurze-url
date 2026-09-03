@@ -43,9 +43,19 @@ func ParseRole(s string) (Role, error) {
 	return role, nil
 }
 
-// AtLeast reports whether r is required or higher.
+// AtLeast reports whether r is required or higher. Both r and required must
+// be known roles — an unrecognised value on either side denies, since a typo
+// in the required role must never end up granting every role access.
 func (r Role) AtLeast(required Role) bool {
-	return rank[r] >= rank[required] && rank[r] > 0
+	have, ok := rank[r]
+	if !ok {
+		return false
+	}
+	want, ok := rank[required]
+	if !ok {
+		return false
+	}
+	return have >= want
 }
 
 func (r Role) String() string { return string(r) }
