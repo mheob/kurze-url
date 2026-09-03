@@ -261,6 +261,72 @@ func TestListAuditLogNeverCrossesTeams(t *testing.T) {
 	require.Empty(t, rows, "an audit entry belonging to another team must never be listed")
 }
 
+// TestCountFoldersForTeamOnlyCountsTheCallersFolders and
+// TestCountTagsForTeamOnlyCountsTheCallersTags exercise CountFoldersForTeam
+// and CountTagsForTeam directly, the same way the tests below exercise
+// UpdateFolder and friends: an HTTP-level test cannot tell a per-team count
+// from a global one, because CountFoldersForTeam/CountTagsForTeam feed both
+// the per-team creation cap (where a global count still refuses new rows,
+// just for the wrong reason) and the ListXForTeam pagination fallback (which
+// no folder or tag test reaches). Calling the query directly against rows
+// seeded in two different teams is the only way to see the team_id filter
+// actually doing something.
+func TestCountFoldersForTeamOnlyCountsTheCallersFolders(t *testing.T) {
+	ctx := context.Background()
+	tx, err := testPool(t).Begin(ctx)
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	teamID, _ := seedTeamWithOwner(ctx, t, tx)
+
+	var otherTeamID uuid.UUID
+	require.NoError(t, tx.QueryRow(ctx,
+		`insert into team (name) values ('other') returning id`).Scan(&otherTeamID))
+
+	_, err = tx.Exec(ctx,
+		`insert into folder (team_id, name) values ($1, 'Mine A'), ($1, 'Mine B')`, teamID)
+	require.NoError(t, err)
+	_, err = tx.Exec(ctx,
+		`insert into folder (team_id, name) values ($1, 'Theirs A'), ($1, 'Theirs B'), ($1, 'Theirs C')`,
+		otherTeamID)
+	require.NoError(t, err)
+
+	q := db.New(tx)
+	count, err := q.CountFoldersForTeam(ctx, teamID)
+
+	require.NoError(t, err)
+	require.EqualValues(t, 2, count,
+		"the count must include only this team's own folders, not every team's")
+}
+
+func TestCountTagsForTeamOnlyCountsTheCallersTags(t *testing.T) {
+	ctx := context.Background()
+	tx, err := testPool(t).Begin(ctx)
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	teamID, _ := seedTeamWithOwner(ctx, t, tx)
+
+	var otherTeamID uuid.UUID
+	require.NoError(t, tx.QueryRow(ctx,
+		`insert into team (name) values ('other') returning id`).Scan(&otherTeamID))
+
+	_, err = tx.Exec(ctx,
+		`insert into tag (team_id, name) values ($1, 'Mine A'), ($1, 'Mine B')`, teamID)
+	require.NoError(t, err)
+	_, err = tx.Exec(ctx,
+		`insert into tag (team_id, name) values ($1, 'Theirs A'), ($1, 'Theirs B'), ($1, 'Theirs C')`,
+		otherTeamID)
+	require.NoError(t, err)
+
+	q := db.New(tx)
+	count, err := q.CountTagsForTeam(ctx, teamID)
+
+	require.NoError(t, err)
+	require.EqualValues(t, 2, count,
+		"the count must include only this team's own tags, not every team's")
+}
+
 // The four tests below exercise UpdateFolder, DeleteFolder, UpdateTag and
 // DeleteTag directly against a team_id that does not own the row, bypassing
 // internal/api entirely. That bypass is deliberate: FolderEditorScope and
