@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -593,13 +594,46 @@ type GetLinkInput struct {
 // rejects unknown body fields, so both are 422 rather than silently ignored.
 type UpdateLinkInput struct {
 	authz.LinkEditorScope
-	Body struct {
-		DestinationURL   *string    `json:"destination_url,omitempty" maxLength:"2048"`
-		Slug             *string    `json:"slug,omitempty" maxLength:"64"`
-		RedirectType     *int       `json:"redirect_type,omitempty" enum:"301,302"`
-		State            *string    `json:"state,omitempty" enum:"active,disabled" doc:"expired follows from expires_at and flagged is set by scanning; neither is a caller's to write."`
-		ExpiresAt        *time.Time `json:"expires_at,omitempty"`
-		AnalyticsEnabled *bool      `json:"analytics_enabled,omitempty"`
+	// RawBody is read only to tell an omitted folder_id from an explicit null;
+	// a *uuid.UUID is nil for both, so a pointer alone gives no way to unfile a
+	// link. The typed Body below stays the source of every value — the
+	// OpenAPI schema and the generated TS client depend on it.
+	RawBody []byte
+	Body    struct {
+		DestinationURL   *string     `json:"destination_url,omitempty" maxLength:"2048"`
+		Slug             *string     `json:"slug,omitempty" maxLength:"64"`
+		RedirectType     *int        `json:"redirect_type,omitempty" enum:"301,302"`
+		State            *string     `json:"state,omitempty" enum:"active,disabled" doc:"expired follows from expires_at and flagged is set by scanning; neither is a caller's to write."`
+		ExpiresAt        *time.Time  `json:"expires_at,omitempty"`
+		AnalyticsEnabled *bool       `json:"analytics_enabled,omitempty"`
+		FolderID         *uuid.UUID  `json:"folder_id,omitempty" nullable:"true" doc:"Send null to unfile the link."`
+		TagIDs           []uuid.UUID `json:"tag_ids,omitempty" maxItems:"10" doc:"Replaces the whole tag set. Send [] to remove every tag."`
+	}
+}
+
+// bodyHasKey reports whether the request body carried this key at all, which
+// is the difference between "leave it alone" and "set it to null". Used only
+// for folder_id: expires_at has the identical *time.Time limitation but is
+// deliberately left alone here — fixing it changes an endpoint plan 3 already
+// shipped and belongs in its own task.
+func bodyHasKey(raw []byte, key string) bool {
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &keys); err != nil {
+		return false
+	}
+	_, ok := keys[key]
+	return ok
+}
+
+// equalUUIDPtr compares two optional UUIDs, treating two nils as equal.
+func equalUUIDPtr(a, b *uuid.UUID) bool {
+	switch {
+	case a == nil && b == nil:
+		return true
+	case a == nil || b == nil:
+		return false
+	default:
+		return *a == *b
 	}
 }
 
@@ -659,9 +693,11 @@ func (d Deps) updateLink(ctx context.Context, in *UpdateLinkInput) (*LinkOutput,
 	// them would silently break the first time a column is added to one query
 	// and not the other.
 	var (
-		updated  linkRow
-		previous db.GetLinkForAPIRow
-		changed  []string
+		updated      linkRow
+		updatedTags  []Tag
+		previous     db.GetLinkForAPIRow
+		changed      []string
+		cacheChanged bool
 	)
 
 	err := db.InTx(ctx, d.Pool, func(q *db.Queries) error {
@@ -682,6 +718,7 @@ func (d Deps) updateLink(ctx context.Context, in *UpdateLinkInput) (*LinkOutput,
 			State:            before.State,
 			ExpiresAt:        before.ExpiresAt,
 			AnalyticsEnabled: before.AnalyticsEnabled,
+			FolderID:         before.FolderID,
 		}
 		metadata := map[string]any{}
 
@@ -722,7 +759,33 @@ func (d Deps) updateLink(ctx context.Context, in *UpdateLinkInput) (*LinkOutput,
 			}
 		}
 
-		if len(changed) == 0 {
+		// cacheChanged snapshots whether any field the redirect path actually
+		// reads (link.Cached) changed, before folder_id/tags — which
+		// link.Cached carries neither of — get a chance to add to `changed`.
+		// The hot path must not pay a Redis command for a purely
+		// organizational edit.
+		cacheChanged = len(changed) > 0
+
+		if bodyHasKey(in.RawBody, "folder_id") {
+			folderID, err := d.resolveFolderRef(ctx, q, member.TeamID, in.Body.FolderID)
+			if err != nil {
+				return err
+			}
+			if !equalUUIDPtr(folderID, before.FolderID) {
+				params.FolderID = folderID
+				changed = append(changed, "folder_id")
+				metadata["folder_id"] = map[string]any{"from": before.FolderID, "to": folderID}
+			}
+		}
+
+		// tag_ids replaces the whole set and is handled after q.UpdateLink so
+		// the link is known to exist. It touches no column UpdateLink writes,
+		// so the no-op check below must account for it separately: a PATCH
+		// carrying only tag_ids must still run the update (to produce a
+		// fresh row for the response) and still write its audit row.
+		tagsChanging := in.Body.TagIDs != nil
+
+		if len(changed) == 0 && !tagsChanging {
 			// Nothing changed; do not write a misleading audit entry, and do
 			// not bump updated_at either.
 			updated = rowFromGet(before)
@@ -734,6 +797,34 @@ func (d Deps) updateLink(ctx context.Context, in *UpdateLinkInput) (*LinkOutput,
 			return err
 		}
 		updated = rowFromUpdate(row)
+
+		if tagsChanging {
+			tags, err := d.resolveTagRefs(ctx, q, member.TeamID, in.Body.TagIDs)
+			if err != nil {
+				return err
+			}
+			if err := q.DeleteLinkTags(ctx, row.ID); err != nil {
+				return err
+			}
+			if len(tags) > 0 {
+				ids := make([]uuid.UUID, 0, len(tags))
+				for _, tag := range tags {
+					ids = append(ids, tag.ID)
+				}
+				if err := q.InsertLinkTags(ctx, db.InsertLinkTagsParams{
+					LinkID: row.ID, TagIds: ids,
+				}); err != nil {
+					return err
+				}
+			}
+			changed = append(changed, "tags")
+			// A count, not the tag names: a tag name is user-supplied free
+			// text, and the audit metadata denylist exists precisely to keep
+			// unvetted strings out of this column.
+			metadata["tags"] = map[string]any{"count": len(tags)}
+			updatedTags = tags
+		}
+
 		metadata["changed"] = changed
 
 		return audit.Log(ctx, q, audit.Entry{
@@ -756,7 +847,7 @@ func (d Deps) updateLink(ctx context.Context, in *UpdateLinkInput) (*LinkOutput,
 		return nil, huma.Error500InternalServerError("could not update the link")
 	}
 
-	if len(changed) > 0 {
+	if cacheChanged {
 		d.invalidateLink(ctx, previous.Hostname, previous.Slug)
 		if updated.Slug != previous.Slug {
 			// The new key may hold a not-found sentinel from a probe.
@@ -764,7 +855,17 @@ func (d Deps) updateLink(ctx context.Context, in *UpdateLinkInput) (*LinkOutput,
 		}
 	}
 
-	return &LinkOutput{Status: http.StatusOK, Body: d.linkResponse(updated)}, nil
+	body := d.linkResponse(updated)
+	if in.Body.TagIDs != nil {
+		body.Tags = updatedTags
+		if body.Tags == nil {
+			// Never null in JSON: a client iterating tags should not have to
+			// nil-check.
+			body.Tags = []Tag{}
+		}
+	}
+
+	return &LinkOutput{Status: http.StatusOK, Body: body}, nil
 }
 
 func (d Deps) deleteLink(ctx context.Context, in *DeleteLinkInput) (*DeleteLinkOutput, error) {

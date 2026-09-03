@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -308,6 +309,26 @@ func (f *tenancyFixture) do(
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	if as.id != uuid.Nil {
+		req.Header.Set("Authorization",
+			"Bearer "+signMeToken(t, f.key, as.id.String(), as.email))
+	}
+
+	rec := httptest.NewRecorder()
+	f.router.ServeHTTP(rec, req)
+	return rec
+}
+
+// doRaw is do's raw-body counterpart, for a test that must send bytes a typed
+// map cannot express — e.g. an explicit JSON null, which is indistinguishable
+// from an omitted key once decoded into a Go map.
+func (f *tenancyFixture) doRaw(
+	t *testing.T, as testUser, method, path, rawBody string,
+) *httptest.ResponseRecorder {
+	t.Helper()
+
+	req := httptest.NewRequest(method, path, strings.NewReader(rawBody))
+	req.Header.Set("Content-Type", "application/json")
 	if as.id != uuid.Nil {
 		req.Header.Set("Authorization",
 			"Bearer "+signMeToken(t, f.key, as.id.String(), as.email))

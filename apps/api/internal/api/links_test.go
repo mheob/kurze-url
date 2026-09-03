@@ -706,6 +706,143 @@ func TestAnotherTeamsTagIsIndistinguishableFromAMissingOne(t *testing.T) {
 		"message template must not differ, once each response's own id is normalized away")
 }
 
+func TestUpdateLinkReplacesTheWholeTagSet(t *testing.T) {
+	f := newTenancyFixture(t)
+	a := f.createTag(t, "Alpha")
+	b := f.createTag(t, "Beta")
+	c := f.createTag(t, "Gamma")
+	linkID := f.createLinkWithTags(t, "https://example.org/x", a.ID, b.ID)
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPatch, "/v1/links/"+linkID.String(),
+		map[string]any{"tag_ids": []string{a.ID.String(), c.ID.String()}})
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	body := decode[linkBody](t, rec)
+	require.Len(t, body.Tags, 2)
+	// Tags come back ordered by name, so the response is stable.
+	require.Equal(t, "Alpha", body.Tags[0].Name)
+	require.Equal(t, "Gamma", body.Tags[1].Name)
+}
+
+func TestUpdateLinkWithEmptyTagIDsDetachesEverything(t *testing.T) {
+	f := newTenancyFixture(t)
+	tag := f.createTag(t, "Presse")
+	linkID := f.createLinkWithTags(t, "https://example.org/x", tag.ID)
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPatch, "/v1/links/"+linkID.String(),
+		map[string]any{"tag_ids": []string{}})
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+
+	var joins int
+	require.NoError(t, f.pool.QueryRow(context.Background(),
+		`select count(*) from link_tag where link_id = $1`, linkID).Scan(&joins))
+	require.Zero(t, joins)
+}
+
+func TestUpdateLinkWithoutTagIDsLeavesTagsAlone(t *testing.T) {
+	f := newTenancyFixture(t)
+	tag := f.createTag(t, "Presse")
+	linkID := f.createLinkWithTags(t, "https://example.org/x", tag.ID)
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPatch, "/v1/links/"+linkID.String(),
+		map[string]any{"destination_url": "https://example.org/y"})
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+
+	var joins int
+	require.NoError(t, f.pool.QueryRow(context.Background(),
+		`select count(*) from link_tag where link_id = $1`, linkID).Scan(&joins))
+	require.Equal(t, 1, joins, "a PATCH that never mentions tag_ids must leave tags untouched")
+}
+
+func TestUpdateLinkWithNullFolderIDUnfilesIt(t *testing.T) {
+	// The distinction this asserts is why the handler reads RawBody: an
+	// omitted folder_id and an explicit null are both a nil pointer.
+	f := newTenancyFixture(t)
+	folder := f.createFolder(t, "Sommerfest")
+	linkID := f.createLinkInFolder(t, "https://example.org/x", folder.ID)
+
+	rec := f.doRaw(t, f.members[authz.RoleEditor], http.MethodPatch,
+		"/v1/links/"+linkID.String(), `{"folder_id": null}`)
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	require.Nil(t, decode[linkBody](t, rec).FolderID)
+}
+
+func TestUpdateLinkWithoutFolderIDLeavesItFiled(t *testing.T) {
+	f := newTenancyFixture(t)
+	folder := f.createFolder(t, "Sommerfest")
+	linkID := f.createLinkInFolder(t, "https://example.org/x", folder.ID)
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPatch, "/v1/links/"+linkID.String(),
+		map[string]any{"destination_url": "https://example.org/y"})
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	body := decode[linkBody](t, rec)
+	require.NotNil(t, body.FolderID, "a PATCH that never mentions folder_id must leave it filed")
+	require.Equal(t, folder.ID, *body.FolderID)
+}
+
+func TestUpdateLinkRecordsFolderAndTagChangesInOneAuditRow(t *testing.T) {
+	// One row per PATCH, not one per changed field: a single request is a
+	// single request, and metadata.changed says which fields moved.
+	f := newTenancyFixture(t)
+	folder := f.createFolder(t, "Sommerfest")
+	tag := f.createTag(t, "Presse")
+	created := f.createLink(t, "audit-folder-tags", "https://example.org/x")
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPatch, "/v1/links/"+created.ID.String(),
+		map[string]any{
+			"folder_id": folder.ID.String(),
+			"tag_ids":   []string{tag.ID.String()},
+		})
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+
+	var rows int
+	require.NoError(t, f.pool.QueryRow(context.Background(),
+		`select count(*) from audit_log where entity_id = $1 and action = 'link.updated'`,
+		created.ID).Scan(&rows))
+	require.Equal(t, 1, rows, "one PATCH is one audit row, however many fields it touched")
+
+	var changed []string
+	require.NoError(t, f.pool.QueryRow(context.Background(),
+		`select array(select jsonb_array_elements_text(metadata->'changed'))
+		 from audit_log where entity_id = $1 and action = 'link.updated'`,
+		created.ID).Scan(&changed))
+	require.Contains(t, changed, "folder_id")
+	require.Contains(t, changed, "tags")
+}
+
+// TestUpdateLinkChangingOnlyFolderOrTagsLeavesTheRedirectCacheAlone proves the
+// hot-path constraint by exercising it, not only by reading the code: neither
+// folder_id nor tag_ids appears in link.Cached, so a PATCH that touches only
+// those must not cost a single Redis command on the redirect path.
+func TestUpdateLinkChangingOnlyFolderOrTagsLeavesTheRedirectCacheAlone(t *testing.T) {
+	f := newTenancyFixture(t)
+	ctx := context.Background()
+	created := f.createLink(t, "nur-organisatorisch", "https://example.org/x")
+	folder := f.createFolder(t, "Sommerfest")
+	tag := f.createTag(t, "Presse")
+
+	cacheKey := link.CacheKey(created.Hostname, created.Slug)
+	require.NoError(t, f.deps.Cache.PutLink(ctx, cacheKey, link.Cached{
+		ID: created.ID, TeamID: created.TeamID, DestinationURL: created.DestinationURL,
+		RedirectType: 302, State: "active", AnalyticsEnabled: true,
+	}, time.Hour))
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPatch, "/v1/links/"+created.ID.String(),
+		map[string]any{
+			"folder_id": folder.ID.String(),
+			"tag_ids":   []string{tag.ID.String()},
+		})
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+
+	_, err := f.deps.Cache.Raw().Get(ctx, cacheKey).Result()
+	require.NoError(t, err,
+		"an organizational-only change must not invalidate the redirect cache")
+}
+
 func TestCreateLinkEnforcesTheTagsPerLinkCap(t *testing.T) {
 	f := newTenancyFixture(t)
 

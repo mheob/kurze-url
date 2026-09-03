@@ -344,6 +344,7 @@ with updated as (
     state = $6,
     expires_at = $7,
     analytics_enabled = $8,
+    folder_id = $9,
     updated_at = now()
   where link.id = $1 and link.team_id = $2
   returning id, domain_id, team_id, slug, destination_url, redirect_type, state, folder_id, expires_at, password_hash, analytics_enabled, created_by, created_at, updated_at, qr_size, qr_error_correction, qr_margin, qr_logo_url, qr_fg_color, qr_bg_color
@@ -365,6 +366,7 @@ type UpdateLinkParams struct {
 	State            string
 	ExpiresAt        *time.Time
 	AnalyticsEnabled bool
+	FolderID         *uuid.UUID
 }
 
 type UpdateLinkRow struct {
@@ -399,6 +401,7 @@ func (q *Queries) UpdateLink(ctx context.Context, arg UpdateLinkParams) (UpdateL
 		arg.State,
 		arg.ExpiresAt,
 		arg.AnalyticsEnabled,
+		arg.FolderID,
 	)
 	var i UpdateLinkRow
 	err := row.Scan(

@@ -89,6 +89,7 @@ with updated as (
     state = $6,
     expires_at = $7,
     analytics_enabled = $8,
+    folder_id = $9,
     updated_at = now()
   where link.id = $1 and link.team_id = $2
   returning *
