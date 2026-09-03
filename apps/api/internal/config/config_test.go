@@ -139,15 +139,8 @@ func TestInviteRateLimitDefaultsAndOverrides(t *testing.T) {
 	require.Equal(t, 5, cfg.InviteRateLimitPerHour)
 }
 
-func withRequiredEnv(t *testing.T) {
-	t.Helper()
-	t.Setenv("DATABASE_URL", "postgres://localhost/test")
-	t.Setenv("REDIS_URL", "redis://localhost:6379")
-	t.Setenv("VISITOR_SALT", "test-salt")
-}
-
 func TestSharedDomainHostnameDefaultsToLocalhost(t *testing.T) {
-	withRequiredEnv(t)
+	setRequired(t)
 
 	cfg, err := config.Load()
 	require.NoError(t, err)
@@ -158,7 +151,7 @@ func TestSharedDomainHostnameDefaultsToLocalhost(t *testing.T) {
 }
 
 func TestSharedDomainHostnameComesFromTheEnvironment(t *testing.T) {
-	withRequiredEnv(t)
+	setRequired(t)
 	t.Setenv("SHARED_DOMAIN_HOSTNAME", "kurze.url")
 
 	cfg, err := config.Load()
@@ -169,7 +162,7 @@ func TestSharedDomainHostnameComesFromTheEnvironment(t *testing.T) {
 }
 
 func TestShortURLSchemeCanBeOverridden(t *testing.T) {
-	withRequiredEnv(t)
+	setRequired(t)
 	t.Setenv("SHARED_DOMAIN_HOSTNAME", "kurze.url")
 	t.Setenv("SHORT_URL_SCHEME", "http")
 
@@ -180,7 +173,7 @@ func TestShortURLSchemeCanBeOverridden(t *testing.T) {
 }
 
 func TestShortURLSchemeRejectsAnythingElse(t *testing.T) {
-	withRequiredEnv(t)
+	setRequired(t)
 	t.Setenv("SHORT_URL_SCHEME", "javascript")
 
 	_, err := config.Load()

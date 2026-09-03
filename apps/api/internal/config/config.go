@@ -72,15 +72,15 @@ type Config struct {
 // surface runnable in local development with no Supabase project.
 func Load() (Config, error) {
 	cfg := Config{
-		Port:        env("PORT", "8080"),
-		DatabaseURL: os.Getenv("DATABASE_URL"),
-		RedisURL:    os.Getenv("REDIS_URL"),
-		APIHostname: env("API_HOSTNAME", "localhost"),
+		Port:                 env("PORT", "8080"),
+		DatabaseURL:          os.Getenv("DATABASE_URL"),
+		RedisURL:             os.Getenv("REDIS_URL"),
+		APIHostname:          env("API_HOSTNAME", "localhost"),
 		SharedDomainHostname: env("SHARED_DOMAIN_HOSTNAME", "localhost"),
-		JWKSURL:     os.Getenv("SUPABASE_JWKS_URL"),
-		JWTIssuer:   os.Getenv("SUPABASE_JWT_ISSUER"),
-		JWTAudience: env("SUPABASE_JWT_AUDIENCE", "authenticated"),
-		VisitorSalt: os.Getenv("VISITOR_SALT"),
+		JWKSURL:              os.Getenv("SUPABASE_JWKS_URL"),
+		JWTIssuer:            os.Getenv("SUPABASE_JWT_ISSUER"),
+		JWTAudience:          env("SUPABASE_JWT_AUDIENCE", "authenticated"),
+		VisitorSalt:          os.Getenv("VISITOR_SALT"),
 
 		LinkCacheTTL:     time.Hour,
 		NotFoundCacheTTL: time.Minute,
