@@ -754,6 +754,15 @@ func TestUpdateLinkWithoutTagIDsLeavesTagsAlone(t *testing.T) {
 	require.NoError(t, f.pool.QueryRow(context.Background(),
 		`select count(*) from link_tag where link_id = $1`, linkID).Scan(&joins))
 	require.Equal(t, 1, joins, "a PATCH that never mentions tag_ids must leave tags untouched")
+
+	// The database join surviving is not enough: a client doing an ordinary
+	// read-modify-write PATCHes destination_url and writes this response
+	// object back, so the response itself must report the tag the link
+	// actually has, not the empty default.
+	body := decode[linkBody](t, rec)
+	require.Len(t, body.Tags, 1, "response must report the link's actual tags, not []")
+	require.Equal(t, tag.ID, body.Tags[0].ID)
+	require.Equal(t, "Presse", body.Tags[0].Name)
 }
 
 func TestUpdateLinkWithNullFolderIDUnfilesIt(t *testing.T) {

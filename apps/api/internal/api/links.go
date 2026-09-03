@@ -927,6 +927,27 @@ func (d Deps) updateLink(ctx context.Context, in *UpdateLinkInput) (*LinkOutput,
 			// nil-check.
 			body.Tags = []Tag{}
 		}
+	} else {
+		// tag_ids was omitted, so the update above left link_tag untouched
+		// and updatedTags was never populated. linkResponse defaulted Tags
+		// to [], which would misreport the link as having none — exactly
+		// what a read-modify-write client would silently persist back. Load
+		// the tags the link actually has, the same way getLink does for a
+		// single link.
+		//
+		// The write already committed by this point, so a failure here
+		// cannot be swallowed as best-effort the way invalidateLink's is:
+		// invalidateLink only risks a cache staying stale for at most
+		// LinkCacheTTL, but fabricating an empty tag set here would
+		// reintroduce the exact bug this handles. Report it as a 500
+		// instead, matching how getLink and listLinks already treat an
+		// attachTags failure.
+		items := []Link{body}
+		if err := d.attachTags(ctx, member.TeamID, items); err != nil {
+			d.Log.Error("attach tags to link", "error", err, "link_id", in.LinkID)
+			return nil, huma.Error500InternalServerError("could not update the link")
+		}
+		body = items[0]
 	}
 
 	return &LinkOutput{Status: http.StatusOK, Body: body}, nil
