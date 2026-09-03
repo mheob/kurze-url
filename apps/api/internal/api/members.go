@@ -53,6 +53,25 @@ type MemberOutput struct {
 	Body Member
 }
 
+// UpdateMemberInput is PATCH /v1/teams/{team_id}/members/{user_id}. Changing
+// a role requires at least the admin role; the handler enforces the tighter
+// owner-only rules itself.
+type UpdateMemberInput struct {
+	authz.AdminScope
+	UserID uuid.UUID `path:"user_id" doc:"The member to change."`
+	Body   struct {
+		Role string `json:"role" enum:"viewer,editor,admin,owner"`
+	}
+}
+
+// RemoveMemberInput is DELETE /v1/teams/{team_id}/members/{user_id}. Removing
+// a member requires at least the admin role; the handler refuses an admin
+// removing an owner and refuses removing the team's last owner.
+type RemoveMemberInput struct {
+	authz.AdminScope
+	UserID uuid.UUID `path:"user_id" doc:"The member to remove."`
+}
+
 func (d Deps) registerMembers(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID: "list-team-members",
@@ -73,6 +92,26 @@ func (d Deps) registerMembers(api huma.API) {
 		DefaultStatus: http.StatusCreated,
 		Security:      []map[string][]string{{"bearerAuth": {}}},
 	}, d.addMember)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "update-team-member",
+		Method:        http.MethodPatch,
+		Path:          "/v1/teams/{team_id}/members/{user_id}",
+		Summary:       "Change a member's role",
+		Tags:          []string{"Members"},
+		DefaultStatus: http.StatusNoContent,
+		Security:      []map[string][]string{{"bearerAuth": {}}},
+	}, d.updateMember)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "remove-team-member",
+		Method:        http.MethodDelete,
+		Path:          "/v1/teams/{team_id}/members/{user_id}",
+		Summary:       "Remove a member",
+		Tags:          []string{"Members"},
+		DefaultStatus: http.StatusNoContent,
+		Security:      []map[string][]string{{"bearerAuth": {}}},
+	}, d.removeMember)
 }
 
 func (d Deps) listMembers(ctx context.Context, in *ListMembersInput) (*ListMembersOutput, error) {
@@ -221,6 +260,165 @@ func (d Deps) resolveInvitee(ctx context.Context, in *AddMemberInput) (uuid.UUID
 	}
 
 	return invitedID, true, nil
+}
+
+// updateMember is PATCH /v1/teams/{team_id}/members/{user_id}. It enforces
+// the three rules that keep the role hierarchy from collapsing: granting or
+// revoking the owner role requires the owner role, and the last owner can
+// never be demoted. The membership lookup, the last-owner lock and the role
+// update all run inside one transaction, so a non-member target, a refused
+// hierarchy rule, or a would-be-ownerless team never reaches the database
+// with a partial write.
+func (d Deps) updateMember(ctx context.Context, in *UpdateMemberInput) (*struct{}, error) {
+	actor := in.Member()
+
+	newRole, err := authz.ParseRole(in.Body.Role)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity("unknown role")
+	}
+
+	err = db.InTx(ctx, d.Pool, func(q *db.Queries) error {
+		current, err := q.GetTeamMembership(ctx, db.GetTeamMembershipParams{
+			TeamID: in.TeamID,
+			UserID: in.UserID,
+		})
+		if errors.Is(err, pgx.ErrNoRows) {
+			return huma.Error404NotFound("that person is not a member of this team")
+		}
+		if err != nil {
+			return err
+		}
+
+		currentRole, err := authz.ParseRole(current.Role)
+		if err != nil {
+			return err
+		}
+
+		// Anything involving the owner role — granting it or taking it away —
+		// is an owner's decision, not an admin's.
+		if (currentRole == authz.RoleOwner || newRole == authz.RoleOwner) &&
+			!actor.Role.AtLeast(authz.RoleOwner) {
+			return huma.Error403Forbidden("changing the owner role requires the owner role")
+		}
+
+		if currentRole == authz.RoleOwner && newRole != authz.RoleOwner {
+			if err := d.refuseLastOwner(ctx, q, in.TeamID); err != nil {
+				return err
+			}
+		}
+
+		if currentRole == newRole {
+			return nil // Nothing changed; do not write a misleading audit entry.
+		}
+
+		if err := q.UpdateTeamMemberRole(ctx, db.UpdateTeamMemberRoleParams{
+			TeamID: in.TeamID,
+			UserID: in.UserID,
+			Role:   newRole.String(),
+		}); err != nil {
+			return err
+		}
+
+		return audit.Log(ctx, q, audit.Entry{
+			TeamID:      in.TeamID,
+			ActorUserID: actor.UserID,
+			Action:      audit.ActionMemberRoleChanged,
+			EntityType:  audit.EntityTeamMember,
+			EntityID:    in.UserID,
+			Metadata:    map[string]any{"from": currentRole.String(), "to": newRole.String()},
+		})
+	})
+	if err != nil {
+		return nil, d.mutationError(err, "could not change the member's role",
+			"update team member role", in.TeamID)
+	}
+
+	return nil, nil
+}
+
+// removeMember is DELETE /v1/teams/{team_id}/members/{user_id}. An admin may
+// remove anyone but an owner, and the last owner can never be removed at
+// all. The membership lookup, the last-owner lock and the delete all run
+// inside one transaction, for the same reason as updateMember.
+func (d Deps) removeMember(ctx context.Context, in *RemoveMemberInput) (*struct{}, error) {
+	actor := in.Member()
+
+	err := db.InTx(ctx, d.Pool, func(q *db.Queries) error {
+		current, err := q.GetTeamMembership(ctx, db.GetTeamMembershipParams{
+			TeamID: in.TeamID,
+			UserID: in.UserID,
+		})
+		if errors.Is(err, pgx.ErrNoRows) {
+			return huma.Error404NotFound("that person is not a member of this team")
+		}
+		if err != nil {
+			return err
+		}
+
+		currentRole, err := authz.ParseRole(current.Role)
+		if err != nil {
+			return err
+		}
+
+		if currentRole == authz.RoleOwner {
+			if !actor.Role.AtLeast(authz.RoleOwner) {
+				return huma.Error403Forbidden("removing an owner requires the owner role")
+			}
+			if err := d.refuseLastOwner(ctx, q, in.TeamID); err != nil {
+				return err
+			}
+		}
+
+		if err := q.DeleteTeamMember(ctx, db.DeleteTeamMemberParams{
+			TeamID: in.TeamID,
+			UserID: in.UserID,
+		}); err != nil {
+			return err
+		}
+
+		return audit.Log(ctx, q, audit.Entry{
+			TeamID:      in.TeamID,
+			ActorUserID: actor.UserID,
+			Action:      audit.ActionMemberRemoved,
+			EntityType:  audit.EntityTeamMember,
+			EntityID:    in.UserID,
+			Metadata:    map[string]any{"role": currentRole.String()},
+		})
+	})
+	if err != nil {
+		return nil, d.mutationError(err, "could not remove the member",
+			"remove team member", in.TeamID)
+	}
+
+	return nil, nil
+}
+
+// refuseLastOwner locks the team's owner rows and refuses if only one is
+// left. The lock is what makes this safe: without it, two concurrent
+// demotions or removals both read "two owners" and both succeed, leaving the
+// team ownerless. It must be called from inside the same transaction as the
+// mutation it guards.
+func (d Deps) refuseLastOwner(ctx context.Context, q *db.Queries, teamID uuid.UUID) error {
+	owners, err := q.LockTeamOwners(ctx, teamID)
+	if err != nil {
+		return err
+	}
+	if len(owners) <= 1 {
+		return huma.Error403Forbidden("a team must always have at least one owner")
+	}
+	return nil
+}
+
+// mutationError passes a deliberate huma status error through unchanged and
+// turns anything else into a logged 500, so a handler's InTx callback can
+// return either kind.
+func (d Deps) mutationError(err error, message, operation string, teamID uuid.UUID) error {
+	var status huma.StatusError
+	if errors.As(err, &status) {
+		return err
+	}
+	d.Log.Error(operation, "error", err, "team_id", teamID)
+	return huma.Error500InternalServerError(message)
 }
 
 // derefString flattens a nullable column. auth.users.email is nullable because
