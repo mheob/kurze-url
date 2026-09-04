@@ -20,5 +20,9 @@
 	"footer": {
 		"tagline": "Ein Open-Source-Projekt für Vereine.",
 		"apiStatus": "API-Status: {{status}}"
+	},
+	"notFound": {
+		"heading": "Seite nicht gefunden",
+		"body": "Die gesuchte Seite existiert nicht oder wurde verschoben."
 	}
 }

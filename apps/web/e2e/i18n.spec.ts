@@ -13,10 +13,21 @@ import { expect, test } from '@playwright/test';
 /** Strings legitimately identical in both languages. Adding one is deliberate and reviewable. */
 const IDENTICAL_BY_DESIGN = new Set(['kurze.url']);
 
+/**
+ * `/` is a real route with real content; the 404 page is a separate render
+ * path entirely — TanStack Router's own default `notFoundComponent` (a
+ * hardcoded English literal) would pass every other check here (catalogue
+ * parity has no key for it, `react/jsx-no-literals` cannot see a dependency's
+ * output, axe finds a title and adequate contrast), so it needs its own visit
+ * rather than being assumed to divergence-check for free just because `/` does.
+ */
+const PATHS = ['/', '/this-page-does-not-exist'] as const;
+
 async function visibleText(
 	page: import('@playwright/test').Page,
 	baseURL: string,
 	language: string,
+	path: string,
 ): Promise<string[]> {
 	// Playwright derives a cookie's domain from `url`, not from wherever
 	// `page.goto` later navigates — it has to be the fixture's `baseURL`, the
@@ -24,7 +35,7 @@ async function visibleText(
 	// whatever host `url` names (e.g. `localhost`) and never sent to a CI
 	// preview host.
 	await page.context().addCookies([{ name: 'lang', value: language, url: baseURL }]);
-	await page.goto('/');
+	await page.goto(path);
 
 	const texts = await page.locator('body :visible').allInnerTexts();
 	const labels = await page
@@ -49,20 +60,25 @@ async function visibleText(
 	);
 }
 
-test('no user-facing string is identical across languages', async ({ page, baseURL }) => {
-	// playwright.config.ts always sets `use.baseURL` (to BASE_URL or the
-	// localhost fallback), so this is only ever undefined if that invariant is
-	// broken — worth a loud failure rather than silently falling back to a
-	// wrong host.
-	if (!baseURL) throw new Error('baseURL fixture is unset — check playwright.config.ts');
+for (const path of PATHS) {
+	test(`no user-facing string is identical across languages (${path})`, async ({
+		page,
+		baseURL,
+	}) => {
+		// playwright.config.ts always sets `use.baseURL` (to BASE_URL or the
+		// localhost fallback), so this is only ever undefined if that invariant is
+		// broken — worth a loud failure rather than silently falling back to a
+		// wrong host.
+		if (!baseURL) throw new Error('baseURL fixture is unset — check playwright.config.ts');
 
-	const english = new Set(await visibleText(page, baseURL, 'en'));
-	const german = await visibleText(page, baseURL, 'de');
+		const english = new Set(await visibleText(page, baseURL, 'en', path));
+		const german = await visibleText(page, baseURL, 'de', path);
 
-	const untranslated = german.filter((value) => english.has(value));
+		const untranslated = german.filter((value) => english.has(value));
 
-	expect(
-		untranslated,
-		`these strings did not change with the language: ${untranslated.join(', ')}`,
-	).toEqual([]);
-});
+		expect(
+			untranslated,
+			`these strings did not change with the language: ${untranslated.join(', ')}`,
+		).toEqual([]);
+	});
+}

@@ -4,7 +4,7 @@ import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools';
 import { createServerFn } from '@tanstack/react-start';
 import { getRequestHeader } from '@tanstack/react-start/server';
 import { useMemo } from 'react';
-import { I18nextProvider } from 'react-i18next';
+import { I18nextProvider, useTranslation } from 'react-i18next';
 
 import { createI18n, documentTitle } from '../i18n';
 import { DEFAULT_LANGUAGE, readLanguage, readTheme, themeClassName } from '../lib/preferences';
@@ -60,8 +60,27 @@ function RootDocument({ children }: { readonly children: React.ReactNode }) {
 	);
 }
 
+/**
+ * TanStack Router's own default `notFoundComponent` is a hardcoded English
+ * literal ("Not Found") with no translation hook at all — it renders for any
+ * URL that matches no route, regardless of the request's language, so an
+ * unrecognised `/de/...`-flavoured link would otherwise ship English text
+ * inside an already-correctly-German `<html lang="de">` shell.
+ */
+function NotFound() {
+	const { t } = useTranslation();
+
+	return (
+		<main className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
+			<h1 className="text-3xl font-bold">{t('notFound.heading')}</h1>
+			<p className="text-muted-foreground max-w-prose">{t('notFound.body')}</p>
+		</main>
+	);
+}
+
 export const Route = createRootRoute({
 	loader: () => getPreferences(),
+	notFoundComponent: NotFound,
 	// `loaderData` is what makes `head` able to see the request's language at
 	// all — it runs before `RootDocument` (and its `I18nextProvider`) exists,
 	// so `documentTitle` reads the catalogue directly instead of going through

@@ -20,5 +20,9 @@
 	"footer": {
 		"tagline": "An open-source project for associations.",
 		"apiStatus": "API status: {{status}}"
+	},
+	"notFound": {
+		"heading": "Page not found",
+		"body": "The page you are looking for does not exist or has moved."
 	}
 }
