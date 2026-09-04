@@ -74,6 +74,8 @@ Both projects exist: **`kurze-url-api`** and **`kurze-url-web`**.
 
 `framework` is pinned to `tanstack-start` here rather than left to the dashboard, so the preset lives in version control and cannot drift per environment.
 
+`regions` is `fra1`, matching `apps/api`. Without it, functions default to `iad1` and a German visitor's request crosses the Atlantic twice — once to reach the server function, once more for that function to reach the API in Frankfurt — on every data fetch, because every API call goes through a server function by design. Keeping the compute in Frankfurt also keeps request processing inside the EU, which is the same reason Supabase is pinned there (see `docs/planning/08-legal-and-compliance.md`).
+
 **The health footer remains the end-to-end check.** `SiteFooter` renders `footer.apiStatus`, sourced from `fetchHealth()` in `src/server/health.ts`. On any PR's `kurze-url-web` preview:
 
 - **`ok`** → the whole chain works: Related Projects resolved, the server function reached the matching API preview.
