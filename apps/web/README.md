@@ -68,23 +68,24 @@ Three layers, each catching what the one below it cannot:
 
 `apps/web` and `apps/api` are two separate Vercel projects from this one monorepo (Root Directory = `apps/web`, Framework Preset auto-detected as TanStack Start). `apps/web/vercel.json` declares `apps/api` as a **Related Project**, so `@vercel/related-projects` (`src/server/api.ts`) can resolve the _matching_ preview (or production) API URL automatically per deployment — without it, a PR that touches both apps would have no way to know the other preview's URL short of hardcoding it. Doc reference: `docs/planning/07-repo-structure-and-tooling.md:49`.
 
-Both projects now exist: **`kurze-url-api`** and **`kurze-url-web`**.
+Both projects exist: **`kurze-url-api`** and **`kurze-url-web`**.
 
-**One thing still unverified, and it has a built-in detector.** `vercel.json` names the related project by its Vercel project _name_ (`"kurze-url-api"`). Doc 07 (`docs/planning/07-repo-structure-and-tooling.md:49`) describes this field as the project **ID** (`prj_...`), and Vercel's own documented example (vercel.com/docs/monorepos, "Define Related Projects") uses an ID. There is no confirmed source for a plain name resolving, and no way to settle it without a deployment.
+`vercel.json` references the API by its **project ID**, not its name. Vercel's own schema settles it — `relatedProjects` is documented there as _"An array of projectIds to associate with the current project"_, matching `docs/planning/07-repo-structure-and-tooling.md:49`. A project name in that field resolves to nothing, and the failure is silent: `withRelatedProject` falls back to `API_HOST` (or `localhost:8080`), so a preview quietly talks to the wrong API rather than erroring.
 
-You do not need to reason about it — **the health footer answers it**. `SiteFooter` renders `footer.apiStatus`, sourced from `fetchHealth()` in `src/server/health.ts`. Open any PR's `kurze-url-web` preview and read it:
+`framework` is pinned to `tanstack-start` here rather than left to the dashboard, so the preset lives in version control and cannot drift per environment.
 
-- **`ok`** → Related Projects resolved. Nothing to change.
-- **`unreachable`**, while that PR's `kurze-url-api` preview is itself healthy → the name did not resolve. Copy the `prj_...` value from `kurze-url-api` → Settings → General → Project ID and replace `"kurze-url-api"` in `apps/web/vercel.json` with it.
+**The health footer remains the end-to-end check.** `SiteFooter` renders `footer.apiStatus`, sourced from `fetchHealth()` in `src/server/health.ts`. On any PR's `kurze-url-web` preview:
 
-That distinction matters: `unreachable` when the API preview is _also_ down means the API is down, not that this wiring is wrong.
+- **`ok`** → the whole chain works: Related Projects resolved, the server function reached the matching API preview.
+- **`unreachable`** while that PR's `kurze-url-api` preview is itself healthy → the wiring is wrong. Re-check the ID in `vercel.json` against `kurze-url-api` → Settings → General → Project ID.
+- **`unreachable`** while the API preview is _also_ down → the API is down. Different problem.
 
 ### Vercel project settings
 
 Both projects exist. These are the settings `kurze-url-web` needs, and what to confirm once a PR runs.
 
 1. **Root Directory**: `apps/web`.
-2. **Framework Preset**: TanStack Start, not a generic Vite or "Other" preset — it should auto-detect.
+2. **Framework Preset**: pinned to `tanstack-start` by `vercel.json`, so the dashboard value is overridden and needs no change. Worth knowing the dashboard may still display "Other".
 3. **Build settings**: framework defaults. TanStack Start's Vercel preset handles the build command and output directory.
 4. **No Ignored Build Step.** `apps/web` is a pnpm workspace member, so Vercel's automatic "skip unaffected builds" already covers it. (`apps/api` is Go, outside the workspace graph, and does need one — that is its project's concern, not this one's.)
 5. **Environment variables** (Preview and Production): the Supabase URL and anon key. `API_HOST` is optional and local-dev only — Related Projects supplies the API URL on Vercel itself.

@@ -1,4 +1,5 @@
 {
 	"$schema": "https://openapi.vercel.sh/vercel.json",
-	"relatedProjects": ["kurze-url-api"]
+	"relatedProjects": ["prj_8XrgH38ZQfdkxj9gKI5uUQ9pa0ef"],
+	"framework": "tanstack-start"
 }
