@@ -14,7 +14,7 @@ Project context: open-source URL shortener for non-profit associations ("Vereine
 | DB access | **sqlc** | Type-safe Go generated from raw SQL queries; no ORM — see "Database access" below |
 | Migrations | **Supabase CLI** (`supabase migration new/up`, `db push`) | No separate Go migration tool — see "Migrations" below |
 | Rate limiting | **Custom, Redis-backed** (Upstash) | No official Upstash Go SDK exists for this — see "Rate limiting" below |
-| Frontend API client | **Generated from the Huma-produced OpenAPI spec** | e.g. via `openapi-typescript` — single source of truth shared with the frontend, avoids hand-written/drifting types |
+| Frontend API client | **Generated from the Huma-produced OpenAPI spec** | via `@hey-api/openapi-ts` — single source of truth shared with the frontend, avoids hand-written/drifting types |
 
 ## Deployment model
 
@@ -26,7 +26,7 @@ Vercel's Go runtime supports two patterns: (1) many small files under `/api/`, e
 
 Decided 2026-09-01, resolving the code-first-vs-spec-first question raised alongside this doc: **code-first with Huma**, not hand-written OpenAPI + oapi-codegen.
 
-Huma is a Go framework built specifically around OpenAPI 3 / JSON Schema: Go types and handlers are annotated, and the OpenAPI 3.1 spec is generated automatically — it structurally cannot drift out of sync with the implementation, since the spec _is_ the code's own declared shape. It explicitly supports "bring your own router," including chi. The generated spec still functions as a real contract: `openapi-typescript` (or `oapi-codegen` in client-generation mode) can turn it into a typed TypeScript client for the TanStack Start frontend, so the "one spec, generated clients" benefit of spec-first is kept without the overhead of hand-authoring and maintaining a YAML contract separately from the implementation.
+Huma is a Go framework built specifically around OpenAPI 3 / JSON Schema: Go types and handlers are annotated, and the OpenAPI 3.1 spec is generated automatically — it structurally cannot drift out of sync with the implementation, since the spec _is_ the code's own declared shape. It explicitly supports "bring your own router," including chi. The generated spec still functions as a real contract: `@hey-api/openapi-ts` (or `oapi-codegen` in client-generation mode) can turn it into a typed TypeScript client for the TanStack Start frontend, so the "one spec, generated clients" benefit of spec-first is kept without the overhead of hand-authoring and maintaining a YAML contract separately from the implementation.
 
 Trade-off accepted: this is less strict than true contract-first design (the spec can't be finalized and reviewed _before_ any implementation exists, the way spec-first would allow) — acceptable here since the team is small and the same person is driving both API and frontend early on.
 

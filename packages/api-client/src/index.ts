@@ -1,10 +1,5 @@
-import createOpenApiClient, {
-	type Client,
-	type ClientOptions,
-	type Middleware,
-} from 'openapi-fetch';
-
-import type { paths } from './schema.js';
+import { type Client, createClient, createConfig } from './generated/client';
+import type { ClientOptions as GeneratedClientOptions } from './generated/types.gen';
 
 /**
  * How the client obtains a bearer token for each request.
@@ -12,8 +7,10 @@ import type { paths } from './schema.js';
  * It is a function rather than a string because a Supabase access token
  * expires: reading it per request lets the caller hand back whatever the
  * session currently holds, including one refreshed since the client was built.
- * Returning `undefined` sends the request unauthenticated, which is what the
- * public operations expect.
+ * Returning `undefined` sends the request unauthenticated.
+ *
+ * The token is only ever attached to operations whose OpenAPI definition
+ * declares `bearerAuth`, so `getHealth` stays anonymous without special-casing.
  */
 type GetAccessToken = () => string | undefined | Promise<string | undefined>;
 
@@ -23,62 +20,46 @@ interface ApiClientOptions {
 	/** Omit for an unauthenticated client — only `/v1/health` is reachable then. */
 	readonly getAccessToken?: GetAccessToken;
 	/** Swapped in tests. Defaults to the global `fetch`. */
-	readonly fetch?: ClientOptions['fetch'];
+	readonly fetch?: typeof globalThis.fetch;
 }
 
 /**
- * Attaches the bearer token, resolved per request rather than per client.
+ * Builds a client for the kurze-url API.
  *
- * @param getAccessToken Supplies the current token, or `undefined` to send the
- *   request unauthenticated.
- * @returns Middleware that sets `Authorization` when a token is available.
- */
-function bearerAuth(getAccessToken: GetAccessToken): Middleware {
-	return {
-		// oxlint-disable-next-line typescript/prefer-readonly-parameter-types
-		async onRequest({ request }: { request: Request }) {
-			const token = await getAccessToken();
-
-			// An empty string counts as no token. Sending `Bearer ` would be
-			// rejected as malformed rather than as unauthenticated, which is a
-			// worse error for the caller to debug.
-			if (token !== undefined && token !== '') {
-				request.headers.set('Authorization', `Bearer ${token}`);
-			}
-
-			return request;
-		},
-	};
-}
-
-/**
- * Builds a typed client for the kurze-url API.
+ * Every path, parameter, request body and response is generated from
+ * `apps/api/openapi.json`, which is itself generated from the Go handlers — so
+ * an endpoint that changes shape breaks compilation here rather than at runtime
+ * in a browser.
  *
- * Every path, parameter, request body and response is checked against
- * `apps/api/openapi.json`, which is generated from the Go handlers themselves —
- * so an endpoint that changes shape breaks compilation here rather than at
- * runtime in a browser.
+ * Pass the result to the generated operations, which each accept a `client`:
  *
- * The redirect surface (`GET /{slug}`) is deliberately absent: it is not part
- * of the OpenAPI document, it answers on the short-link hostnames rather than
- * the API's own, and nothing should reach it through a generated client.
+ * ```ts
+ * const client = createApiClient({ baseUrl, getAccessToken });
+ * const { data } = await listLinks({ client, path: { team_id: teamId } });
+ * ```
+ *
+ * A fresh instance is returned rather than configuring the module-level client
+ * the generator emits, because the frontend renders on the server: one process
+ * serves many people there, and a shared client would leak one person's token
+ * into another's request.
+ *
+ * The redirect surface (`GET /{slug}`) is deliberately absent. It is not in the
+ * OpenAPI document, it answers on the short-link hostnames rather than the
+ * API's own, and nothing should reach it through a generated client.
  *
  * @param options Base URL, an optional token supplier, and an optional `fetch`.
- * @returns A client whose methods mirror the API's paths.
+ * @returns A client to hand to the generated operations.
  */
-function createApiClient(options: ApiClientOptions): Client<paths> {
-	const client = createOpenApiClient<paths>({
-		baseUrl: options.baseUrl,
-		fetch: options.fetch,
-	});
-
-	if (options.getAccessToken) {
-		client.use(bearerAuth(options.getAccessToken));
-	}
-
-	return client;
+function createApiClient(options: ApiClientOptions): Client {
+	return createClient(
+		createConfig<GeneratedClientOptions>({
+			auth: options.getAccessToken,
+			baseUrl: options.baseUrl,
+			fetch: options.fetch,
+		}),
+	);
 }
 
 export { createApiClient };
 export type { ApiClientOptions, GetAccessToken };
-export type { components, operations, paths } from './schema.js';
+export * from './generated';
