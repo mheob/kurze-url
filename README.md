@@ -58,7 +58,13 @@ supabase db reset
 
 # 3. Configure and run the API
 cp apps/api/.env.example apps/api/.env   # then set VISITOR_SALT
-cd apps/api && go run ./cmd/api
+cd apps/api && set -a && . ./.env && set +a && go run ./cmd/api
+```
+
+The API reads `os.Getenv` and has no dotenv dependency, so `apps/api/.env` has to be exported into the shell — `go run` on its own will not see it. If you already keep the values in Vercel's Development environment, take them from there instead of editing the file by hand:
+
+```bash
+vercel env pull apps/api/.env --environment=development --project kurze-url-api
 ```
 
 The seed creates a verified `short.test` domain with a `hello` link, so:
