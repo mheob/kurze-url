@@ -232,3 +232,10 @@ jobs:
         run: pnpm --filter @kurze-url/web exec playwright test
         env:
           BASE_URL: ${{ github.event.deployment_status.environment_url }}
+          # Preview deployments are behind Vercel Authentication, which answers
+          # an unauthenticated request with a redirect to its login page rather
+          # than an error. Without this the suite asserts against that page and
+          # passes. playwright.config.ts refuses to run a *.vercel.app BASE_URL
+          # without it, so a missing secret fails the job instead of the check
+          # silently becoming meaningless.
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
