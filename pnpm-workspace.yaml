@@ -7,7 +7,14 @@ allowBuilds:
   esbuild: true
   lefthook: true
   lightningcss: true
+  # No-op here: its postinstall only runs `msw init` when package.json has a
+  # `msw.workerDirectory` entry (browser mock service worker setup), which this
+  # project doesn't add — only `msw/node`'s setupServer is used in tests.
+  msw: true
 
 # Exclude trusted packages from the age gate
 minimumReleaseAgeExclude:
   - "@mheob/*"
+  - "@vitest/mocker@5.0.0"
+  - "@vitest/spy@5.0.0"
+  - vitest@5.0.0
