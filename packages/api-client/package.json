@@ -1,0 +1,19 @@
+{
+	"name": "@kurze-url/api-client",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"generate": "openapi-typescript ../../apps/api/openapi.json --output ./src/schema.d.ts"
+	},
+	"dependencies": {
+		"openapi-fetch": "^0.14.0"
+	},
+	"devDependencies": {
+		"openapi-typescript": "^7.9.1",
+		"typescript": "^5.9.0"
+	}
+}
