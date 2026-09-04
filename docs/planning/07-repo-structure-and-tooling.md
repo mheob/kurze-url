@@ -26,7 +26,7 @@ apps/
   web/            # TanStack Start frontend — Vercel project "web", Root Directory = apps/web
   cli/            # Go CLI — not a Vercel project, released via goreleaser
 packages/
-  api-client/     # TypeScript client generated from apps/api's OpenAPI spec (openapi-typescript), pnpm workspace package
+  api-client/     # TypeScript client generated from apps/api's OpenAPI spec (@hey-api/openapi-ts), pnpm workspace package
 supabase/         # Supabase CLI-owned migrations (top-level, not nested under apps/api — see note below)
 .github/
   workflows/      # ci-api.yml, ci-web.yml, ci-cli.yml, db-migrate.yml, release-cli.yml, e2e.yml, secret-scan.yml
