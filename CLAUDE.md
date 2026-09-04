@@ -97,7 +97,7 @@ Tables: `team`, `team_member`, `domain`, `folder`, `tag`, `link`, `link_tag`, `l
 
 ## Non-obvious constraints (things that will bite you)
 
-- **TypeScript codegen tools cannot run on TypeScript 7.** The repo is on 7 (the native port), which does not expose the compiler's `ts.factory` / `ts.SyntaxKind` API. Both `@hey-api/openapi-ts` and `openapi-typescript` crash on it, whatever their declared peer range says. TypeScript 5 is pinned as a devDependency of `packages/api-client` for the generator alone; the shipped types and `pnpm typecheck` stay on 7.
+- **TypeScript codegen tools cannot run on TypeScript 7.** The repo is on 7 (the native port), which does not expose the compiler's `ts.factory` / `ts.SyntaxKind` API. Both `@hey-api/openapi-ts` and `openapi-typescript` crash on it, whatever their declared peer range says — hey-api's admits 7 and still fails. **TypeScript 6** is pinned as a devDependency of `packages/api-client` for the generator alone: it is the last JS-based release, so it still carries the full compiler API, and it is the nearest version to the repo's own that works. The shipped types and `pnpm typecheck` stay on 7, and the generated output is byte-identical either way.
 - **Vercel Hobby retains runtime logs for 1 hour.** Sentry is the only durable error record — wire it up early, not last.
 - **Supabase free tier has no backups at all.** Not "short retention" — none. (See open items.)
 - **Supabase Branching costs money per hour** and isn't covered by the Spend Cap → migrations run against the single project on merge to `main`, never per-PR.
