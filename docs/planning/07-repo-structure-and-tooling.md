@@ -29,7 +29,8 @@ packages/
   api-client/     # TypeScript client generated from apps/api's OpenAPI spec (@hey-api/openapi-ts), pnpm workspace package
 supabase/         # Supabase CLI-owned migrations (top-level, not nested under apps/api — see note below)
 .github/
-  workflows/      # ci-api.yml, ci-web.yml, ci-cli.yml, db-migrate.yml, release-cli.yml, e2e.yml, secret-scan.yml
+  workflows/      # ci-api.yml, ci-js.yml, ci-cli.yml, release-cli.yml, secret-scan.yml, commit-lint.yml
+                  # (no db-migrate.yml — Supabase's GitHub integration applies migrations, see below)
 pnpm-workspace.yaml
 ```
 
@@ -64,23 +65,24 @@ This removes an entire category of "preview frontend is silently talking to prod
 
 Decided against **Supabase Branching** (automatic per-PR preview database branches, official GitHub integration) despite it being the "obvious" pairing with Vercel's per-PR preview deployments: branching compute is **usage-billed per hour** (~$0.01344/hour on the default Micro size) and explicitly **not covered by the account's Spend Cap** — incompatible with this project's consistent free-tier-first, reactive-scaling stance (the same reasoning that already ruled out Cloudflare Containers' Workers-Paid requirement and keeps Web Risk API as only a fallback in `02-external-services-and-hosting.md`). A single small-scale non-profit tool doesn't have PR volume high enough to make isolated per-PR databases worth a real recurring cost.
 
-Decided instead: migrations apply to the **one** free-tier Supabase project directly, on merge to `main` — not per-PR. GitHub Actions workflow using the official `supabase/setup-cli` action:
+Decided instead: migrations apply to the **one** free-tier Supabase project directly, on merge to `main` — not per-PR.
 
-```yaml
-# .github/workflows/db-migrate.yml (on push to main, paths: supabase/**)
-- uses: supabase/setup-cli@v2
-  with: { version: latest }
-- run: supabase link --project-ref $SUPABASE_PROJECT_ID
-- run: supabase db push
-```
+**Revised 2026-09-04.** The original plan here was a hand-written GitHub Actions workflow calling `supabase link` and `supabase db push`, with three repository secrets. That workflow was never built, and it should not be: Supabase's own GitHub integration already does it. Enabling **"Deploy to production"** in the integration's configuration applies new migrations when you push or merge to the production branch, per [Supabase's branching/GitHub-integration docs](https://supabase.com/docs/guides/deployment/branching/github-integration). That is the same outcome with no workflow to maintain, no `SUPABASE_ACCESS_TOKEN` or `SUPABASE_DB_PASSWORD` to store as repository secrets, and no drift between the CLI version CI pins and the one developers run.
 
-Requires three GitHub Actions secrets: `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`, `SUPABASE_PROJECT_ID`. Gated behind the `ci-api.yml` checks (see below) passing first via a required-status-check branch protection rule on `main`, so a broken migration can't land alongside broken application code. This is a real trade-off versus Branching's isolation — a bad migration on `main` hits the one shared project directly — mitigated by CI validating migrations before merge (see "CI" below) and by Supabase migrations already being reversible SQL files under version control if a rollback is ever needed.
+**The anti-Branching decision above is unchanged**, and the distinction is the whole point. Two separate things live behind the same integration:
+
+- **Deploy to production** — applies migrations to the existing project. No new instance, so no per-hour compute. **Enabled.**
+- **Preview branches** — an ephemeral Supabase instance per pull request, billed per hour and outside the Spend Cap. **Disabled**, for the reasons argued above.
+
+Getting that pair wrong in either direction is the failure mode worth watching: enabling preview branches reintroduces the cost this project deliberately avoided, and adding a `db push` workflow alongside the integration gives schema state two owners — precisely what the "one owner of schema state" rule in `CLAUDE.md` forbids.
+
+The trade-off versus Branching is unchanged too: a bad migration on `main` hits the one shared project directly, mitigated by CI validating migrations before merge (see "CI" below) and by migrations being reversible SQL under version control.
 
 ## CI
 
 Path-filtered GitHub Actions workflows — each app gets its own workflow, triggered only by changes to its own directory (plus shared dependencies), so a frontend-only PR doesn't wait on Go tests and vice versa. This also resolves the "exact CI wiring" item explicitly left open in `03-frontend.md`.
 
-- **`ci-api.yml`** (triggers: `apps/api/**`, `supabase/**`) — `go vet`, `golangci-lint`, `go test ./...`, and a migration sanity check (`supabase db diff` / equivalent dry-run against a local Postgres via the Supabase CLI's local dev stack, catching malformed migrations before they ever reach `db-migrate.yml`).
+- **`ci-api.yml`** (triggers: `apps/api/**`, `supabase/**`) — `go vet`, `golangci-lint`, `go test ./...`, and a migration sanity check (`supabase db diff` / equivalent dry-run against a local Postgres via the Supabase CLI's local dev stack, catching malformed migrations before merge, which is the only gate now that Supabase's GitHub integration applies them on merge to `main`).
 - **`ci-web.yml`** (triggers: `apps/web/**`, `packages/**`) — typecheck, lint, the Vitest unit + MSW-backed integration suite from `03-frontend.md`, and a Storybook build (surfaces the a11y addon's findings at build time, not just when someone happens to open Storybook locally).
 - **`ci-cli.yml`** (triggers: `apps/cli/**`) — `go vet`, `go test ./...`.
 - **`e2e.yml`** — **not on every PR**, resolving the "E2E is slower, may make sense to run less frequently" note from `03-frontend.md`: runs the Playwright + axe-core suite from `03-frontend.md` against the PR's actual Vercel preview URLs (frontend preview, correctly wired to the matching API preview via Related Projects above) once both preview deployments succeed, triggered via a `workflow_run`/deployment-status hook — plus a scheduled nightly run against `main`'s production-equivalent state as a backstop. Avoids paying Playwright's runtime cost on every single push while still catching integration regressions before merge and on a predictable cadence otherwise.
@@ -93,7 +95,7 @@ No secrets committed to the repo; `.env.example` (no real values) per app, `.git
 - **Vercel project environment variables** (scoped Production / Preview / Development), split by project:
   - `apps/api`: Supabase connection string + service-role key, Supabase JWKS URL (`06-api-design.md`), Upstash Redis URL/token, Google Safe Browsing API key, a Vercel API token (used by the backend itself to call Vercel's Domain API on a user's behalf, per `02-external-services-and-hosting.md`).
   - `apps/web`: Supabase URL + anon key (for `supabase-js` on the client, per `03-frontend.md`); the API base URL is resolved automatically per-deployment via Related Projects above rather than being a manually-set secret.
-- **GitHub Actions secrets** (a separate store from Vercel's): `SUPABASE_ACCESS_TOKEN` / `SUPABASE_DB_PASSWORD` / `SUPABASE_PROJECT_ID` for `db-migrate.yml`; `GITHUB_TOKEN` (automatic) for `release-cli.yml`.
+- **GitHub Actions secrets** (a separate store from Vercel's): `GITHUB_TOKEN` (automatic) for `release-cli.yml`. No Supabase secrets are needed here — the GitHub integration authenticates through Supabase's own app installation rather than a token this repository stores, which is one of the reasons it was preferred over a hand-written `db push` workflow.
 - **Supabase dashboard setting**, not a repo/CI secret at all but still credential-like: the Resend API key, entered directly as the custom SMTP password per `02-external-services-and-hosting.md` — never touches the Go backend or CI.
 
 ## CLI release process

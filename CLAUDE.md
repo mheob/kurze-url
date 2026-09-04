@@ -27,7 +27,7 @@ The things that are easy to get wrong, and expensive to get wrong:
 | --- | --- | --- |
 | Backend | Go, **chi** router + **Huma** (code-first, generates OpenAPI 3.1) | Single persistent `net/http` server, `cmd/api/main.go` |
 | DB access | **sqlc** — raw SQL, generated type-safe Go | No ORM. GORM explicitly rejected. |
-| Migrations | **Supabase CLI only** (`supabase migration new`, `db push`) | No golang-migrate, no Atlas — one owner of schema state |
+| Migrations | **Supabase CLI** authors them (`supabase migration new`); Supabase's **GitHub integration** applies them on merge to `main` | No golang-migrate, no Atlas — one owner of schema state. Preview branches stay **off**; only "Deploy to production" is enabled |
 | Database | Supabase (Postgres), free tier, **Frankfurt/EU region** |  |
 | Cache | Upstash Redis, free tier | Fronts the redirect path; also does unique-visitor dedup and rate limiting |
 | Frontend | TanStack Start (React) + Router/Query/Form/Table |  |
@@ -100,7 +100,7 @@ Tables: `team`, `team_member`, `domain`, `folder`, `tag`, `link`, `link_tag`, `l
 - **TypeScript codegen tools cannot run on TypeScript 7.** The repo is on 7 (the native port), which does not expose the compiler's `ts.factory` / `ts.SyntaxKind` API. Both `@hey-api/openapi-ts` and `openapi-typescript` crash on it, whatever their declared peer range says — hey-api's admits 7 and still fails. **TypeScript 6** is pinned as a devDependency of `packages/api-client` for the generator alone: it is the last JS-based release, so it still carries the full compiler API, and it is the nearest version to the repo's own that works. The shipped types and `pnpm typecheck` stay on 7, and the generated output is byte-identical either way.
 - **Vercel Hobby retains runtime logs for 1 hour.** Sentry is the only durable error record — wire it up early, not last.
 - **Supabase free tier has no backups at all.** Not "short retention" — none. (See open items.)
-- **Supabase Branching costs money per hour** and isn't covered by the Spend Cap → migrations run against the single project on merge to `main`, never per-PR.
+- **Supabase preview branches cost money per hour** and aren't covered by the Spend Cap → migrations run against the single project on merge to `main`, never per-PR. The GitHub integration's **"Deploy to production"** option does exactly that and is enabled; its **preview-branch** half is what costs, and stays off. Do not add a `db push` GitHub Actions workflow — that would make two systems own schema state, which is the thing the "one owner" rule exists to prevent.
 - **`apps/api` doesn't get Vercel's automatic build skipping** (it's Go, not in the pnpm workspace graph) — it needs an explicit Ignored Build Step: `git diff --quiet HEAD^ HEAD -- apps/api supabase`.
 - **Frontend previews must point at the matching API preview** via Vercel Related Projects + `@vercel/related-projects`, not a hardcoded URL.
 - **Upstash has no official Go rate-limit SDK** (unlike JS/Python) — the sliding window is hand-rolled against Redis.
