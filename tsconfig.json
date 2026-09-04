@@ -18,6 +18,8 @@
 		"apps/web/src/**/*.ts",
 		"apps/web/src/**/*.tsx",
 		"apps/web/.storybook/**/*.ts",
-		"apps/web/.storybook/**/*.tsx"
+		"apps/web/.storybook/**/*.tsx",
+		"apps/web/*.config.ts",
+		"apps/web/e2e/**/*.ts"
 	]
 }
