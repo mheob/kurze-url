@@ -2,7 +2,7 @@ import { TanStackDevtools } from '@tanstack/react-devtools';
 import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router';
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools';
 
-import appCss from '../styles.css?url';
+import appCss from '../styles/app.css?url';
 
 const devtoolsConfig = {
 	position: 'bottom-right',
@@ -21,7 +21,7 @@ function RootDocument({ children }: { readonly children: React.ReactNode }) {
 			<head>
 				<HeadContent />
 			</head>
-			<body>
+			<body className="bg-background text-foreground">
 				{children}
 				<TanStackDevtools config={devtoolsConfig} plugins={devtoolsPlugins} />
 				<Scripts />
