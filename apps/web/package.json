@@ -35,6 +35,8 @@
 		"tailwindcss": "^4.1.18"
 	},
 	"devDependencies": {
+		"@axe-core/playwright": "^4.13.0",
+		"@playwright/test": "^1.62.1",
 		"@storybook/addon-a11y": "^10.5.10",
 		"@storybook/tanstack-react": "^10.5.10",
 		"@tanstack/devtools-vite": "^0.8.5",

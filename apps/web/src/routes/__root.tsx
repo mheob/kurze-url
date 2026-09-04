@@ -6,8 +6,8 @@ import { getRequestHeader } from '@tanstack/react-start/server';
 import { useMemo } from 'react';
 import { I18nextProvider } from 'react-i18next';
 
-import { createI18n } from '../i18n';
-import { readLanguage, readTheme, themeClassName } from '../lib/preferences';
+import { createI18n, documentTitle } from '../i18n';
+import { DEFAULT_LANGUAGE, readLanguage, readTheme, themeClassName } from '../lib/preferences';
 
 import appCss from '../styles/app.css?url';
 
@@ -62,7 +62,12 @@ function RootDocument({ children }: { readonly children: React.ReactNode }) {
 
 export const Route = createRootRoute({
 	loader: () => getPreferences(),
-	head: () => ({
+	// `loaderData` is what makes `head` able to see the request's language at
+	// all — it runs before `RootDocument` (and its `I18nextProvider`) exists,
+	// so `documentTitle` reads the catalogue directly instead of going through
+	// `useTranslation`. Axe's `document-title` check (WCAG 2.4.2) needs this
+	// non-empty, and it must still be translated like everything else here.
+	head: ({ loaderData }) => ({
 		links: [
 			{
 				href: appCss,
@@ -77,10 +82,9 @@ export const Route = createRootRoute({
 				content: 'width=device-width, initial-scale=1',
 				name: 'viewport',
 			},
-			// Deliberately no `title` entry: @tanstack/react-router only emits a
-			// <title> tag when `meta.title` is truthy, and this app ships zero
-			// hardcoded user-facing strings. Leave this page title-less until the
-			// i18n task can supply a translated one — don't "helpfully" restore it.
+			{
+				title: documentTitle(loaderData?.language ?? DEFAULT_LANGUAGE),
+			},
 		],
 	}),
 	shellComponent: RootDocument,

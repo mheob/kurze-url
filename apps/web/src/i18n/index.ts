@@ -23,3 +23,13 @@ export function createI18n(language: Language): i18n {
 
 	return instance;
 }
+
+/**
+ * The root route's `head()` runs before `RootDocument` renders — no
+ * `I18nextProvider` exists yet — so the `<title>` it emits can't go through
+ * `useTranslation`. It reads the catalogue directly instead. A non-empty,
+ * translated title is what axe's `document-title` check (WCAG 2.4.2) verifies.
+ */
+export function documentTitle(language: Language): string {
+	return language === 'de' ? de.pageTitle : en.pageTitle;
+}
