@@ -58,3 +58,7 @@ Thumbs.db
 *.log
 npm-debug.log*
 pnpm-debug.log*
+
+# Written by `vercel link`. `.env.example` stays tracked, so no blanket .env* here.
+.env.local
+.env*.local

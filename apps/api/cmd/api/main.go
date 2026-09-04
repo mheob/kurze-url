@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mheob/kurze-url/apps/api/internal/analytics"
@@ -45,7 +46,28 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
+	poolCfg, err := pgxpool.ParseConfig(cfg.DatabaseURL)
+	if err != nil {
+		return err
+	}
+
+	// Production connects through Supavisor's transaction pooler, which
+	// multiplexes many client connections onto far fewer server connections.
+	// pgx's default mode caches prepared statements per connection, so a
+	// statement it cached earlier is already present on whichever server
+	// connection it borrows next — Postgres answers "prepared statement
+	// already exists" (SQLSTATE 42P05) and the API dies at startup.
+	//
+	// QueryExecModeExec uses unnamed statements and keeps no cache, which is
+	// the mode the pooler supports. It costs almost nothing here: these are
+	// short-lived serverless invocations, so a per-connection statement cache
+	// rarely survives long enough to be reused anyway. Set unconditionally
+	// rather than only when a pooler host is detected — a connection string
+	// that silently changes the query protocol depending on its hostname is
+	// worse than one slightly slower path in local development.
+	poolCfg.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeExec
+
+	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
 		return err
 	}
