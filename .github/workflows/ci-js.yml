@@ -191,19 +191,23 @@ jobs:
     # "– <project-slug>" once a repo has more than one connected Vercel
     # project (see https://github.com/vercel/wait-for-deployment-action,
     # official Vercel org action, for the "Preview – <slug>" / "Production –
-    # <slug>" format). apps/api's Vercel project name is already fixed as
-    # `url-shortener-api` (apps/web/src/server/api.ts, planning doc 07), so
-    # its deployments are excluded by name below. apps/web's own Vercel
-    # project does not exist yet — its creation is a blocked, human dashboard
-    # step (see the task report) — so its name can't be positively matched
-    # the same way; restricting to `Preview` environments plus excluding the
-    # known API name is the closest verifiable gate available before that
-    # project exists. Re-verify this condition against a real
-    # deployment_status payload once the web project has been created.
+    # <slug>" format).
+    #
+    # This matches the web project by name rather than excluding the API by
+    # name. A negative match passes anything it does not know about, so a
+    # third project connected to this repo later would slip through and point
+    # Playwright at whatever it deployed. A positive match fails closed: if
+    # the suffix ever stops matching, the job stops running rather than
+    # running against the wrong thing, which is the safer way to be wrong.
+    #
+    # Verify against a real deployment_status payload the first time a PR
+    # produces a web preview — temporarily add a step running
+    # `echo '${{ toJson(github.event.deployment) }}'` to see the actual
+    # environment string.
     if: >-
       github.event_name == 'deployment_status' && github.event.deployment_status.state == 'success' &&
-      startsWith(github.event.deployment.environment, 'Preview') && !endsWith(github.event.deployment.environment, '–
-      url-shortener-api')
+      startsWith(github.event.deployment.environment, 'Preview') && endsWith(github.event.deployment.environment, '–
+      kurze-url-web')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

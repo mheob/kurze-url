@@ -68,21 +68,35 @@ Three layers, each catching what the one below it cannot:
 
 `apps/web` and `apps/api` are two separate Vercel projects from this one monorepo (Root Directory = `apps/web`, Framework Preset auto-detected as TanStack Start). `apps/web/vercel.json` declares `apps/api` as a **Related Project**, so `@vercel/related-projects` (`src/server/api.ts`) can resolve the _matching_ preview (or production) API URL automatically per deployment — without it, a PR that touches both apps would have no way to know the other preview's URL short of hardcoding it. Doc reference: `docs/planning/07-repo-structure-and-tooling.md:49`.
 
-**Caveat, unverified until a human checks it once:** `vercel.json` currently names the related project by its Vercel project _name_ (`"url-shortener-api"`), matching the string already load-bearing in `api.ts`. Doc 07's own text describes this field as the API project's Vercel project **ID** (`prj_...`), and Vercel's own documented example (vercel.com/docs/monorepos, "Define Related Projects") uses an ID too — there is no confirmed source for a plain name resolving. **The test is the health footer** `SiteFooter` renders (`footer.apiStatus`, sourced from `fetchHealth()` in `src/server/health.ts`): open a preview deployment of `apps/web` for any PR and look at it.
+Both projects now exist: **`kurze-url-api`** and **`kurze-url-web`**.
 
-- Reports **`ok`** → Related Projects resolved correctly; nothing to change.
-- Reports **`unreachable`**, while the matching `apps/api` preview for the same PR is itself healthy → the name did not resolve. Go to the `apps/api` Vercel project's Settings → General → Project ID, copy the `prj_...` value, and replace `"url-shortener-api"` with it in `apps/web/vercel.json`.
+**One thing still unverified, and it has a built-in detector.** `vercel.json` names the related project by its Vercel project _name_ (`"kurze-url-api"`). Doc 07 (`docs/planning/07-repo-structure-and-tooling.md:49`) describes this field as the project **ID** (`prj_...`), and Vercel's own documented example (vercel.com/docs/monorepos, "Define Related Projects") uses an ID. There is no confirmed source for a plain name resolving, and no way to settle it without a deployment.
 
-### Handoff checklist (Vercel dashboard access required)
+You do not need to reason about it — **the health footer answers it**. `SiteFooter` renders `footer.apiStatus`, sourced from `fetchHealth()` in `src/server/health.ts`. Open any PR's `kurze-url-web` preview and read it:
 
-None of the following can be done from a coding session without dashboard access. In order:
+- **`ok`** → Related Projects resolved. Nothing to change.
+- **`unreachable`**, while that PR's `kurze-url-api` preview is itself healthy → the name did not resolve. Copy the `prj_...` value from `kurze-url-api` → Settings → General → Project ID and replace `"kurze-url-api"` in `apps/web/vercel.json` with it.
 
-1. **Create a second Vercel project** against this same GitHub repository (the first, for `apps/api`, already exists).
-2. **Root Directory**: `apps/web`.
-3. **Framework Preset**: confirm it lands on TanStack Start, not a generic Vite/"Other" preset (should auto-detect from `vercel.json` + `package.json`).
-4. **Project name**: any name works for `apps/web` itself — it does not need to match `url-shortener-api` or anything already committed. Once chosen, immediately do the Related Projects check above before relying on any preview.
-5. **Build settings**: leave build command / output directory on the framework defaults; TanStack Start's Vercel preset handles them.
-6. **No Ignored Build Step** for this project — it's a pnpm workspace member, so Vercel's automatic "skip unaffected builds" already covers it.
-7. **Environment variables** (Preview + Production): Supabase URL + anon key. `API_HOST` is optional — a local-dev-only fallback; Related Projects supplies the API URL on Vercel itself.
-8. **Confirm "deployment_status Events" stays enabled** for this project, Settings → Git (Vercel's default). `.github/workflows/ci-js.yml`'s `e2e` job only fires off this event; if it's ever disabled, E2E silently stops running against previews.
-9. **After both projects exist**, open a PR and confirm, in order: the `web` job passes, a preview actually deploys, the `e2e` job fires off that deployment's `deployment_status` success event and passes, and the health footer (above) reports `ok`. Also re-verify the `e2e` job's own `environment`-string project filter (see the comments in `ci-js.yml`) against the real payload the first time both previews exist side by side — it is sourced from a third-party action's documentation, not observed directly against this repo yet.
+That distinction matters: `unreachable` when the API preview is _also_ down means the API is down, not that this wiring is wrong.
+
+### Vercel project settings
+
+Both projects exist. These are the settings `kurze-url-web` needs, and what to confirm once a PR runs.
+
+1. **Root Directory**: `apps/web`.
+2. **Framework Preset**: TanStack Start, not a generic Vite or "Other" preset — it should auto-detect.
+3. **Build settings**: framework defaults. TanStack Start's Vercel preset handles the build command and output directory.
+4. **No Ignored Build Step.** `apps/web` is a pnpm workspace member, so Vercel's automatic "skip unaffected builds" already covers it. (`apps/api` is Go, outside the workspace graph, and does need one — that is its project's concern, not this one's.)
+5. **Environment variables** (Preview and Production): the Supabase URL and anon key. `API_HOST` is optional and local-dev only — Related Projects supplies the API URL on Vercel itself.
+6. **Confirm "deployment_status Events" is enabled**, Settings → Git. It is Vercel's default. The `e2e` job in `.github/workflows/ci-js.yml` fires off this event alone; if it is ever disabled, E2E stops running against previews and nothing says so.
+
+### Confirm on the first pull request
+
+In order:
+
+1. The `web` job passes.
+2. A `kurze-url-web` preview deploys.
+3. The `e2e` job fires off that deployment's `deployment_status` success event and passes.
+4. The health footer reports `ok` (see above).
+
+**Also verify the `e2e` job's project filter against the real payload the first time both previews exist side by side.** It matches deployments whose `environment` ends with `– kurze-url-web`, and that suffix format is sourced from a Vercel-org action's documentation rather than observed against this repo. The filter is a positive match, so it fails closed — if the format differs, the job stops running rather than running against the API. To see the actual string, add a step running `echo '${{ toJson(github.event.deployment) }}'` temporarily.

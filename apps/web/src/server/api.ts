@@ -21,7 +21,7 @@ import { withRelatedProject } from '@vercel/related-projects';
  */
 export function apiBaseUrl(): string {
 	return withRelatedProject({
-		projectName: 'url-shortener-api',
+		projectName: 'kurze-url-api',
 		defaultHost: process.env.API_HOST ?? 'http://localhost:8080',
 	});
 }

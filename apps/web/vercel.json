@@ -1,4 +1,4 @@
 {
 	"$schema": "https://openapi.vercel.sh/vercel.json",
-	"relatedProjects": ["url-shortener-api"]
+	"relatedProjects": ["kurze-url-api"]
 }
