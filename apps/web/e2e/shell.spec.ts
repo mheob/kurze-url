@@ -28,10 +28,20 @@ test('keeps the theme across a reload', async ({ page }) => {
 
 for (const theme of THEMES) {
 	for (const language of LANGUAGES) {
-		test(`has no accessibility violations in ${theme} ${language}`, async ({ page, context }) => {
+		test(`has no accessibility violations in ${theme} ${language}`, async ({
+			page,
+			context,
+			baseURL,
+		}) => {
+			// Cookie domain comes from `url`, not from the later `page.goto` target —
+			// it must be the fixture's `baseURL` (the host these tests actually run
+			// against), never a hardcoded `localhost`, or the cookie is scoped to the
+			// wrong host and never sent on CI's `*.vercel.app` preview.
+			if (!baseURL) throw new Error('baseURL fixture is unset — check playwright.config.ts');
+
 			await context.addCookies([
-				{ name: 'theme', value: theme, url: 'http://localhost:3000' },
-				{ name: 'lang', value: language, url: 'http://localhost:3000' },
+				{ name: 'theme', value: theme, url: baseURL },
+				{ name: 'lang', value: language, url: baseURL },
 			]);
 			await page.goto('/');
 

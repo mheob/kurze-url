@@ -15,11 +15,15 @@ const IDENTICAL_BY_DESIGN = new Set(['kurze.url']);
 
 async function visibleText(
 	page: import('@playwright/test').Page,
+	baseURL: string,
 	language: string,
 ): Promise<string[]> {
-	await page
-		.context()
-		.addCookies([{ name: 'lang', value: language, url: 'http://localhost:3000' }]);
+	// Playwright derives a cookie's domain from `url`, not from wherever
+	// `page.goto` later navigates — it has to be the fixture's `baseURL`, the
+	// same host the test actually runs against, or the cookie is scoped to
+	// whatever host `url` names (e.g. `localhost`) and never sent to a CI
+	// preview host.
+	await page.context().addCookies([{ name: 'lang', value: language, url: baseURL }]);
 	await page.goto('/');
 
 	const texts = await page.locator('body :visible').allInnerTexts();
@@ -45,9 +49,15 @@ async function visibleText(
 	);
 }
 
-test('no user-facing string is identical across languages', async ({ page }) => {
-	const english = new Set(await visibleText(page, 'en'));
-	const german = await visibleText(page, 'de');
+test('no user-facing string is identical across languages', async ({ page, baseURL }) => {
+	// playwright.config.ts always sets `use.baseURL` (to BASE_URL or the
+	// localhost fallback), so this is only ever undefined if that invariant is
+	// broken — worth a loud failure rather than silently falling back to a
+	// wrong host.
+	if (!baseURL) throw new Error('baseURL fixture is unset — check playwright.config.ts');
+
+	const english = new Set(await visibleText(page, baseURL, 'en'));
+	const german = await visibleText(page, baseURL, 'de');
 
 	const untranslated = german.filter((value) => english.has(value));
 
