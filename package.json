@@ -10,7 +10,7 @@
 		"generate:api": "cd apps/api && go run ./cmd/openapi > openapi.json && cd ../.. && pnpm --filter @kurze-url/api-client generate && pnpm format",
 		"lint": "oxlint",
 		"lint:fix": "oxlint --fix",
-		"prepare": "lefthook install",
+		"prepare": "git rev-parse --git-dir > /dev/null 2>&1 && lefthook install || echo 'skipping lefthook: not a git repository'",
 		"typecheck": "tsc --noEmit"
 	},
 	"devDependencies": {
