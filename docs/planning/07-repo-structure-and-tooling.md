@@ -53,7 +53,7 @@ Vercel's monorepo support is exactly the "one Git repo, N Vercel projects, each 
 import { withRelatedProject } from '@vercel/related-projects';
 
 const apiBaseUrl = withRelatedProject({
-	projectName: 'url-shortener-api',
+	projectName: 'kurze-url-api',
 	defaultHost: process.env.API_HOST, // fallback for local dev / non-Vercel builds
 });
 ```

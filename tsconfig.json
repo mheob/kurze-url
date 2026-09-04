@@ -4,11 +4,22 @@
 		"lib": ["ES2025", "DOM"],
 		"module": "preserve",
 		"moduleResolution": "bundler",
+		"jsx": "react-jsx",
 		"strict": true,
 		"noUncheckedIndexedAccess": true,
 		"verbatimModuleSyntax": true,
 		"skipLibCheck": true,
-		"noEmit": true
+		"noEmit": true,
+		"allowImportingTsExtensions": true
 	},
-	"include": ["*.config.ts", "packages/*/src/**/*.ts"]
+	"include": [
+		"*.config.ts",
+		"packages/*/src/**/*.ts",
+		"apps/web/src/**/*.ts",
+		"apps/web/src/**/*.tsx",
+		"apps/web/.storybook/**/*.ts",
+		"apps/web/.storybook/**/*.tsx",
+		"apps/web/*.config.ts",
+		"apps/web/e2e/**/*.ts"
+	]
 }

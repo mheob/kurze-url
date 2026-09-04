@@ -4,7 +4,13 @@ packages:
 
 allowBuilds:
   better-sqlite3: true
+  esbuild: true
   lefthook: true
+  lightningcss: true
+  # No-op here: its postinstall only runs `msw init` when package.json has a
+  # `msw.workerDirectory` entry (browser mock service worker setup), which this
+  # project doesn't add — only `msw/node`'s setupServer is used in tests.
+  msw: true
 
 # Exclude trusted packages from the age gate
 minimumReleaseAgeExclude:

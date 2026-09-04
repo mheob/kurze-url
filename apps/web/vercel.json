@@ -1,0 +1,6 @@
+{
+	"$schema": "https://openapi.vercel.sh/vercel.json",
+	"framework": "tanstack-start",
+	"regions": ["fra1"],
+	"relatedProjects": ["prj_8XrgH38ZQfdkxj9gKI5uUQ9pa0ef"]
+}

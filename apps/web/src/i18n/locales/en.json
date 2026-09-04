@@ -1,0 +1,28 @@
+{
+	"brand": "kurze.url",
+	"pageTitle": "kurze.url – Short links for your association",
+	"home": {
+		"heading": "Short links for your association",
+		"body": "Create short, memorable links and see how often they are used."
+	},
+	"actions": {
+		"signIn": "Sign in"
+	},
+	"language": {
+		"label": "Language",
+		"en": "English",
+		"de": "German"
+	},
+	"theme": {
+		"toLight": "Switch to light mode",
+		"toDark": "Switch to dark mode"
+	},
+	"footer": {
+		"tagline": "An open-source project for associations.",
+		"apiStatus": "API status: {{status}}"
+	},
+	"notFound": {
+		"heading": "Page not found",
+		"body": "The page you are looking for does not exist or has moved."
+	}
+}
