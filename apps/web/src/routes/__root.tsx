@@ -33,8 +33,11 @@ const devtoolsPlugins = [
  */
 const getPreferences = createServerFn({ method: 'GET' }).handler(async () => {
 	const cookieHeader = getRequestHeader('cookie');
+	// Only ever the initial guess before a `lang` cookie exists — `readLanguage`
+	// reads this exclusively as a fallback for a request with no cookie at all.
+	const acceptLanguageHeader = getRequestHeader('accept-language');
 	return {
-		language: readLanguage(cookieHeader),
+		language: readLanguage(cookieHeader, acceptLanguageHeader),
 		theme: readTheme(cookieHeader),
 	};
 });
