@@ -7,10 +7,12 @@
 	},
 	"scripts": {
 		"build": "vite build",
+		"build-storybook": "storybook build",
 		"dev": "vite dev --port 3000",
 		"generate-routes": "tsr generate",
 		"preview": "vite preview --port 3000",
 		"start": "vite preview --port 3000",
+		"storybook": "storybook dev -p 6006",
 		"test": "vitest run",
 		"test:watch": "vitest"
 	},
@@ -33,6 +35,8 @@
 		"tailwindcss": "^4.1.18"
 	},
 	"devDependencies": {
+		"@storybook/addon-a11y": "^10.5.10",
+		"@storybook/tanstack-react": "^10.5.10",
 		"@tanstack/devtools-vite": "^0.8.5",
 		"@tanstack/router-cli": "^1.132.0",
 		"@testing-library/jest-dom": "^7.0.1",
@@ -44,6 +48,7 @@
 		"@vitejs/plugin-react": "^6.1.1",
 		"jsdom": "^30.0.1",
 		"msw": "^2.15.0",
+		"storybook": "^10.5.10",
 		"vite": "^8.0.0",
 		"vitest": "^4.1.11"
 	}

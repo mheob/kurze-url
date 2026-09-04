@@ -1,10 +1,12 @@
-import { baseConfig, baseJsConfig, reactConfig, tailwindcssConfig } from '@mheob/oxlint-config';
+import {
+	baseConfig,
+	baseJsConfig,
+	reactConfig,
+	storybookConfig,
+	tailwindcssConfig,
+} from '@mheob/oxlint-config';
 import { defineConfig } from 'oxlint';
 
-// `storybookConfig` is not extended yet: its overrides only match `**/*stories.*` files and
-// `.storybook/main.ts`, neither of which exists until Task 10 adds Storybook itself. Extending
-// it now would install `eslint-plugin-storybook` for a preset that matches nothing — add it
-// together with Storybook in Task 10.
 // better-tailwindcss resolves its `tailwindcss` install and CSS entry point relative to a
 // `cwd` it defaults to the process cwd (the repo root, which has no `tailwindcss` package of
 // its own — it lives in apps/web's node_modules). Every rule needs both options repeated
@@ -21,7 +23,7 @@ const tailwindPluginOptions = { cwd: 'apps/web', entryPoint: 'src/styles/app.css
 const noUnknownClassesOptions = { ...tailwindPluginOptions, ignore: ['^dark$'] };
 
 export default defineConfig({
-	extends: [baseConfig, baseJsConfig, reactConfig, tailwindcssConfig],
+	extends: [baseConfig, baseJsConfig, reactConfig, storybookConfig, tailwindcssConfig],
 	ignorePatterns: [
 		// Generated from apps/api/openapi.json by @hey-api/openapi-ts, including the
 		// vendored request runtime. Linting it would report on the generator's
