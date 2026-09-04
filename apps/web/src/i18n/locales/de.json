@@ -1,0 +1,22 @@
+{
+	"brand": "kurze.url",
+	"home": {
+		"heading": "Kurze Links für euren Verein",
+		"body": "Erstellt kurze, einprägsame Links und seht, wie oft sie genutzt werden."
+	},
+	"actions": {
+		"signIn": "Anmelden"
+	},
+	"language": {
+		"label": "Sprache",
+		"en": "Englisch",
+		"de": "Deutsch"
+	},
+	"theme": {
+		"toLight": "Zum hellen Modus wechseln",
+		"toDark": "Zum dunklen Modus wechseln"
+	},
+	"footer": {
+		"tagline": "Ein Open-Source-Projekt für Vereine."
+	}
+}
