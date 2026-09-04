@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { readLanguage, readTheme } from './preferences';
+import { readLanguage, readTheme, themeClassName } from './preferences';
 
 describe('readLanguage', () => {
 	it('reads the language from a cookie header', () => {
@@ -32,5 +32,15 @@ describe('readTheme', () => {
 	it('defaults to light when unset or unsupported', () => {
 		expect(readTheme(undefined)).toBe('light');
 		expect(readTheme('theme=neon')).toBe('light');
+	});
+});
+
+describe('themeClassName', () => {
+	it('maps dark to the dark class', () => {
+		expect(themeClassName('dark')).toBe('dark');
+	});
+
+	it('maps light to no class', () => {
+		expect(themeClassName('light')).toBeUndefined();
 	});
 });

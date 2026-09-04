@@ -48,6 +48,16 @@ export function readTheme(cookieHeader: string | undefined): Theme {
 	return isTheme(value) ? value : DEFAULT_THEME;
 }
 
+/**
+ * Named on purpose: an inline `theme === 'dark' ? 'dark' : undefined` ternary
+ * in JSX is invisible to every test, so an inverted comparison would silently
+ * flip the theme with nothing to catch it. Pulling the mapping out here makes
+ * it a unit the root route's test suite can assert on directly.
+ */
+export function themeClassName(theme: Theme): string | undefined {
+	return theme === 'dark' ? 'dark' : undefined;
+}
+
 /** One year, in seconds. A preference should outlive the session that set it. */
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 

@@ -7,7 +7,7 @@ import { useMemo } from 'react';
 import { I18nextProvider } from 'react-i18next';
 
 import { createI18n } from '../i18n';
-import { readLanguage, readTheme } from '../lib/preferences';
+import { readLanguage, readTheme, themeClassName } from '../lib/preferences';
 
 import appCss from '../styles/app.css?url';
 
@@ -47,7 +47,7 @@ function RootDocument({ children }: { readonly children: React.ReactNode }) {
 	const i18n = useMemo(() => createI18n(language), [language]);
 
 	return (
-		<html className={theme === 'dark' ? 'dark' : undefined} lang={language}>
+		<html className={themeClassName(theme)} lang={language}>
 			<head>
 				<HeadContent />
 			</head>
