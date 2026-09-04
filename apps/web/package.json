@@ -42,6 +42,7 @@
 		"@storybook/addon-vitest": "^10.5.10",
 		"@storybook/tanstack-react": "^10.5.10",
 		"@tanstack/devtools-vite": "^0.8.5",
+		"@tanstack/nitro-v2-vite-plugin": "^1.155.0",
 		"@tanstack/router-cli": "^1.132.0",
 		"@testing-library/jest-dom": "^7.0.1",
 		"@testing-library/react": "^16.3.3",
