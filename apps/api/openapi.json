@@ -1,0 +1,2233 @@
+{
+	"components": {
+		"schemas": {
+			"AddMemberInputBody": {
+				"additionalProperties": false,
+				"properties": {
+					"$schema": {
+						"description": "A URL to the JSON Schema for this object.",
+						"examples": ["https://example.com/schemas/AddMemberInputBody.json"],
+						"format": "uri",
+						"readOnly": true,
+						"type": "string"
+					},
+					"email": {
+						"description": "The person's email address.",
+						"format": "email",
+						"type": "string"
+					},
+					"role": {
+						"description": "The role to grant.",
+						"enum": ["viewer", "editor", "admin", "owner"],
+						"type": "string"
+					}
+				},
+				"required": ["email", "role"],
+				"type": "object"
+			},
+			"AuditEntry": {
+				"additionalProperties": false,
+				"properties": {
+					"action": {
+						"type": "string"
+					},
+					"actor_user_id": {
+						"type": "string"
+					},
+					"created_at": {
+						"format": "date-time",
+						"type": "string"
+					},
+					"entity_id": {
+						"type": "string"
+					},
+					"entity_type": {
+						"type": "string"
+					},
+					"id": {
+						"format": "int64",
+						"type": "integer"
+					},
+					"metadata": {}
+				},
+				"required": ["id", "action", "entity_type", "metadata", "created_at"],
+				"type": "object"
+			},
+			"CreateFolderInputBody": {
+				"additionalProperties": false,
+				"properties": {
+					"$schema": {
+						"description": "A URL to the JSON Schema for this object.",
+						"examples": ["https://example.com/schemas/CreateFolderInputBody.json"],
+						"format": "uri",
+						"readOnly": true,
+						"type": "string"
+					},
+					"name": {
+						"description": "Trimmed on input. Must not be empty.",
+						"maxLength": 60,
+						"type": "string"
+					}
+				},
+				"required": ["name"],
+				"type": "object"
+			},
+			"CreateLinkInputBody": {
+				"additionalProperties": false,
+				"properties": {
+					"$schema": {
+						"description": "A URL to the JSON Schema for this object.",
+						"examples": ["https://example.com/schemas/CreateLinkInputBody.json"],
+						"format": "uri",
+						"readOnly": true,
+						"type": "string"
+					},
+					"analytics_enabled": {
+						"description": "Defaults to true.",
+						"type": "boolean"
+					},
+					"destination_url": {
+						"description": "Where the link points. https:// only.",
+						"maxLength": 2048,
+						"type": "string"
+					},
+					"domain_id": {
+						"description": "Optional. Defaults to the instance's shared domain.",
+						"type": "string"
+					},
+					"expires_at": {
+						"description": "Must be in the future.",
+						"format": "date-time",
+						"type": "string"
+					},
+					"folder_id": {
+						"description": "Optional. Must be a folder in this team.",
+						"type": "string"
+					},
+					"redirect_type": {
+						"default": 302,
+						"description": "301 is cached by browsers: clicks go uncounted and destination changes stop taking effect.",
+						"enum": [301, 302],
+						"format": "int64",
+						"type": "integer"
+					},
+					"slug": {
+						"description": "Optional custom alias. Lowercased on input; generated when omitted.",
+						"maxLength": 64,
+						"type": "string"
+					},
+					"tag_ids": {
+						"description": "Optional. Tags must belong to this team.",
+						"items": {
+							"type": "string"
+						},
+						"maxItems": 10,
+						"type": ["array", "null"]
+					}
+				},
+				"required": ["destination_url"],
+				"type": "object"
+			},
+			"CreateTagInputBody": {
+				"additionalProperties": false,
+				"properties": {
+					"$schema": {
+						"description": "A URL to the JSON Schema for this object.",
+						"examples": ["https://example.com/schemas/CreateTagInputBody.json"],
+						"format": "uri",
+						"readOnly": true,
+						"type": "string"
+					},
+					"name": {
+						"description": "Trimmed on input. Unique per team, case-insensitively.",
+						"maxLength": 60,
+						"type": "string"
+					}
+				},
+				"required": ["name"],
+				"type": "object"
+			},
+			"CreateTeamInputBody": {
+				"additionalProperties": false,
+				"properties": {
+					"$schema": {
+						"description": "A URL to the JSON Schema for this object.",
+						"examples": ["https://example.com/schemas/CreateTeamInputBody.json"],
+						"format": "uri",
+						"readOnly": true,
+						"type": "string"
+					},
+					"name": {
+						"description": "The Verein's display name.",
+						"maxLength": 200,
+						"minLength": 1,
+						"type": "string"
+					}
+				},
+				"required": ["name"],
+				"type": "object"
+			},
+			"ErrorDetail": {
+				"additionalProperties": false,
+				"properties": {
+					"location": {
+						"description": "Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'",
+						"type": "string"
+					},
+					"message": {
+						"description": "Error message text",
+						"type": "string"
+					},
+					"value": {
+						"description": "The value at the given location"
+					}
+				},
+				"type": "object"
+			},
+			"ErrorModel": {
+				"additionalProperties": false,
+				"properties": {
+					"$schema": {
+						"description": "A URL to the JSON Schema for this object.",
+						"examples": ["https://example.com/schemas/ErrorModel.json"],
+						"format": "uri",
+						"readOnly": true,
+						"type": "string"
+					},
+					"detail": {
+						"description": "A human-readable explanation specific to this occurrence of the problem.",
+						"examples": ["Property foo is required but is missing."],
+						"type": "string"
+					},
+					"errors": {
+						"description": "Optional list of individual error details",
+						"items": {
+							"$ref": "#/components/schemas/ErrorDetail"
+						},
+						"type": ["array", "null"]
+					},
+					"instance": {
+						"description": "A URI reference that identifies the specific occurrence of the problem.",
+						"examples": ["https://example.com/error-log/abc123"],
+						"format": "uri",
+						"type": "string"
+					},
+					"status": {
+						"description": "HTTP status code",
+						"examples": [400],
+						"format": "int64",
+						"type": "integer"
+					},
+					"title": {
+						"description": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
+						"examples": ["Bad Request"],
+						"type": "string"
+					},
+					"type": {
+						"default": "about:blank",
+						"description": "A URI reference to human-readable documentation for the error.",
+						"examples": ["https://example.com/errors/example"],
+						"format": "uri",
+						"type": "string"
+					}
+				},
+				"type": "object"
+			},
+			"Folder": {
+				"additionalProperties": false,
+				"properties": {
+					"$schema": {
+						"description": "A URL to the JSON Schema for this object.",
+						"examples": ["https://example.com/schemas/Folder.json"],
+						"format": "uri",
+						"readOnly": true,
+						"type": "string"
+					},
+					"created_at": {
+						"format": "date-time",
+						"type": "string"
+					},
+					"id": {
+						"type": "string"
+					},
+					"name": {
+						"type": "string"
+					},
+					"team_id": {
+						"type": "string"
+					}
+				},
+				"required": ["id", "team_id", "name", "created_at"],
+				"type": "object"
+			},
+			"HealthOutputBody": {
+				"additionalProperties": false,
+				"properties": {
+					"$schema": {
+						"description": "A URL to the JSON Schema for this object.",
+						"examples": ["https://example.com/schemas/HealthOutputBody.json"],
+						"format": "uri",
+						"readOnly": true,
+						"type": "string"
+					},
+					"status": {
+						"type": "string"
+					}
+				},
+				"required": ["status"],
+				"type": "object"
+			},
+			"Link": {
+				"additionalProperties": false,
+				"properties": {
+					"$schema": {
+						"description": "A URL to the JSON Schema for this object.",
+						"examples": ["https://example.com/schemas/Link.json"],
+						"format": "uri",
+						"readOnly": true,
+						"type": "string"
+					},
+					"analytics_enabled": {
+						"type": "boolean"
+					},
+					"created_at": {
+						"format": "date-time",
+						"type": "string"
+					},
+					"created_by": {
+						"type": "string"
+					},
+					"destination_url": {
+						"type": "string"
+					},
+					"domain_id": {
+						"type": "string"
+					},
+					"expires_at": {
+						"format": "date-time",
+						"type": ["string", "null"]
+					},
+					"folder_id": {
+						"type": "string"
+					},
+					"has_password": {
+						"type": "boolean"
+					},
+					"hostname": {
+						"type": "string"
+					},
+					"id": {
+						"type": "string"
+					},
+					"redirect_type": {
+						"format": "int64",
+						"type": "integer"
+					},
+					"short_url": {
+						"type": "string"
+					},
+					"slug": {
+						"type": "string"
+					},
+					"state": {
+						"type": "string"
+					},
+					"tags": {
+						"items": {
+							"$ref": "#/components/schemas/Tag"
+						},
+						"type": ["array", "null"]
+					},
+					"team_id": {
+						"type": "string"
+					},
+					"updated_at": {
+						"format": "date-time",
+						"type": "string"
+					}
+				},
+				"required": [
+					"id",
+					"team_id",
+					"domain_id",
+					"hostname",
+					"slug",
+					"short_url",
+					"destination_url",
+					"redirect_type",
+					"state",
+					"expires_at",
+					"has_password",
+					"analytics_enabled",
+					"folder_id",
+					"tags",
+					"created_by",
+					"created_at",
+					"updated_at"
+				],
+				"type": "object"
+			},
+			"MeOutputBody": {
+				"additionalProperties": false,
+				"properties": {
+					"$schema": {
+						"description": "A URL to the JSON Schema for this object.",
+						"examples": ["https://example.com/schemas/MeOutputBody.json"],
+						"format": "uri",
+						"readOnly": true,
+						"type": "string"
+					},
+					"email": {
+						"type": "string"
+					},
+					"memberships": {
+						"items": {
+							"$ref": "#/components/schemas/TeamMembership"
+						},
+						"type": ["array", "null"]
+					},
+					"user_id": {
+						"type": "string"
+					}
+				},
+				"required": ["user_id", "email", "memberships"],
+				"type": "object"
+			},
+			"Member": {
+				"additionalProperties": false,
+				"properties": {
+					"$schema": {
+						"description": "A URL to the JSON Schema for this object.",
+						"examples": ["https://example.com/schemas/Member.json"],
+						"format": "uri",
+						"readOnly": true,
+						"type": "string"
+					},
+					"created_at": {
+						"format": "date-time",
+						"type": "string"
+					},
+					"email": {
+						"type": "string"
+					},
+					"role": {
+						"type": "string"
+					},
+					"user_id": {
+						"type": "string"
+					}
+				},
+				"required": ["user_id", "email", "role", "created_at"],
+				"type": "object"
+			},
+			"PageAuditEntry": {
+				"additionalProperties": false,
+				"properties": {
+					"$schema": {
+						"description": "A URL to the JSON Schema for this object.",
+						"examples": ["https://example.com/schemas/PageAuditEntry.json"],
+						"format": "uri",
+						"readOnly": true,
+						"type": "string"
+					},
+					"items": {
+						"items": {
+							"$ref": "#/components/schemas/AuditEntry"
+						},
+						"type": ["array", "null"]
+					},
+					"page": {
+						"format": "int64",
+						"type": "integer"
+					},
+					"per_page": {
+						"format": "int64",
+						"type": "integer"
+					},
+					"total_count": {
+						"format": "int64",
+						"type": "integer"
+					}
+				},
+				"required": ["items", "page", "per_page", "total_count"],
+				"type": "object"
+			},
+			"PageFolder": {
+				"additionalProperties": false,
+				"properties": {
+					"$schema": {
+						"description": "A URL to the JSON Schema for this object.",
+						"examples": ["https://example.com/schemas/PageFolder.json"],
+						"format": "uri",
+						"readOnly": true,
+						"type": "string"
+					},
+					"items": {
+						"items": {
+							"$ref": "#/components/schemas/Folder"
+						},
+						"type": ["array", "null"]
+					},
+					"page": {
+						"format": "int64",
+						"type": "integer"
+					},
+					"per_page": {
+						"format": "int64",
+						"type": "integer"
+					},
+					"total_count": {
+						"format": "int64",
+						"type": "integer"
+					}
+				},
+				"required": ["items", "page", "per_page", "total_count"],
+				"type": "object"
+			},
+			"PageLink": {
+				"additionalProperties": false,
+				"properties": {
+					"$schema": {
+						"description": "A URL to the JSON Schema for this object.",
+						"examples": ["https://example.com/schemas/PageLink.json"],
+						"format": "uri",
+						"readOnly": true,
+						"type": "string"
+					},
+					"items": {
+						"items": {
+							"$ref": "#/components/schemas/Link"
+						},
+						"type": ["array", "null"]
+					},
+					"page": {
+						"format": "int64",
+						"type": "integer"
+					},
+					"per_page": {
+						"format": "int64",
+						"type": "integer"
+					},
+					"total_count": {
+						"format": "int64",
+						"type": "integer"
+					}
+				},
+				"required": ["items", "page", "per_page", "total_count"],
+				"type": "object"
+			},
+			"PageMember": {
+				"additionalProperties": false,
+				"properties": {
+					"$schema": {
+						"description": "A URL to the JSON Schema for this object.",
+						"examples": ["https://example.com/schemas/PageMember.json"],
+						"format": "uri",
+						"readOnly": true,
+						"type": "string"
+					},
+					"items": {
+						"items": {
+							"$ref": "#/components/schemas/Member"
+						},
+						"type": ["array", "null"]
+					},
+					"page": {
+						"format": "int64",
+						"type": "integer"
+					},
+					"per_page": {
+						"format": "int64",
+						"type": "integer"
+					},
+					"total_count": {
+						"format": "int64",
+						"type": "integer"
+					}
+				},
+				"required": ["items", "page", "per_page", "total_count"],
+				"type": "object"
+			},
+			"PageTag": {
+				"additionalProperties": false,
+				"properties": {
+					"$schema": {
+						"description": "A URL to the JSON Schema for this object.",
+						"examples": ["https://example.com/schemas/PageTag.json"],
+						"format": "uri",
+						"readOnly": true,
+						"type": "string"
+					},
+					"items": {
+						"items": {
+							"$ref": "#/components/schemas/Tag"
+						},
+						"type": ["array", "null"]
+					},
+					"page": {
+						"format": "int64",
+						"type": "integer"
+					},
+					"per_page": {
+						"format": "int64",
+						"type": "integer"
+					},
+					"total_count": {
+						"format": "int64",
+						"type": "integer"
+					}
+				},
+				"required": ["items", "page", "per_page", "total_count"],
+				"type": "object"
+			},
+			"PageTeam": {
+				"additionalProperties": false,
+				"properties": {
+					"$schema": {
+						"description": "A URL to the JSON Schema for this object.",
+						"examples": ["https://example.com/schemas/PageTeam.json"],
+						"format": "uri",
+						"readOnly": true,
+						"type": "string"
+					},
+					"items": {
+						"items": {
+							"$ref": "#/components/schemas/Team"
+						},
+						"type": ["array", "null"]
+					},
+					"page": {
+						"format": "int64",
+						"type": "integer"
+					},
+					"per_page": {
+						"format": "int64",
+						"type": "integer"
+					},
+					"total_count": {
+						"format": "int64",
+						"type": "integer"
+					}
+				},
+				"required": ["items", "page", "per_page", "total_count"],
+				"type": "object"
+			},
+			"Tag": {
+				"additionalProperties": false,
+				"properties": {
+					"$schema": {
+						"description": "A URL to the JSON Schema for this object.",
+						"examples": ["https://example.com/schemas/Tag.json"],
+						"format": "uri",
+						"readOnly": true,
+						"type": "string"
+					},
+					"id": {
+						"type": "string"
+					},
+					"name": {
+						"type": "string"
+					},
+					"team_id": {
+						"type": "string"
+					}
+				},
+				"required": ["id", "team_id", "name"],
+				"type": "object"
+			},
+			"Team": {
+				"additionalProperties": false,
+				"properties": {
+					"$schema": {
+						"description": "A URL to the JSON Schema for this object.",
+						"examples": ["https://example.com/schemas/Team.json"],
+						"format": "uri",
+						"readOnly": true,
+						"type": "string"
+					},
+					"created_at": {
+						"format": "date-time",
+						"type": "string"
+					},
+					"id": {
+						"type": "string"
+					},
+					"name": {
+						"type": "string"
+					},
+					"role": {
+						"type": "string"
+					}
+				},
+				"required": ["id", "name", "created_at", "role"],
+				"type": "object"
+			},
+			"TeamMembership": {
+				"additionalProperties": false,
+				"properties": {
+					"name": {
+						"type": "string"
+					},
+					"role": {
+						"type": "string"
+					},
+					"team_id": {
+						"type": "string"
+					}
+				},
+				"required": ["team_id", "name", "role"],
+				"type": "object"
+			},
+			"UpdateFolderInputBody": {
+				"additionalProperties": false,
+				"properties": {
+					"$schema": {
+						"description": "A URL to the JSON Schema for this object.",
+						"examples": ["https://example.com/schemas/UpdateFolderInputBody.json"],
+						"format": "uri",
+						"readOnly": true,
+						"type": "string"
+					},
+					"name": {
+						"maxLength": 60,
+						"type": "string"
+					}
+				},
+				"required": ["name"],
+				"type": "object"
+			},
+			"UpdateLinkInputBody": {
+				"additionalProperties": false,
+				"properties": {
+					"$schema": {
+						"description": "A URL to the JSON Schema for this object.",
+						"examples": ["https://example.com/schemas/UpdateLinkInputBody.json"],
+						"format": "uri",
+						"readOnly": true,
+						"type": "string"
+					},
+					"analytics_enabled": {
+						"type": "boolean"
+					},
+					"destination_url": {
+						"maxLength": 2048,
+						"type": "string"
+					},
+					"expires_at": {
+						"format": "date-time",
+						"type": "string"
+					},
+					"folder_id": {
+						"description": "Send null to unfile the link.",
+						"type": ["string", "null"]
+					},
+					"redirect_type": {
+						"enum": [301, 302],
+						"format": "int64",
+						"type": "integer"
+					},
+					"slug": {
+						"maxLength": 64,
+						"type": "string"
+					},
+					"state": {
+						"description": "expired follows from expires_at and flagged is set by scanning; neither is a caller's to write.",
+						"enum": ["active", "disabled"],
+						"type": "string"
+					},
+					"tag_ids": {
+						"description": "Replaces the whole tag set. Send [] to remove every tag.",
+						"items": {
+							"type": "string"
+						},
+						"maxItems": 10,
+						"type": ["array", "null"]
+					}
+				},
+				"type": "object"
+			},
+			"UpdateMemberInputBody": {
+				"additionalProperties": false,
+				"properties": {
+					"$schema": {
+						"description": "A URL to the JSON Schema for this object.",
+						"examples": ["https://example.com/schemas/UpdateMemberInputBody.json"],
+						"format": "uri",
+						"readOnly": true,
+						"type": "string"
+					},
+					"role": {
+						"enum": ["viewer", "editor", "admin", "owner"],
+						"type": "string"
+					}
+				},
+				"required": ["role"],
+				"type": "object"
+			},
+			"UpdateTagInputBody": {
+				"additionalProperties": false,
+				"properties": {
+					"$schema": {
+						"description": "A URL to the JSON Schema for this object.",
+						"examples": ["https://example.com/schemas/UpdateTagInputBody.json"],
+						"format": "uri",
+						"readOnly": true,
+						"type": "string"
+					},
+					"name": {
+						"maxLength": 60,
+						"type": "string"
+					}
+				},
+				"required": ["name"],
+				"type": "object"
+			},
+			"UpdateTeamInputBody": {
+				"additionalProperties": false,
+				"properties": {
+					"$schema": {
+						"description": "A URL to the JSON Schema for this object.",
+						"examples": ["https://example.com/schemas/UpdateTeamInputBody.json"],
+						"format": "uri",
+						"readOnly": true,
+						"type": "string"
+					},
+					"name": {
+						"maxLength": 200,
+						"minLength": 1,
+						"type": "string"
+					}
+				},
+				"required": ["name"],
+				"type": "object"
+			}
+		},
+		"securitySchemes": {
+			"bearerAuth": {
+				"bearerFormat": "JWT",
+				"description": "A Supabase-issued access token (ES256, verified against the project's JWKS).",
+				"scheme": "bearer",
+				"type": "http"
+			}
+		}
+	},
+	"info": {
+		"title": "kurze-url API",
+		"version": "1.0.0"
+	},
+	"openapi": "3.1.0",
+	"paths": {
+		"/v1/folders/{folder_id}": {
+			"delete": {
+				"operationId": "delete-folder",
+				"parameters": [
+					{
+						"description": "The folder this request operates on.",
+						"in": "path",
+						"name": "folder_id",
+						"required": true,
+						"schema": {
+							"description": "The folder this request operates on.",
+							"type": "string"
+						}
+					}
+				],
+				"responses": {
+					"204": {
+						"description": "No Content"
+					},
+					"default": {
+						"content": {
+							"application/problem+json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorModel"
+								}
+							}
+						},
+						"description": "Error"
+					}
+				},
+				"security": [
+					{
+						"bearerAuth": []
+					}
+				],
+				"summary": "Delete a folder",
+				"tags": ["Folders"]
+			},
+			"patch": {
+				"operationId": "update-folder",
+				"parameters": [
+					{
+						"description": "The folder this request operates on.",
+						"in": "path",
+						"name": "folder_id",
+						"required": true,
+						"schema": {
+							"description": "The folder this request operates on.",
+							"type": "string"
+						}
+					}
+				],
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/UpdateFolderInputBody"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/Folder"
+								}
+							}
+						},
+						"description": "OK"
+					},
+					"default": {
+						"content": {
+							"application/problem+json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorModel"
+								}
+							}
+						},
+						"description": "Error"
+					}
+				},
+				"security": [
+					{
+						"bearerAuth": []
+					}
+				],
+				"summary": "Rename a folder",
+				"tags": ["Folders"]
+			}
+		},
+		"/v1/health": {
+			"get": {
+				"operationId": "get-health",
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HealthOutputBody"
+								}
+							}
+						},
+						"description": "OK"
+					},
+					"default": {
+						"content": {
+							"application/problem+json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorModel"
+								}
+							}
+						},
+						"description": "Error"
+					}
+				},
+				"summary": "Liveness probe",
+				"tags": ["Meta"]
+			}
+		},
+		"/v1/links/{link_id}": {
+			"delete": {
+				"operationId": "delete-link",
+				"parameters": [
+					{
+						"description": "The link this request operates on.",
+						"in": "path",
+						"name": "link_id",
+						"required": true,
+						"schema": {
+							"description": "The link this request operates on.",
+							"type": "string"
+						}
+					}
+				],
+				"responses": {
+					"204": {
+						"description": "No Content"
+					},
+					"default": {
+						"content": {
+							"application/problem+json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorModel"
+								}
+							}
+						},
+						"description": "Error"
+					}
+				},
+				"security": [
+					{
+						"bearerAuth": []
+					}
+				],
+				"summary": "Delete a link",
+				"tags": ["Links"]
+			},
+			"get": {
+				"operationId": "get-link",
+				"parameters": [
+					{
+						"description": "The link this request operates on.",
+						"in": "path",
+						"name": "link_id",
+						"required": true,
+						"schema": {
+							"description": "The link this request operates on.",
+							"type": "string"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/Link"
+								}
+							}
+						},
+						"description": "OK"
+					},
+					"default": {
+						"content": {
+							"application/problem+json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorModel"
+								}
+							}
+						},
+						"description": "Error"
+					}
+				},
+				"security": [
+					{
+						"bearerAuth": []
+					}
+				],
+				"summary": "Get a link",
+				"tags": ["Links"]
+			},
+			"patch": {
+				"operationId": "update-link",
+				"parameters": [
+					{
+						"description": "The link this request operates on.",
+						"in": "path",
+						"name": "link_id",
+						"required": true,
+						"schema": {
+							"description": "The link this request operates on.",
+							"type": "string"
+						}
+					}
+				],
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/UpdateLinkInputBody"
+							}
+						},
+						"application/octet-stream": {
+							"schema": {
+								"contentMediaType": "application/octet-stream",
+								"format": "binary",
+								"type": "string"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/Link"
+								}
+							}
+						},
+						"description": "OK"
+					},
+					"default": {
+						"content": {
+							"application/problem+json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorModel"
+								}
+							}
+						},
+						"description": "Error"
+					}
+				},
+				"security": [
+					{
+						"bearerAuth": []
+					}
+				],
+				"summary": "Update a link",
+				"tags": ["Links"]
+			}
+		},
+		"/v1/me": {
+			"get": {
+				"operationId": "get-me",
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/MeOutputBody"
+								}
+							}
+						},
+						"description": "OK"
+					},
+					"default": {
+						"content": {
+							"application/problem+json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorModel"
+								}
+							}
+						},
+						"description": "Error"
+					}
+				},
+				"security": [
+					{
+						"bearerAuth": []
+					}
+				],
+				"summary": "The authenticated user and their teams",
+				"tags": ["Session"]
+			}
+		},
+		"/v1/tags/{tag_id}": {
+			"delete": {
+				"operationId": "delete-tag",
+				"parameters": [
+					{
+						"description": "The tag this request operates on.",
+						"in": "path",
+						"name": "tag_id",
+						"required": true,
+						"schema": {
+							"description": "The tag this request operates on.",
+							"type": "string"
+						}
+					}
+				],
+				"responses": {
+					"204": {
+						"description": "No Content"
+					},
+					"default": {
+						"content": {
+							"application/problem+json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorModel"
+								}
+							}
+						},
+						"description": "Error"
+					}
+				},
+				"security": [
+					{
+						"bearerAuth": []
+					}
+				],
+				"summary": "Delete a tag",
+				"tags": ["Tags"]
+			},
+			"patch": {
+				"operationId": "update-tag",
+				"parameters": [
+					{
+						"description": "The tag this request operates on.",
+						"in": "path",
+						"name": "tag_id",
+						"required": true,
+						"schema": {
+							"description": "The tag this request operates on.",
+							"type": "string"
+						}
+					}
+				],
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/UpdateTagInputBody"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/Tag"
+								}
+							}
+						},
+						"description": "OK"
+					},
+					"default": {
+						"content": {
+							"application/problem+json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorModel"
+								}
+							}
+						},
+						"description": "Error"
+					}
+				},
+				"security": [
+					{
+						"bearerAuth": []
+					}
+				],
+				"summary": "Rename a tag",
+				"tags": ["Tags"]
+			}
+		},
+		"/v1/teams": {
+			"get": {
+				"operationId": "list-teams",
+				"parameters": [
+					{
+						"description": "1-based page number.",
+						"explode": false,
+						"in": "query",
+						"name": "page",
+						"schema": {
+							"default": 1,
+							"description": "1-based page number.",
+							"format": "int64",
+							"maximum": 1000000,
+							"minimum": 1,
+							"type": "integer"
+						}
+					},
+					{
+						"description": "Items per page, capped at 100.",
+						"explode": false,
+						"in": "query",
+						"name": "per_page",
+						"schema": {
+							"default": 25,
+							"description": "Items per page, capped at 100.",
+							"format": "int64",
+							"maximum": 100,
+							"minimum": 1,
+							"type": "integer"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/PageTeam"
+								}
+							}
+						},
+						"description": "OK"
+					},
+					"default": {
+						"content": {
+							"application/problem+json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorModel"
+								}
+							}
+						},
+						"description": "Error"
+					}
+				},
+				"security": [
+					{
+						"bearerAuth": []
+					}
+				],
+				"summary": "List the teams the caller belongs to",
+				"tags": ["Teams"]
+			},
+			"post": {
+				"description": "Restricted to the instance maintainers. A Verein asks the maintainer, who creates the team and invites its first owner.",
+				"operationId": "create-team",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/CreateTeamInputBody"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"201": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/Team"
+								}
+							}
+						},
+						"description": "Created"
+					},
+					"default": {
+						"content": {
+							"application/problem+json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorModel"
+								}
+							}
+						},
+						"description": "Error"
+					}
+				},
+				"security": [
+					{
+						"bearerAuth": []
+					}
+				],
+				"summary": "Create a team",
+				"tags": ["Teams"]
+			}
+		},
+		"/v1/teams/{team_id}": {
+			"get": {
+				"operationId": "get-team",
+				"parameters": [
+					{
+						"description": "The team this request operates on.",
+						"in": "path",
+						"name": "team_id",
+						"required": true,
+						"schema": {
+							"description": "The team this request operates on.",
+							"type": "string"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/Team"
+								}
+							}
+						},
+						"description": "OK"
+					},
+					"default": {
+						"content": {
+							"application/problem+json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorModel"
+								}
+							}
+						},
+						"description": "Error"
+					}
+				},
+				"security": [
+					{
+						"bearerAuth": []
+					}
+				],
+				"summary": "Get a team",
+				"tags": ["Teams"]
+			},
+			"patch": {
+				"operationId": "update-team",
+				"parameters": [
+					{
+						"description": "The team this request operates on.",
+						"in": "path",
+						"name": "team_id",
+						"required": true,
+						"schema": {
+							"description": "The team this request operates on.",
+							"type": "string"
+						}
+					}
+				],
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/UpdateTeamInputBody"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/Team"
+								}
+							}
+						},
+						"description": "OK"
+					},
+					"default": {
+						"content": {
+							"application/problem+json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorModel"
+								}
+							}
+						},
+						"description": "Error"
+					}
+				},
+				"security": [
+					{
+						"bearerAuth": []
+					}
+				],
+				"summary": "Rename a team",
+				"tags": ["Teams"]
+			}
+		},
+		"/v1/teams/{team_id}/audit-log": {
+			"get": {
+				"description": "Administrative history, so it is restricted to admins and owners.",
+				"operationId": "list-audit-log",
+				"parameters": [
+					{
+						"description": "The team this request operates on.",
+						"in": "path",
+						"name": "team_id",
+						"required": true,
+						"schema": {
+							"description": "The team this request operates on.",
+							"type": "string"
+						}
+					},
+					{
+						"description": "1-based page number.",
+						"explode": false,
+						"in": "query",
+						"name": "page",
+						"schema": {
+							"default": 1,
+							"description": "1-based page number.",
+							"format": "int64",
+							"maximum": 1000000,
+							"minimum": 1,
+							"type": "integer"
+						}
+					},
+					{
+						"description": "Items per page, capped at 100.",
+						"explode": false,
+						"in": "query",
+						"name": "per_page",
+						"schema": {
+							"default": 25,
+							"description": "Items per page, capped at 100.",
+							"format": "int64",
+							"maximum": 100,
+							"minimum": 1,
+							"type": "integer"
+						}
+					},
+					{
+						"description": "Restrict to one entity type.",
+						"explode": false,
+						"in": "query",
+						"name": "entity_type",
+						"schema": {
+							"description": "Restrict to one entity type.",
+							"enum": ["team", "team_member", "domain", "folder", "tag", "link"],
+							"type": "string"
+						}
+					},
+					{
+						"description": "Restrict to one action, e.g. team_member.removed.",
+						"explode": false,
+						"in": "query",
+						"name": "action",
+						"schema": {
+							"description": "Restrict to one action, e.g. team_member.removed.",
+							"maxLength": 64,
+							"type": "string"
+						}
+					},
+					{
+						"description": "Restrict to one actor, as a UUID.",
+						"explode": false,
+						"in": "query",
+						"name": "actor_user_id",
+						"schema": {
+							"description": "Restrict to one actor, as a UUID.",
+							"type": "string"
+						}
+					},
+					{
+						"description": "Only entries at or after this instant (RFC 3339).",
+						"explode": false,
+						"in": "query",
+						"name": "from",
+						"schema": {
+							"description": "Only entries at or after this instant (RFC 3339).",
+							"format": "date-time",
+							"type": "string"
+						}
+					},
+					{
+						"description": "Only entries at or before this instant (RFC 3339).",
+						"explode": false,
+						"in": "query",
+						"name": "to",
+						"schema": {
+							"description": "Only entries at or before this instant (RFC 3339).",
+							"format": "date-time",
+							"type": "string"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/PageAuditEntry"
+								}
+							}
+						},
+						"description": "OK"
+					},
+					"default": {
+						"content": {
+							"application/problem+json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorModel"
+								}
+							}
+						},
+						"description": "Error"
+					}
+				},
+				"security": [
+					{
+						"bearerAuth": []
+					}
+				],
+				"summary": "Read a team's audit log",
+				"tags": ["Audit"]
+			}
+		},
+		"/v1/teams/{team_id}/folders": {
+			"get": {
+				"operationId": "list-folders",
+				"parameters": [
+					{
+						"description": "The team this request operates on.",
+						"in": "path",
+						"name": "team_id",
+						"required": true,
+						"schema": {
+							"description": "The team this request operates on.",
+							"type": "string"
+						}
+					},
+					{
+						"description": "1-based page number.",
+						"explode": false,
+						"in": "query",
+						"name": "page",
+						"schema": {
+							"default": 1,
+							"description": "1-based page number.",
+							"format": "int64",
+							"maximum": 1000000,
+							"minimum": 1,
+							"type": "integer"
+						}
+					},
+					{
+						"description": "Items per page, capped at 100.",
+						"explode": false,
+						"in": "query",
+						"name": "per_page",
+						"schema": {
+							"default": 25,
+							"description": "Items per page, capped at 100.",
+							"format": "int64",
+							"maximum": 100,
+							"minimum": 1,
+							"type": "integer"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/PageFolder"
+								}
+							}
+						},
+						"description": "OK"
+					},
+					"default": {
+						"content": {
+							"application/problem+json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorModel"
+								}
+							}
+						},
+						"description": "Error"
+					}
+				},
+				"security": [
+					{
+						"bearerAuth": []
+					}
+				],
+				"summary": "List a team's folders",
+				"tags": ["Folders"]
+			},
+			"post": {
+				"operationId": "create-folder",
+				"parameters": [
+					{
+						"description": "The team this request operates on.",
+						"in": "path",
+						"name": "team_id",
+						"required": true,
+						"schema": {
+							"description": "The team this request operates on.",
+							"type": "string"
+						}
+					}
+				],
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/CreateFolderInputBody"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"201": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/Folder"
+								}
+							}
+						},
+						"description": "Created"
+					},
+					"default": {
+						"content": {
+							"application/problem+json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorModel"
+								}
+							}
+						},
+						"description": "Error"
+					}
+				},
+				"security": [
+					{
+						"bearerAuth": []
+					}
+				],
+				"summary": "Create a folder",
+				"tags": ["Folders"]
+			}
+		},
+		"/v1/teams/{team_id}/links": {
+			"get": {
+				"operationId": "list-links",
+				"parameters": [
+					{
+						"description": "The team this request operates on.",
+						"in": "path",
+						"name": "team_id",
+						"required": true,
+						"schema": {
+							"description": "The team this request operates on.",
+							"type": "string"
+						}
+					},
+					{
+						"description": "1-based page number.",
+						"explode": false,
+						"in": "query",
+						"name": "page",
+						"schema": {
+							"default": 1,
+							"description": "1-based page number.",
+							"format": "int64",
+							"maximum": 1000000,
+							"minimum": 1,
+							"type": "integer"
+						}
+					},
+					{
+						"description": "Items per page, capped at 100.",
+						"explode": false,
+						"in": "query",
+						"name": "per_page",
+						"schema": {
+							"default": 25,
+							"description": "Items per page, capped at 100.",
+							"format": "int64",
+							"maximum": 100,
+							"minimum": 1,
+							"type": "integer"
+						}
+					},
+					{
+						"description": "Substring match across the slug and the destination URL.",
+						"explode": false,
+						"in": "query",
+						"name": "q",
+						"schema": {
+							"description": "Substring match across the slug and the destination URL.",
+							"maxLength": 200,
+							"type": "string"
+						}
+					},
+					{
+						"description": "Restrict to one state.",
+						"explode": false,
+						"in": "query",
+						"name": "state",
+						"schema": {
+							"description": "Restrict to one state.",
+							"enum": ["active", "disabled", "expired", "flagged"],
+							"type": "string"
+						}
+					},
+					{
+						"description": "Restrict to one domain, as a UUID.",
+						"explode": false,
+						"in": "query",
+						"name": "domain_id",
+						"schema": {
+							"description": "Restrict to one domain, as a UUID.",
+							"type": "string"
+						}
+					},
+					{
+						"description": "Restrict to one folder, as a UUID.",
+						"explode": false,
+						"in": "query",
+						"name": "folder_id",
+						"schema": {
+							"description": "Restrict to one folder, as a UUID.",
+							"type": "string"
+						}
+					},
+					{
+						"description": "Restrict to links carrying one tag, as a UUID.",
+						"explode": false,
+						"in": "query",
+						"name": "tag_id",
+						"schema": {
+							"description": "Restrict to links carrying one tag, as a UUID.",
+							"type": "string"
+						}
+					},
+					{
+						"description": "Newest first by default.",
+						"explode": false,
+						"in": "query",
+						"name": "sort",
+						"schema": {
+							"default": "-created_at",
+							"description": "Newest first by default.",
+							"enum": ["created_at", "-created_at"],
+							"type": "string"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/PageLink"
+								}
+							}
+						},
+						"description": "OK"
+					},
+					"default": {
+						"content": {
+							"application/problem+json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorModel"
+								}
+							}
+						},
+						"description": "Error"
+					}
+				},
+				"security": [
+					{
+						"bearerAuth": []
+					}
+				],
+				"summary": "List a team's links",
+				"tags": ["Links"]
+			},
+			"post": {
+				"operationId": "create-link",
+				"parameters": [
+					{
+						"description": "The team this request operates on.",
+						"in": "path",
+						"name": "team_id",
+						"required": true,
+						"schema": {
+							"description": "The team this request operates on.",
+							"type": "string"
+						}
+					}
+				],
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/CreateLinkInputBody"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"201": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/Link"
+								}
+							}
+						},
+						"description": "Created"
+					},
+					"default": {
+						"content": {
+							"application/problem+json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorModel"
+								}
+							}
+						},
+						"description": "Error"
+					}
+				},
+				"security": [
+					{
+						"bearerAuth": []
+					}
+				],
+				"summary": "Create a link",
+				"tags": ["Links"]
+			}
+		},
+		"/v1/teams/{team_id}/members": {
+			"get": {
+				"operationId": "list-team-members",
+				"parameters": [
+					{
+						"description": "The team this request operates on.",
+						"in": "path",
+						"name": "team_id",
+						"required": true,
+						"schema": {
+							"description": "The team this request operates on.",
+							"type": "string"
+						}
+					},
+					{
+						"description": "1-based page number.",
+						"explode": false,
+						"in": "query",
+						"name": "page",
+						"schema": {
+							"default": 1,
+							"description": "1-based page number.",
+							"format": "int64",
+							"maximum": 1000000,
+							"minimum": 1,
+							"type": "integer"
+						}
+					},
+					{
+						"description": "Items per page, capped at 100.",
+						"explode": false,
+						"in": "query",
+						"name": "per_page",
+						"schema": {
+							"default": 25,
+							"description": "Items per page, capped at 100.",
+							"format": "int64",
+							"maximum": 100,
+							"minimum": 1,
+							"type": "integer"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/PageMember"
+								}
+							}
+						},
+						"description": "OK"
+					},
+					"default": {
+						"content": {
+							"application/problem+json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorModel"
+								}
+							}
+						},
+						"description": "Error"
+					}
+				},
+				"security": [
+					{
+						"bearerAuth": []
+					}
+				],
+				"summary": "List a team's members",
+				"tags": ["Members"]
+			},
+			"post": {
+				"description": "An address without an account is invited by email; an address that already has one is added directly and sees the team on next login.",
+				"operationId": "add-team-member",
+				"parameters": [
+					{
+						"description": "The team this request operates on.",
+						"in": "path",
+						"name": "team_id",
+						"required": true,
+						"schema": {
+							"description": "The team this request operates on.",
+							"type": "string"
+						}
+					}
+				],
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/AddMemberInputBody"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"201": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/Member"
+								}
+							}
+						},
+						"description": "Created"
+					},
+					"default": {
+						"content": {
+							"application/problem+json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorModel"
+								}
+							}
+						},
+						"description": "Error"
+					}
+				},
+				"security": [
+					{
+						"bearerAuth": []
+					}
+				],
+				"summary": "Invite or add a member",
+				"tags": ["Members"]
+			}
+		},
+		"/v1/teams/{team_id}/members/{user_id}": {
+			"delete": {
+				"operationId": "remove-team-member",
+				"parameters": [
+					{
+						"description": "The team this request operates on.",
+						"in": "path",
+						"name": "team_id",
+						"required": true,
+						"schema": {
+							"description": "The team this request operates on.",
+							"type": "string"
+						}
+					},
+					{
+						"description": "The member to remove.",
+						"in": "path",
+						"name": "user_id",
+						"required": true,
+						"schema": {
+							"description": "The member to remove.",
+							"type": "string"
+						}
+					}
+				],
+				"responses": {
+					"204": {
+						"description": "No Content"
+					},
+					"default": {
+						"content": {
+							"application/problem+json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorModel"
+								}
+							}
+						},
+						"description": "Error"
+					}
+				},
+				"security": [
+					{
+						"bearerAuth": []
+					}
+				],
+				"summary": "Remove a member",
+				"tags": ["Members"]
+			},
+			"patch": {
+				"operationId": "update-team-member",
+				"parameters": [
+					{
+						"description": "The team this request operates on.",
+						"in": "path",
+						"name": "team_id",
+						"required": true,
+						"schema": {
+							"description": "The team this request operates on.",
+							"type": "string"
+						}
+					},
+					{
+						"description": "The member to change.",
+						"in": "path",
+						"name": "user_id",
+						"required": true,
+						"schema": {
+							"description": "The member to change.",
+							"type": "string"
+						}
+					}
+				],
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/UpdateMemberInputBody"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"204": {
+						"description": "No Content"
+					},
+					"default": {
+						"content": {
+							"application/problem+json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorModel"
+								}
+							}
+						},
+						"description": "Error"
+					}
+				},
+				"security": [
+					{
+						"bearerAuth": []
+					}
+				],
+				"summary": "Change a member's role",
+				"tags": ["Members"]
+			}
+		},
+		"/v1/teams/{team_id}/tags": {
+			"get": {
+				"operationId": "list-tags",
+				"parameters": [
+					{
+						"description": "The team this request operates on.",
+						"in": "path",
+						"name": "team_id",
+						"required": true,
+						"schema": {
+							"description": "The team this request operates on.",
+							"type": "string"
+						}
+					},
+					{
+						"description": "1-based page number.",
+						"explode": false,
+						"in": "query",
+						"name": "page",
+						"schema": {
+							"default": 1,
+							"description": "1-based page number.",
+							"format": "int64",
+							"maximum": 1000000,
+							"minimum": 1,
+							"type": "integer"
+						}
+					},
+					{
+						"description": "Items per page, capped at 100.",
+						"explode": false,
+						"in": "query",
+						"name": "per_page",
+						"schema": {
+							"default": 25,
+							"description": "Items per page, capped at 100.",
+							"format": "int64",
+							"maximum": 100,
+							"minimum": 1,
+							"type": "integer"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/PageTag"
+								}
+							}
+						},
+						"description": "OK"
+					},
+					"default": {
+						"content": {
+							"application/problem+json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorModel"
+								}
+							}
+						},
+						"description": "Error"
+					}
+				},
+				"security": [
+					{
+						"bearerAuth": []
+					}
+				],
+				"summary": "List a team's tags",
+				"tags": ["Tags"]
+			},
+			"post": {
+				"operationId": "create-tag",
+				"parameters": [
+					{
+						"description": "The team this request operates on.",
+						"in": "path",
+						"name": "team_id",
+						"required": true,
+						"schema": {
+							"description": "The team this request operates on.",
+							"type": "string"
+						}
+					}
+				],
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/CreateTagInputBody"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"201": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/Tag"
+								}
+							}
+						},
+						"description": "Created"
+					},
+					"default": {
+						"content": {
+							"application/problem+json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorModel"
+								}
+							}
+						},
+						"description": "Error"
+					}
+				},
+				"security": [
+					{
+						"bearerAuth": []
+					}
+				],
+				"summary": "Create a tag",
+				"tags": ["Tags"]
+			}
+		}
+	}
+}
