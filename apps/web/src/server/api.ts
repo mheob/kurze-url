@@ -1,3 +1,12 @@
+// `process` is ambient-typed here, in this file only, rather than via the root
+// tsconfig's `types` field: `types` isn't additive — it would restrict
+// automatic `@types/*` inclusion for the whole root program (which, per the
+// root `include` globs, also covers packages/api-client/src and the root
+// *.config.ts files) to solve a one-line need in this one file. This resolves
+// through apps/web's own `@types/node` devDependency via TypeScript's
+// per-file reference-directive resolution instead.
+/// <reference types="node" />
+
 import { createApiClient } from '@kurze-url/api-client';
 import { withRelatedProject } from '@vercel/related-projects';
 
