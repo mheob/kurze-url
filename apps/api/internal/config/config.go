@@ -72,10 +72,16 @@ type Config struct {
 // surface runnable in local development with no Supabase project.
 func Load() (Config, error) {
 	cfg := Config{
-		Port:                 env("PORT", "8080"),
-		DatabaseURL:          os.Getenv("DATABASE_URL"),
-		RedisURL:             os.Getenv("REDIS_URL"),
-		APIHostname:          env("API_HOSTNAME", "localhost"),
+		Port:        env("PORT", "8080"),
+		DatabaseURL: os.Getenv("DATABASE_URL"),
+		RedisURL:    os.Getenv("REDIS_URL"),
+		// VERCEL_URL carries this deployment's own hostname, which is what makes
+		// preview deployments work at all: Vercel mints a new one per deployment,
+		// so no fixed API_HOSTNAME can match a preview, and an unmatched host
+		// sends every /v1 request into the redirect surface to be read as a slug.
+		// Production sets API_HOSTNAME to a stable hostname and it wins; local
+		// development has neither and falls through to localhost.
+		APIHostname:          env("API_HOSTNAME", env("VERCEL_URL", "localhost")),
 		SharedDomainHostname: env("SHARED_DOMAIN_HOSTNAME", "localhost"),
 		JWKSURL:              os.Getenv("SUPABASE_JWKS_URL"),
 		JWTIssuer:            os.Getenv("SUPABASE_JWT_ISSUER"),

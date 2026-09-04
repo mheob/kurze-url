@@ -179,3 +179,37 @@ func TestShortURLSchemeRejectsAnythingElse(t *testing.T) {
 	_, err := config.Load()
 	require.Error(t, err)
 }
+
+func TestAPIHostnameFallsBackToVercelURL(t *testing.T) {
+	// Vercel mints a new hostname for every preview deployment, so no fixed
+	// API_HOSTNAME can match one. Without this fallback a preview matches
+	// nothing, every /v1 request falls through to the redirect surface, and
+	// the health probe reports the API unreachable even when it is fine.
+	setRequired(t)
+	t.Setenv("VERCEL_URL", "kurze-url-abc123-mheobs-projects.vercel.app")
+
+	cfg, err := config.Load()
+	require.NoError(t, err)
+	require.Equal(t, "kurze-url-abc123-mheobs-projects.vercel.app", cfg.APIHostname)
+}
+
+func TestExplicitAPIHostnameBeatsVercelURL(t *testing.T) {
+	// Production sets API_HOSTNAME to a stable hostname. VERCEL_URL is present
+	// there too, and must not win.
+	setRequired(t)
+	t.Setenv("VERCEL_URL", "kurze-url-abc123-mheobs-projects.vercel.app")
+	t.Setenv("API_HOSTNAME", "api.kurze.url")
+
+	cfg, err := config.Load()
+	require.NoError(t, err)
+	require.Equal(t, "api.kurze.url", cfg.APIHostname)
+}
+
+func TestAPIHostnameDefaultsToLocalhostOffVercel(t *testing.T) {
+	// Local development has neither variable.
+	setRequired(t)
+
+	cfg, err := config.Load()
+	require.NoError(t, err)
+	require.Equal(t, "localhost", cfg.APIHostname)
+}
