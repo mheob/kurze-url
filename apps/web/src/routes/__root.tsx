@@ -46,9 +46,10 @@ export const Route = createRootRoute({
 				content: 'width=device-width, initial-scale=1',
 				name: 'viewport',
 			},
-			{
-				title: 'TanStack Start Starter',
-			},
+			// Deliberately no `title` entry: @tanstack/react-router only emits a
+			// <title> tag when `meta.title` is truthy, and this app ships zero
+			// hardcoded user-facing strings. Leave this page title-less until the
+			// i18n task can supply a translated one — don't "helpfully" restore it.
 		],
 	}),
 	shellComponent: RootDocument,
