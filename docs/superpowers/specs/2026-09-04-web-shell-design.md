@@ -31,6 +31,7 @@ A deployed, bilingual, themed, accessible page that proves the structure works, 
 - One public page: header with a language switcher and a theme toggle, translated copy, footer, and a sign-in button that is a visible stub.
 - One server function calling `GET /v1/health`, to prove the deployment path end to end.
 - Storybook with the accessibility addon.
+- The lint layer for a React app: the three presets above, plus the `jsx-a11y` and `vitest` plugins and a tuned `react/jsx-no-literals`.
 - Vitest + React Testing Library + MSW, and Playwright + `@axe-core/playwright`.
 - The `apps/web` Vercel project, with Related Projects pointing at the API project.
 - CI: the JS workflow extended for the new app; E2E against the pull request's Vercel preview.
@@ -55,14 +56,14 @@ These bind every task. They are the project's rules, restated here so the plan's
 - The tenant is called `team` in every identifier. "Verein" appears only in user-facing German copy.
 - **No hardcoded user-facing string, anywhere, ever — not even temporarily.** English is the default, German ships alongside it.
 - Dark and light mode from the first component, not retrofitted.
-- **WCAG 2.1 AA**, checked in CI at two levels.
+- **WCAG 2.1 AA**, checked in CI at two levels. That is the floor, not the target: this spec ships three.
 - shadcn/ui on **Radix** (`shadcn init -b radix`), deliberately not the Base UI default, because Tremor is Radix-based.
 - TanStack Router, Query, Form and Table; lucide-react for icons.
 - `GET /<slug>` is the hot path and belongs to the Go service. Nothing here touches it.
 - Never store a full IP address.
 - Vercel hosts `apps/web` and `apps/api` as two projects from one repository, each with its own Root Directory.
 - Conventional Commits, checked in CI.
-- oxlint and oxfmt, never ESLint or Prettier.
+- oxlint and oxfmt, never ESLint or Prettier. `@mheob/oxlint-config` already exports `reactConfig`, `storybookConfig` and `tailwindcssConfig`, and `oxlint.config.ts` carries a comment saying to enable them once `apps/web` exists. Not `nextJsConfig` — this is TanStack Start, not Next.
 
 ---
 
@@ -138,14 +139,17 @@ Plan 6 depends on every one of those and adds Supabase PKCE on top. Discovering 
 
 ---
 
-## Accessibility, at two levels
+## Accessibility, at three levels
 
-Both levels ship here, rather than one being deferred to a plan with more surface to check.
+`CLAUDE.md` requires two. A third is available for nearly nothing, so it ships too.
 
-- **Storybook's a11y addon** gives component-level feedback while a component is being written.
+- **oxlint's `jsx-a11y` plugin** fires in the editor, before the file is saved. It is the cheapest of the three by a wide margin and the only one that catches a problem before it exists in a commit. It is **not** enabled by `@mheob/oxlint-config`'s `reactConfig`, which turns on `react`, `react-perf` and `typescript` and stops there — so it has to be added deliberately. Verified against a probe component: `jsx-a11y(alt-text): Missing 'alt' attribute`.
+- **Storybook's a11y addon** gives component-level feedback while a component is being written, on rendered output rather than source, so it sees computed contrast and roles.
 - **`@axe-core/playwright`** checks whole rendered pages, catching composition-level problems — focus order across a page, landmark structure — that no single component's story reveals.
 
-`CLAUDE.md` states accessibility is "checked in CI at two levels". A plan that establishes one level has not established that rule; it has established half of it and left the other half to a future plan that will have more pages to retrofit, not fewer.
+The three are ordered by what they can see. The linter reads source and catches the statically obvious. Storybook renders one component and catches what needs a DOM. Playwright renders a whole page and catches what needs a page. A missing `alt` is caught by all three; a broken focus order across a header and a dialog is caught only by the last.
+
+`CLAUDE.md` states accessibility is "checked in CI at two levels". A plan that establishes one level has not established that rule; it has established half of it and left the other half to a future plan that will have more pages to retrofit, not fewer. Shipping a third costs one plugin entry.
 
 The E2E accessibility check runs against both themes and both languages. Contrast is a property of the theme, and German strings are reliably longer than their English equivalents — which is a common way for layouts to break, and doc 03 names it as something Storybook should surface.
 
@@ -155,9 +159,28 @@ The E2E accessibility check runs against both themes and both languages. Contras
 
 The rule is unenforceable by intention. Someone will type a user-facing string during a refactor, and no reviewer catches all of them.
 
-It cannot be enforced by the linter either: oxlint's configured rule set here is 529 rules and none of them is a JSX-literal or i18n rule — there is no equivalent of `react/jsx-no-literals` or `i18next/no-literal-string` available. Checking for one and finding nothing is why this section names a different mechanism rather than assuming the obvious one exists.
+Three checks, at descending speed and ascending completeness. None of them is redundant, and the reason is worth stating precisely, because the obvious single answer does not work.
 
-Two checks together, both behavioural, which is stronger than a lint rule would have been anyway — a linter sees JSX text nodes, while a hardcoded `aria-label` or a string assembled in a variable slips past it and still reaches a screen reader:
+**`react/jsx-no-literals`.** oxlint does have this rule. It is absent from the rule set the repository resolves today only because the `react` plugin is not enabled yet — there are no `.tsx` files to lint. With every plugin on, oxlint exposes 732 rules and this is one of them, and it fires as expected:
+
+```
+error react(jsx-no-literals): Disallow literal text as JSX children
+  help: Wrap this text in a JSX expression container, such as a call to a translation function.
+```
+
+It is the fastest feedback available: it fires in the editor, at the moment the string is typed. It also wants tuning rather than a bare `"error"` — punctuation and whitespace between elements trip it.
+
+What it does **not** catch was measured rather than assumed. Against this component it flagged the text child and stayed silent on both of the others:
+
+```tsx
+<div aria-label="Close dialog">
+	{' '}
+	// not flagged — and it reaches a screen reader Hardcoded heading // flagged
+	<span>{'also hardcoded'}</span> // not flagged — expression container
+</div>
+```
+
+A linter sees JSX text nodes. A hardcoded attribute or a string assembled in a variable is invisible to it, which is why the two behavioural checks below are not belt-and-braces but the part that actually covers the requirement:
 
 **Catalogue parity.** A test asserts the English and German catalogues have identical key sets. This catches the ordinary drift of adding a key to one file and forgetting the other, and it is cheap enough to run in the unit suite.
 
