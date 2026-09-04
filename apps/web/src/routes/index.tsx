@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import { SiteFooter } from '../components/site-footer';
 import { SiteHeader } from '../components/site-header';
+import { Button } from '../components/ui/button';
 import { usePreferences } from '../lib/use-preferences';
 import { fetchHealth } from '../server/health';
 
@@ -35,13 +36,9 @@ function Home() {
 				{/* Plan 6 replaces this with the real Supabase PKCE flow. It is a
 				    visible, disabled control rather than a working-looking one, so
 				    nobody mistakes it for an auth bug. */}
-				<button
-					className="bg-primary text-primary-foreground rounded px-4 py-2"
-					disabled
-					type="button"
-				>
+				<Button disabled type="button">
 					{t('actions.signIn')}
-				</button>
+				</Button>
 			</main>
 			<SiteFooter apiStatus={status} />
 		</div>

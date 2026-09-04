@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { preferenceCookie, THEME_COOKIE, type Theme } from '../lib/preferences';
+import { Button } from './ui/button';
 
 /**
  * `theme` seeds local state rather than being read directly: it is only ever
@@ -29,12 +30,14 @@ export function ThemeToggle({ theme: initialTheme }: { readonly theme: Theme }) 
 	}
 
 	return (
-		<button
+		<Button
 			aria-label={t(next === 'dark' ? 'theme.toDark' : 'theme.toLight')}
 			onClick={toggle}
+			size="icon"
 			type="button"
+			variant="ghost"
 		>
 			{next === 'dark' ? <MoonIcon aria-hidden /> : <SunIcon aria-hidden />}
-		</button>
+		</Button>
 	);
 }

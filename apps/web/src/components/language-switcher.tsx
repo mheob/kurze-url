@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 
 import { LANGUAGE_COOKIE, LANGUAGES, type Language, preferenceCookie } from '../lib/preferences';
+import { Button } from './ui/button';
 
 /**
  * Setting the cookie and reloading, rather than switching client-side only:
@@ -27,14 +28,16 @@ export function LanguageSwitcher() {
 		// bolted-on `role` attribute and the test's `getByRole('group')` query.
 		<fieldset aria-label={t('language.label')}>
 			{LANGUAGES.map((language) => (
-				<button
+				<Button
 					aria-pressed={i18n.language === language}
 					key={language}
 					onClick={() => choose(language)}
+					size="sm"
 					type="button"
+					variant="outline"
 				>
 					{t(`language.${language}`)}
-				</button>
+				</Button>
 			))}
 		</fieldset>
 	);
