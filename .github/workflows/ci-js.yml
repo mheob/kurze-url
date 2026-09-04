@@ -6,13 +6,23 @@ name: CI — JS/TS
 #
 # The workspace currently holds only root tooling; apps/web and
 # packages/api-client join these checks automatically as they land.
+#
+# deployment_status is added below for the e2e job only (Task 12): it fires
+# per Vercel deployment status update, for either of this repo's two Vercel
+# projects (apps/api and apps/web).
 on:
   pull_request:
   push:
     branches: [main]
+  deployment_status:
 
+# github.event_name is part of the group key so a deployment_status run never
+# shares a group with the pull_request/push run for the same ref — without
+# it, a production deployment_status event for refs/heads/main would land in
+# the same group as the push-triggered run for that same ref and, with
+# cancel-in-progress, could cancel checks that were still running.
 concurrency:
-  group: ci-js-${{ github.ref }}
+  group: ci-js-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 permissions:
@@ -21,6 +31,13 @@ permissions:
 jobs:
   changes:
     name: detect changes (js)
+    # deployment_status also triggers this workflow (for the e2e job below).
+    # The format/lint/typecheck/Storybook checks already ran against that
+    # commit via the pull_request/push trigger, so skip re-deriving `js` for
+    # that event rather than re-running them for nothing: skipping this job
+    # leaves needs.changes.outputs.js unset, which is falsy, so check/
+    # storybook/web below skip too via their existing `if:`.
+    if: github.event_name != 'deployment_status'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -103,3 +120,83 @@ jobs:
 
       - name: Build Storybook
         run: pnpm --filter @kurze-url/web build-storybook
+
+  web:
+    name: web unit tests
+    needs: changes
+    if: needs.changes.outputs.js == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Vitest only — Playwright is a separate runner, driven against a real
+      # deployment by the e2e job below, not here.
+      - name: Unit tests
+        run: pnpm --filter @kurze-url/web test
+
+      - name: Build
+        run: pnpm --filter @kurze-url/web build
+
+  e2e:
+    name: e2e against the preview
+    # E2E runs against the pull request's actual Vercel preview, not on every
+    # push (planning doc 07), so this is driven by deployment_status rather
+    # than sitting under `needs: changes` like the jobs above.
+    #
+    # apps/api and apps/web are two separate Vercel projects deploying from
+    # this one repo, so a deployment_status event fires for either one's
+    # deployments — this must only act on a successful *preview* deployment
+    # of the *web* project, or Playwright ends up pointed at a Go service and
+    # fails confusingly.
+    #
+    # Vercel suffixes the GitHub deployment's `environment` with
+    # "– <project-slug>" once a repo has more than one connected Vercel
+    # project (see https://github.com/vercel/wait-for-deployment-action,
+    # official Vercel org action, for the "Preview – <slug>" / "Production –
+    # <slug>" format). apps/api's Vercel project name is already fixed as
+    # `url-shortener-api` (apps/web/src/server/api.ts, planning doc 07), so
+    # its deployments are excluded by name below. apps/web's own Vercel
+    # project does not exist yet — its creation is a blocked, human dashboard
+    # step (see the task report) — so its name can't be positively matched
+    # the same way; restricting to `Preview` environments plus excluding the
+    # known API name is the closest verifiable gate available before that
+    # project exists. Re-verify this condition against a real
+    # deployment_status payload once the web project has been created.
+    if: >-
+      github.event_name == 'deployment_status' && github.event.deployment_status.state == 'success' &&
+      startsWith(github.event.deployment.environment, 'Preview') && !endsWith(github.event.deployment.environment, '–
+      url-shortener-api')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm --filter @kurze-url/web exec playwright install --with-deps chromium
+
+      # environment_url, not the deprecated target_url — see Vercel's own
+      # deployment_status -> repository_dispatch migration example in
+      # docs/git/vercel-for-github.
+      - name: Playwright
+        run: pnpm --filter @kurze-url/web exec playwright test
+        env:
+          BASE_URL: ${{ github.event.deployment_status.environment_url }}
