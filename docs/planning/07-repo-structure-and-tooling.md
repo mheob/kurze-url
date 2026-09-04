@@ -104,6 +104,18 @@ This versioning applies only to the CLI, which is a distributed binary people in
 
 **Conventional Commits** adopted as the commit-message convention repo-wide, checked in CI but not configured as a hard merge-blocker for MVP — cheap to start now (unlocks automated changelog generation for CLI releases later, e.g. via `goreleaser`'s own changelog support) without adding friction for a small, informal early contributor base. Worth tightening (blocking, `release-please`-style automated version bumps) if/when the project gets real external contributors.
 
+## Task runner: plain pnpm workspace, not Turborepo
+
+Considered 2026-09-04 and declined for now, with a specific trigger to revisit.
+
+Turborepo earns its keep on a dependency graph of packages with slow tasks worth caching. This repo has neither yet. `packages/api-client` is the only TypeScript package; `apps/web` is still empty. `apps/api` and `apps/cli` are separate Go modules outside the pnpm workspace entirely, so the slowest thing in the repo — a Go test suite around 40 seconds — is beyond a JS task runner's reach and is already path-filtered in `ci-api.yml`.
+
+The root scripts are single global passes rather than per-package ones: `oxlint`, `oxfmt` and `tsc --noEmit` each cover the whole repository in one invocation. Measured on the tree as it stands, `pnpm lint` takes 1.15s and `pnpm typecheck` 0.44s. Adopting Turbo means decomposing those into per-package scripts for it to orchestrate — slower rather than faster at this size, and `tsc` would need project references to split at all. Against a 0.44s task, cache hashing and daemon startup are a net loss.
+
+There is also no build step to cache. `api-client` ships TypeScript source, and Vercel builds `apps/web` and `apps/api` as two separate projects with their own Root Directory, so deploy orchestration already belongs to Vercel.
+
+**Revisit when all three hold:** `apps/web` exists with a real build (a Vite/TanStack Start build is the first genuinely slow JS task); there are three or more TypeScript packages with dependencies between them, so `dependsOn: ["^build"]` expresses something real; and something slow runs repeatedly, such as Storybook or a Playwright suite. Vercel offers first-party remote caching for Turbo, which makes adopting it later cheap — the retrofit is a `turbo.json` plus moving scripts into packages, much less than maintaining orchestration config for a single package now.
+
 ## Not yet decided / to revisit
 
 - `CONTRIBUTING.md` and issue/PR templates — open-source hygiene worth having, but not blocking any technical decision; reasonable to add once the codebase itself exists rather than now.
