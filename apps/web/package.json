@@ -15,11 +15,13 @@
 		"test:watch": "vitest"
 	},
 	"dependencies": {
+		"@kurze-url/api-client": "workspace:*",
 		"@tailwindcss/vite": "^4.1.18",
 		"@tanstack/react-devtools": "^0.10.12",
 		"@tanstack/react-router": "^1.170.32",
 		"@tanstack/react-router-devtools": "^1.167.1",
 		"@tanstack/react-start": "^1.168.49",
+		"@vercel/related-projects": "^1.1.1",
 		"class-variance-authority": "^0.7.1",
 		"cn": "^0.2.4",
 		"i18next": "^26.4.1",

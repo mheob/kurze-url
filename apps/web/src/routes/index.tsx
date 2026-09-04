@@ -1,17 +1,30 @@
 import { createFileRoute } from '@tanstack/react-router';
+import { createServerFn } from '@tanstack/react-start';
 import { useTranslation } from 'react-i18next';
 
 import { SiteFooter } from '../components/site-footer';
 import { SiteHeader } from '../components/site-header';
 import { usePreferences } from '../lib/use-preferences';
+import { fetchHealth } from '../server/health';
+
+/**
+ * Wraps fetchHealth in a server function so the loader — isomorphic, like
+ * __root.tsx's getPreferences — never runs the API call in the browser. On
+ * the initial SSR pass this executes in-process; on a client-side navigation
+ * back to this route it becomes an RPC to this app's own server, which is the
+ * only thing the browser ever talks to.
+ */
+const getHealthStatus = createServerFn({ method: 'GET' }).handler(() => fetchHealth());
 
 export const Route = createFileRoute('/')({
 	component: Home,
+	loader: () => getHealthStatus(),
 });
 
 function Home() {
 	const { t } = useTranslation();
 	const { theme } = usePreferences();
+	const { status } = Route.useLoaderData();
 
 	return (
 		<div className="bg-background text-foreground flex min-h-screen flex-col">
@@ -30,7 +43,7 @@ function Home() {
 					{t('actions.signIn')}
 				</button>
 			</main>
-			<SiteFooter />
+			<SiteFooter apiStatus={status} />
 		</div>
 	);
 }

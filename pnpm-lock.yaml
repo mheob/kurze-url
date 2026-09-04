@@ -14,6 +14,9 @@ importers:
       '@mheob/oxlint-config':
         specifier: ^3.0.1
         version: 3.0.1(eslint-plugin-better-tailwindcss@4.7.0(eslint@10.9.1(jiti@2.7.0)(supports-color@10.2.2))(oxlint@1.80.0(oxlint-tsgolint@7.0.2001))(tailwindcss@4.3.3)(typescript@7.0.2))(eslint-plugin-jsonc@3.4.2(eslint@10.9.1(jiti@2.7.0)(supports-color@10.2.2)))(eslint-plugin-regexp@3.2.0(eslint@10.9.1(jiti@2.7.0)(supports-color@10.2.2)))(eslint-plugin-yml@3.8.1(eslint@10.9.1(jiti@2.7.0)(supports-color@10.2.2)))(oxlint-tsgolint@7.0.2001)(oxlint@1.80.0(oxlint-tsgolint@7.0.2001))
+      '@types/node':
+        specifier: ^22.20.1
+        version: 22.20.1
       cve-lite-cli:
         specifier: ^1.31.0
         version: 1.31.0
@@ -47,6 +50,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@kurze-url/api-client':
+        specifier: workspace:*
+        version: link:../../packages/api-client
       '@tailwindcss/vite':
         specifier: ^4.1.18
         version: 4.3.3(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0)(yaml@2.9.0))
@@ -62,6 +68,9 @@ importers:
       '@tanstack/react-start':
         specifier: ^1.168.49
         version: 1.168.49(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(rolldown@1.2.7)(supports-color@10.2.2)(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0)(yaml@2.9.0))
+      '@vercel/related-projects':
+        specifier: ^1.1.1
+        version: 1.1.1
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -2251,6 +2260,9 @@ packages:
     resolution: {integrity: sha512-3qkmU6KXWh8GIThEAW3kuRHPQBMjWkKy+Ppz3WkUucx53DTpOa6siMn4xDGSOhlVyMrDaJTCTMLYPZVAIk1P0A==}
     peerDependencies:
       valibot: ^1.4.0
+
+  '@vercel/related-projects@1.1.1':
+    resolution: {integrity: sha512-Lr56tbvVXPMsBuHwAa2NEPCCLWwk+/IDMeZjrZSG1kDEztJg+bI7YPzguyPvaJrDSCEi6SEZe4U8EnxM5XdIZw==}
 
   '@vitejs/plugin-react@6.1.1':
     resolution: {integrity: sha512-yxLaQV9gkhS8ezJqCM6+ndU7mDY6gqAg75NQ+0IjwEI8IYOmQCgkRwHKVSfWXW076DsqMo0Dk+0FK1U+M5RgFw==}
@@ -5994,6 +6006,10 @@ snapshots:
   '@valibot/to-json-schema@1.7.1(valibot@1.4.2(typescript@7.0.2))':
     dependencies:
       valibot: 1.4.2(typescript@7.0.2)
+
+  '@vercel/related-projects@1.1.1':
+    optionalDependencies:
+      ajv: 6.15.0
 
   '@vitejs/plugin-react@6.1.1(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0)(yaml@2.9.0))':
     dependencies:

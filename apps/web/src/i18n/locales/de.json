@@ -17,6 +17,7 @@
 		"toDark": "Zum dunklen Modus wechseln"
 	},
 	"footer": {
-		"tagline": "Ein Open-Source-Projekt für Vereine."
+		"tagline": "Ein Open-Source-Projekt für Vereine.",
+		"apiStatus": "API-Status: {{status}}"
 	}
 }

@@ -9,7 +9,8 @@
 		"noUncheckedIndexedAccess": true,
 		"verbatimModuleSyntax": true,
 		"skipLibCheck": true,
-		"noEmit": true
+		"noEmit": true,
+		"types": ["node"]
 	},
 	"include": [
 		"*.config.ts",

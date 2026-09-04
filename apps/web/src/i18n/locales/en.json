@@ -17,6 +17,7 @@
 		"toDark": "Switch to dark mode"
 	},
 	"footer": {
-		"tagline": "An open-source project for associations."
+		"tagline": "An open-source project for associations.",
+		"apiStatus": "API status: {{status}}"
 	}
 }
