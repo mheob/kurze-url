@@ -13,6 +13,13 @@ import { defineConfig } from 'oxlint';
 // dropped, never reaching the plugin.
 const tailwindPluginOptions = { cwd: 'apps/web', entryPoint: 'src/styles/app.css' };
 
+// `dark` is applied to `<html>` as a plain toggle class (see Task 6's root route) so that
+// `app.css`'s `@custom-variant dark (&:where(.dark, .dark *))` can key off it. It is a
+// selector hook, not a generated Tailwind utility, so `no-unknown-classes`'s "is this a real
+// class" check can't recognise it and flags it as unknown. Anchored so it only matches the
+// bare class, never a real `dark:`-prefixed utility.
+const noUnknownClassesOptions = { ...tailwindPluginOptions, ignore: ['^dark$'] };
+
 export default defineConfig({
 	extends: [baseConfig, baseJsConfig, reactConfig, tailwindcssConfig],
 	ignorePatterns: [
@@ -67,7 +74,7 @@ export default defineConfig({
 		'better-tailwindcss/no-conflicting-classes': ['error', tailwindPluginOptions],
 		'better-tailwindcss/no-deprecated-classes': ['warn', tailwindPluginOptions],
 		'better-tailwindcss/no-duplicate-classes': ['warn', tailwindPluginOptions],
-		'better-tailwindcss/no-unknown-classes': ['error', tailwindPluginOptions],
+		'better-tailwindcss/no-unknown-classes': ['error', noUnknownClassesOptions],
 		'better-tailwindcss/no-unnecessary-whitespace': ['warn', tailwindPluginOptions],
 	},
 });
