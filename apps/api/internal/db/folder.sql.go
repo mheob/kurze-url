@@ -79,9 +79,10 @@ func (q *Queries) CreateFolder(ctx context.Context, arg CreateFolderParams) (Cre
 
 const deleteFolder = `-- name: DeleteFolder :one
 
+
 delete from folder
 where id = $1 and team_id = $2
-returning id
+returning id, name
 `
 
 type DeleteFolderParams struct {
@@ -89,14 +90,23 @@ type DeleteFolderParams struct {
 	TeamID uuid.UUID
 }
 
+type DeleteFolderRow struct {
+	ID   uuid.UUID
+	Name string
+}
+
 // DeleteFolder returns the id so the handler can tell "deleted" from "no such
 // folder in this team" without a second round trip. Links in the folder are
 // unfiled by the on delete set null foreign key, not by application code.
-func (q *Queries) DeleteFolder(ctx context.Context, arg DeleteFolderParams) (uuid.UUID, error) {
+// The name comes back with the id because the audit row records it: entity_id
+// points at a row that no longer exists, so without the name a folder.deleted
+// entry cannot be read back to a folder. DeleteTag returns its name for the
+// same reason.
+func (q *Queries) DeleteFolder(ctx context.Context, arg DeleteFolderParams) (DeleteFolderRow, error) {
 	row := q.db.QueryRow(ctx, deleteFolder, arg.ID, arg.TeamID)
-	var id uuid.UUID
-	err := row.Scan(&id)
-	return id, err
+	var i DeleteFolderRow
+	err := row.Scan(&i.ID, &i.Name)
+	return i, err
 }
 
 const getFolderInTeam = `-- name: GetFolderInTeam :one

@@ -67,7 +67,12 @@ select count(*) from link where folder_id = $1 and team_id = $2;
 -- folder in this team" without a second round trip. Links in the folder are
 -- unfiled by the on delete set null foreign key, not by application code.
 
+-- The name comes back with the id because the audit row records it: entity_id
+-- points at a row that no longer exists, so without the name a folder.deleted
+-- entry cannot be read back to a folder. DeleteTag returns its name for the
+-- same reason.
+
 -- name: DeleteFolder :one
 delete from folder
 where id = $1 and team_id = $2
-returning id;
+returning id, name;

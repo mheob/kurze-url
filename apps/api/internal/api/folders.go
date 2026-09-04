@@ -282,7 +282,7 @@ func (d Deps) deleteFolder(ctx context.Context, in *DeleteFolderInput) (*DeleteF
 			return err
 		}
 
-		id, err := q.DeleteFolder(ctx, db.DeleteFolderParams{
+		row, err := q.DeleteFolder(ctx, db.DeleteFolderParams{
 			ID: folder.ID, TeamID: member.TeamID,
 		})
 		if err != nil {
@@ -294,8 +294,10 @@ func (d Deps) deleteFolder(ctx context.Context, in *DeleteFolderInput) (*DeleteF
 			ActorUserID: member.UserID,
 			Action:      audit.ActionFolderDeleted,
 			EntityType:  audit.EntityFolder,
-			EntityID:    id,
-			Metadata:    map[string]any{"links_unfiled": unfiled},
+			EntityID:    row.ID,
+			// The name is recorded because entity_id now points at a deleted
+			// row: without it the entry says only that some folder went.
+			Metadata: map[string]any{"name": row.Name, "links_unfiled": unfiled},
 		})
 	})
 

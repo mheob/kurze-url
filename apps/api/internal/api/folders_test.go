@@ -211,3 +211,23 @@ func TestDeleteFolderRecordsHowManyLinksWereUnfiled(t *testing.T) {
 		 where team_id = $1 and action = 'folder.deleted'`, f.teamID).Scan(&unfiled))
 	require.Equal(t, 2, unfiled)
 }
+
+func TestDeleteFolderRecordsWhichFolderWentInTheAuditRow(t *testing.T) {
+	// entity_id points at a row that no longer exists, so without the name the
+	// audit entry says only that some folder was deleted. DeleteTag records its
+	// name for the same reason.
+	f := newTenancyFixture(t)
+	folder := f.createFolder(t, "Sommerfest 2026")
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodDelete,
+		"/v1/folders/"+folder.ID.String(), nil)
+	require.Equal(t, http.StatusNoContent, rec.Code, "body: %s", rec.Body.String())
+
+	var name string
+	require.NoError(t, f.pool.QueryRow(context.Background(),
+		`select metadata->>'name' from audit_log
+		 where team_id = $1 and action = 'folder.deleted' and entity_id = $2`,
+		f.teamID, folder.ID).Scan(&name))
+	require.Equal(t, "Sommerfest 2026", name,
+		"the audit row must name the folder, with its case intact")
+}
