@@ -21,8 +21,22 @@ on:
 # it, a production deployment_status event for refs/heads/main would land in
 # the same group as the push-triggered run for that same ref and, with
 # cancel-in-progress, could cancel checks that were still running.
+#
+# github.event.deployment.id is also folded in: apps/api and apps/web are two
+# separate Vercel projects that both deploy on every push to the same ref,
+# and each sends several deployment_status pings (queued/building/success) as
+# it goes. Keying only on event_name put every one of those pings — from
+# *both* projects — in one shared group, so the web preview's `success` ping
+# (which starts the e2e job) could be cancelled by the API's later, unrelated
+# `success` ping for the same ref, with no ordering guarantee between the two
+# builds. The deployment id is unique per Vercel deployment, so this makes
+# only repeat pings for the *same* deployment collide, which is the only
+# cancellation that's ever actually redundant. It's empty for push/
+# pull_request (github.event.deployment doesn't exist there), which is fine:
+# event_name already keeps those two event types apart from each other and
+# from deployment_status.
 concurrency:
-  group: ci-js-${{ github.ref }}-${{ github.event_name }}
+  group: ci-js-${{ github.ref }}-${{ github.event_name }}-${{ github.event.deployment.id }}
   cancel-in-progress: true
 
 permissions:
