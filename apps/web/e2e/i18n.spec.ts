@@ -26,9 +26,13 @@ async function visibleText(
 	const labels = await page
 		.locator('[aria-label]')
 		.evaluateAll((nodes) => nodes.map((node) => node.getAttribute('aria-label') ?? ''));
+	// `body :visible` and `[aria-label]` both scope to <body> and never see
+	// <head>, so <title> needs its own read — `page.title()` is the direct API
+	// for it, not a locator workaround.
+	const title = await page.title();
 
 	return (
-		[...texts, ...labels]
+		[...texts, ...labels, title]
 			// `body :visible` also matches the theme toggle's inline SVG icon (and its
 			// child <path>/<circle>/<line> nodes) — SVGElement has no `innerText`, so
 			// Playwright reports `null` for it rather than `''`. Nullish-coalescing
