@@ -112,14 +112,20 @@ jobs:
         run: pnpm typecheck
 
   storybook:
-    name: build Storybook
+    name: build & test Storybook
     needs: changes
     if: needs.changes.outputs.js == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # A build-only smoke test: it catches a broken config, addon or story
-    # without needing a hosted target. Storybook itself is deliberately not
-    # deployed anywhere, so nothing here uploads or publishes storybook-static.
+    # `build-storybook` is a build-only smoke test: it catches a broken config,
+    # addon or story without needing a hosted target, but nothing about a
+    # `vite build` inspects rendered output — it stayed silent when a reviewer
+    # removed an accessible name from a story. `pnpm test:storybook` is the
+    # part that actually gates: it renders every story in a real Chromium tab
+    # via @storybook/addon-vitest and fails the job on any axe violation,
+    # which is what .storybook/preview.tsx's `a11y: { test: 'error' }` is for.
+    # Storybook itself is still deliberately not deployed anywhere, so nothing
+    # here uploads or publishes storybook-static.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -134,6 +140,14 @@ jobs:
 
       - name: Build Storybook
         run: pnpm --filter @kurze-url/web build-storybook
+
+      # Chromium only: it's the only browser instance configured for the
+      # `storybook` Vitest project (vitest.config.ts).
+      - name: Install Playwright browser
+        run: pnpm --filter @kurze-url/web exec playwright install --with-deps chromium
+
+      - name: Test Storybook (Vitest + addon-vitest, real accessibility gate)
+        run: pnpm --filter @kurze-url/web test:storybook
 
   web:
     name: web unit tests

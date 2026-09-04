@@ -13,8 +13,9 @@
 		"preview": "vite preview --port 3000",
 		"start": "vite preview --port 3000",
 		"storybook": "storybook dev -p 6006",
-		"test": "vitest run",
-		"test:watch": "vitest"
+		"test": "vitest run --project unit",
+		"test:storybook": "vitest run --project storybook",
+		"test:watch": "vitest --project unit"
 	},
 	"dependencies": {
 		"@kurze-url/api-client": "workspace:*",
@@ -38,6 +39,7 @@
 		"@axe-core/playwright": "^4.13.0",
 		"@playwright/test": "^1.62.1",
 		"@storybook/addon-a11y": "^10.5.10",
+		"@storybook/addon-vitest": "^10.5.10",
 		"@storybook/tanstack-react": "^10.5.10",
 		"@tanstack/devtools-vite": "^0.8.5",
 		"@tanstack/router-cli": "^1.132.0",
@@ -48,6 +50,8 @@
 		"@types/react": "^19.2.0",
 		"@types/react-dom": "^19.2.0",
 		"@vitejs/plugin-react": "^6.1.1",
+		"@vitest/browser": "4.1.11",
+		"@vitest/browser-playwright": "4.1.11",
 		"jsdom": "^30.0.1",
 		"msw": "^2.15.0",
 		"storybook": "^10.5.10",
