@@ -64,6 +64,11 @@ async function mintSessionCookies(
 ): Promise<SessionCookie[]> {
 	const captured: SessionCookie[] = [];
 
+	// The service-role key here (where this call conventionally takes the
+	// anon/publishable key) doesn't affect cookie naming or encoding — that's
+	// derived only from `url`'s hostname — it only authenticates the request
+	// GoTrue makes on `verifyOtp` below, and GoTrue accepts any valid project
+	// key for that.
 	const cookieClient = createServerClient(url, serviceRoleKey, {
 		cookies: {
 			getAll: () => [],
