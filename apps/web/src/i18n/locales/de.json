@@ -31,5 +31,8 @@
 		"sendLink": "Link zusenden",
 		"linkSent": "Falls es zu dieser Adresse ein Konto gibt, ist ein Link unterwegs.",
 		"signOut": "Abmelden"
+	},
+	"teams": {
+		"none": "Sie gehören noch keinem Verein an. Bitten Sie die Person, die Sie eingeladen hat, Sie hinzuzufügen."
 	}
 }

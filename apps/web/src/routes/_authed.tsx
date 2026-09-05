@@ -6,8 +6,8 @@ import { getRequest } from '@tanstack/react-start/server';
 import {
 	authedApiClient,
 	flushSessionCookies,
+	isUnauthenticatedError,
 	requireSession,
-	UnauthenticatedError,
 } from '../server/session';
 
 // oxlint's typescript(consistent-type-definitions) is error-level (see the
@@ -69,34 +69,6 @@ export const fetchMe = createServerFn({ method: 'GET' }).handler(async (): Promi
  */
 export function assertMembership(memberships: Membership[], teamId: string): void {
 	if (!memberships.some((membership) => membership.team_id === teamId)) throw notFound();
-}
-
-/**
- * Not a plain `error instanceof UnauthenticatedError`, deliberately: that
- * check is only reliable for the very first render of an `_authed` route,
- * where `beforeLoad` runs on the server and `fetchMe()` calls its handler
- * in-process — the real class instance comes straight back. Every later
- * client-side navigation into an `_authed` route runs `beforeLoad` again, in
- * the browser this time, where `fetchMe()` is a genuine HTTP round trip. A
- * thrown error crossing that boundary is serialised with `seroval`
- * (`@tanstack/start-server-core`'s `server-functions-handler.js` calls
- * `toCrossJSONAsync` on it) and reconstructed with `fromCrossJSON` on the
- * other side. seroval only special-cases the built-in `Error` subclasses
- * (`TypeError`, `RangeError`, …its own `ERROR_CONSTRUCTOR` table) — an
- * application-defined one like `UnauthenticatedError` comes back as a plain
- * `Error` with `.name` restored as an own property, not as an instance of
- * the original class. Confirmed by reading the installed `seroval@1.6.4`'s
- * `deserializeError`/`getInitialErrorOptions`. Without the `.name` check
- * here, a session that expires while the app is already open would fail to
- * redirect to `/login` on the next in-app navigation and would instead
- * surface a raw error — silently, the same family of failure the cookie
- * conventions this plan already documents warn about, just on the read side
- * rather than the write side. `UnauthenticatedError.name` (the class's own
- * name, not an instance's) is used rather than the string literal so a
- * rename of the class can't quietly desync this check from it.
- */
-function isUnauthenticatedError(error: unknown): boolean {
-	return error instanceof Error && error.name === UnauthenticatedError.name;
 }
 
 export const Route = createFileRoute('/_authed')({

@@ -31,5 +31,8 @@
 		"sendLink": "Send me a link",
 		"linkSent": "If that address has an account, a link is on its way.",
 		"signOut": "Sign out"
+	},
+	"teams": {
+		"none": "You are not a member of any team yet. Ask the person who invited you to add you to one."
 	}
 }
