@@ -56,32 +56,52 @@ describe('createCookieAdapter', () => {
 	});
 
 	it('marks auth cookies httpOnly, Secure and SameSite=Lax', () => {
+		// The shape @supabase/ssr's own DEFAULT_COOKIE_OPTIONS actually sends —
+		// notably `httpOnly: false` — not `{}`, which is a shape production
+		// never produces and let a merge-order bug pass silently: `serialize`
+		// used to spread `options` last, so this library default clobbered the
+		// app's `httpOnly: true` policy and every session cookie shipped
+		// readable by JavaScript.
 		const request = new Request('https://example.test/');
 		const headers = new Headers();
 		const { setAll } = createCookieAdapter(request, headers);
 
-		setAll([{ name: 'sb-x', value: 'y', options: {} }]);
+		setAll([
+			{
+				name: 'sb-x',
+				value: 'y',
+				options: { path: '/', sameSite: 'lax', httpOnly: false, maxAge: 34560000 },
+			},
+		]);
 
 		const cookie = headers.get('set-cookie') ?? '';
 		expect(cookie).toContain('HttpOnly');
+		expect(cookie).toContain('Secure');
 		expect(cookie).toContain('SameSite=Lax');
 		expect(cookie).toContain('Path=/');
+		// maxAge is not one of the four app-policy attributes, so the
+		// caller-supplied value must still come through unchanged.
+		expect(cookie).toContain('Max-Age=34560000');
 	});
 
-	it('reflects a non-lax SameSite value instead of hardcoding Lax', () => {
+	it('forces SameSite=Lax as app policy even if a caller asks for Strict', () => {
 		// Regression test for a finding where `serialize` read
 		// `options.sameSite` only to decide *whether* to emit the attribute,
 		// then always wrote the literal string `Lax` regardless of the actual
 		// value — correct by accident, since every cookie in this codebase
-		// resolves to `lax` today, and undetectable by a test asserting the
-		// literal `SameSite=Lax` no matter what went in.
+		// resolved to `lax` anyway. Finding 1 makes that accident load-bearing:
+		// httpOnly/secure/sameSite/path are app policy, not a library or caller
+		// suggestion, so `SUPABASE_COOKIE_OPTIONS` must win the merge and a
+		// caller-supplied `strict` must never reach the response.
 		const request = new Request('https://example.test/');
 		const headers = new Headers();
 		const { setAll } = createCookieAdapter(request, headers);
 
 		setAll([{ name: 'sb-x', value: 'y', options: { sameSite: 'strict' } }]);
 
-		expect(headers.get('set-cookie')).toContain('SameSite=Strict');
+		const cookie = headers.get('set-cookie') ?? '';
+		expect(cookie).toContain('SameSite=Lax');
+		expect(cookie).not.toContain('SameSite=Strict');
 	});
 
 	it('applies the response headers @supabase/ssr passes alongside cookies', () => {

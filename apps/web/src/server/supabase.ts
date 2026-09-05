@@ -90,7 +90,7 @@ export function createCookieAdapter(
 			for (const { name, value, options } of cookies) {
 				headers.append(
 					'set-cookie',
-					serialize(name, value, { ...SUPABASE_COOKIE_OPTIONS, ...options }),
+					serialize(name, value, { ...options, ...SUPABASE_COOKIE_OPTIONS }),
 				);
 			}
 			for (const [key, value] of Object.entries(responseHeaders ?? {})) {
@@ -115,5 +115,6 @@ export function createSupabase(request: Request, headers: Headers): SupabaseClie
 
 	return createServerClient(url, key, {
 		cookies: createCookieAdapter(request, headers),
+		cookieOptions: SUPABASE_COOKIE_OPTIONS,
 	});
 }
