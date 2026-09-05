@@ -1,6 +1,7 @@
 import { createServerFn } from '@tanstack/react-start';
-import { getRequestUrl } from '@tanstack/react-start/server';
+import { getRequest, getRequestUrl } from '@tanstack/react-start/server';
 
+import { flushSessionCookies } from './session';
 import { createSupabase } from './supabase';
 
 /**
@@ -66,3 +67,22 @@ export async function sendMagicLinkFor(email: string, origin: string): Promise<{
 export const sendMagicLink = createServerFn({ method: 'POST' })
 	.validator((data: { email: string }) => data)
 	.handler(async ({ data }) => sendMagicLinkFor(data.email, getRequestUrl().origin));
+
+/**
+ * `getRequest()` (not a `request` field on the handler's context — same
+ * correction as `sendMagicLink` above) reads the incoming request from the
+ * server's per-request AsyncLocalStorage.
+ *
+ * Supabase's `signOut` asks the cookie adapter to *clear* the session
+ * cookies, which is a `setAll` call like any other — written into the local
+ * `headers` here, and lost unless flushed. Without `flushSessionCookies`,
+ * this handler would run, the client would see a 200, and the browser would
+ * keep sending the same still-valid session cookie on its next request: a
+ * sign-out that silently does not sign anyone out.
+ */
+export const signOut = createServerFn({ method: 'POST' }).handler(async () => {
+	const headers = new Headers();
+	const supabase = createSupabase(getRequest(), headers);
+	await supabase.auth.signOut();
+	flushSessionCookies(headers);
+});
