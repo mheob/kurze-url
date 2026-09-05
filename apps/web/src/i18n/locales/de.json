@@ -24,5 +24,12 @@
 	"notFound": {
 		"heading": "Seite nicht gefunden",
 		"body": "Die gesuchte Seite existiert nicht oder wurde verschoben."
+	},
+	"auth": {
+		"signInTitle": "Anmelden",
+		"emailLabel": "E-Mail-Adresse",
+		"sendLink": "Link zusenden",
+		"linkSent": "Falls es zu dieser Adresse ein Konto gibt, ist ein Link unterwegs.",
+		"signOut": "Abmelden"
 	}
 }
