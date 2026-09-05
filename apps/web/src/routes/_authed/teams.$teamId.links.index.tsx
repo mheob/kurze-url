@@ -1,6 +1,11 @@
 import type { PageLink } from '@kurze-url/api-client';
 import { useSuspenseQuery } from '@tanstack/react-query';
-import { createFileRoute, redirect, type SearchSchemaInput } from '@tanstack/react-router';
+import {
+	createFileRoute,
+	Navigate,
+	redirect,
+	type SearchSchemaInput,
+} from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 
 import { LinkList } from '../../components/link-list';
@@ -102,15 +107,29 @@ export const Route = createFileRoute('/_authed/teams/$teamId/links/')({
  * meaningless for a list fetch (it only ever arises from a form's 400/422),
  * so it falls back to the same generic message as an unrecognised failure.
  *
- * `kind: 'unauthenticated'` never actually reaches here any more (Fix round
- * 1): `loadLinks` above intercepts exactly that classification and redirects
- * to `/login` before the router ever renders this component, which is why
- * there is no `errors.unauthenticated` catalogue key any more either — this
- * function has no case that would render it.
+ * `kind: 'unauthenticated'` *can* still reach here (Fix round 2, reviewing
+ * Fix round 1's claim that it couldn't): `loadLinks`'s try/catch only guards
+ * its own `ensureQueryData` call, which is the *loader's* fetch. React
+ * Query's defaults (`router.tsx` sets no `defaultOptions`, so
+ * `refetchOnWindowFocus: true` applies) mean `useSuspenseQuery` in
+ * `RouteComponent` below can also throw to this boundary on a *background*
+ * refetch — e.g. the tab was left open, the session expired, and the window
+ * regained focus — a path `loadLinks` never sees because it isn't a loader
+ * run at all. So this component redirects to `/login` itself for that kind,
+ * via `<Navigate>` (the component-side equivalent of the `throw redirect(...)`
+ * a loader would use — a render can't throw a redirect the way a
+ * loader/`beforeLoad` can, since nothing upstream is watching for one).
+ * Every other kind still renders inline, unchanged, so the list keeps failing
+ * loudly for a genuinely down API. There is still no `errors.unauthenticated`
+ * catalogue key: both paths that can classify a failure this way redirect
+ * before any text would render, so the key would stay dead.
  */
-function LinksError({ error }: { readonly error: unknown }): React.JSX.Element {
+export function LinksError({ error }: { readonly error: unknown }): React.JSX.Element {
 	const { t } = useTranslation();
 	const failure: ApiFailure = classifyApiError(error);
+
+	if (failure.kind === 'unauthenticated') return <Navigate to="/login" />;
+
 	const key = failure.kind === 'fields' ? 'unknown' : failure.kind;
 
 	return <p role="alert">{t(`errors.${key}`)}</p>;
