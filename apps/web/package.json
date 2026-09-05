@@ -19,8 +19,12 @@
 	},
 	"dependencies": {
 		"@kurze-url/api-client": "workspace:*",
+		"@supabase/ssr": "^0.12.5",
+		"@supabase/supabase-js": "^2.115.0",
 		"@tailwindcss/vite": "^4.1.18",
 		"@tanstack/react-devtools": "^0.10.12",
+		"@tanstack/react-form": "^1.33.5",
+		"@tanstack/react-query": "^5.102.8",
 		"@tanstack/react-router": "^1.170.32",
 		"@tanstack/react-router-devtools": "^1.167.1",
 		"@tanstack/react-start": "^1.168.49",
