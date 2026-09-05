@@ -62,11 +62,17 @@ type InsertAuditLogParams struct {
 	Action      string
 	EntityType  string
 	EntityID    *uuid.UUID
-	Metadata    []byte
+	Metadata    *string
 }
 
 // Audit log. Writes always share the transaction of the mutation they record;
 // see db.InTx.
+// No cast on metadata: sqlc.yaml overrides audit_log.metadata to a Go string
+// instead (see that file for why), and an explicit ::text or ::jsonb cast
+// here would fix sqlc's inferred Go type but break the query itself — text
+// has no cast to jsonb, and Postgres only resolves an uncast parameter
+// straight to the target column's type. Leave this parameter uncast so
+// Postgres keeps inferring it as jsonb from the insert context.
 func (q *Queries) InsertAuditLog(ctx context.Context, arg InsertAuditLogParams) error {
 	_, err := q.db.Exec(ctx, insertAuditLog,
 		arg.TeamID,
@@ -111,7 +117,7 @@ type ListAuditLogRow struct {
 	Action      string
 	EntityType  string
 	EntityID    *uuid.UUID
-	Metadata    []byte
+	Metadata    *string
 	CreatedAt   time.Time
 	TotalCount  int64
 }

@@ -100,13 +100,20 @@ func (d Deps) listAuditLog(
 	var total int64
 	for _, row := range rows {
 		total = row.TotalCount
+		// metadata is nullable at the schema level, though every writer
+		// (internal/audit.Log) always supplies at least "{}"; nil is only
+		// possible for a row written by something other than that path.
+		var metadata json.RawMessage
+		if row.Metadata != nil {
+			metadata = json.RawMessage(*row.Metadata)
+		}
 		items = append(items, AuditEntry{
 			ID:          row.ID,
 			Action:      row.Action,
 			EntityType:  row.EntityType,
 			EntityID:    row.EntityID,
 			ActorUserID: row.ActorUserID,
-			Metadata:    json.RawMessage(row.Metadata),
+			Metadata:    metadata,
 			CreatedAt:   row.CreatedAt,
 		})
 	}
