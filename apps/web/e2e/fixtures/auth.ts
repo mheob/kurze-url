@@ -3,11 +3,13 @@ import { randomUUID } from 'node:crypto';
 import { test as base } from '@playwright/test';
 import { createServerClient } from '@supabase/ssr';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { Client as PgClient } from 'pg';
 
 /**
  * Runs against the kurze-url-preview project, never production. That
  * separation is what makes it acceptable for a service-role key — which
- * bypasses every database policy — to exist as a CI secret at all.
+ * bypasses every database policy — and a direct database connection string
+ * to exist as CI secrets at all.
  *
  * Magic-link-only login leaves Playwright nothing to type and no inbox to
  * read, so this mints a session through the Supabase Admin API and sets the
@@ -22,15 +24,28 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
  * single test run can never be on that list — there is no honest way to make
  * a brand-new random user a maintainer without rewriting the preview
  * deployment's configuration on every test run, which would defeat the
- * allowlist's own purpose. So this seeds `team` and `team_member` directly
- * through the service-role PostgREST connection instead of going through the
- * API. That is not a lesser form of authorization than the API's own: there
- * is no RLS anywhere in this schema (CLAUDE.md's golden rule 4 — the Go API
- * itself only ever connects with a service-role connection and enforces
- * tenancy in Go, never in Postgres), so this fixture's direct insert is
- * exactly as authorized as the API's own connection, it just skips the HTTP
- * hop and the maintainer check that exists to gate *real Vereine* asking for
- * a team, not a test seeding its own throwaway one.
+ * allowlist's own purpose. So this seeds `team` and `team_member` directly,
+ * over a plain Postgres connection (`E2E_DATABASE_URL`, `node-postgres`),
+ * instead of going through the API.
+ *
+ * That connection is deliberately not PostgREST (`supabase-js`'s
+ * `.from(...)`, i.e. `/rest/v1/`): this product never talks to PostgREST
+ * anywhere else — the Go API itself connects to Postgres directly with pgx —
+ * so a test fixture routing through it would couple the e2e suite to a
+ * service that isn't part of the system, and PostgREST outages (schema-cache
+ * failures, in particular) have already broken this suite for reasons that
+ * have nothing to do with the app. A direct connection is also not a lesser
+ * form of authorization than the API's own: there is no RLS anywhere in this
+ * schema (CLAUDE.md's golden rule 4 — the Go API itself only ever connects
+ * with a service-role-equivalent connection and enforces tenancy in Go, never
+ * in Postgres), so this fixture's direct insert is exactly as authorized as
+ * the API's own connection, it just skips the HTTP hop (of either PostgREST
+ * or the API) and the maintainer check that exists to gate *real Vereine*
+ * asking for a team, not a test seeding its own throwaway one.
+ *
+ * User creation and session minting still go through the Supabase Admin API
+ * (GoTrue, `/auth/v1/admin/*`) — a different service from PostgREST, and one
+ * this product's own login flow already depends on, so it stays as is.
  */
 
 interface SessionCookie {
@@ -141,9 +156,14 @@ export const test = base.extend<{ teamId: string }>({
 	teamId: async ({ context, baseURL }, use): Promise<void> => {
 		const url = process.env.SUPABASE_URL;
 		const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-		if (!url || !serviceRoleKey) {
+		const databaseUrl = process.env.E2E_DATABASE_URL;
+		if (!url || !serviceRoleKey || !databaseUrl) {
+			const missing: string[] = [];
+			if (!url) missing.push('SUPABASE_URL');
+			if (!serviceRoleKey) missing.push('SUPABASE_SERVICE_ROLE_KEY');
+			if (!databaseUrl) missing.push('E2E_DATABASE_URL');
 			throw new Error(
-				'SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required for authenticated e2e. ' +
+				`${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} required for authenticated e2e. ` +
 					'Without them these specs would run signed out and pass against the login page — ' +
 					'the same failure the protection-bypass work fixed in September.',
 			);
@@ -155,6 +175,9 @@ export const test = base.extend<{ teamId: string }>({
 		if (!baseURL) throw new Error('baseURL fixture is unset — check playwright.config.ts');
 
 		const admin = createClient(url, serviceRoleKey);
+		const db = new PgClient({ connectionString: databaseUrl });
+		await db.connect();
+
 		const email = `e2e-${randomUUID()}@example.com`;
 
 		let userId: string | undefined;
@@ -173,24 +196,21 @@ export const test = base.extend<{ teamId: string }>({
 			}
 			userId = created.user.id;
 
-			const { data: team, error: teamError } = await admin
-				.from('team')
-				.insert({ name: `e2e ${randomUUID()}` })
-				.select<'id', { id: string }>('id')
-				.single();
-			// Same discriminated-union narrowing as above: `teamError` falsy means
-			// `team` is the non-null success row, never both falsy at once.
-			if (teamError) {
-				throw new Error(`could not seed the e2e fixture team: ${teamError.message}`);
+			const teamResult = await db.query<{ id: string }>(
+				'insert into team (name) values ($1) returning id',
+				[`e2e ${randomUUID()}`],
+			);
+			const team = teamResult.rows[0];
+			if (!team) {
+				throw new Error('could not seed the e2e fixture team: insert returned no row');
 			}
 			teamId = team.id;
 
-			const { error: memberError } = await admin
-				.from('team_member')
-				.insert({ role: 'owner', team_id: teamId, user_id: userId });
-			if (memberError) {
-				throw new Error(`could not seed the e2e fixture team membership: ${memberError.message}`);
-			}
+			await db.query('insert into team_member (team_id, user_id, role) values ($1, $2, $3)', [
+				teamId,
+				userId,
+				'owner',
+			]);
 
 			const cookies = await mintSessionCookies(admin, url, serviceRoleKey, email);
 			await context.addCookies(toBrowserCookies(cookies, baseURL));
@@ -203,7 +223,8 @@ export const test = base.extend<{ teamId: string }>({
 			// created for the team. `team_member`/`link`/`domain`/`tag` all cascade
 			// from `team` itself (`on delete cascade`), so deleting the team first
 			// leaves nothing behind for the user delete to trip over.
-			if (teamId !== undefined) await admin.from('team').delete().eq('id', teamId);
+			if (teamId !== undefined) await db.query('delete from team where id = $1', [teamId]);
+			await db.end();
 			if (userId !== undefined) await admin.auth.admin.deleteUser(userId);
 		}
 	},
