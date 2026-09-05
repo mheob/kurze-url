@@ -31,7 +31,7 @@ These bind every task. They are the project's rules, restated so you do not have
   - Breaking changes: `feat!:` or a `BREAKING CHANGE:` footer.
   - **No co-author or generator footer**, in commits or pull requests.
   - One logical change per commit.
-- Run from the repo root before every commit: `pnpm format`, `pnpm lint`, `pnpm typecheck`, `pnpm test`.
+- Run from the repo root before every commit: `pnpm format`, `pnpm lint`, `pnpm typecheck`, `pnpm test`. **Also run `pnpm --filter @kurze-url/web build` for any task touching `src/server/**`** — the whole-branch review found it catches a real `import-protection` failure that the other four gates all pass through. If a server function's logic lives in a separately exported, by-name-referenced helper that transitively imports `@tanstack/react-start/server` (directly, or through `flushSessionCookies`), wrap that helper in `createServerOnlyFn`; logic written inline inside a `.handler()` closure does not need it (see Task 4's `sendMagicLinkFor` versus Task 5's `signOut`).
 
 ### Falsification is part of every task, not a final pass
 
@@ -44,6 +44,22 @@ The auth guard is the trap in this plan. A test that visits an authenticated rou
 ### A note on the environment
 
 `SHARED_DOMAIN_HOSTNAME` is `short.invalid` in Production and Preview. Every link this UI creates therefore has a `short_url` that cannot resolve. That is deliberate and documented in `CLAUDE.md`'s Open items; Task 11 surfaces it in the UI. Do not "fix" it by pointing the app somewhere else.
+
+---
+
+## Corrections found during execution
+
+Twelve subagents implemented this plan; review — including one whole-branch pass — found several samples below to be wrong. Corrected in place so a re-run does not reinstate them. Read before the task bodies:
+
+- **Cookie adapter, Task 2 Step 4 (a security bug).** The original sample declared `setAll` with one parameter, dropping the `Cache-Control`/`Expires`/`Pragma` headers `@supabase/ssr` actually passes; hardcoded `SameSite=Lax` while appearing to read `options.sameSite`; hung a test seam off `globalThis.__lastSetAll`; and spread `{ ...SUPABASE_COOKIE_OPTIONS, ...options }`, which let the library's own `httpOnly: false` default win — **no session cookie was ever written with `HttpOnly`**. Only caught in the final whole-branch review, because the shipped test exercised `options: {}`, a shape the library never sends.
+- **No `request` on a server function's handler.** The installed `createServerFn` hands the handler `{ data, serverFnMeta, context, method }`, never `request`. Every sample below uses `getRequest()`/`getRequestUrl()`/`getRequestHeader()` from `@tanstack/react-start/server` instead.
+- **Cookie flushing was never mentioned, anywhere.** Reading a session is what refreshes it, and a refresh only reaches the browser through `flushSessionCookies` (`src/server/session.ts`, introduced in Task 3), which uses `getResponse().headers.append` — `setResponseHeader`/`setResponseHeaders` both clobber earlier `Set-Cookie` values, and session cookies are chunked. A missed flush is invisible until about an hour after a successful login.
+- **`_authed/index.tsx` is removed.** A pathless layout's own index file resolves to the same path (`/`) as the public marketing route and TanStack Router rejects the duplicate. The redirect moved to `routes/index.tsx`, which owns `/` for all three cases: signed out, signed in with memberships, signed in with none.
+- **German samples used formal _Sie_.** This project's user-facing German is informal (du/dich, ihr/euch), per `de.json`. Rewritten below wherever the plan diverged.
+- **Task 8's error shape was fictional.** With `throwOnError: true` the generated client throws the parsed `ErrorModel` directly — `status` and `errors` sit at the top level, there is no `.response`/`.error` wrapper. Huma also emits a bare `"body"` location for a request that failed to parse as JSON at all, which a naive `location.split('.').pop()` misfiles as a field named `body`.
+- **The gate list was missing a build.** `pnpm --filter @kurze-url/web build` is required for any task touching `src/server/**` — it catches a real `import-protection` failure that `format`, `lint`, `typecheck` and `test` all pass through. `createServerOnlyFn` is documented where it first becomes necessary (Task 4) and where it does not apply (Task 5's `signOut`).
+- **Task 9 guessed.** `data.items` and the Query integration package (`@tanstack/react-router-with-query`) were both assumptions. Corrected against the generated client and the package actually used, `@tanstack/react-router-ssr-query`.
+- **A repeated test-seam mistake.** Two samples hung a test double off `globalThis`; both are rewritten to use `vi.hoisted` with a narrowly typed fake, the pattern this codebase's reviewers settled on after rejecting the `globalThis` version three times.
 
 ---
 
@@ -67,7 +83,6 @@ The auth guard is the trap in this plan. A test that visits an authenticated rou
 | Path | Responsibility |
 | --- | --- |
 | `apps/web/src/routes/_authed.tsx` | Pathless layout: guard, `/v1/me`, team context. |
-| `apps/web/src/routes/_authed/index.tsx` | Redirect to the last-used team. |
 | `apps/web/src/lib/current-team.ts` | The `team` cookie: read, validate against memberships, write. |
 | `apps/web/src/lib/current-team.test.ts` | Unit tests, including the stale-membership case. |
 | `apps/web/src/components/team-switcher.tsx` | Team menu; writes the cookie. |
@@ -102,6 +117,7 @@ The auth guard is the trap in this plan. A test that visits an authenticated rou
 | --- | --- |
 | `apps/web/package.json` | Add `@tanstack/react-query`, `@tanstack/react-form`, `@supabase/ssr`, `@supabase/supabase-js`. |
 | `apps/web/src/router.tsx` | Provide a `QueryClient`. |
+| `apps/web/src/routes/index.tsx` | The existing public `/` route grows the three-way outcome (marketing shell, redirect to the last-used team, no-team message) that `_authed/index.tsx` would otherwise have owned — see "Corrections found during execution". |
 | `apps/web/src/i18n/locales/{en,de}.json` | Every new string, in both. |
 | `apps/web/e2e/i18n.spec.ts` | Extend the crawl to authenticated pages. |
 | `.github/workflows/ci-js.yml` | Pass the preview project's service-role key to Playwright. |
@@ -217,6 +233,7 @@ Invoke the `create-commit` skill to compose the message rather than pasting the 
 - Consumes: Task 1's environment variables.
 - Produces:
   - `createSupabase(request: Request, headers: Headers): SupabaseClient`
+  - `createCookieAdapter(request: Request, headers: Headers)` — the `getAll`/`setAll` pair, factored out of `createSupabase` so it can be exercised directly in tests instead of through a global.
   - `SUPABASE_COOKIE_OPTIONS` — the options every auth cookie is written with.
 
 Tasks 3, 4, 5 and 6 all call `createSupabase`.
@@ -233,9 +250,9 @@ Note the resolved versions in your task report. This repo has a `minimumReleaseA
 
 ```ts
 // apps/web/src/server/supabase.test.ts
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createSupabase } from './supabase';
+import { createCookieAdapter, createSupabase } from './supabase';
 
 /**
  * The adapter's write path is the one that looks optional and is not.
@@ -245,6 +262,18 @@ import { createSupabase } from './supabase';
  * an hour later, in production, as a login that silently stops working.
  */
 describe('createSupabase', () => {
+	// createSupabase reads these from process.env at call time, so an unset
+	// pair throws before the adapter under test ever runs. Task 1 (the real
+	// project) is maintainer work, gated separately from this task.
+	beforeEach(() => {
+		vi.stubEnv('SUPABASE_URL', 'https://project.supabase.test');
+		vi.stubEnv('SUPABASE_PUBLISHABLE_KEY', 'test-publishable-key');
+	});
+
+	afterEach(() => {
+		vi.unstubAllEnvs();
+	});
+
 	it('reads cookies from the request', async () => {
 		const request = new Request('https://example.test/', {
 			headers: { cookie: 'sb-access-token=abc; other=x' },
@@ -256,33 +285,95 @@ describe('createSupabase', () => {
 		expect(client).toBeDefined();
 		expect(request.headers.get('cookie')).toContain('sb-access-token=abc');
 	});
+});
 
+/**
+ * createCookieAdapter is a pure function of (request, headers) — no shared
+ * state, so unlike createSupabase it needs no env stubbing, and its `setAll`
+ * can be called directly, the same way @supabase/ssr calls it during
+ * sign-in and refresh. This replaces a `globalThis.__lastSetAll` seam an
+ * earlier version of this test used: `no-underscore-dangle` and
+ * `no-unsafe-type-assertion` are error-level, and reviewers rejected that
+ * pattern in this codebase three times over.
+ */
+describe('createCookieAdapter', () => {
 	it('writes cookies onto the response headers', () => {
 		const request = new Request('https://example.test/');
 		const headers = new Headers();
+		const { setAll } = createCookieAdapter(request, headers);
 
-		createSupabase(request, headers);
-		// The adapter is exercised directly: @supabase/ssr calls setAll during
-		// sign-in and refresh, and nothing else in the app would notice if it
-		// were a no-op.
-		const setAll = (globalThis as { __lastSetAll?: (c: unknown[]) => void }).__lastSetAll;
-		expect(setAll).toBeTypeOf('function');
-		setAll?.([{ name: 'sb-x', value: 'y', options: {} }]);
+		setAll([{ name: 'sb-x', value: 'y', options: {} }]);
 
 		expect(headers.get('set-cookie')).toContain('sb-x=y');
 	});
 
 	it('marks auth cookies httpOnly, Secure and SameSite=Lax', () => {
+		// The shape @supabase/ssr's own default cookie options actually send —
+		// notably httpOnly: false — not `{}`. `{}` is a shape production never
+		// produces, and it is what let a merge-order bug pass silently: an
+		// earlier version of `serialize` spread `options` last, so this
+		// library default clobbered the app's `httpOnly: true` policy and
+		// every session cookie shipped readable by JavaScript.
 		const request = new Request('https://example.test/');
 		const headers = new Headers();
-		createSupabase(request, headers);
-		const setAll = (globalThis as { __lastSetAll?: (c: unknown[]) => void }).__lastSetAll;
-		setAll?.([{ name: 'sb-x', value: 'y', options: {} }]);
+		const { setAll } = createCookieAdapter(request, headers);
+
+		setAll([
+			{
+				name: 'sb-x',
+				value: 'y',
+				options: { path: '/', sameSite: 'lax', httpOnly: false, maxAge: 34560000 },
+			},
+		]);
 
 		const cookie = headers.get('set-cookie') ?? '';
 		expect(cookie).toContain('HttpOnly');
+		expect(cookie).toContain('Secure');
 		expect(cookie).toContain('SameSite=Lax');
 		expect(cookie).toContain('Path=/');
+		// maxAge is not one of the four app-policy attributes, so a
+		// caller-supplied value must still come through unchanged.
+		expect(cookie).toContain('Max-Age=34560000');
+	});
+
+	it('forces SameSite=Lax as app policy even if a caller asks for Strict', () => {
+		// httpOnly/secure/sameSite/path are app policy, not a library or
+		// caller suggestion, so SUPABASE_COOKIE_OPTIONS must win the merge and
+		// a caller-supplied `strict` must never reach the response.
+		const request = new Request('https://example.test/');
+		const headers = new Headers();
+		const { setAll } = createCookieAdapter(request, headers);
+
+		setAll([{ name: 'sb-x', value: 'y', options: { sameSite: 'strict' } }]);
+
+		const cookie = headers.get('set-cookie') ?? '';
+		expect(cookie).toContain('SameSite=Lax');
+		expect(cookie).not.toContain('SameSite=Strict');
+	});
+
+	it('applies the response headers @supabase/ssr passes alongside cookies', () => {
+		// @supabase/ssr calls setAll with a second argument on every write — a
+		// Cache-Control/Expires/Pragma bundle, so a CDN or reverse proxy in
+		// front of this app never caches a response carrying one person's
+		// session cookie for another. A `setAll` declaring only the cookies
+		// parameter silently drops it: TypeScript does not catch this,
+		// because a callback declaring fewer parameters than its type allows
+		// is structurally valid.
+		const request = new Request('https://example.test/');
+		const headers = new Headers();
+		const { setAll } = createCookieAdapter(request, headers);
+
+		setAll([], {
+			'Cache-Control': 'private, no-cache, no-store, must-revalidate, max-age=0',
+			Expires: '0',
+			Pragma: 'no-cache',
+		});
+
+		expect(headers.get('cache-control')).toBe(
+			'private, no-cache, no-store, must-revalidate, max-age=0',
+		);
+		expect(headers.get('expires')).toBe('0');
+		expect(headers.get('pragma')).toBe('no-cache');
 	});
 });
 ```
@@ -313,12 +404,22 @@ export const SUPABASE_COOKIE_OPTIONS: CookieOptions = {
 	path: '/',
 };
 
+// Mirrors the `cookie` package's own sameSite mapping (the same package
+// @supabase/ssr's CookieOptions type is defined against): `true` and
+// `'strict'` both serialize to `Strict`; only `'none'` serializes to `None`.
+// Anything else — in practice just `'lax'` — serializes to `Lax`.
+function sameSiteValue(sameSite: NonNullable<CookieOptions['sameSite']>): string {
+	if (sameSite === true || sameSite === 'strict') return 'Strict';
+	if (sameSite === 'none') return 'None';
+	return 'Lax';
+}
+
 function serialize(name: string, value: string, options: CookieOptions): string {
 	const parts = [`${name}=${value}`, `Path=${options.path ?? '/'}`];
 	if (options.maxAge !== undefined) parts.push(`Max-Age=${options.maxAge}`);
 	if (options.httpOnly) parts.push('HttpOnly');
 	if (options.secure) parts.push('Secure');
-	if (options.sameSite) parts.push(`SameSite=Lax`);
+	if (options.sameSite) parts.push(`SameSite=${sameSiteValue(options.sameSite)}`);
 	return parts.join('; ');
 }
 
@@ -337,6 +438,44 @@ function parse(cookieHeader: string | null): { name: string; value: string }[] {
 }
 
 /**
+ * Pure request/response binding with no shared state of any kind — factored
+ * out of `createSupabase` so it can be exercised directly in tests instead of
+ * through a global. @supabase/ssr always passes a second `setAll` argument
+ * (response headers it wants applied alongside the cookies); it is declared
+ * optional here only so a test exercising the cookie half alone can call
+ * `setAll` with one argument.
+ */
+export function createCookieAdapter(
+	request: Request,
+	headers: Headers,
+): {
+	getAll: () => { name: string; value: string }[];
+	setAll: (
+		cookies: { name: string; value: string; options: CookieOptions }[],
+		responseHeaders?: Record<string, string>,
+	) => void;
+} {
+	return {
+		getAll: () => parse(request.headers.get('cookie')),
+		setAll: (cookies, responseHeaders) => {
+			for (const { name, value, options } of cookies) {
+				// `{ ...options, ...SUPABASE_COOKIE_OPTIONS }` — app policy spread
+				// LAST. See the paragraph below the code block: reversing this
+				// order is the security bug this task exists to avoid
+				// reinstating.
+				headers.append(
+					'set-cookie',
+					serialize(name, value, { ...options, ...SUPABASE_COOKIE_OPTIONS }),
+				);
+			}
+			for (const [key, value] of Object.entries(responseHeaders ?? {})) {
+				headers.set(key, value);
+			}
+		},
+	};
+}
+
+/**
  * Bound to one request and one outgoing header set. Never module-level: the
  * frontend renders on the server, where one process serves many people, and a
  * shared client would leak one person's session into another's request — the
@@ -349,37 +488,29 @@ export function createSupabase(request: Request, headers: Headers): SupabaseClie
 		throw new Error('SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY are required');
 	}
 
-	const setAll = (cookies: { name: string; value: string; options: CookieOptions }[]): void => {
-		for (const { name, value, options } of cookies) {
-			headers.append(
-				'set-cookie',
-				serialize(name, value, { ...SUPABASE_COOKIE_OPTIONS, ...options }),
-			);
-		}
-	};
-	// Exposed for the adapter's own tests: @supabase/ssr only calls setAll
-	// during sign-in and refresh, so nothing else in the app would notice a
-	// no-op write path.
-	(globalThis as { __lastSetAll?: typeof setAll }).__lastSetAll = setAll;
-
 	return createServerClient(url, key, {
-		cookies: { getAll: () => parse(request.headers.get('cookie')), setAll },
+		cookies: createCookieAdapter(request, headers),
+		cookieOptions: SUPABASE_COOKIE_OPTIONS,
 	});
 }
 ```
 
+**The spread order in `setAll` is the load-bearing line in this file.** `@supabase/ssr@0.12.5` calls `setAll` with its own default `CookieOptions` on every cookie it writes — including `httpOnly: false` — and this adapter must merge that against `SUPABASE_COOKIE_OPTIONS`. Spread `SUPABASE_COOKIE_OPTIONS` first and the library's `options` last (`{ ...SUPABASE_COOKIE_OPTIONS, ...options }`) and the library's `httpOnly: false` wins the merge: **no session cookie is ever written with `HttpOnly`**, and the access token becomes readable by any script on the page. This exact bug shipped in this plan's first pass, and only a final whole-branch review caught it — the task's own test, at the time, called `setAll` with `options: {}`, a shape `@supabase/ssr` never actually sends, so it passed regardless of merge order. Spread app policy **last** (`{ ...options, ...SUPABASE_COOKIE_OPTIONS }`, as above), and test it against the shape the library really sends, not `{}` — see the second test in Step 2.
+
 - [ ] **Step 5: Run the tests and watch them pass**
 
-Run: `pnpm --filter @kurze-url/web exec vitest run --project unit src/server/supabase.test.ts` Expected: PASS, 3 tests.
+Run: `pnpm --filter @kurze-url/web exec vitest run --project unit src/server/supabase.test.ts` Expected: PASS, 5 tests.
 
 - [ ] **Step 6: Falsify**
 
-Replace the body of `setAll` with `return;` and re-run. Expected: the second and third tests fail, the first still passes. If all three still pass, the write path is not actually under test — fix the test, not the code. Record the result in your task report.
+Replace the body of `setAll` with `return;` and re-run. Expected: all four `createCookieAdapter` tests fail; `createSupabase`'s own "reads cookies from the request" test still passes, since it never calls `setAll`. If everything still passes, the write path is not actually under test — fix the test, not the code.
+
+Then, separately, swap the merge order back to `{ ...SUPABASE_COOKIE_OPTIONS, ...options }` and re-run. Expected: only "marks auth cookies httpOnly, Secure and SameSite=Lax" fails — that merge order is the security bug described above. Restore the correct order before committing. Record both results in your task report.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-pnpm format && pnpm lint && pnpm typecheck
+pnpm format && pnpm lint && pnpm typecheck && pnpm --filter @kurze-url/web build
 but commit -b <branch> apps/web/package.json apps/web/src/server/supabase.ts apps/web/src/server/supabase.test.ts pnpm-lock.yaml -m "feat(web): bind Supabase to a read/write cookie adapter"
 ```
 
@@ -401,9 +532,11 @@ Invoke the `create-commit` skill to compose the message rather than pasting the 
   - `getAccessToken(request: Request, headers: Headers): Promise<string | undefined>`
   - `requireSession(request: Request, headers: Headers): Promise<{ accessToken: string }>` — throws `UnauthenticatedError` when there is none
   - `class UnauthenticatedError extends Error`
+  - `isUnauthenticatedError(error: unknown): boolean` — the check every caller must use instead of `error instanceof UnauthenticatedError` (see Step 3)
   - `authedApiClient(accessToken: string): ReturnType<typeof getApiClient>`
+  - `flushSessionCookies(headers: Headers): void` — carries cookies written into a throwaway `Headers` onto the real response (see Step 3)
 
-Every server function in Tasks 4, 6, 7 and 10 calls `requireSession` then `authedApiClient`.
+Every server function from Task 4 onward calls `requireSession`, then, once it is done reading or writing the session, `flushSessionCookies`, then `authedApiClient`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -411,33 +544,62 @@ Every server function in Tasks 4, 6, 7 and 10 calls `requireSession` then `authe
 // apps/web/src/server/session.test.ts
 import { describe, expect, it, vi } from 'vitest';
 
-import { UnauthenticatedError, getAccessToken, requireSession } from './session';
+import {
+	UnauthenticatedError,
+	flushSessionCookies,
+	getAccessToken,
+	requireSession,
+} from './session';
 
-vi.mock('./supabase', () => ({
-	createSupabase: vi.fn(() => ({
-		auth: {
-			getSession: vi.fn(async () => globalThis.__session),
-		},
-	})),
+/**
+ * Deliberately not the real SupabaseClient shape — only the slice
+ * getAccessToken actually reaches through. A `vi.hoisted` fake, not a
+ * `globalThis` seam: `no-underscore-dangle` and `no-unsafe-type-assertion`
+ * are error-level here, and a mutable global written on every call is
+ * exactly the pattern Task 2's review rejected.
+ */
+interface FakeSupabaseClient {
+	auth: {
+		getSession: () => Promise<{ data: { session: { access_token: string } | null }; error: null }>;
+	};
+}
+
+/** Only the slice flushSessionCookies reaches through. */
+interface FakeResponse {
+	headers: { append: (name: string, value: string) => void };
+}
+
+const mocks = vi.hoisted(() => ({
+	createSupabase: vi.fn<(request: Request, headers: Headers) => FakeSupabaseClient>(),
+	getResponse: vi.fn<() => FakeResponse>(),
 }));
 
-declare global {
-	// eslint-disable-next-line no-var
-	var __session: { data: { session: { access_token: string } | null }; error: null };
-}
+vi.mock('./supabase', () => ({ createSupabase: mocks.createSupabase }));
+vi.mock('@tanstack/react-start/server', () => ({ getResponse: mocks.getResponse }));
 
 function req(): [Request, Headers] {
 	return [new Request('https://example.test/'), new Headers()];
 }
 
+function withSession(accessToken: string | null): void {
+	mocks.createSupabase.mockReturnValue({
+		auth: {
+			getSession: vi.fn(async () => ({
+				data: { session: accessToken ? { access_token: accessToken } : null },
+				error: null,
+			})),
+		},
+	});
+}
+
 describe('getAccessToken', () => {
 	it('returns the token when a session exists', async () => {
-		globalThis.__session = { data: { session: { access_token: 'tok' } }, error: null };
+		withSession('tok');
 		await expect(getAccessToken(...req())).resolves.toBe('tok');
 	});
 
 	it('returns undefined when there is no session', async () => {
-		globalThis.__session = { data: { session: null }, error: null };
+		withSession(null);
 		await expect(getAccessToken(...req())).resolves.toBeUndefined();
 	});
 });
@@ -447,13 +609,40 @@ describe('requireSession', () => {
 		// The guard must fail closed. Returning '' here would send an
 		// unauthenticated request to the API, which answers 401 — the same
 		// symptom, three layers further away from the cause.
-		globalThis.__session = { data: { session: null }, error: null };
+		withSession(null);
 		await expect(requireSession(...req())).rejects.toBeInstanceOf(UnauthenticatedError);
 	});
 
 	it('returns the token when a session exists', async () => {
-		globalThis.__session = { data: { session: { access_token: 'tok' } }, error: null };
+		withSession('tok');
 		await expect(requireSession(...req())).resolves.toEqual({ accessToken: 'tok' });
+	});
+});
+
+describe('flushSessionCookies', () => {
+	/**
+	 * The defect this guards against: `createSupabase(request, headers)`
+	 * writes into a Headers object nothing else reads. A no-op
+	 * flushSessionCookies would pass every other test in this file — they
+	 * never inspect `headers` after the call — while leaving a freshly
+	 * created or refreshed session with nowhere to go.
+	 */
+	it('appends every Set-Cookie the adapter wrote onto the real response', () => {
+		const appended: string[] = [];
+		mocks.getResponse.mockReturnValue({
+			headers: { append: (name, value) => appended.push(`${name}: ${value}`) },
+		});
+
+		const adapterHeaders = new Headers();
+		adapterHeaders.append('set-cookie', 'sb-access-token=abc; Path=/; HttpOnly');
+		adapterHeaders.append('set-cookie', 'sb-refresh-token=def; Path=/; HttpOnly');
+
+		flushSessionCookies(adapterHeaders);
+
+		expect(appended).toEqual([
+			'set-cookie: sb-access-token=abc; Path=/; HttpOnly',
+			'set-cookie: sb-refresh-token=def; Path=/; HttpOnly',
+		]);
 	});
 });
 ```
@@ -464,8 +653,11 @@ Run: `pnpm --filter @kurze-url/web exec vitest run --project unit src/server/ses
 
 - [ ] **Step 3: Implement**
 
-```ts
+````ts
 // apps/web/src/server/session.ts
+import { createServerOnlyFn } from '@tanstack/react-start';
+import { getResponse } from '@tanstack/react-start/server';
+
 import { getApiClient } from './api';
 import { createSupabase } from './supabase';
 
@@ -506,10 +698,79 @@ export async function requireSession(
 	return { accessToken };
 }
 
+/**
+ * Not a plain `error instanceof UnauthenticatedError`. That check only holds
+ * for the very first, server-rendered pass through a route's loader — a
+ * later client-side navigation turns the same server function into a real
+ * HTTP round trip, and a thrown error crossing that boundary is serialised
+ * (seroval, inside `@tanstack/start-server-core`) and reconstructed on the
+ * other side. seroval only special-cases the built-in `Error` subclasses; an
+ * application-defined one like `UnauthenticatedError` comes back as a plain
+ * `Error` with `.name` restored, not as an instance of the original class.
+ * Both `routes/_authed.tsx` (Task 6) and `routes/index.tsx` (Task 7) need
+ * this identical check, so it lives here rather than in either route file.
+ */
+export function isUnauthenticatedError(error: unknown): boolean {
+	return error instanceof Error && error.name === UnauthenticatedError.name;
+}
+
 export function authedApiClient(accessToken: string): ReturnType<typeof getApiClient> {
 	return getApiClient(undefined, () => accessToken);
 }
-```
+
+/**
+ * `createSupabase(request, headers)` writes cookies into the `Headers`
+ * object the caller passed in — never into the actual HTTP response. Nothing
+ * carries that on its own: a caller that builds a throwaway `Headers`, hands
+ * it to `createSupabase`, and never does anything else with it has silently
+ * thrown away every cookie Supabase wrote. That includes a brand-new session
+ * and, just as easily missed, a *refreshed* one — reading a session is
+ * itself what renews an expiring one, so this bites on a long-lived tab
+ * under normal use, not only at sign-in. **If a caller forgets this call,
+ * the symptom is a login that appears to succeed and then silently reverts
+ * to signed-out about an hour later** — there is no error, no failed
+ * request, just a cookie the browser never received.
+ *
+ * Call it once per request, after the last `createSupabase`-backed call
+ * whose cookies matter, passing the same `Headers` instance that was
+ * threaded into `createSupabase`:
+ *
+ * ```ts
+ * const headers = new Headers();
+ * const { accessToken } = await requireSession(request, headers);
+ * flushSessionCookies(headers);
+ * ```
+ *
+ * Uses `getResponse().headers.append`, not `@tanstack/start-server-core`'s
+ * `setResponseHeader`/`setResponseHeaders`: there is no exported
+ * `appendResponseHeader`, and `set-cookie` is the one header where multiple
+ * values are legitimate, not a bug — session cookies are chunked, so more
+ * than one is the common case. `setResponseHeaders` (plural) calls the
+ * underlying `Headers.set`, which discards every cookie but the last when
+ * more than one is pending. `setResponseHeader` (singular) does support
+ * multiple values, but only by first deleting any `set-cookie` the response
+ * already carries — safe the first time this runs in a request, but a
+ * second call (a route that reads the session more than once) wipes out the
+ * first call's cookies instead of adding to them. `getResponse()` returns
+ * the same per-request response object those helpers mutate, and its
+ * `.headers` is a plain `Headers` — `.append` adds without touching what is
+ * already there, so this stays correct no matter how many times, or where,
+ * it is called within one request.
+ *
+ * Wrapped in `createServerOnlyFn`: `isUnauthenticatedError` above is
+ * referenced from route files that also run on the client, so this whole
+ * module resolves into the client bundle. Without the wrap, this function's
+ * own top-level `getResponse` import trips `pnpm --filter @kurze-url/web
+ * build`'s `import-protection` check — see Task 4's note on
+ * `createServerOnlyFn` for when the wrap is and is not needed.
+ */
+export const flushSessionCookies = createServerOnlyFn((headers: Headers): void => {
+	const response = getResponse();
+	for (const cookie of headers.getSetCookie()) {
+		response.headers.append('set-cookie', cookie);
+	}
+});
+````
 
 - [ ] **Step 4: Extend `getApiClient` to accept a token supplier**
 
@@ -528,16 +789,18 @@ export function getApiClient(
 
 - [ ] **Step 5: Run the tests and watch them pass**
 
-Run: `pnpm --filter @kurze-url/web exec vitest run --project unit src/server/session.test.ts` Expected: PASS, 4 tests.
+Run: `pnpm --filter @kurze-url/web exec vitest run --project unit src/server/session.test.ts` Expected: PASS, 5 tests.
 
 - [ ] **Step 6: Falsify**
 
-Change `requireSession` to `return { accessToken: accessToken ?? '' }`. Expected: the "throws UnauthenticatedError" test fails and nothing else does. Record it.
+Change `requireSession` to `return { accessToken: accessToken ?? '' }`. Expected: the "throws UnauthenticatedError" test fails and nothing else does.
+
+Then, separately, make `flushSessionCookies`'s body a no-op. Expected: only "appends every Set-Cookie the adapter wrote onto the real response" fails — a false pass here is exactly the "login works, then silently reverts to signed-out" failure this helper exists to prevent. Record both results.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-pnpm format && pnpm lint && pnpm typecheck && pnpm test
+pnpm format && pnpm lint && pnpm typecheck && pnpm test && pnpm --filter @kurze-url/web build
 but commit -b <branch> apps/web/src/server/session.ts apps/web/src/server/session.test.ts apps/web/src/server/api.ts -m "feat(web): read the session and build an authenticated API client"
 ```
 
@@ -554,8 +817,10 @@ Invoke the `create-commit` skill to compose the message rather than pasting the 
 
 **Interfaces:**
 
-- Consumes: `createSupabase` from Task 2.
+- Consumes: `createSupabase` from Task 2; `flushSessionCookies` from Task 3.
 - Produces: `sendMagicLink` — a server function taking `{ email: string }` and resolving to `{ sent: true }` **always**.
+
+This is the first server function in the plan, so two things earned from Tasks 2 and 3 apply here for the first time and are explained once, below: `getRequest`/`getRequestUrl` instead of a `request` field on the handler, and the `flushSessionCookies` call.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -563,8 +828,37 @@ Invoke the `create-commit` skill to compose the message rather than pasting the 
 // apps/web/src/server/auth.test.ts
 import { describe, expect, it, vi } from 'vitest';
 
-const signInWithOtp = vi.fn();
-vi.mock('./supabase', () => ({ createSupabase: () => ({ auth: { signInWithOtp } }) }));
+/** Only the slice sendMagicLinkFor actually reaches through. */
+interface FakeSupabaseClient {
+	auth: {
+		signInWithOtp: (options: {
+			email: string;
+			options: { emailRedirectTo: string; shouldCreateUser: boolean };
+		}) => Promise<{ error: { message: string } | null }>;
+	};
+}
+
+/** Only the slice flushSessionCookies reaches through — see session.test.ts. */
+interface FakeResponse {
+	headers: { append: (name: string, value: string) => void };
+}
+
+const mocks = vi.hoisted(() => ({
+	signInWithOtp: vi.fn<FakeSupabaseClient['auth']['signInWithOtp']>(),
+	getResponse: vi.fn<() => FakeResponse>(() => ({ headers: { append: () => undefined } })),
+}));
+
+vi.mock('./supabase', () => ({
+	// Simulates the one thing the flush test below needs from the real
+	// adapter: @supabase/ssr writes the PKCE code verifier cookie into
+	// `headers` synchronously, before signInWithOtp's HTTP call resolves.
+	createSupabase: (_request: Request, headers: Headers): FakeSupabaseClient => {
+		headers.append('set-cookie', 'sb-pkce-code-verifier=abc; Path=/; HttpOnly');
+		return { auth: { signInWithOtp: mocks.signInWithOtp } };
+	},
+}));
+
+vi.mock('@tanstack/react-start/server', () => ({ getResponse: mocks.getResponse }));
 
 const { sendMagicLinkFor } = await import('./auth');
 
@@ -574,11 +868,11 @@ describe('sendMagicLinkFor', () => {
 		// creation and members arrive through inviteUserByEmail. Left at its
 		// default, signInWithOtp would mint an auth.users row for any address
 		// anyone typed — a self-service signup door opened by accident.
-		signInWithOtp.mockResolvedValue({ error: null });
+		mocks.signInWithOtp.mockResolvedValue({ error: null });
 
 		await sendMagicLinkFor('someone@example.test', 'https://app.test');
 
-		expect(signInWithOtp).toHaveBeenCalledWith(
+		expect(mocks.signInWithOtp).toHaveBeenCalledWith(
 			expect.objectContaining({
 				options: expect.objectContaining({ shouldCreateUser: false }),
 			}),
@@ -589,14 +883,34 @@ describe('sendMagicLinkFor', () => {
 		// With account creation off, Supabase distinguishes known from unknown.
 		// The UI must not: otherwise the login form becomes an oracle for
 		// which addresses belong to a Verein.
-		signInWithOtp.mockResolvedValue({ error: null });
+		mocks.signInWithOtp.mockResolvedValue({ error: null });
 		const known = await sendMagicLinkFor('known@example.test', 'https://app.test');
 
-		signInWithOtp.mockResolvedValue({ error: { message: 'Signups not allowed for otp' } });
+		mocks.signInWithOtp.mockResolvedValue({ error: { message: 'Signups not allowed for otp' } });
 		const unknown = await sendMagicLinkFor('unknown@example.test', 'https://app.test');
 
 		expect(unknown).toEqual(known);
 		expect(unknown).toEqual({ sent: true });
+	});
+
+	/**
+	 * `sendMagicLinkFor` builds a `Headers` object, lets `signInWithOtp` write
+	 * the PKCE verifier cookie into it, and must not discard it: without the
+	 * flush, the verifier never reaches the browser, and `/auth/callback`'s
+	 * `exchangeCodeForSession` has nothing to consume — login breaks end to
+	 * end, not merely a session refresh silently dropped. With
+	 * `flushSessionCookies` removed, `appended` stays empty.
+	 */
+	it('flushes the PKCE verifier cookie onto the real response', async () => {
+		mocks.signInWithOtp.mockResolvedValue({ error: null });
+		const appended: string[] = [];
+		mocks.getResponse.mockReturnValue({
+			headers: { append: (name, value) => appended.push(`${name}: ${value}`) },
+		});
+
+		await sendMagicLinkFor('someone@example.test', 'https://app.test');
+
+		expect(appended).toEqual(['set-cookie: sb-pkce-code-verifier=abc; Path=/; HttpOnly']);
 	});
 });
 ```
@@ -609,16 +923,40 @@ Run: `pnpm --filter @kurze-url/web exec vitest run --project unit src/server/aut
 
 ```ts
 // apps/web/src/server/auth.ts
-import { createServerFn } from '@tanstack/react-start';
+import { createServerFn, createServerOnlyFn } from '@tanstack/react-start';
+import { getRequestUrl } from '@tanstack/react-start/server';
 
+import { flushSessionCookies } from './session';
 import { createSupabase } from './supabase';
 
 /**
  * Extracted from the server function so it can be tested without a request:
  * the enumeration guarantee is the interesting behaviour, and it should not
  * need a framework harness to assert.
+ *
+ * The `headers` built here are not discarded, even though this call passes a
+ * synthetic `new Request(origin)` with none of the real visitor's cookies:
+ * `signInWithOtp`'s PKCE flow writes the code verifier cookie through the
+ * adapter's `setAll` before the OTP request is even sent, on both the
+ * known- and unknown-address paths. `flushSessionCookies` carries it onto
+ * the real response.
+ *
+ * Wrapped in `createServerOnlyFn`, TanStack Start's own documented answer to
+ * this shape: this is a plain, separately-exported helper referenced *by
+ * name* from `sendMagicLink`'s `.handler()` below (done deliberately so the
+ * enumeration guarantee is testable without a request), and once it calls
+ * `flushSessionCookies` — which reaches `getResponse` from
+ * `@tanstack/react-start/server` — that import becomes reachable from the
+ * client bundle too. Left unwrapped, `pnpm --filter @kurze-url/web build`
+ * fails with a real `import-protection` error; `format`, `lint`,
+ * `typecheck` and `test` all pass regardless, which is why the build has to
+ * be its own gate (see the Global Constraints note). Under Vitest,
+ * `createServerOnlyFn` is the identity function, so this file's tests are
+ * unaffected either way. Contrast `signOut` in Task 5: its equivalent logic
+ * stays inline inside a `.handler()` closure, and an inline closure does not
+ * need the wrap.
  */
-export async function sendMagicLinkFor(email: string, origin: string): Promise<{ sent: true }> {
+async function sendMagicLinkForImpl(email: string, origin: string): Promise<{ sent: true }> {
 	const headers = new Headers();
 	const supabase = createSupabase(new Request(origin), headers);
 
@@ -627,6 +965,8 @@ export async function sendMagicLinkFor(email: string, origin: string): Promise<{
 		options: { shouldCreateUser: false, emailRedirectTo: `${origin}/auth/callback` },
 	});
 
+	flushSessionCookies(headers);
+
 	// Deliberately ignoring the error. Supabase distinguishes a known address
 	// from an unknown one; surfacing that difference would turn this form into
 	// an account-enumeration oracle. Failures that matter (SMTP down) show up
@@ -634,18 +974,29 @@ export async function sendMagicLinkFor(email: string, origin: string): Promise<{
 	return { sent: true };
 }
 
+export const sendMagicLinkFor = createServerOnlyFn(sendMagicLinkForImpl);
+
+/**
+ * `getRequestUrl()`, not a `request` field on the handler's context: this
+ * version of `createServerFn` hands the handler only `{ data, serverFnMeta,
+ * context, method }`, nothing else. `getRequestUrl` reads the incoming
+ * request from the server's per-request AsyncLocalStorage, the same
+ * isomorphic-safe seam `__root.tsx`'s `getPreferences` uses for
+ * `getRequestHeader`. Every later server function in this plan makes the
+ * same correction; it is not called out again after this task.
+ */
 export const sendMagicLink = createServerFn({ method: 'POST' })
 	.validator((data: { email: string }) => data)
-	.handler(async ({ data, request }) => sendMagicLinkFor(data.email, new URL(request.url).origin));
+	.handler(async ({ data }) => sendMagicLinkFor(data.email, getRequestUrl().origin));
 ```
 
 - [ ] **Step 4: Run the test and watch it pass**
 
-Run: `pnpm --filter @kurze-url/web exec vitest run --project unit src/server/auth.test.ts` Expected: PASS, 2 tests.
+Run: `pnpm --filter @kurze-url/web exec vitest run --project unit src/server/auth.test.ts` Expected: PASS, 3 tests.
 
 - [ ] **Step 5: Falsify**
 
-Remove `shouldCreateUser: false`, re-run: the first test must fail. Then restore it and make the function return `{ sent: !error }`: the second test must fail. Record both.
+Remove `shouldCreateUser: false`, re-run: the first test must fail. Then restore it and make the function return `{ sent: !error }`: the second test must fail. Then restore that and remove the `flushSessionCookies` call: only "flushes the PKCE verifier cookie onto the real response" must fail. Record all three.
 
 - [ ] **Step 6: Add the strings, both languages**
 
@@ -676,7 +1027,7 @@ The English copy is deliberately conditional. "Check your email" would assert so
 - [ ] **Step 7: Commit**
 
 ```bash
-pnpm format && pnpm lint && pnpm typecheck && pnpm test
+pnpm format && pnpm lint && pnpm typecheck && pnpm test && pnpm --filter @kurze-url/web build
 but commit -b <branch> apps/web/src/server/auth.ts apps/web/src/server/auth.test.ts apps/web/src/i18n/locales -m "feat(web): send magic links without creating accounts"
 ```
 
@@ -693,7 +1044,7 @@ Invoke the `create-commit` skill to compose the message rather than pasting the 
 
 **Interfaces:**
 
-- Consumes: `sendMagicLink` (Task 4), `createSupabase` (Task 2).
+- Consumes: `sendMagicLink` (Task 4), `createSupabase` (Task 2), `flushSessionCookies` (Task 3).
 - Produces: routes `/login`, `/auth/callback`; server function `signOut`.
 
 - [ ] **Step 1: Write the failing test**
@@ -778,28 +1129,51 @@ export const Route = createFileRoute('/login')({ component: LoginForm });
 
 - [ ] **Step 4: Implement the callback**
 
+A route's `loader` has no `request` field either — its context is `{ params, context, location, ... }` — so the exchange runs inside its own server function, the same `getRequest()` correction as every other server function in this plan:
+
 ```tsx
 // apps/web/src/routes/auth.callback.tsx
 import { createFileRoute, redirect } from '@tanstack/react-router';
+import { createServerFn } from '@tanstack/react-start';
+import { getRequest } from '@tanstack/react-start/server';
 
+import { flushSessionCookies } from '../server/session';
 import { createSupabase } from '../server/supabase';
 
-export const Route = createFileRoute('/auth/callback')({
-	loader: async ({ location, request }) => {
+/**
+ * This is where the PKCE verifier cookie written during signInWithOtp is
+ * consumed. Most failures here — a reused code, an expired code, a missing
+ * verifier — come back as `error` rather than a rejection, so the result is
+ * reported rather than assumed: a caller that ignores it cannot tell a
+ * failed exchange from a successful one.
+ */
+const exchangeCodeForSession = createServerFn({ method: 'GET' }).handler(
+	async (): Promise<{ ok: boolean }> => {
+		const request = getRequest();
+		const code = new URL(request.url).searchParams.get('code');
+		if (!code) return { ok: false };
+
 		const headers = new Headers();
-		const code = new URL(location.href, 'https://placeholder.invalid').searchParams.get('code');
+		const supabase = createSupabase(request, headers);
+		const { error } = await supabase.auth.exchangeCodeForSession(code);
+		// The Set-Cookie headers the exchange produced must reach the real
+		// response, or the session is created and immediately lost — see
+		// flushSessionCookies's docstring in server/session.ts (Task 3).
+		flushSessionCookies(headers);
+		return { ok: error === null };
+	},
+);
 
-		if (code) {
-			const supabase = createSupabase(request, headers);
-			// This is where the PKCE verifier cookie written during
-			// signInWithOtp is consumed. If the adapter cannot read cookies,
-			// this fails with "code verifier should be non-empty".
-			await supabase.auth.exchangeCodeForSession(code);
-		}
-
-		// The Set-Cookie headers the exchange produced must travel with the
-		// redirect, or the session is created and immediately lost.
-		throw redirect({ to: '/', headers });
+export const Route = createFileRoute('/auth/callback')({
+	loader: async () => {
+		const { ok } = await exchangeCodeForSession();
+		// A failed exchange must not land where a successful one does — that
+		// indistinguishability would let a signed-out visitor look signed-in.
+		// Sending it to /login instead, with no detail on why it failed, keeps
+		// this from becoming a second enumeration oracle alongside
+		// sendMagicLinkFor's (reused vs. expired vs. missing verifier all look
+		// the same from here).
+		throw redirect({ to: ok ? '/' : '/login' });
 	},
 });
 ```
@@ -807,11 +1181,27 @@ export const Route = createFileRoute('/auth/callback')({
 - [ ] **Step 5: Add sign-out to `src/server/auth.ts`**
 
 ```ts
-export const signOut = createServerFn({ method: 'POST' }).handler(async ({ request }) => {
+import { getRequest } from '@tanstack/react-start/server';
+
+/**
+ * Written inline inside the `.handler()` closure, not extracted the way
+ * `sendMagicLinkFor` was in Task 4: nothing outside this handler needs to
+ * call this logic directly, so there is no separately-exported, by-name-
+ * referenced helper for the client build to trip over, and `createServerOnlyFn`
+ * is not needed here. It would be needed the moment this logic moved into its
+ * own exported function — see Task 4's note on exactly that distinction.
+ *
+ * `signOut` asks the cookie adapter to *clear* the session cookies — a
+ * setAll call like any other, and just as lost unless flushed. Without
+ * `flushSessionCookies`, this handler runs, the client sees a 200, and the
+ * browser keeps sending the same still-valid session cookie on its next
+ * request: a sign-out that silently does not sign anyone out.
+ */
+export const signOut = createServerFn({ method: 'POST' }).handler(async () => {
 	const headers = new Headers();
-	const supabase = createSupabase(request, headers);
+	const supabase = createSupabase(getRequest(), headers);
 	await supabase.auth.signOut();
-	return { headers };
+	flushSessionCookies(headers);
 });
 ```
 
@@ -826,7 +1216,7 @@ Replace the `<label>` with a `placeholder` attribute. Expected: the second test 
 - [ ] **Step 8: Commit**
 
 ```bash
-pnpm format && pnpm lint && pnpm typecheck && pnpm test
+pnpm format && pnpm lint && pnpm typecheck && pnpm test && pnpm --filter @kurze-url/web build
 but commit -b <branch> apps/web/src/routes/login.tsx apps/web/src/routes/login.test.tsx apps/web/src/routes/auth.callback.tsx apps/web/src/server/auth.ts -m "feat(web): add login, the auth callback and sign-out"
 ```
 
@@ -839,15 +1229,17 @@ Invoke the `create-commit` skill to compose the message rather than pasting the 
 **Files:**
 
 - Create: `apps/web/src/routes/_authed.tsx`, `apps/web/src/routes/_authed.test.ts`
-- Modify: `apps/web/src/server/links.ts` (created here with `fetchMe` only)
 
 **Interfaces:**
 
-- Consumes: `requireSession`, `authedApiClient` (Task 3).
+- Consumes: `requireSession`, `flushSessionCookies`, `isUnauthenticatedError`, `authedApiClient` (Task 3).
 - Produces:
-  - `fetchMe` — server function resolving `{ user_id: string; email: string; memberships: { team_id: string; name: string; role: string }[] }`
+  - `fetchMe` — server function resolving `Me`
+  - `interface Me { user_id: string; email: string; memberships: Membership[] }`, `interface Membership { team_id: string; name: string; role: string }` — both imported by `routes/index.tsx` (Task 7) and `lib/current-team.ts` (Task 7)
   - route context `{ me }` for every `_authed/*` route
   - `assertMembership(memberships, teamId): void` — throws `notFound()` when absent
+
+`fetchMe` lives here, in `_authed.tsx`, not in `server/links.ts` — its only consumer is this layout (and, via `../_authed` imports, `routes/index.tsx`). An earlier version of this task's Files block said otherwise; the code below is the authority.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -884,8 +1276,14 @@ Run: `pnpm --filter @kurze-url/web exec vitest run --project unit src/routes/_au
 import { getMe } from '@kurze-url/api-client';
 import { createFileRoute, notFound, Outlet, redirect } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
+import { getRequest } from '@tanstack/react-start/server';
 
-import { authedApiClient, requireSession, UnauthenticatedError } from '../server/session';
+import {
+	authedApiClient,
+	flushSessionCookies,
+	isUnauthenticatedError,
+	requireSession,
+} from '../server/session';
 
 export interface Membership {
 	team_id: string;
@@ -893,13 +1291,39 @@ export interface Membership {
 	role: string;
 }
 
-export const fetchMe = createServerFn({ method: 'GET' }).handler(async ({ request }) => {
+export interface Me {
+	email: string;
+	memberships: Membership[];
+	user_id: string;
+}
+
+/**
+ * `getRequest()`, not a `request` field on the handler's context (see Task
+ * 4's note). Reading the session is itself what refreshes it, and
+ * `flushSessionCookies` is what carries a refreshed cookie onto the real
+ * response — skipping it here would reproduce, for every authenticated page
+ * load, the same "login that works and then silently stops" failure Tasks
+ * 4 and 5 already fixed for sign-in and sign-out.
+ *
+ * `memberships` is normalized to a plain array here — Huma serialises a nil
+ * Go slice as JSON `null` — so `assertMembership` below and every later
+ * consumer of `Me` can stay written against `Membership[]`, never
+ * `Membership[] | null`.
+ */
+export const fetchMe = createServerFn({ method: 'GET' }).handler(async (): Promise<Me> => {
 	const headers = new Headers();
-	const { accessToken } = await requireSession(request, headers);
+	const { accessToken } = await requireSession(getRequest(), headers);
+	flushSessionCookies(headers);
+
 	const { data } = await getMe({ client: authedApiClient(accessToken), throwOnError: true });
-	return data;
+	return { email: data.email, memberships: data.memberships ?? [], user_id: data.user_id };
 });
 
+/**
+ * 404, never 403: `internal/authz` already answers a non-member with 404,
+ * so the API itself never confirms a team exists at all. Rendering
+ * "forbidden" here would leak exactly what the API withholds.
+ */
 export function assertMembership(memberships: Membership[], teamId: string): void {
 	if (!memberships.some((m) => m.team_id === teamId)) throw notFound();
 }
@@ -909,9 +1333,10 @@ export const Route = createFileRoute('/_authed')({
 		try {
 			return { me: await fetchMe() };
 		} catch (error) {
-			if (error instanceof UnauthenticatedError) {
-				throw redirect({ to: '/login' });
-			}
+			// Not a plain `error instanceof UnauthenticatedError` — see
+			// `isUnauthenticatedError`'s docstring in `server/session.ts`
+			// (Task 3) for why a client-side navigation needs this instead.
+			if (isUnauthenticatedError(error)) throw redirect({ to: '/login' });
 			throw error;
 		}
 	},
@@ -942,16 +1367,19 @@ Invoke the `create-commit` skill to compose the message rather than pasting the 
 
 **Files:**
 
-- Create: `apps/web/src/lib/current-team.ts`, `apps/web/src/lib/current-team.test.ts`, `apps/web/src/routes/_authed/index.tsx`, `apps/web/src/components/team-switcher.tsx`, `apps/web/src/components/team-switcher.stories.tsx`
-- Modify: `apps/web/src/i18n/locales/en.json`, `apps/web/src/i18n/locales/de.json`
+- Create: `apps/web/src/lib/current-team.ts`, `apps/web/src/lib/current-team.test.ts`, `apps/web/src/components/team-switcher.tsx`, `apps/web/src/components/team-switcher.stories.tsx`
+- Modify: `apps/web/src/routes/index.tsx`, `apps/web/src/i18n/locales/en.json`, `apps/web/src/i18n/locales/de.json`
+
+`apps/web/src/routes/_authed/index.tsx` is **not** created — see "Corrections found during execution" and Step 4 below.
 
 **Interfaces:**
 
-- Consumes: `Membership` and route context `{ me }` from Task 6; `preferenceCookie` from `src/lib/preferences.ts`.
+- Consumes: `Membership`, `fetchMe`, and route context `{ me }` from Task 6; `isUnauthenticatedError` from Task 3; `preferenceCookie` from `src/lib/preferences.ts`.
 - Produces:
   - `TEAM_COOKIE = 'team'`
   - `resolveCurrentTeam(cookieHeader: string | undefined, memberships: Membership[]): string | undefined`
   - `teamCookie(teamId: string): string`
+  - the redirect-or-render logic on `routes/index.tsx`'s loader (Step 4)
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1048,31 +1476,71 @@ export function teamCookie(teamId: string): string {
 }
 ```
 
-- [ ] **Step 4: Implement the index redirect**
+- [ ] **Step 4: Redirect a signed-in visitor away from `/`**
+
+**`_authed/index.tsx` is not created.** A pathless layout's own index file resolves to the same full path (`/`) as `routes/index.tsx` — the existing public marketing route from an earlier plan — and `@tanstack/router-generator` rejects that as a duplicate route, failing `pnpm typecheck` and `pnpm build` outright. The spec's actual requirement is behavioural ("a bare `/` for a signed-in person redirects to the team they used last"), and `routes/index.tsx` is the route that owns `/`, so the redirect is added there instead, alongside the marketing shell it already renders when nobody is signed in:
 
 ```tsx
-// apps/web/src/routes/_authed/index.tsx
+// apps/web/src/routes/index.tsx — extends the existing route; only the
+// additions are shown, the existing marketing JSX is untouched
 import { createFileRoute, redirect } from '@tanstack/react-router';
+import { createServerFn } from '@tanstack/react-start';
+import { getRequestHeader } from '@tanstack/react-start/server';
 
-import { resolveCurrentTeam } from '../../lib/current-team';
+import { resolveCurrentTeam } from '../lib/current-team';
+import { isUnauthenticatedError } from '../server/session';
+import { fetchMe, type Me, type Membership } from './_authed';
 
-export const Route = createFileRoute('/_authed/')({
-	beforeLoad: ({ context, request }) => {
-		const teamId = resolveCurrentTeam(
-			request.headers.get('cookie') ?? undefined,
-			context.me.memberships,
-		);
-		if (!teamId) return;
-		throw redirect({ to: '/teams/$teamId/links', params: { teamId } });
+/**
+ * `getRequestHeader` only works inside the server's per-request context, so
+ * the resolution — not just the header read — stays inside this server
+ * function; only the already-resolved team id (already visible to the
+ * client as one of `me.memberships`' own ids) crosses back out. The Supabase
+ * session cookie is deliberately httpOnly; returning the raw `Cookie`
+ * header from a server function would hand a client-readable RPC response
+ * exactly the value httpOnly exists to keep from it.
+ */
+const getCurrentTeamId = createServerFn({ method: 'GET' })
+	.validator((memberships: Membership[]) => memberships)
+	.handler(({ data: memberships }) => resolveCurrentTeam(getRequestHeader('cookie'), memberships));
+
+/**
+ * `/` is public, so "no session" is the ordinary case here, not a failure —
+ * unlike `_authed.tsx`'s `beforeLoad`, which treats the same
+ * `UnauthenticatedError` as a reason to redirect to `/login`. `fetchMe` is
+ * reused from `_authed.tsx` (Task 6) rather than duplicated: it is already
+ * the one place that reads a session and flushes the refreshed cookie.
+ */
+async function fetchCurrentUser(): Promise<Me | undefined> {
+	try {
+		return await fetchMe();
+	} catch (error) {
+		if (isUnauthenticatedError(error)) return undefined;
+		throw error;
+	}
+}
+
+export const Route = createFileRoute('/')({
+	component: Home,
+	loader: async () => {
+		const me = await fetchCurrentUser();
+		if (!me) return { outcome: { kind: 'marketing' } as const };
+
+		const teamId = await getCurrentTeamId({ data: me.memberships });
+		if (teamId) throw redirect({ to: '/teams/$teamId/links', params: { teamId } });
+
+		// Reached only by someone with no memberships at all: invited but not
+		// yet added to a team, or removed from every one. A redirect loop
+		// would be the alternative to this outcome, so it renders instead.
+		return { outcome: { kind: 'noTeam' } as const };
 	},
-	// Reached only by someone with no memberships at all: invited but not yet
-	// added to a team, or removed from every one. A redirect loop would be the
-	// alternative, so this renders instead.
-	component: NoTeams,
 });
 
-function NoTeams(): React.JSX.Element {
-	return <p>{/* i18n key teams.none, added in Step 6 */}</p>;
+function Home(): React.JSX.Element {
+	const { outcome } = Route.useLoaderData();
+	// ...existing header/footer JSX, branching once more on outcome.kind:
+	// 'marketing' renders the existing heading, body and sign-in link;
+	// 'noTeam' renders `t('teams.none')` (Step 6) instead.
 }
 ```
 
@@ -1135,9 +1603,11 @@ export function TeamSwitcher({ currentTeamId, memberships }: TeamSwitcherProps):
 // de.json
 "teams": {
   "switcherLabel": "Vereine",
-  "none": "Sie gehören noch keinem Verein an. Bitten Sie die Person, die Sie eingeladen hat, Sie hinzuzufügen."
+  "none": "Du gehörst noch keinem Verein an. Frag die Person, die dich eingeladen hat, ob sie dich hinzufügen kann."
 }
 ```
+
+This project's user-facing German is informal (du/dich, ihr/euch), never _Sie_ — see "Corrections found during execution".
 
 Note the German label is "Vereine", not "Teams". The tenant is `team` in every identifier; "Verein" is exactly what user-facing German copy is for.
 
@@ -1179,7 +1649,7 @@ Then delete the `memberships.some(...)` check in `resolveCurrentTeam` so it trus
 
 ```bash
 pnpm format && pnpm lint && pnpm typecheck && pnpm test
-but commit -b <branch> apps/web/src/lib/current-team.ts apps/web/src/lib/current-team.test.ts apps/web/src/routes/_authed apps/web/src/components/team-switcher.tsx apps/web/src/components/team-switcher.stories.tsx apps/web/src/i18n/locales -m "feat(web): remember the last used team and switch between teams"
+but commit -b <branch> apps/web/src/lib/current-team.ts apps/web/src/lib/current-team.test.ts apps/web/src/routes/index.tsx apps/web/src/components/team-switcher.tsx apps/web/src/components/team-switcher.stories.tsx apps/web/src/i18n/locales -m "feat(web): remember the last used team and switch between teams"
 ```
 
 Invoke the `create-commit` skill to compose the message rather than pasting the subject above verbatim — it is a starting point, not the finished message. `create-commit` writes the body, and the repository uses GitButler, so `git commit` is the wrong tool here regardless.
@@ -1209,9 +1679,23 @@ import { describe, expect, it } from 'vitest';
 
 import { classifyApiError } from './api-errors';
 
-/** Shapes copied from what Huma actually returns — RFC 9457 problem+json. */
-function problem(status: number, errors?: { location: string; message: string }[]) {
-	return { response: { status }, error: { status, title: 'x', errors } };
+/**
+ * Shapes copied from what Huma/the generated client actually produce, not
+ * from a `{ response: { status }, error: { errors } }` wrapper. Every
+ * operation's error response is a single `default: ErrorModel` (RFC 9457
+ * `application/problem+json`) — no per-status schema to diverge from — and
+ * with `throwOnError: true` (the convention already used in
+ * `src/server/health.ts`) the generated client throws that parsed body
+ * directly: `status` and `errors` sit at the top level of the thrown value
+ * itself, with no `.response`/`.error` wrapper around it.
+ */
+interface FakeProblemDetail {
+	readonly location?: string;
+	readonly message?: string;
+}
+
+function problem(status: number, errors?: readonly FakeProblemDetail[]) {
+	return { errors, status, title: 'x' };
 }
 
 describe('classifyApiError', () => {
@@ -1241,6 +1725,20 @@ describe('classifyApiError', () => {
 		});
 	});
 
+	it('does not mistake a bare "body" location for a field named body', () => {
+		// Huma's validateBody emits exactly this — location "body", no dot —
+		// for a request body that failed to parse as JSON at all, before any
+		// field-level validation ran. A naive `location.split('.').pop()`
+		// would read that as a field literally named "body", silently
+		// misfiling a whole-request problem as a per-field one no form input
+		// is ever named after. With no field to attach to, this must fall
+		// through to `unknown`.
+		const failure = classifyApiError(
+			problem(400, [{ location: 'body', message: 'invalid character } looking for value' }]),
+		);
+		expect(failure).toEqual({ kind: 'unknown' });
+	});
+
 	it('falls back to unknown for anything else', () => {
 		expect(classifyApiError(new Error('network'))).toEqual({ kind: 'unknown' });
 	});
@@ -1263,25 +1761,55 @@ export type ApiFailure =
 	| { kind: 'unknown' };
 
 interface ProblemDetail {
-	location?: string;
-	message?: string;
+	readonly location?: string;
+	readonly message?: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null;
+}
+
+function isProblemDetail(value: unknown): value is ProblemDetail {
+	if (!isRecord(value)) return false;
+	const { location, message } = value;
+	return (
+		(location === undefined || typeof location === 'string') &&
+		(message === undefined || typeof message === 'string')
+	);
 }
 
 function statusOf(error: unknown): number | undefined {
-	if (typeof error !== 'object' || error === null) return undefined;
-	const response = (error as { response?: { status?: number } }).response;
-	return typeof response?.status === 'number' ? response.status : undefined;
+	if (!isRecord(error)) return undefined;
+	const { status } = error;
+	return typeof status === 'number' ? status : undefined;
+}
+
+function problemDetailsOf(error: unknown): readonly ProblemDetail[] {
+	if (!isRecord(error)) return [];
+	const { errors } = error;
+	if (!Array.isArray(errors) || !errors.every(isProblemDetail)) return [];
+	return errors;
+}
+
+/**
+ * Huma's `location` is prefixed by where the value came from — `body`,
+ * `query`, `path`, or `header`, e.g. `body.destination_url`. A bare prefix
+ * with nothing after it has no field to attach to: Huma emits exactly
+ * `"body"`, with no dot, for a request body that failed to parse as JSON at
+ * all — before any field-level validation ran. That is a whole-request
+ * problem, not a report about a field named "body", and must not be
+ * mistaken for one.
+ */
+function fieldNameOf(location: string | undefined): string | undefined {
+	if (!location?.includes('.')) return undefined;
+	return location.split('.').pop();
 }
 
 function fieldsOf(error: unknown): Record<string, string> {
-	const details = (error as { error?: { errors?: ProblemDetail[] } }).error?.errors ?? [];
 	const fields: Record<string, string> = {};
 
-	for (const detail of details) {
-		// Huma reports "body.destination_url"; the form knows the field as
-		// "destination_url". Anything without a location is a whole-request
-		// problem and belongs in the form-level message, not on a field.
-		const name = detail.location?.split('.').pop();
+	for (const detail of problemDetailsOf(error)) {
+		const name = fieldNameOf(detail.location);
 		if (name && detail.message) fields[name] = detail.message;
 	}
 
@@ -1295,7 +1823,7 @@ export function classifyApiError(error: unknown): ApiFailure {
 	if (status === 403 || status === 404) return { kind: 'notFound' };
 	if (status === 429) return { kind: 'rateLimited' };
 
-	if (status === 422 || status === 400) {
+	if (status === 400 || status === 422) {
 		const fields = fieldsOf(error);
 		if (Object.keys(fields).length > 0) return { kind: 'fields', fields };
 	}
@@ -1310,7 +1838,7 @@ Run: `pnpm --filter @kurze-url/web exec vitest run --project unit src/lib/api-er
 
 - [ ] **Step 5: Falsify**
 
-Change the 403 branch to return `{ kind: 'unknown' }`. Expected: only the "maps 403 to notFound" test fails. Record it.
+Change the 403 branch to return `{ kind: 'unknown' }`. Expected: only the "maps 403 to notFound" test fails. Then restore it and change `fieldNameOf` back to a bare `location.split('.').pop()` (no `.includes('.')` guard): expected only "does not mistake a bare 'body' location for a field named body" fails. Record both.
 
 - [ ] **Step 6: Add the strings, both languages**
 
@@ -1326,11 +1854,13 @@ Change the 403 branch to return `{ kind: 'unknown' }`. Expected: only the "maps 
 ```json
 // de.json
 "errors": {
-  "rateLimited": "Gerade wurden zu viele Links erstellt. Bitte warten Sie eine Minute.",
-  "unknown": "Etwas ist schiefgelaufen. Bitte versuchen Sie es erneut.",
+  "rateLimited": "Gerade wurden zu viele Links erstellt. Warte eine Minute und versuch es dann noch mal.",
+  "unknown": "Etwas ist schiefgelaufen. Versuch es noch mal.",
   "notFound": "Nicht gefunden."
 }
 ```
+
+Informal address again, not _Sie_ — see "Corrections found during execution".
 
 - [ ] **Step 7: Commit**
 
@@ -1352,9 +1882,9 @@ Invoke the `create-commit` skill to compose the message rather than pasting the 
 
 **Interfaces:**
 
-- Consumes: `requireSession`, `authedApiClient` (Task 3); `assertMembership` (Task 6); `classifyApiError` (Task 8).
+- Consumes: `requireSession`, `flushSessionCookies`, `authedApiClient` (Task 3); `assertMembership` (Task 6); `classifyApiError` (Task 8).
 - Produces:
-  - `listLinksFn({ data: { teamId: string; page: number } })` resolving the API's `Page<Link>`
+  - `listLinksFn({ data: { teamId: string; page: number } })` resolving the API's `PageLink`
   - `linksQueryOptions(teamId: string, page: number)` — the shared query key and fetcher
   - `<CopyButton value={string} />`, `<ShortUrlNotice hostname={string} />`
 
@@ -1447,54 +1977,129 @@ export function CopyButton({ value }: { readonly value: string }): React.JSX.Ele
 
 ```ts
 // apps/web/src/server/links.ts
-import { createLink, deleteLink, getLink, listLinks, updateLink } from '@kurze-url/api-client';
-import { createServerFn } from '@tanstack/react-start';
+import { listLinks, type PageLink } from '@kurze-url/api-client';
 import { queryOptions } from '@tanstack/react-query';
+import { createServerFn, createServerOnlyFn } from '@tanstack/react-start';
+import { getRequest } from '@tanstack/react-start/server';
 
-import { authedApiClient, requireSession } from './session';
-
-export const listLinksFn = createServerFn({ method: 'GET' })
-	.validator((data: { teamId: string; page: number }) => data)
-	.handler(async ({ data, request }) => {
-		const headers = new Headers();
-		const { accessToken } = await requireSession(request, headers);
-		const { data: page } = await listLinks({
-			client: authedApiClient(accessToken),
-			path: { team_id: data.teamId },
-			query: { page: data.page, per_page: 20 },
-			throwOnError: true,
-		});
-		return page;
-	});
+import { authedApiClient, flushSessionCookies, requireSession } from './session';
 
 /**
- * One definition of the key and the fetcher, used by both the loader and the
- * component. Two definitions drift, and the symptom is a list that updates on
- * navigation but not after a mutation.
+ * Takes `request` as a parameter rather than calling `getRequest()` itself:
+ * that is what lets `links.test.ts` call this directly with a synthetic
+ * `Request` instead of needing the server's per-request `AsyncLocalStorage`
+ * context that only exists inside a real request — `getRequest()` throws
+ * outside of one, which is exactly what running this under Vitest is.
+ *
+ * `requireSession` reading the session is itself what refreshes an
+ * expiring one; `flushSessionCookies` carries those cookies onto the real
+ * response, the same correction from Task 3 every server function needs.
+ *
+ * Wrapped in `createServerOnlyFn` for the reason described in Task 4: a
+ * separately exported, by-name-referenced helper (from `listLinksFn`'s
+ * handler below) that calls `flushSessionCookies` needs the wrap to keep
+ * `pnpm --filter @kurze-url/web build` passing.
+ */
+export const listLinksFor = createServerOnlyFn(
+	async (request: Request, teamId: string, page: number): Promise<PageLink> => {
+		const headers = new Headers();
+		const { accessToken } = await requireSession(request, headers);
+		flushSessionCookies(headers);
+
+		const { data } = await listLinks({
+			client: authedApiClient(accessToken),
+			path: { team_id: teamId },
+			// throwOnError is required: the generated client's default (false)
+			// never rejects, so a failed request would resolve to
+			// `{ data: undefined, error }` instead of throwing — silently
+			// rendering an empty list rather than the loud failure this list is
+			// deliberately built to show. classifyApiError (Task 8) is written
+			// against exactly this thrown shape.
+			query: { page, per_page: 20 },
+			throwOnError: true,
+		});
+		return data;
+	},
+);
+
+/**
+ * `getRequest()`, not a `request` field on the handler's context (see Task
+ * 4's note). Called inline here, rather than inside `listLinksFor`: that
+ * keeps `listLinksFor` callable with a synthetic request in tests, the same
+ * split `sendMagicLink`/`sendMagicLinkFor` use in Task 4.
+ */
+export const listLinksFn = createServerFn({ method: 'GET' })
+	.validator((data: { teamId: string; page: number }) => data)
+	.handler(async ({ data }) => listLinksFor(getRequest(), data.teamId, data.page));
+
+/**
+ * One definition of the key and the fetcher, used by both the loader
+ * (`ensureQueryData`) and the component (`useSuspenseQuery`). Two
+ * definitions drift, and the symptom is a list that updates on navigation
+ * but not after a mutation.
  */
 export function linksQueryOptions(teamId: string, page: number) {
 	return queryOptions({
 		queryFn: () => listLinksFn({ data: { teamId, page } }),
-		queryKey: ['links', teamId, page],
+		queryKey: ['links', teamId, page] as const,
 	});
 }
 ```
 
+Tasks 10 and 11 append `createLinkFor`/`createLinkFn`, `getLinkFor`/`getLinkFn`, `updateLinkFor`/`updateLinkFn`, and `deleteLinkFor`/`deleteLinkFn` to this same file, each following the `...For`/`...Fn` split above. Import only the operations this task actually uses — `createLink`, `deleteLink`, `getLink` and `updateLink` are not used until Tasks 10 and 11, and oxlint's unused-import rule is error-level.
+
 - [ ] **Step 5: Provide a QueryClient in `src/router.tsx`**
 
 ```tsx
+// apps/web/src/router.tsx
 import { QueryClient } from '@tanstack/react-query';
-import { routerWithQueryClient } from '@tanstack/react-router-with-query';
+import { createRouter as createTanStackRouter } from '@tanstack/react-router';
+import { setupRouterSsrQueryIntegration } from '@tanstack/react-router-ssr-query';
 
-const queryClient = new QueryClient();
+import { routeTree } from './routeTree.gen';
 
-// The router is created per request on the server. The QueryClient must be
-// too: a module-level one would serve one person's cached links to the next
-// request, which is the same hazard createApiClient avoids by returning a
-// fresh instance.
+/**
+ * `@tanstack/react-router-ssr-query`, not `@tanstack/react-router-with-query`:
+ * the latter has been superseded upstream and was never a dependency of this
+ * repo before this task. Confirm the current package name against
+ * `@tanstack/react-router`'s own integration docs before writing this file;
+ * if it has moved again, use the current one and note the divergence in your
+ * task report rather than adapting silently — this plan already guessed
+ * wrong here once.
+ *
+ * `setupRouterSsrQueryIntegration` wires `context.queryClient` into every
+ * route (what the list route's loader calls `ensureQueryData` on),
+ * dehydrates queries populated during the server render into the SSR
+ * payload and rehydrates them into the client's own `QueryClient`, and wraps
+ * the router in a `QueryClientProvider` so `useSuspenseQuery` is reachable
+ * from route components.
+ */
+export function getRouter() {
+	// Created fresh inside this function, never at module scope: the router
+	// is created per request on the server, and a module-level QueryClient
+	// would serve one visitor's cached links to the next request — the same
+	// hazard `createApiClient` avoids by returning a fresh instance.
+	const queryClient = new QueryClient();
+
+	const router = createTanStackRouter({
+		context: { queryClient },
+		defaultPreload: 'intent',
+		defaultPreloadStaleTime: 0,
+		routeTree,
+		scrollRestoration: true,
+	});
+
+	setupRouterSsrQueryIntegration({ queryClient, router });
+
+	return router;
+}
+
+declare module '@tanstack/react-router' {
+	interface Register {
+		router: ReturnType<typeof getRouter>;
+	}
+}
 ```
-
-Follow the version of this integration that the installed `@tanstack/react-router` documents; if the package name above has moved, use the current one and note the divergence in your task report rather than adapting silently.
 
 - [ ] **Step 6: Implement the list route**
 
@@ -1528,13 +2133,22 @@ function LinkList(): React.JSX.Element {
 	const { t } = useTranslation();
 	const { data } = useSuspenseQuery(linksQueryOptions(teamId, page));
 
-	if (data.items.length === 0) return <p>{t('links.empty')}</p>;
+	// `items` is nullable on the wire — the generated `PageLink.items` type is
+	// `Array<Link> | null`, since Huma serialises a nil Go slice as JSON
+	// `null` — the same shape `routes/_authed.tsx` (Task 6) already
+	// normalises for `memberships`. `data.items` (checked against the
+	// generated `PageLink` type in `packages/api-client`, not assumed) is the
+	// right field name; the earlier version of this plan assumed it without
+	// checking and, separately, treated it as always an array.
+	const items = data.items ?? [];
+
+	if (items.length === 0) return <p>{t('links.empty')}</p>;
 
 	return (
 		<>
-			<ShortUrlNotice hostname={data.items[0]?.hostname ?? ''} />
+			<ShortUrlNotice hostname={items[0]?.hostname ?? ''} />
 			<ul>
-				{data.items.map((link) => (
+				{items.map((link) => (
 					<li key={link.id}>
 						<a href={link.short_url}>{link.short_url}</a>
 						<CopyButton value={link.short_url} />
@@ -1547,7 +2161,7 @@ function LinkList(): React.JSX.Element {
 }
 ```
 
-Check the `Page<T>` envelope's actual property name against `apps/api/openapi.json` before writing `data.items` — the plan assumes `items`, and the generated types are the authority.
+Check the generated `PageLink` type in `packages/api-client` before assuming a `Page<T>` envelope's property names or nullability — this plan got `items` right by luck and its non-nullability wrong; the generated types are the authority, not this sample.
 
 - [ ] **Step 7: Add the strings, both languages**
 
@@ -1556,7 +2170,7 @@ Check the `Page<T>` envelope's actual property name against `apps/api/openapi.js
 "links": {
   "copy": "Copy",
   "copied": "Copied",
-  "empty": "No links yet. Create your first one.",
+  "empty": "No links yet.",
   "noShortDomain": "This instance has no working short domain yet, so these links will not redirect."
 }
 ```
@@ -1566,10 +2180,12 @@ Check the `Page<T>` envelope's actual property name against `apps/api/openapi.js
 "links": {
   "copy": "Kopieren",
   "copied": "Kopiert",
-  "empty": "Noch keine Links. Erstellen Sie Ihren ersten.",
+  "empty": "Noch keine Links.",
   "noShortDomain": "Diese Instanz hat noch keine funktionierende Kurz-Domain, daher leiten diese Links nicht weiter."
 }
 ```
+
+`empty` drops the second sentence the first version of this plan invented ("Create your first one." / "Erstellen Sie Ihren ersten.") — it named a call to action this task doesn't build, and the German half was also formal _Sie_.
 
 - [ ] **Step 8: Run and falsify**
 
@@ -1580,7 +2196,7 @@ Change `ShortUrlNotice` to always return the note. Expected: "renders nothing on
 - [ ] **Step 9: Commit**
 
 ```bash
-pnpm format && pnpm lint && pnpm typecheck && pnpm test
+pnpm format && pnpm lint && pnpm typecheck && pnpm test && pnpm --filter @kurze-url/web build
 but commit -b <branch> apps/web/src/server/links.ts apps/web/src/routes/_authed apps/web/src/components apps/web/src/router.tsx apps/web/src/i18n/locales -m "feat(web): list a team's links"
 ```
 
@@ -1730,20 +2346,30 @@ export function LinkForm({ fieldErrors, initial, onSubmit }: LinkFormProps): Rea
 
 - [ ] **Step 4: Add `createLinkFn` to `src/server/links.ts`**
 
+Same `...For`/`...Fn` split as `listLinksFor`/`listLinksFn` (Task 9), for the same reason: `createLinkFn`'s `createServerFn` can't be called directly under Vitest, so the testable logic takes `request: Request` as a plain parameter. `body` is typed as the generated client's own `CreateLinkInputBodyWritable`, not a bare `Record<string, unknown>` — the route builds one of those from typed form values, and threading the real type through here means nothing between the route and the API call needs an unsafe cast.
+
 ```ts
-export const createLinkFn = createServerFn({ method: 'POST' })
-	.validator((data: { teamId: string; body: Record<string, unknown> }) => data)
-	.handler(async ({ data, request }) => {
+import { createLink, type CreateLinkInputBodyWritable, type Link } from '@kurze-url/api-client';
+
+export const createLinkFor = createServerOnlyFn(
+	async (request: Request, teamId: string, body: CreateLinkInputBodyWritable): Promise<Link> => {
 		const headers = new Headers();
 		const { accessToken } = await requireSession(request, headers);
-		const { data: link } = await createLink({
-			body: data.body,
+		flushSessionCookies(headers);
+
+		const { data } = await createLink({
+			body,
 			client: authedApiClient(accessToken),
-			path: { team_id: data.teamId },
+			path: { team_id: teamId },
 			throwOnError: true,
 		});
-		return link;
-	});
+		return data;
+	},
+);
+
+export const createLinkFn = createServerFn({ method: 'POST' })
+	.validator((data: { body: CreateLinkInputBodyWritable; teamId: string }) => data)
+	.handler(async ({ data }) => createLinkFor(getRequest(), data.teamId, data.body));
 ```
 
 - [ ] **Step 5: Implement the create route**
@@ -1791,7 +2417,7 @@ Remove the `role="note"` warning block. Expected: only the 301 test fails. Then 
 - [ ] **Step 9: Commit**
 
 ```bash
-pnpm format && pnpm lint && pnpm typecheck && pnpm test
+pnpm format && pnpm lint && pnpm typecheck && pnpm test && pnpm --filter @kurze-url/web build
 but commit -b <branch> apps/web/src/components/link-form.tsx apps/web/src/components/link-form.test.tsx apps/web/src/components/link-form.stories.tsx apps/web/src/routes/_authed apps/web/src/server/links.ts apps/web/src/i18n/locales -m "feat(web): create links, warning inline about 301"
 ```
 
@@ -1889,46 +2515,73 @@ export function ConfirmDelete({ label, onConfirm }: ConfirmDeleteProps): React.J
 
 - [ ] **Step 4: Add the remaining server functions**
 
+Same `...For`/`...Fn` split as Tasks 9 and 10, and the same `getRequest()`/`flushSessionCookies` correction as every server function since Task 4. `getLinkFor` is not scoped by `team_id`: the API's own entity-scoped authorization (`internal/authz`) is what decides whether this caller may see this link at all, answering 404 for a non-member the same way `assertMembership` does for a whole team — re-deriving that check here would be a second, divergent copy of a decision the API already makes correctly. `deleteLinkFn` resolves `void`, not the brief's earlier `{ deleted: true }`: nothing downstream reads a return value, and a shape nothing consumes is just another thing to keep in sync.
+
 ```ts
+import {
+	deleteLink,
+	getLink,
+	updateLink,
+	type Link,
+	type UpdateLinkInputBodyWritable,
+} from '@kurze-url/api-client';
+
+export const getLinkFor = createServerOnlyFn(
+	async (request: Request, linkId: string): Promise<Link> => {
+		const headers = new Headers();
+		const { accessToken } = await requireSession(request, headers);
+		flushSessionCookies(headers);
+
+		const { data } = await getLink({
+			client: authedApiClient(accessToken),
+			path: { link_id: linkId },
+			throwOnError: true,
+		});
+		return data;
+	},
+);
+
 export const getLinkFn = createServerFn({ method: 'GET' })
 	.validator((data: { linkId: string }) => data)
-	.handler(async ({ data, request }) => {
+	.handler(async ({ data }) => getLinkFor(getRequest(), data.linkId));
+
+export const updateLinkFor = createServerOnlyFn(
+	async (request: Request, linkId: string, body: UpdateLinkInputBodyWritable): Promise<Link> => {
 		const headers = new Headers();
 		const { accessToken } = await requireSession(request, headers);
-		const { data: link } = await getLink({
+		flushSessionCookies(headers);
+
+		const { data } = await updateLink({
+			body,
 			client: authedApiClient(accessToken),
-			path: { link_id: data.linkId },
+			path: { link_id: linkId },
 			throwOnError: true,
 		});
-		return link;
-	});
+		return data;
+	},
+);
 
 export const updateLinkFn = createServerFn({ method: 'POST' })
-	.validator((data: { linkId: string; body: Record<string, unknown> }) => data)
-	.handler(async ({ data, request }) => {
+	.validator((data: { body: UpdateLinkInputBodyWritable; linkId: string }) => data)
+	.handler(async ({ data }) => updateLinkFor(getRequest(), data.linkId, data.body));
+
+export const deleteLinkFor = createServerOnlyFn(
+	async (request: Request, linkId: string): Promise<void> => {
 		const headers = new Headers();
 		const { accessToken } = await requireSession(request, headers);
-		const { data: link } = await updateLink({
-			body: data.body,
+		flushSessionCookies(headers);
+
+		await deleteLink({
 			client: authedApiClient(accessToken),
-			path: { link_id: data.linkId },
+			path: { link_id: linkId },
 			throwOnError: true,
 		});
-		return link;
-	});
+	},
+);
 
 export const deleteLinkFn = createServerFn({ method: 'POST' })
 	.validator((data: { linkId: string }) => data)
-	.handler(async ({ data, request }) => {
-		const headers = new Headers();
-		const { accessToken } = await requireSession(request, headers);
-		await deleteLink({
-			client: authedApiClient(accessToken),
-			path: { link_id: data.linkId },
-			throwOnError: true,
-		});
-		return { deleted: true };
-	});
+	.handler(async ({ data }) => deleteLinkFor(getRequest(), data.linkId));
 ```
 
 - [ ] **Step 5: Implement the edit route**
@@ -1964,7 +2617,7 @@ Make the first click call `onConfirm` directly. Expected: the first test fails, 
 - [ ] **Step 8: Commit**
 
 ```bash
-pnpm format && pnpm lint && pnpm typecheck && pnpm test
+pnpm format && pnpm lint && pnpm typecheck && pnpm test && pnpm --filter @kurze-url/web build
 but commit -b <branch> apps/web/src/components/confirm-delete.tsx apps/web/src/components/confirm-delete.test.tsx apps/web/src/routes/_authed apps/web/src/server/links.ts apps/web/src/i18n/locales -m "feat(web): edit and delete links"
 ```
 
@@ -2095,6 +2748,7 @@ Invoke the `create-commit` skill to compose the message rather than pasting the 
 Before opening the pull request:
 
 - [ ] `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test` all clean from the repo root.
+- [ ] `pnpm --filter @kurze-url/web build` clean — required because it catches an `import-protection` failure the other four gates do not.
 - [ ] `pnpm --filter @kurze-url/web test:storybook` passes — the a11y addon is a real gate.
 - [ ] Playwright passes against a preview, signed in.
 - [ ] Every new string exists in **both** `en.json` and `de.json`; `catalogues.test.ts` proves it.
