@@ -24,7 +24,13 @@ These bind every task. They are the project's rules, restated so you do not have
 - Never store a full IP address.
 - **oxlint and oxfmt, never ESLint or Prettier.** `pnpm format` and `pnpm lint` from the repo root.
 - TypeScript **7** at the root. The TypeScript 6 pin in `packages/api-client` is codegen-only — do not copy it into `apps/web`.
-- Conventional Commits, checked in CI.
+- **Conventional Commits, and the `create-commit` skill writes them.** Never `git commit` directly: this repository uses GitButler, so commits are made with `but commit -b <branch>`, and the skill composes the message. The rules the skill enforces, restated because you will not see it unless you invoke it:
+  - `<type>[optional scope]: <description>` — type from `feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert`.
+  - Description in the **imperative mood, lowercase first letter, no trailing period, and at most 50 characters including the type and scope.** This is the rule most often broken; count the characters.
+  - Body explains **what and why, never how**, wrapped at 72 characters.
+  - Breaking changes: `feat!:` or a `BREAKING CHANGE:` footer.
+  - **No co-author or generator footer**, in commits or pull requests.
+  - One logical change per commit.
 - Run from the repo root before every commit: `pnpm format`, `pnpm lint`, `pnpm typecheck`, `pnpm test`.
 
 ### Falsification is part of every task, not a final pass
@@ -192,9 +198,10 @@ Expected: `{"status":"ok"}`. A `500` mentioning `DATABASE_URL` means the pooler 
 - [ ] **Step 9: Commit**
 
 ```bash
-git add .github/workflows/ci-js.yml
-git commit -m "ci: give Playwright the preview project's service-role key"
+but commit -b <branch> .github/workflows/ci-js.yml -m "ci: give Playwright the preview project's service-role key"
 ```
+
+Invoke the `create-commit` skill to compose the message rather than pasting the subject above verbatim — it is a starting point, not the finished message. `create-commit` writes the body, and the repository uses GitButler, so `git commit` is the wrong tool here regardless.
 
 ---
 
@@ -373,9 +380,10 @@ Replace the body of `setAll` with `return;` and re-run. Expected: the second and
 
 ```bash
 pnpm format && pnpm lint && pnpm typecheck
-git add apps/web/package.json apps/web/src/server/supabase.ts apps/web/src/server/supabase.test.ts pnpm-lock.yaml
-git commit -m "feat(web): bind Supabase to a read/write cookie adapter"
+but commit -b <branch> apps/web/package.json apps/web/src/server/supabase.ts apps/web/src/server/supabase.test.ts pnpm-lock.yaml -m "feat(web): bind Supabase to a read/write cookie adapter"
 ```
+
+Invoke the `create-commit` skill to compose the message rather than pasting the subject above verbatim — it is a starting point, not the finished message. `create-commit` writes the body, and the repository uses GitButler, so `git commit` is the wrong tool here regardless.
 
 ---
 
@@ -530,9 +538,10 @@ Change `requireSession` to `return { accessToken: accessToken ?? '' }`. Expected
 
 ```bash
 pnpm format && pnpm lint && pnpm typecheck && pnpm test
-git add apps/web/src/server/session.ts apps/web/src/server/session.test.ts apps/web/src/server/api.ts
-git commit -m "feat(web): read the session and build an authenticated API client"
+but commit -b <branch> apps/web/src/server/session.ts apps/web/src/server/session.test.ts apps/web/src/server/api.ts -m "feat(web): read the session and build an authenticated API client"
 ```
+
+Invoke the `create-commit` skill to compose the message rather than pasting the subject above verbatim — it is a starting point, not the finished message. `create-commit` writes the body, and the repository uses GitButler, so `git commit` is the wrong tool here regardless.
 
 ---
 
@@ -668,9 +677,10 @@ The English copy is deliberately conditional. "Check your email" would assert so
 
 ```bash
 pnpm format && pnpm lint && pnpm typecheck && pnpm test
-git add apps/web/src/server/auth.ts apps/web/src/server/auth.test.ts apps/web/src/i18n/locales
-git commit -m "feat(web): send magic links without creating accounts"
+but commit -b <branch> apps/web/src/server/auth.ts apps/web/src/server/auth.test.ts apps/web/src/i18n/locales -m "feat(web): send magic links without creating accounts"
 ```
+
+Invoke the `create-commit` skill to compose the message rather than pasting the subject above verbatim — it is a starting point, not the finished message. `create-commit` writes the body, and the repository uses GitButler, so `git commit` is the wrong tool here regardless.
 
 ---
 
@@ -817,9 +827,10 @@ Replace the `<label>` with a `placeholder` attribute. Expected: the second test 
 
 ```bash
 pnpm format && pnpm lint && pnpm typecheck && pnpm test
-git add apps/web/src/routes/login.tsx apps/web/src/routes/login.test.tsx apps/web/src/routes/auth.callback.tsx apps/web/src/server/auth.ts
-git commit -m "feat(web): add login, the auth callback and sign-out"
+but commit -b <branch> apps/web/src/routes/login.tsx apps/web/src/routes/login.test.tsx apps/web/src/routes/auth.callback.tsx apps/web/src/server/auth.ts -m "feat(web): add login, the auth callback and sign-out"
 ```
+
+Invoke the `create-commit` skill to compose the message rather than pasting the subject above verbatim — it is a starting point, not the finished message. `create-commit` writes the body, and the repository uses GitButler, so `git commit` is the wrong tool here regardless.
 
 ---
 
@@ -920,9 +931,10 @@ Make `assertMembership` a no-op body. Expected: the second test fails, the first
 
 ```bash
 pnpm format && pnpm lint && pnpm typecheck && pnpm test
-git add apps/web/src/routes/_authed.tsx apps/web/src/routes/_authed.test.ts
-git commit -m "feat(web): guard the authenticated routes and load memberships"
+but commit -b <branch> apps/web/src/routes/_authed.tsx apps/web/src/routes/_authed.test.ts -m "feat(web): guard the authenticated routes and load memberships"
 ```
+
+Invoke the `create-commit` skill to compose the message rather than pasting the subject above verbatim — it is a starting point, not the finished message. `create-commit` writes the body, and the repository uses GitButler, so `git commit` is the wrong tool here regardless.
 
 ---
 
@@ -1167,9 +1179,10 @@ Then delete the `memberships.some(...)` check in `resolveCurrentTeam` so it trus
 
 ```bash
 pnpm format && pnpm lint && pnpm typecheck && pnpm test
-git add apps/web/src/lib/current-team.ts apps/web/src/lib/current-team.test.ts apps/web/src/routes/_authed apps/web/src/components/team-switcher.tsx apps/web/src/components/team-switcher.stories.tsx apps/web/src/i18n/locales
-git commit -m "feat(web): remember the last used team and switch between teams"
+but commit -b <branch> apps/web/src/lib/current-team.ts apps/web/src/lib/current-team.test.ts apps/web/src/routes/_authed apps/web/src/components/team-switcher.tsx apps/web/src/components/team-switcher.stories.tsx apps/web/src/i18n/locales -m "feat(web): remember the last used team and switch between teams"
 ```
+
+Invoke the `create-commit` skill to compose the message rather than pasting the subject above verbatim — it is a starting point, not the finished message. `create-commit` writes the body, and the repository uses GitButler, so `git commit` is the wrong tool here regardless.
 
 ---
 
@@ -1323,9 +1336,10 @@ Change the 403 branch to return `{ kind: 'unknown' }`. Expected: only the "maps 
 
 ```bash
 pnpm format && pnpm lint && pnpm typecheck && pnpm test
-git add apps/web/src/lib/api-errors.ts apps/web/src/lib/api-errors.test.ts apps/web/src/i18n/locales
-git commit -m "feat(web): classify API errors into what the UI must show"
+but commit -b <branch> apps/web/src/lib/api-errors.ts apps/web/src/lib/api-errors.test.ts apps/web/src/i18n/locales -m "feat(web): classify API errors into what the UI must show"
 ```
+
+Invoke the `create-commit` skill to compose the message rather than pasting the subject above verbatim — it is a starting point, not the finished message. `create-commit` writes the body, and the repository uses GitButler, so `git commit` is the wrong tool here regardless.
 
 ---
 
@@ -1567,9 +1581,10 @@ Change `ShortUrlNotice` to always return the note. Expected: "renders nothing on
 
 ```bash
 pnpm format && pnpm lint && pnpm typecheck && pnpm test
-git add apps/web/src/server/links.ts apps/web/src/routes/_authed apps/web/src/components apps/web/src/router.tsx apps/web/src/i18n/locales
-git commit -m "feat(web): list a team's links"
+but commit -b <branch> apps/web/src/server/links.ts apps/web/src/routes/_authed apps/web/src/components apps/web/src/router.tsx apps/web/src/i18n/locales -m "feat(web): list a team's links"
 ```
+
+Invoke the `create-commit` skill to compose the message rather than pasting the subject above verbatim — it is a starting point, not the finished message. `create-commit` writes the body, and the repository uses GitButler, so `git commit` is the wrong tool here regardless.
 
 ---
 
@@ -1777,9 +1792,10 @@ Remove the `role="note"` warning block. Expected: only the 301 test fails. Then 
 
 ```bash
 pnpm format && pnpm lint && pnpm typecheck && pnpm test
-git add apps/web/src/components/link-form.tsx apps/web/src/components/link-form.test.tsx apps/web/src/components/link-form.stories.tsx apps/web/src/routes/_authed apps/web/src/server/links.ts apps/web/src/i18n/locales
-git commit -m "feat(web): create links, warning inline about 301"
+but commit -b <branch> apps/web/src/components/link-form.tsx apps/web/src/components/link-form.test.tsx apps/web/src/components/link-form.stories.tsx apps/web/src/routes/_authed apps/web/src/server/links.ts apps/web/src/i18n/locales -m "feat(web): create links, warning inline about 301"
 ```
+
+Invoke the `create-commit` skill to compose the message rather than pasting the subject above verbatim — it is a starting point, not the finished message. `create-commit` writes the body, and the repository uses GitButler, so `git commit` is the wrong tool here regardless.
 
 ---
 
@@ -1949,9 +1965,10 @@ Make the first click call `onConfirm` directly. Expected: the first test fails, 
 
 ```bash
 pnpm format && pnpm lint && pnpm typecheck && pnpm test
-git add apps/web/src/components/confirm-delete.tsx apps/web/src/components/confirm-delete.test.tsx apps/web/src/routes/_authed apps/web/src/server/links.ts apps/web/src/i18n/locales
-git commit -m "feat(web): edit and delete links"
+but commit -b <branch> apps/web/src/components/confirm-delete.tsx apps/web/src/components/confirm-delete.test.tsx apps/web/src/routes/_authed apps/web/src/server/links.ts apps/web/src/i18n/locales -m "feat(web): edit and delete links"
 ```
+
+Invoke the `create-commit` skill to compose the message rather than pasting the subject above verbatim — it is a starting point, not the finished message. `create-commit` writes the body, and the repository uses GitButler, so `git commit` is the wrong tool here regardless.
 
 ---
 
@@ -2066,9 +2083,10 @@ Delete the `beforeLoad` guard in `_authed.tsx` and re-run. Expected: "sends a si
 
 ```bash
 pnpm format && pnpm lint && pnpm typecheck && pnpm test
-git add apps/web/e2e
-git commit -m "test(web): cover the authenticated flow end to end"
+but commit -b <branch> apps/web/e2e -m "test(web): cover the authenticated flow end to end"
 ```
+
+Invoke the `create-commit` skill to compose the message rather than pasting the subject above verbatim — it is a starting point, not the finished message. `create-commit` writes the body, and the repository uses GitButler, so `git commit` is the wrong tool here regardless.
 
 ---
 
