@@ -71,6 +71,10 @@ Decided 2026-09-01, arising from API design work on team invitations (see `06-ap
 
 **Resend** chosen over the alternatives compared (Postmark: 100/month; SendGrid: 100/day but trial-only; AWS SES: 3,000/month but needs IAM setup; Brevo: ~9,000/month permanent, largest free tier but a heavier dashboard/setup): free tier of 3,000 emails/month, and the simplest setup of the group — an API key dropped in as the SMTP password, no domain-IAM ceremony. 3,000/month is comfortably beyond what this project needs even optimistically (invite emails plus whatever volume of signup/magic-link/password-reset emails Supabase itself sends, once everything routes through the same SMTP config).
 
+**Enabling custom SMTP does not lift the cap to Resend's quota.** Supabase replaces its 2/hour default with its own 30/hour default, adjustable at Auth → Rate Limits. Set it to **50/hour**: above the application's own `RATE_LIMIT_INVITE_PER_HOUR` (20 per team) so that limiter is the one users hit and the error is one this project can translate; enough for a Verein onboarding ~20 members while some of them immediately request a magic link; and low enough that a single runaway hour cannot drain the 100/day Resend quota and lock everyone out for the rest of the day.
+
+Worth revisiting if sign-in ever stops being magic-link-only — with passwords, email volume falls back to invitations and resets, and 50/hour becomes generous.
+
 No Go backend code is involved — this is purely a Supabase project setting. The Go backend triggers invites via Supabase's Admin API (already using the service-role key it needs regardless), and Supabase sends the actual email through the configured SMTP.
 
 ## Alert thresholds for free-tier monitoring (decided 2026-09-01)
@@ -85,6 +89,9 @@ Two-stage thresholds (warning at 70%, critical at 90%) on every known free-tier 
 | Upstash Redis storage  | 256 MB               | 180 MB               | 230 MB             |
 | Upstash Redis commands | 500K/mo (~16.7K/day) | 350K/mo (~11.7K/day) | 450K/mo (~15K/day) |
 | Upstash bandwidth      | 10 GB/mo             | 7 GB                 | 9 GB               |
+| Resend emails          | 100/day (3,000/mo)   | 70/day               | 90/day             |
+
+**Resend's daily cap, not its monthly one, is the number to watch.** The free tier is 3,000/month _and_ 100/day, which are the same ceiling stated twice — 100 × 30 ≈ 3,000 — so the daily limit is what an onboarding burst actually hits. It matters more than the monthly figure suggests because magic-link login means **every sign-in costs an email**, not just invitations. Exhausting a day's quota does not degrade gracefully: Supabase's send fails and nobody can log in until the next day.
 
 **Redis commands is the one most likely to bind first in practice**, not the others: every redirect costs at least one Redis GET (plus a SET on cache misses), so command volume scales directly with redirect traffic — the ~16.7K/day cap corresponds to roughly 500-700 redirects/hour sustained. Worth watching this one closest once the instance has multiple active Vereine.
 
