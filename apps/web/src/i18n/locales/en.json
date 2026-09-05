@@ -49,7 +49,6 @@
 	"errors": {
 		"rateLimited": "Too many links created just now. Please wait a minute and try again.",
 		"notFound": "Not found.",
-		"unauthenticated": "Your session has expired. Please sign in again.",
 		"unknown": "Something went wrong. Please try again."
 	}
 }

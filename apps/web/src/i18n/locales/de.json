@@ -49,7 +49,6 @@
 	"errors": {
 		"rateLimited": "Gerade wurden zu viele Links erstellt. Warte eine Minute und versuch es dann noch mal.",
 		"notFound": "Nicht gefunden.",
-		"unauthenticated": "Deine Sitzung ist abgelaufen. Melde dich noch mal an.",
 		"unknown": "Etwas ist schiefgelaufen. Versuch es noch mal."
 	}
 }

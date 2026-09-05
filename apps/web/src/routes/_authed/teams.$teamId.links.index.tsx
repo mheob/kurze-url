@@ -1,11 +1,58 @@
+import type { PageLink } from '@kurze-url/api-client';
 import { useSuspenseQuery } from '@tanstack/react-query';
-import { createFileRoute, type SearchSchemaInput } from '@tanstack/react-router';
+import { createFileRoute, redirect, type SearchSchemaInput } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 
 import { LinkList } from '../../components/link-list';
 import { classifyApiError, type ApiFailure } from '../../lib/api-errors';
 import { linksQueryOptions } from '../../server/links';
 import { assertMembership } from '../_authed';
+
+/**
+ * The one method this loader reaches through on `context.queryClient` — a
+ * real `QueryClient` satisfies this structurally, so the loader below needs
+ * no cast, and `links.test.ts`'s fake-object style (narrow interface, not a
+ * mocked class) works here without `no-unsafe-type-assertion` needing to be
+ * silenced.
+ */
+interface LinksDataSource {
+	ensureQueryData: (options: ReturnType<typeof linksQueryOptions>) => Promise<PageLink>;
+}
+
+/**
+ * Finding (Fix round 1): a 401 reaching this loader used to fall through to
+ * `errorComponent`, which rendered `errors.unauthenticated` as dead-end
+ * inline text on a page the visitor can no longer use. `_authed.tsx`'s
+ * `beforeLoad` already redirects to `/login` for the *no session at all*
+ * case (`isUnauthenticatedError`, checked one layer up); this loader's own
+ * gap was the narrower window where that check passed but the session dies
+ * — or the API rejects the token for some other reason — by the time this
+ * route's own fetch runs. That surfaces as the API answering the actual
+ * `listLinks` call with a 401, which `classifyApiError` (not
+ * `isUnauthenticatedError`, which only matches the *no session at all*
+ * shape `requireSession` throws) turns into `{ kind: 'unauthenticated' }`.
+ *
+ * Every other error kind is rethrown unchanged, so it still reaches
+ * `errorComponent` and fails loudly — an empty list is indistinguishable
+ * from a team with no links, which is the worse failure this list is built
+ * to avoid.
+ *
+ * Extracted from the route's `loader` option so it can be unit-tested with a
+ * fake `LinksDataSource` instead of a real router loader context; see
+ * `teams.$teamId.links.index.test.ts`.
+ */
+export async function loadLinks(
+	queryClient: LinksDataSource,
+	teamId: string,
+	page: number,
+): Promise<PageLink> {
+	try {
+		return await queryClient.ensureQueryData(linksQueryOptions(teamId, page));
+	} catch (error) {
+		if (classifyApiError(error).kind === 'unauthenticated') throw redirect({ to: '/login' });
+		throw error;
+	}
+}
 
 export const Route = createFileRoute('/_authed/teams/$teamId/links/')({
 	// Pagination lives in the URL — the same reasoning that put the team id in
@@ -38,8 +85,7 @@ export const Route = createFileRoute('/_authed/teams/$teamId/links/')({
 	beforeLoad: ({ context, params }) => {
 		assertMembership(context.me.memberships, params.teamId);
 	},
-	loader: ({ context, deps, params }) =>
-		context.queryClient.ensureQueryData(linksQueryOptions(params.teamId, deps.page)),
+	loader: ({ context, deps, params }) => loadLinks(context.queryClient, params.teamId, deps.page),
 	component: RouteComponent,
 	errorComponent: LinksError,
 });
@@ -55,6 +101,12 @@ export const Route = createFileRoute('/_authed/teams/$teamId/links/')({
  * (via `throwOnError: true`) into one of a small set of kinds; `fields` is
  * meaningless for a list fetch (it only ever arises from a form's 400/422),
  * so it falls back to the same generic message as an unrecognised failure.
+ *
+ * `kind: 'unauthenticated'` never actually reaches here any more (Fix round
+ * 1): `loadLinks` above intercepts exactly that classification and redirects
+ * to `/login` before the router ever renders this component, which is why
+ * there is no `errors.unauthenticated` catalogue key any more either — this
+ * function has no case that would render it.
  */
 function LinksError({ error }: { readonly error: unknown }): React.JSX.Element {
 	const { t } = useTranslation();
