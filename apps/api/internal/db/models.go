@@ -17,7 +17,7 @@ type AuditLog struct {
 	Action      string
 	EntityType  string
 	EntityID    *uuid.UUID
-	Metadata    []byte
+	Metadata    *string
 	CreatedAt   time.Time
 }
 

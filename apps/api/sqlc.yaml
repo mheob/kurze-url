@@ -44,3 +44,23 @@ sql:
             go_type:
               type: time.Time
               pointer: true
+          # audit_log.metadata is jsonb, which sqlc's pgx/v5 mapping generates
+          # as []byte by default. That is fine for reads, but production
+          # connects through Supavisor's transaction pooler, which forces
+          # pgx.QueryExecModeExec on the pool (see cmd/api/main.go). In that
+          # mode pgx never gets a server-described parameter type, so it picks
+          # a wire encoding from the Go argument's own type alone: a []byte
+          # value is encoded as Postgres bytea, and Postgres then rejects it
+          # for a jsonb column with "invalid input syntax for type json"
+          # (SQLSTATE 22P02) — a plain string is encoded as text instead,
+          # which Postgres parses correctly as jsonb. A per-query ::text cast
+          # cannot fix this instead: it would make sqlc infer the same string
+          # type, but Postgres has no cast from text to jsonb, so the insert
+          # would fail to plan at all. Scoped to this one column rather than
+          # every jsonb column, so link_scan_result.raw_response (unused by
+          # any query yet) is untouched until it needs the same treatment.
+          - column: audit_log.metadata
+            nullable: true
+            go_type:
+              type: string
+              pointer: true
