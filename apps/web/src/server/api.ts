@@ -7,7 +7,7 @@
 // per-file reference-directive resolution instead.
 /// <reference types="node" />
 
-import { createApiClient } from '@kurze-url/api-client';
+import { createApiClient, type GetAccessToken } from '@kurze-url/api-client';
 import { withRelatedProject } from '@vercel/related-projects';
 
 /**
@@ -57,6 +57,14 @@ function platformHeaders(): Record<string, string> {
 // generated `Client` type on its public surface (only `./generated`, not
 // `./generated/client`, is re-exported), so `ReturnType<typeof createApiClient>`
 // names the type without reaching past that boundary.
-export function getApiClient(baseUrl: string = apiBaseUrl()): ReturnType<typeof createApiClient> {
-	return createApiClient({ baseUrl, headers: platformHeaders() });
+//
+// `getAccessToken` is optional so the existing anonymous, single-argument
+// callers (e.g. the health check) keep working unchanged: an authenticated
+// caller passes a supplier, everyone else gets a client where only
+// `bearerAuth`-free operations are reachable.
+export function getApiClient(
+	baseUrl: string = apiBaseUrl(),
+	getAccessToken?: GetAccessToken,
+): ReturnType<typeof createApiClient> {
+	return createApiClient({ baseUrl, getAccessToken, headers: platformHeaders() });
 }
