@@ -200,6 +200,7 @@ function RouteComponent(): React.JSX.Element {
 			<LinkForm
 				fieldErrors={fieldErrors}
 				initial={toFormValues(link)}
+				key={linkId}
 				onSubmit={(values) => {
 					updateMutation.mutate(values);
 				}}
