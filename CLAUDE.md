@@ -53,7 +53,7 @@ supabase/         # Supabase CLI-owned migrations (top-level, not under apps/api
 .github/workflows/
 ```
 
-Inside `apps/api`: `cmd/api/main.go` plus `internal/{api,db,redis,auth,scanning,qr}`.
+Inside `apps/api`: `cmd/api/main.go` and `cmd/openapi/main.go` (writes `openapi.json`, which `packages/api-client` is generated from), plus `internal/{analytics,api,audit,auth,authz,cache,config,db,destination,link,pages,slug,supabase}`. Redis lives behind `cache`, not an `internal/redis`. `scanning` and `qr` arrive with the features that need them and do not exist yet.
 
 `apps/api` and `apps/cli` are **separate Go modules**, no `go.work` — the CLI talks HTTP, it does not import backend packages.
 
