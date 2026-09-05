@@ -247,3 +247,12 @@ jobs:
           # production's — do not "fix" this by swapping in production's.
           SUPABASE_URL: ${{ vars.SUPABASE_PREVIEW_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # Seeding `team`/`team_member` goes over a direct Postgres
+          # connection now, not PostgREST — this product never talks to
+          # PostgREST anywhere else, so the e2e suite shouldn't depend on it
+          # either. Must be kurze-url-preview's connection string, in its
+          # transaction-pooler form (IPv6-only direct connections don't work
+          # here — Vercel has no IPv6 egress, and this project has already
+          # hit that once) — never production's: the whole reason a second
+          # Supabase project exists is that this suite writes rows.
+          E2E_DATABASE_URL: ${{ secrets.E2E_DATABASE_URL }}
