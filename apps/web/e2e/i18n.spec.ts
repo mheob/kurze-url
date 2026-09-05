@@ -1,4 +1,6 @@
-import { expect, test } from '@playwright/test';
+import { expect } from '@playwright/test';
+
+import { test } from './fixtures/auth';
 
 /**
  * The half of the no-hardcoded-string rule that react/jsx-no-literals cannot
@@ -71,6 +73,49 @@ for (const path of PATHS) {
 		// wrong host.
 		if (!baseURL) throw new Error('baseURL fixture is unset — check playwright.config.ts');
 
+		const english = new Set(await visibleText(page, baseURL, 'en', path));
+		const german = await visibleText(page, baseURL, 'de', path);
+
+		const untranslated = german.filter((value) => english.has(value));
+
+		expect(
+			untranslated,
+			`these strings did not change with the language: ${untranslated.join(', ')}`,
+		).toEqual([]);
+	});
+}
+
+/**
+ * The screens people actually use, reached through the same `teamId` fixture
+ * `links.spec.ts` uses — `test` above is `./fixtures/auth`'s extended one, a
+ * superset of `@playwright/test`'s own, so the loop over the public `PATHS`
+ * above never pays for provisioning a team it never asks for: a fixture only
+ * runs for a test that destructures it.
+ */
+const AUTHENTICATED_PATHS = ['links', 'links/new'] as const;
+
+for (const suffix of AUTHENTICATED_PATHS) {
+	test(`no user-facing string is identical across languages (authenticated /${suffix})`, async ({
+		page,
+		baseURL,
+		teamId,
+	}) => {
+		if (!baseURL) throw new Error('baseURL fixture is unset — check playwright.config.ts');
+
+		if (suffix === 'links') {
+			// A freshly provisioned team starts with zero links, and `LinkList`'s
+			// empty-state branch (src/components/link-list.tsx) never renders the
+			// `.invalid`-domain notice, the per-link edit link, or the pagination
+			// nav — all real, translated strings this crawl would otherwise miss.
+			// Created once, before either language visits the page, so both passes
+			// compare the same rendered list.
+			await page.goto(`/teams/${teamId}/links/new`);
+			await page.getByLabel(/destination/i).fill('https://example.org/i18n-crawl');
+			await page.getByRole('button', { name: /save/i }).click();
+			await expect(page.getByText('https://example.org/i18n-crawl')).toBeVisible();
+		}
+
+		const path = `/teams/${teamId}/${suffix}`;
 		const english = new Set(await visibleText(page, baseURL, 'en', path));
 		const german = await visibleText(page, baseURL, 'de', path);
 
