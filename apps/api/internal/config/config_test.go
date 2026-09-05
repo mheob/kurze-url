@@ -205,6 +205,31 @@ func TestExplicitAPIHostnameBeatsVercelURL(t *testing.T) {
 	require.Equal(t, "api.kurze.url", cfg.APIHostname)
 }
 
+func TestBranchURLBeatsVercelURL(t *testing.T) {
+	// Both name this deployment, but the web app reaches the API through
+	// @vercel/related-projects, which hands it the *branch* alias. Matching
+	// VERCEL_URL instead left the API answering /v1 on a hostname its own
+	// frontend never calls: requests arrived on the branch alias, missed the
+	// hostname gate, and fell through to the redirect surface as a slug.
+	setRequired(t)
+	t.Setenv("VERCEL_URL", "kurze-url-abc123-mheobs-projects.vercel.app")
+	t.Setenv("VERCEL_BRANCH_URL", "kurze-url-api-git-some-branch-mheobs-projects.vercel.app")
+
+	cfg, err := config.Load()
+	require.NoError(t, err)
+	require.Equal(t, "kurze-url-api-git-some-branch-mheobs-projects.vercel.app", cfg.APIHostname)
+}
+
+func TestExplicitAPIHostnameBeatsBranchURL(t *testing.T) {
+	setRequired(t)
+	t.Setenv("VERCEL_BRANCH_URL", "kurze-url-api-git-some-branch-mheobs-projects.vercel.app")
+	t.Setenv("API_HOSTNAME", "api.kurze.url")
+
+	cfg, err := config.Load()
+	require.NoError(t, err)
+	require.Equal(t, "api.kurze.url", cfg.APIHostname)
+}
+
 func TestAPIHostnameDefaultsToLocalhostOffVercel(t *testing.T) {
 	// Local development has neither variable.
 	setRequired(t)
