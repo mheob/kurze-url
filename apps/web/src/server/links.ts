@@ -1,4 +1,10 @@
-import { listLinks, type PageLink } from '@kurze-url/api-client';
+import {
+	createLink,
+	listLinks,
+	type CreateLinkInputBodyWritable,
+	type Link,
+	type PageLink,
+} from '@kurze-url/api-client';
 import { queryOptions } from '@tanstack/react-query';
 import { createServerFn, createServerOnlyFn } from '@tanstack/react-start';
 import { getRequest } from '@tanstack/react-start/server';
@@ -96,3 +102,52 @@ export const linksQueryOptions = (teamId: string, page: number) =>
 		queryFn: () => listLinksFn({ data: { teamId, page } }),
 		queryKey: ['links', teamId, page] as const,
 	});
+
+/**
+ * Same `...For`/`...Fn` split as `listLinksFor`/`listLinksFn` above, for the
+ * same reason: `createLinkFn`'s `createServerFn` can't be called directly
+ * under Vitest ("No Start context found"), so the testable logic takes
+ * `request: Request` as a plain parameter instead of reaching for
+ * `getRequest()` itself. `links.test.ts` exercises this function directly.
+ *
+ * `flushSessionCookies` and the `createServerOnlyFn` wrap are both required
+ * for the identical reason documented on `listLinksFor`: reading the session
+ * via `requireSession` is what refreshes an expiring one, and skipping the
+ * flush would silently drop that refresh's cookies on every link creation.
+ */
+export const createLinkFor = createServerOnlyFn(
+	async (request: Request, teamId: string, body: CreateLinkInputBodyWritable): Promise<Link> => {
+		const headers = new Headers();
+		const { accessToken } = await requireSession(request, headers);
+		flushSessionCookies(headers);
+
+		const { data } = await createLink({
+			body,
+			client: authedApiClient(accessToken),
+			path: { team_id: teamId },
+			// throwOnError is required for the same reason as `listLinksFor`: the
+			// generated client's default (false) never rejects, so a validation
+			// failure would resolve to `{ data: undefined, error }` instead of
+			// throwing — silently reporting success for a link that was never
+			// created. `classifyApiError` (Task 8) is written against exactly the
+			// thrown shape this produces.
+			throwOnError: true,
+		});
+		return data;
+	},
+);
+
+/**
+ * `getRequest()` called inline here, not inside `createLinkFor`, for the same
+ * reason `listLinksFn` does it this way: it keeps `createLinkFor` callable
+ * with a synthetic request in tests.
+ *
+ * `body` is typed as the generated client's own `CreateLinkInputBodyWritable`,
+ * not the brief's `Record<string, unknown>` — the route builds one of those
+ * from typed `LinkFormValues`, and threading the real type through here means
+ * nothing between the route and the API call needs an unsafe cast. Validation
+ * of what's actually in the body stays the API's job either way.
+ */
+export const createLinkFn = createServerFn({ method: 'POST' })
+	.validator((data: { body: CreateLinkInputBodyWritable; teamId: string }) => data)
+	.handler(async ({ data }) => createLinkFor(getRequest(), data.teamId, data.body));

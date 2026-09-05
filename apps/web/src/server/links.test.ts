@@ -45,7 +45,7 @@ vi.mock('@tanstack/react-start/server', () => ({
  * in. `listLinksFor` takes a `Request` as a plain parameter instead, which
  * is what makes it callable here at all; see its docstring in `links.ts`.
  */
-const { listLinksFor } = await import('./links');
+const { createLinkFor, listLinksFor } = await import('./links');
 
 /**
  * `createSupabase` also writes a refreshed session's cookies into the
@@ -161,6 +161,98 @@ describe('listLinksFor', () => {
 		});
 
 		await listLinksFor(request, 'team-a', 1);
+
+		expect(appended).toEqual(['set-cookie: sb-access-token=refreshed; Path=/; HttpOnly']);
+	});
+});
+
+describe('createLinkFor', () => {
+	it('creates a link via the API', async () => {
+		vi.stubEnv('API_HOST', 'http://api.test');
+		withSession('tok');
+
+		let seenAuth: string | null = null;
+		let seenBody: unknown;
+		server.use(
+			http.post('http://api.test/v1/teams/team-a/links', async ({ request: apiRequest }) => {
+				seenAuth = apiRequest.headers.get('authorization');
+				seenBody = await apiRequest.json();
+				return HttpResponse.json(
+					{
+						analytics_enabled: true,
+						created_at: '2026-01-01T00:00:00Z',
+						created_by: 'user-1',
+						destination_url: 'https://example.org/',
+						domain_id: 'domain-1',
+						expires_at: null,
+						folder_id: 'folder-1',
+						has_password: false,
+						hostname: 'short.invalid',
+						id: 'link-1',
+						redirect_type: 302,
+						short_url: 'https://short.invalid/abc123',
+						slug: 'abc123',
+						state: 'active',
+						tags: [],
+						team_id: 'team-a',
+						updated_at: '2026-01-01T00:00:00Z',
+					},
+					{ status: 201 },
+				);
+			}),
+		);
+
+		const result = await createLinkFor(request, 'team-a', {
+			destination_url: 'https://example.org/',
+		});
+
+		expect(seenAuth).toBe('Bearer tok');
+		expect(seenBody).toEqual({ destination_url: 'https://example.org/' });
+		expect(result.short_url).toBe('https://short.invalid/abc123');
+	});
+
+	/**
+	 * Same finding as `listLinksFor`'s equivalent test: reading the session via
+	 * `requireSession` is itself what refreshes an expiring one, and skipping
+	 * `flushSessionCookies` would silently drop that refresh's cookies — here,
+	 * on every link creation rather than every list fetch.
+	 */
+	it('flushes refreshed session cookies onto the real response', async () => {
+		vi.stubEnv('API_HOST', 'http://api.test');
+		withSession('tok');
+		server.use(
+			http.post('http://api.test/v1/teams/team-a/links', () =>
+				HttpResponse.json(
+					{
+						analytics_enabled: true,
+						created_at: '2026-01-01T00:00:00Z',
+						created_by: 'user-1',
+						destination_url: 'https://example.org/',
+						domain_id: 'domain-1',
+						expires_at: null,
+						folder_id: 'folder-1',
+						has_password: false,
+						hostname: 'short.invalid',
+						id: 'link-1',
+						redirect_type: 302,
+						short_url: 'https://short.invalid/abc123',
+						slug: 'abc123',
+						state: 'active',
+						tags: [],
+						team_id: 'team-a',
+						updated_at: '2026-01-01T00:00:00Z',
+					},
+					{ status: 201 },
+				),
+			),
+		);
+
+		const appended: string[] = [];
+		mocks.getResponse.mockReturnValue({
+			headers: { append: (name, value) => appended.push(`${name}: ${value}`) },
+		});
+
+		await createLinkFor(request, 'team-a', { destination_url: 'https://example.org/' });
 
 		expect(appended).toEqual(['set-cookie: sb-access-token=refreshed; Path=/; HttpOnly']);
 	});

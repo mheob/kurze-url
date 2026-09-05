@@ -44,7 +44,19 @@
 		"noShortDomain": "This instance has no working short domain yet, so these links will not redirect.",
 		"paginationLabel": "Pagination",
 		"previousPage": "Previous page",
-		"nextPage": "Next page"
+		"nextPage": "Next page",
+		"create": "Create link",
+		"destination": "Destination URL",
+		"destinationRequired": "Destination URL is required.",
+		"slug": "Short path",
+		"slugGenerated": "Leave empty and one will be generated",
+		"redirectType": "Redirect type",
+		"redirect302": "302 — temporary (recommended)",
+		"redirect301": "301 — permanent",
+		"redirect301Warning": "Browsers cache a 301. Clicks stop being counted, and changing the destination later will not reach anyone who has already visited.",
+		"expiresAt": "Expires at",
+		"analyticsEnabled": "Count clicks for this link",
+		"save": "Save"
 	},
 	"errors": {
 		"rateLimited": "Too many links created just now. Please wait a minute and try again.",
