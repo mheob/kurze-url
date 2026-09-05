@@ -44,12 +44,13 @@ function pageOf(overrides: Partial<PageLink> = {}): PageLink {
  * `LinkList` renders TanStack Router `<Link>` elements for pagination, which
  * need a router in context — the same reasoning `team-switcher.test.tsx`
  * gives for its own minimal, test-only route tree. Also registers
- * `/teams/$teamId/links/new` (Finding 2's create-link entry point): `<Link>`
+ * `/teams/$teamId/links/new` (Finding 2's create-link entry point) and
+ * `/teams/$teamId/links/$linkId` (Finding 2's edit-link entry point): `<Link>`
  * builds its `href` from the `to` path template regardless of whether this
- * router's own tree contains a matching route (verified — omitting it here
- * does not fail any test), but registering it keeps this fixture honest
- * about the route actually existing, matching every other route `<Link>`
- * here targets.
+ * router's own tree contains a matching route (verified — omitting either
+ * here does not fail any test), but registering them keeps this fixture
+ * honest about the routes actually existing, matching every other route
+ * `<Link>` here targets.
  */
 function renderWith(data: PageLink, page = 1): ReturnType<typeof render> {
 	const rootRoute = createRootRoute({
@@ -65,9 +66,14 @@ function renderWith(data: PageLink, page = 1): ReturnType<typeof render> {
 		getParentRoute: () => rootRoute,
 		path: '/teams/$teamId/links/new',
 	});
+	const editLinkRoute = createRoute({
+		component: () => null,
+		getParentRoute: () => rootRoute,
+		path: '/teams/$teamId/links/$linkId',
+	});
 	const router = createRouter({
 		history: createMemoryHistory({ initialEntries: ['/'] }),
-		routeTree: rootRoute.addChildren([linksRoute, newLinkRoute]),
+		routeTree: rootRoute.addChildren([linksRoute, newLinkRoute, editLinkRoute]),
 	});
 
 	return render(
@@ -98,14 +104,39 @@ describe('LinkList', () => {
 		// Finding 2: the empty state read as an actionable prompt ("Create your
 		// first one") with nothing to click. Now it is an actual link.
 		renderWith(pageOf());
-		expect(await screen.findByRole('link', { name: 'Create link' })).toBeInTheDocument();
+		expect(await screen.findByRole('link', { name: 'Create link' })).toHaveAttribute(
+			'href',
+			'/teams/team-a/links/new',
+		);
 	});
 
 	it('offers a link to create another link when the team already has links', async () => {
 		// Finding 2, other half: a team that already has links must still be
 		// able to reach the create page, not only a team with none.
 		renderWith(pageOf({ items: [link()], total_count: 1 }));
-		expect(await screen.findByRole('link', { name: 'Create link' })).toBeInTheDocument();
+		expect(await screen.findByRole('link', { name: 'Create link' })).toHaveAttribute(
+			'href',
+			'/teams/team-a/links/new',
+		);
+	});
+
+	it('offers an edit link per row, addressed at both the team and the link', async () => {
+		// Finding 2: rows had no edit link at all, so Task 11's entire edit and
+		// delete surface was reachable only by hand-typing a URL containing a
+		// UUID. The edit link interpolates *two* params — a wrong `teamId` or a
+		// row's link confused with another's would both compile and pass a
+		// role/name-only assertion, so this pins the actual `href` for each row.
+		renderWith(
+			pageOf({
+				items: [link(), link({ id: 'link-2', short_url: 'https://short.invalid/def456' })],
+				total_count: 2,
+			}),
+		);
+
+		const editLinks = await screen.findAllByRole('link', { name: 'Edit' });
+		expect(editLinks).toHaveLength(2);
+		expect(editLinks[0]).toHaveAttribute('href', '/teams/team-a/links/link-1');
+		expect(editLinks[1]).toHaveAttribute('href', '/teams/team-a/links/link-2');
 	});
 
 	it('lists every link on the page with a copy button and its destination', async () => {

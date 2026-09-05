@@ -57,6 +57,9 @@ export function LinkList({ data, page, teamId }: LinkListViewProps): React.JSX.E
 						<a href={link.short_url}>{link.short_url}</a>
 						<CopyButton value={link.short_url} />
 						<span>{link.destination_url}</span>
+						<Link params={{ linkId: link.id, teamId }} to="/teams/$teamId/links/$linkId">
+							{t('links.edit')}
+						</Link>
 					</li>
 				))}
 			</ul>
