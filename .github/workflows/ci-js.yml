@@ -239,3 +239,11 @@ jobs:
           # without it, so a missing secret fails the job instead of the check
           # silently becoming meaningless.
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          # fixtures/auth.ts mints a signed-in session via the Supabase Admin
+          # API instead of driving the login UI, and throws by design if
+          # either of these is missing — the same failure the fixture exists
+          # to catch (specs once ran signed out and passed against Vercel's
+          # login page). The key is the kurze-url-preview project's, never
+          # production's — do not "fix" this by swapping in production's.
+          SUPABASE_URL: ${{ vars.SUPABASE_PREVIEW_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
