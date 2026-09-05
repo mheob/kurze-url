@@ -202,7 +202,7 @@ Verify by inviting an address you control through `POST /v1/teams/{team_id}/memb
 - [ ] **Step 8: Verify against a real preview deployment**
 
 ```bash
-git commit --allow-empty -m "chore: verify preview database wiring"
+but commit -b <branch> --allow-empty -m "chore: verify preview database wiring"
 but push <branch>
 # wait for the API preview, then:
 curl -s -H "x-vercel-protection-bypass: $BYPASS" \
