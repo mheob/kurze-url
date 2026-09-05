@@ -27,7 +27,7 @@ vi.mock('./supabase', () => ({
 	createSupabase: (): FakeSupabaseClient => ({ auth: { signInWithOtp: mocks.signInWithOtp } }),
 }));
 
-const { sendMagicLinkFor } = await import('./auth');
+const { ENUMERATION_TIMING_FLOOR_MS, sendMagicLinkFor } = await import('./auth');
 
 describe('sendMagicLinkFor', () => {
 	it('never creates an account', async () => {
@@ -58,5 +58,44 @@ describe('sendMagicLinkFor', () => {
 
 		expect(unknown).toEqual(known);
 		expect(unknown).toEqual({ sent: true });
+	});
+
+	it('holds a fixed latency floor on the fast-fail (unknown-address) path', async () => {
+		// Real timers would make this suite slower by the floor on every run;
+		// fake timers let us prove the wait happens without paying for it.
+		vi.useFakeTimers();
+		try {
+			// The fast-fail case: Supabase rejects locally with no SMTP
+			// round-trip, so the mocked call already resolves on the next
+			// microtask tick, before any timer fires. Without a floor, that
+			// would let the response leave immediately — the timing gap this
+			// test exists to close.
+			mocks.signInWithOtp.mockResolvedValue({
+				error: { message: 'Signups not allowed for otp' },
+			});
+
+			let settled = false;
+			const pending = sendMagicLinkFor('unknown@example.test', 'https://app.test').then(
+				(result) => {
+					settled = true;
+					return result;
+				},
+			);
+
+			// Let the already-resolved signInWithOtp promise flush without
+			// advancing the clock at all.
+			await Promise.resolve();
+			await Promise.resolve();
+			expect(settled).toBe(false);
+
+			await vi.advanceTimersByTimeAsync(ENUMERATION_TIMING_FLOOR_MS - 1);
+			expect(settled).toBe(false);
+
+			await vi.advanceTimersByTimeAsync(1);
+			expect(settled).toBe(true);
+			await expect(pending).resolves.toEqual({ sent: true });
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });
