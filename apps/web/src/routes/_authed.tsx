@@ -1,8 +1,21 @@
 import { getMe } from '@kurze-url/api-client';
-import { createFileRoute, notFound, Outlet, redirect } from '@tanstack/react-router';
+import { useMutation } from '@tanstack/react-query';
+import {
+	createFileRoute,
+	notFound,
+	Outlet,
+	redirect,
+	useParams,
+	useRouter,
+} from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
 import { getRequest } from '@tanstack/react-start/server';
+import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
+import { AuthedShell } from '../components/authed-shell';
+import { classifyApiError } from '../lib/api-errors';
+import { signOut } from '../server/auth';
 import {
 	authedApiClient,
 	flushSessionCookies,
@@ -80,5 +93,57 @@ export const Route = createFileRoute('/_authed')({
 			throw error;
 		}
 	},
-	component: () => <Outlet />,
+	component: AuthedLayout,
 });
+
+/**
+ * Wires `AuthedShell` (Finding 2) into the actual route tree: `TeamSwitcher`
+ * and the sign-out control were both built, tested and (for the switcher)
+ * storied in earlier tasks, but nothing rendered either one until now.
+ *
+ * `useParams({ strict: false })` (not `Route.useParams()`, which only sees
+ * this route's *own* params — `_authed` is a pathless layout with none) is
+ * what reaches `teamId` from whichever child route is actually matched;
+ * falling back to the first membership covers the layout rendering above a
+ * child that has no `teamId` of its own, or none at all (see `AuthedShell`'s
+ * own docstring for why `currentTeamId` is optional rather than assumed).
+ */
+function AuthedLayout(): React.JSX.Element {
+	const { me } = Route.useRouteContext();
+	const { t } = useTranslation();
+	const router = useRouter();
+	const { teamId } = useParams({ strict: false });
+	const [signOutFailed, setSignOutFailed] = useState(false);
+
+	const signOutMutation = useMutation({
+		mutationFn: () => signOut(),
+		onError: (error: unknown) => {
+			// Already signed out from the API's point of view — same "nothing
+			// left to undo" reasoning as any other `unauthenticated` classification
+			// elsewhere in this app — so this still lands on `/login`, just without
+			// pretending the click failed.
+			if (classifyApiError(error).kind === 'unauthenticated') {
+				void router.navigate({ to: '/login' });
+				return;
+			}
+			setSignOutFailed(true);
+		},
+		onSuccess: async () => {
+			setSignOutFailed(false);
+			await router.navigate({ to: '/' });
+		},
+	});
+
+	return (
+		<>
+			<AuthedShell
+				currentTeamId={teamId ?? me.memberships[0]?.team_id}
+				memberships={me.memberships}
+				onSignOut={() => signOutMutation.mutate()}
+				signingOut={signOutMutation.isPending}
+			/>
+			{signOutFailed ? <p role="alert">{t('errors.unknown')}</p> : null}
+			<Outlet />
+		</>
+	);
+}
