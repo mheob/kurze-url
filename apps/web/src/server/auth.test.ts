@@ -19,12 +19,35 @@ interface FakeSupabaseClient {
 	};
 }
 
+/**
+ * Only the slice `flushSessionCookies` reaches through: a response object
+ * whose `headers` supports `append`, same narrowing rationale as
+ * `FakeSupabaseClient` above and `session.test.ts`'s own `FakeResponse`.
+ */
+interface FakeResponse {
+	headers: { append: (name: string, value: string) => void };
+}
+
 const mocks = vi.hoisted(() => ({
 	signInWithOtp: vi.fn<FakeSupabaseClient['auth']['signInWithOtp']>(),
+	// Defaulted so tests that never touch cookies don't need their own setup —
+	// only the flush test below overrides this to inspect what was appended.
+	getResponse: vi.fn<() => FakeResponse>(() => ({ headers: { append: () => undefined } })),
 }));
 
 vi.mock('./supabase', () => ({
-	createSupabase: (): FakeSupabaseClient => ({ auth: { signInWithOtp: mocks.signInWithOtp } }),
+	// Simulates the one thing this file's flush test needs from the real
+	// adapter: @supabase/ssr writes the PKCE code verifier cookie into
+	// `headers` synchronously, before `signInWithOtp`'s HTTP call even
+	// resolves (see Finding 1's own reasoning in `auth.ts`).
+	createSupabase: (_request: Request, headers: Headers): FakeSupabaseClient => {
+		headers.append('set-cookie', 'sb-pkce-code-verifier=abc; Path=/; HttpOnly');
+		return { auth: { signInWithOtp: mocks.signInWithOtp } };
+	},
+}));
+
+vi.mock('@tanstack/react-start/server', () => ({
+	getResponse: mocks.getResponse,
 }));
 
 const { ENUMERATION_TIMING_FLOOR_MS, sendMagicLinkFor } = await import('./auth');
@@ -97,5 +120,27 @@ describe('sendMagicLinkFor', () => {
 		} finally {
 			vi.useRealTimers();
 		}
+	});
+
+	/**
+	 * Finding 1: `sendMagicLinkFor` built a `Headers` object, let
+	 * `signInWithOtp` write the PKCE verifier cookie into it, and then
+	 * discarded it — the verifier never reached the browser, so
+	 * `/auth/callback`'s `exchangeCodeForSession` had nothing to consume and
+	 * login was broken end to end. This test fails on exactly that: with the
+	 * `flushSessionCookies(headers)` call removed, `appended` stays empty
+	 * because nothing ever forwards the cookie the mocked `createSupabase`
+	 * wrote onto the real response.
+	 */
+	it('flushes the PKCE verifier cookie onto the real response', async () => {
+		mocks.signInWithOtp.mockResolvedValue({ error: null });
+		const appended: string[] = [];
+		mocks.getResponse.mockReturnValue({
+			headers: { append: (name, value) => appended.push(`${name}: ${value}`) },
+		});
+
+		await sendMagicLinkFor('someone@example.test', 'https://app.test');
+
+		expect(appended).toEqual(['set-cookie: sb-pkce-code-verifier=abc; Path=/; HttpOnly']);
 	});
 });
