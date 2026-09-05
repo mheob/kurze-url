@@ -36,9 +36,20 @@
 		"none": "You are not a member of any team yet. Ask the person who invited you to add you to one.",
 		"switcherLabel": "Teams"
 	},
+	"links": {
+		"heading": "Your links",
+		"copy": "Copy",
+		"copied": "Copied",
+		"empty": "No links yet. Create your first one.",
+		"noShortDomain": "This instance has no working short domain yet, so these links will not redirect.",
+		"paginationLabel": "Pagination",
+		"previousPage": "Previous page",
+		"nextPage": "Next page"
+	},
 	"errors": {
 		"rateLimited": "Too many links created just now. Please wait a minute and try again.",
 		"notFound": "Not found.",
+		"unauthenticated": "Your session has expired. Please sign in again.",
 		"unknown": "Something went wrong. Please try again."
 	}
 }

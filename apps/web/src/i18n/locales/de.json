@@ -36,9 +36,20 @@
 		"none": "Du gehörst noch keinem Verein an. Frag die Person, die dich eingeladen hat, ob sie dich hinzufügen kann.",
 		"switcherLabel": "Vereine"
 	},
+	"links": {
+		"heading": "Deine Links",
+		"copy": "Kopieren",
+		"copied": "Kopiert",
+		"empty": "Noch keine Links. Erstell deinen ersten.",
+		"noShortDomain": "Diese Instanz hat noch keine funktionierende Kurz-Domain, daher leiten diese Links nicht weiter.",
+		"paginationLabel": "Seitennavigation",
+		"previousPage": "Vorherige Seite",
+		"nextPage": "Nächste Seite"
+	},
 	"errors": {
 		"rateLimited": "Gerade wurden zu viele Links erstellt. Warte eine Minute und versuch es dann noch mal.",
 		"notFound": "Nicht gefunden.",
+		"unauthenticated": "Deine Sitzung ist abgelaufen. Melde dich noch mal an.",
 		"unknown": "Etwas ist schiefgelaufen. Versuch es noch mal."
 	}
 }
