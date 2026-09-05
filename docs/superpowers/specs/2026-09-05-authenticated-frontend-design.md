@@ -77,6 +77,14 @@ A pasted URL then shows the same team to everyone, two tabs can hold two teams, 
 
 `$teamId` is validated in the layout against the memberships from `/v1/me`. A team you do not belong to renders not-found, so the frontend does not leak the existence of teams the API hides.
 
+### `_authed/index.tsx` remembers the last team
+
+A bare `/` for a signed-in person redirects to the team they used last, read from a `team` cookie, falling back to the first membership when the cookie is absent or names a team they no longer belong to. The team switcher writes the cookie.
+
+This reuses the mechanism `src/lib/preferences.ts` already established for language and theme, and for the same stated reason: a cookie is readable on the server during rendering, so the redirect happens before the first paint rather than after a round trip. `localStorage` cannot do that.
+
+The membership check on read is the part that matters. A cookie naming a team someone was removed from would otherwise redirect them into a not-found on every visit, with no way out except clearing cookies — the failure mode is a person locked out of their own dashboard by stale state.
+
 ## Routes
 
 ```
@@ -161,11 +169,9 @@ It also shrinks a risk this plan otherwise takes on. The Playwright fixture need
 
 ### Migrations reach two projects now
 
-Supabase's GitHub integration deploys to one production project. The preview project needs its own path, and the documentation does not say whether two projects can connect to the same repository — so the first task establishes it rather than assuming.
+Both projects connect to the same GitHub repository — confirmed 2026-09-05: `kurze-url` and `kurze-url-preview` each show `mheob/kurze-url` as their connected repo. Supabase's integration therefore stays the **only** thing applying migrations to either database, and CLAUDE.md's one-owner rule needs no amendment. The `supabase db push` prohibition stands as written.
 
-**If two projects can connect:** use that. Supabase's integration stays the only thing applying migrations, and CLAUDE.md's one-owner rule is untouched.
-
-**If they cannot:** a CI job runs `supabase db push` against the preview project only. This collides with CLAUDE.md's flat prohibition on a `db push` workflow, and the collision must be resolved in the document rather than in silence. The rule exists so that **production** schema state has one owner; a push that can only ever reach the preview project does not give production a second owner. If this fallback is taken, CLAUDE.md is amended to say so explicitly, naming the production project as the thing the rule protects.
+One consequence to know rather than discover: both projects deploy migrations on merge to `main`, so a pull request that _adds_ a migration runs its E2E against a preview database that does not have it yet. That is the same ordering production has always had, and it is a reason to keep schema changes and the frontend work that depends on them in separate pull requests.
 
 ## Testing
 
@@ -187,6 +193,4 @@ Custom SMTP must be live before this ships. Supabase's built-in sender caps at 2
 
 ## Open questions
 
-- Whether two Supabase projects can connect to one GitHub repository. Settled by the first task; determines whether CLAUDE.md needs amending.
-- The shared short domain remains unresolved (CLAUDE.md Open items). This plan surfaces the consequence rather than waiting on it.
-- Whether the team switcher needs a "last used team" cookie for `_authed/index.tsx`, or whether redirecting to the first membership is enough. Deferred until there is a user with two teams.
+- Which hostname the shared short domain finally uses (CLAUDE.md, Open items). `short.invalid` is a deliberate placeholder, not a blocker: this plan surfaces the consequence in the UI rather than waiting on the decision, and the notice clears itself when a real domain is set.
