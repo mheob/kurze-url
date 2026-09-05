@@ -1,9 +1,13 @@
 import {
 	createLink,
+	deleteLink,
+	getLink,
 	listLinks,
+	updateLink,
 	type CreateLinkInputBodyWritable,
 	type Link,
 	type PageLink,
+	type UpdateLinkInputBodyWritable,
 } from '@kurze-url/api-client';
 import { queryOptions } from '@tanstack/react-query';
 import { createServerFn, createServerOnlyFn } from '@tanstack/react-start';
@@ -151,3 +155,86 @@ export const createLinkFor = createServerOnlyFn(
 export const createLinkFn = createServerFn({ method: 'POST' })
 	.validator((data: { body: CreateLinkInputBodyWritable; teamId: string }) => data)
 	.handler(async ({ data }) => createLinkFor(getRequest(), data.teamId, data.body));
+
+/**
+ * Same `...For`/`...Fn` split, same reason: `getLinkFn`'s `createServerFn` is
+ * unreachable under Vitest ("No Start context found"), so
+ * `teams.$teamId.links.$linkId.test.ts` calls this directly with a synthetic
+ * request instead.
+ *
+ * Not scoped by `team_id` here, deliberately: the API's own entity-scoped
+ * authorization (`internal/authz`, per CLAUDE.md) is what decides whether this
+ * caller may see this link at all, answering with 404 for a non-member the
+ * same way `assertMembership` does for a whole team. Re-deriving that check
+ * here would be a second, divergent copy of a decision the API already makes
+ * correctly.
+ */
+export const getLinkFor = createServerOnlyFn(
+	async (request: Request, linkId: string): Promise<Link> => {
+		const headers = new Headers();
+		const { accessToken } = await requireSession(request, headers);
+		flushSessionCookies(headers);
+
+		const { data } = await getLink({
+			client: authedApiClient(accessToken),
+			path: { link_id: linkId },
+			throwOnError: true,
+		});
+		return data;
+	},
+);
+
+/** `getRequest()` inline, not inside `getLinkFor`, for the same reason as `listLinksFn`/`createLinkFn`. */
+export const getLinkFn = createServerFn({ method: 'GET' })
+	.validator((data: { linkId: string }) => data)
+	.handler(async ({ data }) => getLinkFor(getRequest(), data.linkId));
+
+/**
+ * Same `...For`/`...Fn` split and the same reasoning as `createLinkFor`.
+ * `body` is the generated client's own `UpdateLinkInputBodyWritable` — every
+ * field optional, since a PATCH — so the edit route's own transform decides
+ * what to send and nothing here needs an unsafe cast.
+ */
+export const updateLinkFor = createServerOnlyFn(
+	async (request: Request, linkId: string, body: UpdateLinkInputBodyWritable): Promise<Link> => {
+		const headers = new Headers();
+		const { accessToken } = await requireSession(request, headers);
+		flushSessionCookies(headers);
+
+		const { data } = await updateLink({
+			body,
+			client: authedApiClient(accessToken),
+			path: { link_id: linkId },
+			throwOnError: true,
+		});
+		return data;
+	},
+);
+
+export const updateLinkFn = createServerFn({ method: 'POST' })
+	.validator((data: { body: UpdateLinkInputBodyWritable; linkId: string }) => data)
+	.handler(async ({ data }) => updateLinkFor(getRequest(), data.linkId, data.body));
+
+/**
+ * Same `...For`/`...Fn` split. Returns `void`, not the brief's
+ * `{ deleted: true }`: nothing downstream reads a return value — the edit
+ * route's mutation only cares whether the promise resolved or rejected — and
+ * a shape nothing consumes is just another thing to keep in sync.
+ */
+export const deleteLinkFor = createServerOnlyFn(
+	async (request: Request, linkId: string): Promise<void> => {
+		const headers = new Headers();
+		const { accessToken } = await requireSession(request, headers);
+		flushSessionCookies(headers);
+
+		await deleteLink({
+			client: authedApiClient(accessToken),
+			path: { link_id: linkId },
+			throwOnError: true,
+		});
+	},
+);
+
+export const deleteLinkFn = createServerFn({ method: 'POST' })
+	.validator((data: { linkId: string }) => data)
+	.handler(async ({ data }) => deleteLinkFor(getRequest(), data.linkId));

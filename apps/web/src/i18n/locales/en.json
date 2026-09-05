@@ -56,7 +56,12 @@
 		"redirect301Warning": "Browsers cache a 301. Clicks stop being counted, and changing the destination later will not reach anyone who has already visited.",
 		"expiresAt": "Expires at",
 		"analyticsEnabled": "Count clicks for this link",
-		"save": "Save"
+		"save": "Save",
+		"edit": "Edit",
+		"delete": "Delete",
+		"deleteQuestion": "Delete this link? Anyone who already has the short URL will get a 404.",
+		"deleteConfirm": "Yes, delete it",
+		"cancel": "Cancel"
 	},
 	"errors": {
 		"rateLimited": "Too many links created just now. Please wait a minute and try again.",

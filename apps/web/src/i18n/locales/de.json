@@ -56,7 +56,12 @@
 		"redirect301Warning": "Browser speichern eine 301 zwischen. Klicks werden dann nicht mehr gezählt, und eine spätere Änderung des Ziels erreicht niemanden, der die Seite bereits besucht hat.",
 		"expiresAt": "Läuft ab am",
 		"analyticsEnabled": "Klicks für diesen Link zählen",
-		"save": "Speichern"
+		"save": "Speichern",
+		"edit": "Bearbeiten",
+		"delete": "Löschen",
+		"deleteQuestion": "Diesen Link löschen? Wer die Kurz-URL bereits hat, erhält dann einen 404.",
+		"deleteConfirm": "Ja, löschen",
+		"cancel": "Abbrechen"
 	},
 	"errors": {
 		"rateLimited": "Gerade wurden zu viele Links erstellt. Warte eine Minute und versuch es dann noch mal.",
