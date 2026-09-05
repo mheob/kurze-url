@@ -141,13 +141,13 @@ func Log(ctx context.Context, q *db.Queries, e Entry) error {
 		return err
 	}
 
-	raw := `{}`
+	raw := []byte(`{}`)
 	if len(e.Metadata) > 0 {
 		encoded, err := json.Marshal(e.Metadata)
 		if err != nil {
 			return fmt.Errorf("audit: encode metadata: %w", err)
 		}
-		raw = string(encoded)
+		raw = encoded
 	}
 
 	teamID, actorUserID, entityID := e.TeamID, e.ActorUserID, e.EntityID
@@ -157,7 +157,7 @@ func Log(ctx context.Context, q *db.Queries, e Entry) error {
 		Action:      string(e.Action),
 		EntityType:  e.EntityType,
 		EntityID:    &entityID,
-		Metadata:    &raw,
+		Metadata:    raw,
 	}); err != nil {
 		return fmt.Errorf("audit: insert entry: %w", err)
 	}

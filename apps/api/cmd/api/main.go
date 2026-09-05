@@ -53,19 +53,48 @@ func run(log *slog.Logger) error {
 
 	// Production connects through Supavisor's transaction pooler, which
 	// multiplexes many client connections onto far fewer server connections.
-	// pgx's default mode caches prepared statements per connection, so a
-	// statement it cached earlier is already present on whichever server
-	// connection it borrows next — Postgres answers "prepared statement
-	// already exists" (SQLSTATE 42P05) and the API dies at startup.
+	// pgx's default mode (QueryExecModeCacheStatement) prepares and caches a
+	// *named* server-side statement per connection, so a statement it cached
+	// earlier is already present on whichever server connection it borrows
+	// next — Postgres answers "prepared statement already exists" (SQLSTATE
+	// 42P05) and the API dies at startup.
 	//
-	// QueryExecModeExec uses unnamed statements and keeps no cache, which is
-	// the mode the pooler supports. It costs almost nothing here: these are
-	// short-lived serverless invocations, so a per-connection statement cache
-	// rarely survives long enough to be reused anyway. Set unconditionally
-	// rather than only when a pooler host is detected — a connection string
-	// that silently changes the query protocol depending on its hostname is
-	// worse than one slightly slower path in local development.
-	poolCfg.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeExec
+	// QueryExecModeExec (tried first) avoids that by never asking Postgres to
+	// describe a statement's parameter types at all, but that has a cost of
+	// its own: with no server-described type, pgx can only guess a parameter's
+	// wire encoding from the Go argument's own type. That guess is wrong for
+	// anything whose correct encoding depends on the actual column type —
+	// e.g. a []byte bound to jsonb goes out as bytea and Postgres rejects it
+	// (SQLSTATE 22P02), and a []uuid.UUID bound to a uuid[] parameter has no
+	// default encoding at all ("cannot find encode plan"). Both shapes exist
+	// in this codebase (audit_log.metadata, the tag-id array queries) and
+	// both broke in production.
+	//
+	// QueryExecModeCacheDescribe fixes that while remaining pooler-safe. Per
+	// pgx's conn.go: on a cache miss it calls Prepare(ctx, "", sql) — an
+	// *unnamed* statement (Parse.Name == "") — purely to learn each
+	// parameter's real OID, then throws the server-side statement away; the
+	// OIDs are cached client-side, keyed by SQL text, on the *pgx.Conn.
+	// Every execution — cache hit or miss — then goes through
+	// PgConn.ExecParams, which sends its own fresh, self-contained, unnamed
+	// Parse+Bind+Describe+Execute+Sync in one flush. Nothing here ever names
+	// a statement, and no round trip depends on server-side state a *different*
+	// round trip created, which is exactly the failure mode
+	// QueryExecModeCacheStatement (named statements) and
+	// QueryExecModeDescribeExec (an unnamed statement referenced from a
+	// *second*, later round trip) both have under a pooler that may swap the
+	// backing backend connection between round trips. The OIDs cached here
+	// describe the schema, not a specific backend, so they stay valid no
+	// matter which backend a later round trip lands on.
+	//
+	// Cost: once a given query text has been described on a given pooled
+	// connection (once per process lifetime, since this is a long-lived
+	// server, not a per-request cold start), every subsequent execution of it
+	// costs exactly one round trip — the same as QueryExecModeExec today.
+	// GET /<slug>, the redirect hot path, is unaffected either way: it is
+	// served from Redis on a hit and only falls through to Postgres on a
+	// cache miss.
+	poolCfg.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeCacheDescribe
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
