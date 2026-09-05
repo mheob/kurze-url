@@ -35,5 +35,10 @@
 	"teams": {
 		"none": "You are not a member of any team yet. Ask the person who invited you to add you to one.",
 		"switcherLabel": "Teams"
+	},
+	"errors": {
+		"rateLimited": "Too many links created just now. Please wait a minute and try again.",
+		"notFound": "Not found.",
+		"unknown": "Something went wrong. Please try again."
 	}
 }

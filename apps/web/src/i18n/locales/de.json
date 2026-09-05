@@ -35,5 +35,10 @@
 	"teams": {
 		"none": "Du gehörst noch keinem Verein an. Frag die Person, die dich eingeladen hat, ob sie dich hinzufügen kann.",
 		"switcherLabel": "Vereine"
+	},
+	"errors": {
+		"rateLimited": "Gerade wurden zu viele Links erstellt. Warte eine Minute und versuch es dann noch mal.",
+		"notFound": "Nicht gefunden.",
+		"unknown": "Etwas ist schiefgelaufen. Versuch es noch mal."
 	}
 }
