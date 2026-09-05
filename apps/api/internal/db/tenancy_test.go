@@ -202,7 +202,7 @@ func TestListAuditLogFiltersByActionAndPaginates(t *testing.T) {
 	teamID, userID := seedTeamWithOwner(ctx, t, tx)
 	q := db.New(tx)
 
-	emptyMetadata := "{}"
+	emptyMetadata := []byte("{}")
 	for _, action := range []string{"team.created", "team.renamed", "team.renamed"} {
 		require.NoError(t, q.InsertAuditLog(ctx, db.InsertAuditLogParams{
 			TeamID:      &teamID,
@@ -210,7 +210,7 @@ func TestListAuditLogFiltersByActionAndPaginates(t *testing.T) {
 			Action:      action,
 			EntityType:  "team",
 			EntityID:    &teamID,
-			Metadata:    &emptyMetadata,
+			Metadata:    emptyMetadata,
 		}))
 	}
 
@@ -243,14 +243,14 @@ func TestListAuditLogNeverCrossesTeams(t *testing.T) {
 		`insert into team (name) values ('other') returning id`).Scan(&otherTeamID))
 
 	q := db.New(tx)
-	emptyMetadata := "{}"
+	emptyMetadata := []byte("{}")
 	require.NoError(t, q.InsertAuditLog(ctx, db.InsertAuditLogParams{
 		TeamID:      &otherTeamID,
 		ActorUserID: &userID,
 		Action:      "team.created",
 		EntityType:  "team",
 		EntityID:    &otherTeamID,
-		Metadata:    &emptyMetadata,
+		Metadata:    emptyMetadata,
 	}))
 
 	rows, err := q.ListAuditLog(ctx, db.ListAuditLogParams{
