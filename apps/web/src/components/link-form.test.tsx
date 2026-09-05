@@ -47,6 +47,31 @@ describe('LinkForm', () => {
 		expect(screen.getByLabelText(/destination|ziel/i)).toHaveAccessibleDescription(/must be https/);
 	});
 
+	it('shows a server field error for expires_at', () => {
+		// Finding 1: this field previously had no `aria-describedby`/error `<p>`
+		// wiring at all, so a rejection naming it (a past expiry, say) rendered
+		// nothing — no field message, no banner, a silent failure.
+		renderForm({ fieldErrors: { expires_at: 'must be in the future' }, onSubmit: vi.fn() });
+		expect(screen.getByLabelText(/expires|läuft ab/i)).toHaveAccessibleDescription(
+			/must be in the future/,
+		);
+	});
+
+	it('shows a server field error for a field the form has no input for', () => {
+		// A field the API might add later, or any name this form doesn't render
+		// a specific input for — must still surface, not vanish.
+		renderForm({ fieldErrors: { some_future_field: 'not allowed' }, onSubmit: vi.fn() });
+		expect(screen.getByRole('alert')).toHaveTextContent('not allowed');
+	});
+
+	it('shows the slug placeholder saying one will be generated', () => {
+		renderForm({ onSubmit: vi.fn() });
+		expect(screen.getByLabelText(/short path|kurzpfad/i)).toHaveAttribute(
+			'placeholder',
+			'Leave empty and one will be generated',
+		);
+	});
+
 	it('offers no domain picker', () => {
 		// One domain exists on this instance, so a select with one option is
 		// furniture. It appears when custom domains do.

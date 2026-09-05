@@ -19,6 +19,21 @@ const defaultValues: LinkFormValues = {
 	slug: '',
 };
 
+/**
+ * Every field name this form renders an inline error for. A server field
+ * error naming anything outside this set (a field this form has no input
+ * for at all — e.g. one the API grows later) has nowhere to attach, and
+ * without a fallback it would silently vanish instead of surfacing. See the
+ * generic alert rendered below for those.
+ */
+const KNOWN_FIELD_NAMES: ReadonlySet<string> = new Set([
+	'analytics_enabled',
+	'destination_url',
+	'expires_at',
+	'redirect_type',
+	'slug',
+]);
+
 interface LinkFormProps {
 	readonly fieldErrors?: Readonly<Record<string, string>>;
 	readonly initial?: Partial<LinkFormValues>;
@@ -48,6 +63,13 @@ export function LinkForm({ fieldErrors, initial, onSubmit }: LinkFormProps): Rea
 		onSubmit: ({ value }) => onSubmit(value),
 	});
 
+	// A server error naming a field this form doesn't render (see
+	// `KNOWN_FIELD_NAMES` above) — surfaced as a generic alert rather than
+	// nowhere at all.
+	const unhandledFieldErrors = fieldErrors
+		? Object.entries(fieldErrors).filter(([name]) => !KNOWN_FIELD_NAMES.has(name))
+		: [];
+
 	return (
 		<form
 			onSubmit={(event) => {
@@ -56,6 +78,10 @@ export function LinkForm({ fieldErrors, initial, onSubmit }: LinkFormProps): Rea
 				void form.handleSubmit();
 			}}
 		>
+			{unhandledFieldErrors.length > 0 ? (
+				<p role="alert">{unhandledFieldErrors.map(([, message]) => message).join(' ')}</p>
+			) : null}
+
 			<form.Field
 				name="destination_url"
 				validators={{
@@ -145,33 +171,47 @@ export function LinkForm({ fieldErrors, initial, onSubmit }: LinkFormProps): Rea
 			</form.Field>
 
 			<form.Field name="expires_at">
-				{(field) => (
-					<div>
-						<label htmlFor="expires_at">{t('links.expiresAt')}</label>
-						<input
-							id="expires_at"
-							name={field.name}
-							onChange={(event) => field.handleChange(event.target.value)}
-							type="datetime-local"
-							value={field.state.value}
-						/>
-					</div>
-				)}
+				{(field) => {
+					const errorId = 'expires_at-error';
+					const errorMessage = fieldErrors?.expires_at;
+
+					return (
+						<div>
+							<label htmlFor="expires_at">{t('links.expiresAt')}</label>
+							<input
+								aria-describedby={errorMessage ? errorId : undefined}
+								id="expires_at"
+								name={field.name}
+								onChange={(event) => field.handleChange(event.target.value)}
+								type="datetime-local"
+								value={field.state.value}
+							/>
+							{errorMessage ? <p id={errorId}>{errorMessage}</p> : null}
+						</div>
+					);
+				}}
 			</form.Field>
 
 			<form.Field name="analytics_enabled">
-				{(field) => (
-					<div>
-						<label htmlFor="analytics_enabled">{t('links.analyticsEnabled')}</label>
-						<input
-							checked={field.state.value}
-							id="analytics_enabled"
-							name={field.name}
-							onChange={(event) => field.handleChange(event.target.checked)}
-							type="checkbox"
-						/>
-					</div>
-				)}
+				{(field) => {
+					const errorId = 'analytics_enabled-error';
+					const errorMessage = fieldErrors?.analytics_enabled;
+
+					return (
+						<div>
+							<label htmlFor="analytics_enabled">{t('links.analyticsEnabled')}</label>
+							<input
+								aria-describedby={errorMessage ? errorId : undefined}
+								checked={field.state.value}
+								id="analytics_enabled"
+								name={field.name}
+								onChange={(event) => field.handleChange(event.target.checked)}
+								type="checkbox"
+							/>
+							{errorMessage ? <p id={errorId}>{errorMessage}</p> : null}
+						</div>
+					);
+				}}
 			</form.Field>
 
 			{/* No domain picker: one domain exists on this instance, so a select
