@@ -1,11 +1,11 @@
-import { createFileRoute, redirect } from '@tanstack/react-router';
+import { createFileRoute, Link, redirect } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
 import { getRequestHeader } from '@tanstack/react-start/server';
 import { useTranslation } from 'react-i18next';
 
 import { SiteFooter } from '../components/site-footer';
 import { SiteHeader } from '../components/site-header';
-import { Button } from '../components/ui/button';
+import { buttonVariants } from '../components/ui/button';
 import { resolveCurrentTeam } from '../lib/current-team';
 import { usePreferences } from '../lib/use-preferences';
 import { fetchHealth } from '../server/health';
@@ -125,12 +125,9 @@ function Home() {
 					<>
 						<h1 className="text-3xl font-bold">{t('home.heading')}</h1>
 						<p className="text-muted-foreground max-w-prose">{t('home.body')}</p>
-						{/* Plan 6 replaces this with the real Supabase PKCE flow. It is a
-						    visible, disabled control rather than a working-looking one, so
-						    nobody mistakes it for an auth bug. */}
-						<Button disabled type="button">
+						<Link className={buttonVariants({ variant: 'default' })} to="/login">
 							{t('actions.signIn')}
-						</Button>
+						</Link>
 					</>
 				)}
 			</main>
