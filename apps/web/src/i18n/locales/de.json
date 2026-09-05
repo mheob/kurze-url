@@ -24,5 +24,48 @@
 	"notFound": {
 		"heading": "Seite nicht gefunden",
 		"body": "Die gesuchte Seite existiert nicht oder wurde verschoben."
+	},
+	"auth": {
+		"signInTitle": "Anmelden",
+		"emailLabel": "E-Mail-Adresse",
+		"sendLink": "Link zusenden",
+		"linkSent": "Falls es zu dieser Adresse ein Konto gibt, ist ein Link unterwegs.",
+		"signOut": "Abmelden"
+	},
+	"teams": {
+		"none": "Du gehörst noch keinem Verein an. Frag die Person, die dich eingeladen hat, ob sie dich hinzufügen kann.",
+		"switcherLabel": "Vereine"
+	},
+	"links": {
+		"heading": "Deine Links",
+		"copy": "Kopieren",
+		"copied": "Kopiert",
+		"empty": "Noch keine Links.",
+		"noShortDomain": "Diese Instanz hat noch keine funktionierende Kurz-Domain, daher leiten diese Links nicht weiter.",
+		"paginationLabel": "Seitennavigation",
+		"previousPage": "Vorherige Seite",
+		"nextPage": "Nächste Seite",
+		"create": "Link erstellen",
+		"destination": "Ziel-URL",
+		"destinationRequired": "Die Ziel-URL ist erforderlich.",
+		"slug": "Kurzpfad",
+		"slugGenerated": "Leer lassen, dann wird einer erzeugt",
+		"redirectType": "Weiterleitungstyp",
+		"redirect302": "302 — vorübergehend (empfohlen)",
+		"redirect301": "301 — dauerhaft",
+		"redirect301Warning": "Browser speichern eine 301 zwischen. Klicks werden dann nicht mehr gezählt, und eine spätere Änderung des Ziels erreicht niemanden, der die Seite bereits besucht hat.",
+		"expiresAt": "Läuft ab am",
+		"analyticsEnabled": "Klicks für diesen Link zählen",
+		"save": "Speichern",
+		"edit": "Bearbeiten",
+		"delete": "Löschen",
+		"deleteQuestion": "Diesen Link löschen? Wer die Kurz-URL bereits hat, erhält dann einen 404.",
+		"deleteConfirm": "Ja, löschen",
+		"cancel": "Abbrechen"
+	},
+	"errors": {
+		"rateLimited": "Gerade wurden zu viele Links erstellt. Warte eine Minute und versuch es dann noch mal.",
+		"notFound": "Nicht gefunden.",
+		"unknown": "Etwas ist schiefgelaufen. Versuch es noch mal."
 	}
 }

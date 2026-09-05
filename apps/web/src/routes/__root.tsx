@@ -1,5 +1,6 @@
 import { TanStackDevtools } from '@tanstack/react-devtools';
-import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router';
+import type { QueryClient } from '@tanstack/react-query';
+import { HeadContent, Scripts, createRootRouteWithContext } from '@tanstack/react-router';
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools';
 import { createServerFn } from '@tanstack/react-start';
 import { getRequestHeader } from '@tanstack/react-start/server';
@@ -81,7 +82,16 @@ function NotFound() {
 	);
 }
 
-export const Route = createRootRoute({
+/**
+ * `queryClient` is the one piece of context every route in the tree can rely
+ * on: `router.tsx`'s `getRouter` creates a fresh `QueryClient` per request
+ * and passes it in here, so `context.queryClient` is what
+ * `teams.$teamId.links.index.tsx`'s loader calls `ensureQueryData` on. Typed
+ * here, at the root, because router context is cumulative down the tree —
+ * every descendant route (via `createFileRoute`) inherits this type without
+ * redeclaring it.
+ */
+export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
 	loader: () => getPreferences(),
 	notFoundComponent: NotFound,
 	// `loaderData` is what makes `head` able to see the request's language at

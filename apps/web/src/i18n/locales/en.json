@@ -24,5 +24,48 @@
 	"notFound": {
 		"heading": "Page not found",
 		"body": "The page you are looking for does not exist or has moved."
+	},
+	"auth": {
+		"signInTitle": "Sign in",
+		"emailLabel": "Email address",
+		"sendLink": "Send me a link",
+		"linkSent": "If that address has an account, a link is on its way.",
+		"signOut": "Sign out"
+	},
+	"teams": {
+		"none": "You are not a member of any team yet. Ask the person who invited you to add you to one.",
+		"switcherLabel": "Teams"
+	},
+	"links": {
+		"heading": "Your links",
+		"copy": "Copy",
+		"copied": "Copied",
+		"empty": "No links yet.",
+		"noShortDomain": "This instance has no working short domain yet, so these links will not redirect.",
+		"paginationLabel": "Pagination",
+		"previousPage": "Previous page",
+		"nextPage": "Next page",
+		"create": "Create link",
+		"destination": "Destination URL",
+		"destinationRequired": "Destination URL is required.",
+		"slug": "Short path",
+		"slugGenerated": "Leave empty and one will be generated",
+		"redirectType": "Redirect type",
+		"redirect302": "302 — temporary (recommended)",
+		"redirect301": "301 — permanent",
+		"redirect301Warning": "Browsers cache a 301. Clicks stop being counted, and changing the destination later will not reach anyone who has already visited.",
+		"expiresAt": "Expires at",
+		"analyticsEnabled": "Count clicks for this link",
+		"save": "Save",
+		"edit": "Edit",
+		"delete": "Delete",
+		"deleteQuestion": "Delete this link? Anyone who already has the short URL will get a 404.",
+		"deleteConfirm": "Yes, delete it",
+		"cancel": "Cancel"
+	},
+	"errors": {
+		"rateLimited": "Too many links created just now. Please wait a minute and try again.",
+		"notFound": "Not found.",
+		"unknown": "Something went wrong. Please try again."
 	}
 }
