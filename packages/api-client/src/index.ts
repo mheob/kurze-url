@@ -21,6 +21,12 @@ interface ApiClientOptions {
 	readonly getAccessToken?: GetAccessToken;
 	/** Swapped in tests. Defaults to the global `fetch`. */
 	readonly fetch?: typeof globalThis.fetch;
+	/**
+	 * Sent on every request this client makes. For headers the caller's
+	 * platform requires rather than the API itself — the API's own auth goes
+	 * through `getAccessToken`, so nothing here should carry a bearer token.
+	 */
+	readonly headers?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -47,7 +53,8 @@ interface ApiClientOptions {
  * OpenAPI document, it answers on the short-link hostnames rather than the
  * API's own, and nothing should reach it through a generated client.
  *
- * @param options Base URL, an optional token supplier, and an optional `fetch`.
+ * @param options Base URL, an optional token supplier, optional per-request
+ *   headers, and an optional `fetch`.
  * @returns A client to hand to the generated operations.
  */
 function createApiClient(options: ApiClientOptions): Client {
@@ -56,6 +63,7 @@ function createApiClient(options: ApiClientOptions): Client {
 			auth: options.getAccessToken,
 			baseUrl: options.baseUrl,
 			fetch: options.fetch,
+			headers: options.headers,
 		}),
 	);
 }
