@@ -11,6 +11,7 @@
 		"lint": "oxlint",
 		"lint:fix": "oxlint --fix",
 		"prepare": "git rev-parse --git-dir > /dev/null 2>&1 && lefthook install || echo 'skipping lefthook: not a git repository'",
+		"test": "pnpm --recursive test",
 		"typecheck": "tsc --noEmit"
 	},
 	"devDependencies": {
