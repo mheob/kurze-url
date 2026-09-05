@@ -30,12 +30,24 @@ export function LinkList({ data, page, teamId }: LinkListViewProps): React.JSX.E
 	const hasNextPage = data.page * data.per_page < data.total_count;
 
 	if (items.length === 0) {
-		return <p>{t('links.empty')}</p>;
+		return (
+			<p>
+				{t('links.empty')}{' '}
+				<Link params={{ teamId }} to="/teams/$teamId/links/new">
+					{t('links.create')}
+				</Link>
+			</p>
+		);
 	}
 
 	return (
 		<>
 			<h1>{t('links.heading')}</h1>
+			{/* The entry point for a team that already has links — the empty
+			    state above has its own, since it can never render both. */}
+			<Link params={{ teamId }} to="/teams/$teamId/links/new">
+				{t('links.create')}
+			</Link>
 			{/* Every link on this team was created against the same domain, so the
 			    first item's hostname stands in for all of them. */}
 			<ShortUrlNotice hostname={items[0]?.hostname ?? ''} />

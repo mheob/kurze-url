@@ -40,7 +40,7 @@
 		"heading": "Your links",
 		"copy": "Copy",
 		"copied": "Copied",
-		"empty": "No links yet. Create your first one.",
+		"empty": "No links yet.",
 		"noShortDomain": "This instance has no working short domain yet, so these links will not redirect.",
 		"paginationLabel": "Pagination",
 		"previousPage": "Previous page",

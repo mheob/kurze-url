@@ -43,7 +43,13 @@ function pageOf(overrides: Partial<PageLink> = {}): PageLink {
 /**
  * `LinkList` renders TanStack Router `<Link>` elements for pagination, which
  * need a router in context — the same reasoning `team-switcher.test.tsx`
- * gives for its own minimal, test-only route tree.
+ * gives for its own minimal, test-only route tree. Also registers
+ * `/teams/$teamId/links/new` (Finding 2's create-link entry point): `<Link>`
+ * builds its `href` from the `to` path template regardless of whether this
+ * router's own tree contains a matching route (verified — omitting it here
+ * does not fail any test), but registering it keeps this fixture honest
+ * about the route actually existing, matching every other route `<Link>`
+ * here targets.
  */
 function renderWith(data: PageLink, page = 1): ReturnType<typeof render> {
 	const rootRoute = createRootRoute({
@@ -54,9 +60,14 @@ function renderWith(data: PageLink, page = 1): ReturnType<typeof render> {
 		getParentRoute: () => rootRoute,
 		path: '/teams/$teamId/links',
 	});
+	const newLinkRoute = createRoute({
+		component: () => null,
+		getParentRoute: () => rootRoute,
+		path: '/teams/$teamId/links/new',
+	});
 	const router = createRouter({
 		history: createMemoryHistory({ initialEntries: ['/'] }),
-		routeTree: rootRoute.addChildren([linksRoute]),
+		routeTree: rootRoute.addChildren([linksRoute, newLinkRoute]),
 	});
 
 	return render(
@@ -79,8 +90,22 @@ describe('LinkList', () => {
 		// `RouterProvider`'s initial match resolves asynchronously (its own
 		// microtask, separate from React's synchronous render), the same
 		// reason `team-switcher.test.tsx` awaits its first query too.
-		expect(await screen.findByText('No links yet. Create your first one.')).toBeInTheDocument();
+		expect(await screen.findByText('No links yet.')).toBeInTheDocument();
 		expect(screen.queryByRole('list')).not.toBeInTheDocument();
+	});
+
+	it('offers a link to create the first link when the team has none', async () => {
+		// Finding 2: the empty state read as an actionable prompt ("Create your
+		// first one") with nothing to click. Now it is an actual link.
+		renderWith(pageOf());
+		expect(await screen.findByRole('link', { name: 'Create link' })).toBeInTheDocument();
+	});
+
+	it('offers a link to create another link when the team already has links', async () => {
+		// Finding 2, other half: a team that already has links must still be
+		// able to reach the create page, not only a team with none.
+		renderWith(pageOf({ items: [link()], total_count: 1 }));
+		expect(await screen.findByRole('link', { name: 'Create link' })).toBeInTheDocument();
 	});
 
 	it('lists every link on the page with a copy button and its destination', async () => {
