@@ -152,8 +152,13 @@ function toBrowserCookies(
 	}));
 }
 
-export const test = base.extend<{ teamId: string }>({
-	teamId: async ({ context, baseURL }, use): Promise<void> => {
+interface Team {
+	readonly id: string;
+	readonly name: string;
+}
+
+export const test = base.extend<{ team: Team; teamId: string; teamName: string }>({
+	team: async ({ context, baseURL }, use): Promise<void> => {
 		const url = process.env.SUPABASE_URL;
 		const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 		const databaseUrl = process.env.E2E_DATABASE_URL;
@@ -196,15 +201,21 @@ export const test = base.extend<{ teamId: string }>({
 			}
 			userId = created.user.id;
 
+			// Captured in its own variable, not inlined into the query's parameter
+			// array, so the exact string this run generated can be handed back to
+			// the caller (below) alongside the id — `i18n.spec.ts` needs the literal
+			// value to tell its own crawl "this string is this run's team name, not
+			// hardcoded UI copy" (`teamName` fixture, further down).
+			const teamName = `e2e ${randomUUID()}`;
 			const teamResult = await db.query<{ id: string }>(
 				'insert into team (name) values ($1) returning id',
-				[`e2e ${randomUUID()}`],
+				[teamName],
 			);
-			const team = teamResult.rows[0];
-			if (!team) {
+			const teamRow = teamResult.rows[0];
+			if (!teamRow) {
 				throw new Error('could not seed the e2e fixture team: insert returned no row');
 			}
-			teamId = team.id;
+			teamId = teamRow.id;
 
 			await db.query('insert into team_member (team_id, user_id, role) values ($1, $2, $3)', [
 				teamId,
@@ -215,7 +226,7 @@ export const test = base.extend<{ teamId: string }>({
 			const cookies = await mintSessionCookies(admin, url, serviceRoleKey, email);
 			await context.addCookies(toBrowserCookies(cookies, baseURL));
 
-			await use(teamId);
+			await use({ id: teamId, name: teamName });
 		} finally {
 			// Team first, then user: `link.created_by` references `auth.users`
 			// with no `on delete cascade` (deliberately — see the migration's own
@@ -227,5 +238,21 @@ export const test = base.extend<{ teamId: string }>({
 			await db.end();
 			if (userId !== undefined) await admin.auth.admin.deleteUser(userId);
 		}
+	},
+
+	/**
+	 * Thin derivatives over `team`, not their own independent setup: Playwright
+	 * scopes a fixture's provisioning/teardown to run once per test regardless
+	 * of how many other fixtures depend on it, so `links.spec.ts` destructuring
+	 * only `teamId` (as it did before `team` existed) still gets exactly one
+	 * team created and torn down, not two. `i18n.spec.ts`'s authenticated crawl
+	 * is the one caller that needs `teamName` too.
+	 */
+	teamId: async ({ team }, use): Promise<void> => {
+		await use(team.id);
+	},
+
+	teamName: async ({ team }, use): Promise<void> => {
+		await use(team.name);
 	},
 });

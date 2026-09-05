@@ -30,6 +30,7 @@ async function visibleText(
 	baseURL: string,
 	language: string,
 	path: string,
+	identicalByDesign: ReadonlySet<string> = IDENTICAL_BY_DESIGN,
 ): Promise<string[]> {
 	// Playwright derives a cookie's domain from `url`, not from wherever
 	// `page.goto` later navigates — it has to be the fixture's `baseURL`, the
@@ -58,7 +59,7 @@ async function visibleText(
 			.flatMap((value) => (value ?? '').split('\n'))
 			.map((value) => value.trim())
 			.filter((value) => value.length > 0 && !/^[\d\s\p{P}]+$/u.test(value))
-			.filter((value) => !IDENTICAL_BY_DESIGN.has(value))
+			.filter((value) => !identicalByDesign.has(value))
 	);
 }
 
@@ -99,6 +100,7 @@ for (const suffix of AUTHENTICATED_PATHS) {
 		page,
 		baseURL,
 		teamId,
+		teamName,
 	}) => {
 		if (!baseURL) throw new Error('baseURL fixture is unset — check playwright.config.ts');
 
@@ -115,9 +117,24 @@ for (const suffix of AUTHENTICATED_PATHS) {
 			await expect(page.getByText('https://example.org/i18n-crawl')).toBeVisible();
 		}
 
+		// Every authenticated page renders `AuthedShell` -> `TeamSwitcher`, which
+		// prints `membership.name` — this run's `teamName` fixture value — as
+		// plain link text. That is user data, not UI copy: a real Verein's own
+		// name would sit in that exact spot and would be exactly as identical
+		// across languages, because nobody translates an association's name
+		// (any more than they would translate "Bürgerinitiative Lindenstraße
+		// e.V." into English for the English UI — it already is what it is,
+		// regardless of language). Allowing the *literal* string this run's
+		// fixture created — reusing the module's own exclusion Set rather than a
+		// second mechanism — has no blind spot: a pattern-based exclusion (a
+		// UUID shape, an `e2e ` prefix) would just as happily swallow a real
+		// hardcoded string that happened to sit next to this one, which is
+		// exactly the false negative this spec exists to prevent.
+		const identicalByDesign = new Set([...IDENTICAL_BY_DESIGN, teamName]);
+
 		const path = `/teams/${teamId}/${suffix}`;
-		const english = new Set(await visibleText(page, baseURL, 'en', path));
-		const german = await visibleText(page, baseURL, 'de', path);
+		const english = new Set(await visibleText(page, baseURL, 'en', path, identicalByDesign));
+		const german = await visibleText(page, baseURL, 'de', path, identicalByDesign);
 
 		const untranslated = german.filter((value) => english.has(value));
 
