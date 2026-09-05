@@ -100,6 +100,7 @@ export function LinkForm({ fieldErrors, initial, onSubmit }: LinkFormProps): Rea
 							<label htmlFor="destination_url">{t('links.destination')}</label>
 							<input
 								aria-describedby={errorMessage ? errorId : undefined}
+								aria-invalid={errorMessage ? true : undefined}
 								id="destination_url"
 								name={field.name}
 								onBlur={field.handleBlur}
@@ -108,7 +109,11 @@ export function LinkForm({ fieldErrors, initial, onSubmit }: LinkFormProps): Rea
 								type="url"
 								value={field.state.value}
 							/>
-							{errorMessage ? <p id={errorId}>{errorMessage}</p> : null}
+							{errorMessage ? (
+								<p id={errorId} role="alert">
+									{errorMessage}
+								</p>
+							) : null}
 						</div>
 					);
 				}}
@@ -126,6 +131,7 @@ export function LinkForm({ fieldErrors, initial, onSubmit }: LinkFormProps): Rea
 							    blank required-looking field otherwise reads as an oversight. */}
 							<input
 								aria-describedby={errorMessage ? errorId : undefined}
+								aria-invalid={errorMessage ? true : undefined}
 								id="slug"
 								name={field.name}
 								onBlur={field.handleBlur}
@@ -133,7 +139,11 @@ export function LinkForm({ fieldErrors, initial, onSubmit }: LinkFormProps): Rea
 								placeholder={t('links.slugGenerated')}
 								value={field.state.value}
 							/>
-							{errorMessage ? <p id={errorId}>{errorMessage}</p> : null}
+							{errorMessage ? (
+								<p id={errorId} role="alert">
+									{errorMessage}
+								</p>
+							) : null}
 						</div>
 					);
 				}}
@@ -149,6 +159,7 @@ export function LinkForm({ fieldErrors, initial, onSubmit }: LinkFormProps): Rea
 							<label htmlFor="redirect_type">{t('links.redirectType')}</label>
 							<select
 								aria-describedby={errorMessage ? errorId : undefined}
+								aria-invalid={errorMessage ? true : undefined}
 								id="redirect_type"
 								name={field.name}
 								onChange={(event) => field.handleChange(Number(event.target.value))}
@@ -157,7 +168,11 @@ export function LinkForm({ fieldErrors, initial, onSubmit }: LinkFormProps): Rea
 								<option value={302}>{t('links.redirect302')}</option>
 								<option value={301}>{t('links.redirect301')}</option>
 							</select>
-							{errorMessage ? <p id={errorId}>{errorMessage}</p> : null}
+							{errorMessage ? (
+								<p id={errorId} role="alert">
+									{errorMessage}
+								</p>
+							) : null}
 							{/* CLAUDE.md requires this. A cached 301 stops clicks being counted
 							    and stops later destination changes taking effect for anyone who
 							    has already visited — breakage a volunteer cannot diagnose and
@@ -180,13 +195,18 @@ export function LinkForm({ fieldErrors, initial, onSubmit }: LinkFormProps): Rea
 							<label htmlFor="expires_at">{t('links.expiresAt')}</label>
 							<input
 								aria-describedby={errorMessage ? errorId : undefined}
+								aria-invalid={errorMessage ? true : undefined}
 								id="expires_at"
 								name={field.name}
 								onChange={(event) => field.handleChange(event.target.value)}
 								type="datetime-local"
 								value={field.state.value}
 							/>
-							{errorMessage ? <p id={errorId}>{errorMessage}</p> : null}
+							{errorMessage ? (
+								<p id={errorId} role="alert">
+									{errorMessage}
+								</p>
+							) : null}
 						</div>
 					);
 				}}
@@ -202,13 +222,18 @@ export function LinkForm({ fieldErrors, initial, onSubmit }: LinkFormProps): Rea
 							<label htmlFor="analytics_enabled">{t('links.analyticsEnabled')}</label>
 							<input
 								aria-describedby={errorMessage ? errorId : undefined}
+								aria-invalid={errorMessage ? true : undefined}
 								checked={field.state.value}
 								id="analytics_enabled"
 								name={field.name}
 								onChange={(event) => field.handleChange(event.target.checked)}
 								type="checkbox"
 							/>
-							{errorMessage ? <p id={errorId}>{errorMessage}</p> : null}
+							{errorMessage ? (
+								<p id={errorId} role="alert">
+									{errorMessage}
+								</p>
+							) : null}
 						</div>
 					);
 				}}

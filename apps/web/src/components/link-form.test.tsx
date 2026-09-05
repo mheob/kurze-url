@@ -57,6 +57,28 @@ describe('LinkForm', () => {
 		);
 	});
 
+	it('marks a field with a server error as aria-invalid, not only described-by', () => {
+		// Minor 11: `aria-describedby` alone tells assistive tech there is *a*
+		// description, not that the field failed validation — `aria-invalid` is
+		// what a screen reader announces unprompted, without the visitor having
+		// to go hunting for the description text.
+		renderForm({ fieldErrors: { destination_url: 'must be https' }, onSubmit: vi.fn() });
+		expect(screen.getByLabelText(/destination|ziel/i)).toHaveAttribute('aria-invalid', 'true');
+	});
+
+	it('does not mark a field invalid when it has no error', () => {
+		renderForm({ onSubmit: vi.fn() });
+		expect(screen.getByLabelText(/destination|ziel/i)).not.toHaveAttribute('aria-invalid');
+	});
+
+	it('announces a field-level server error as an alert', () => {
+		// Minor 11, other half: the error `<p>` had no `role="alert"`, so a
+		// screen reader only reached it by hunting, the same gap
+		// `aria-invalid` closes for the field itself.
+		renderForm({ fieldErrors: { destination_url: 'must be https' }, onSubmit: vi.fn() });
+		expect(screen.getByRole('alert')).toHaveTextContent('must be https');
+	});
+
 	it('shows a server field error for a field the form has no input for', () => {
 		// A field the API might add later, or any name this form doesn't render
 		// a specific input for — must still surface, not vanish.
