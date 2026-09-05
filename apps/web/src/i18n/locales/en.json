@@ -33,6 +33,7 @@
 		"signOut": "Sign out"
 	},
 	"teams": {
-		"none": "You are not a member of any team yet. Ask the person who invited you to add you to one."
+		"none": "You are not a member of any team yet. Ask the person who invited you to add you to one.",
+		"switcherLabel": "Teams"
 	}
 }

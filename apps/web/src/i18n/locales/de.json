@@ -33,6 +33,7 @@
 		"signOut": "Abmelden"
 	},
 	"teams": {
-		"none": "Du gehörst noch keinem Verein an. Frag die Person, die dich eingeladen hat, ob sie dich hinzufügen kann."
+		"none": "Du gehörst noch keinem Verein an. Frag die Person, die dich eingeladen hat, ob sie dich hinzufügen kann.",
+		"switcherLabel": "Vereine"
 	}
 }

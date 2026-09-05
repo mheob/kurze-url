@@ -49,16 +49,32 @@ describe('fetchCurrentUser', () => {
 
 describe('resolveHomeOutcome', () => {
 	it('shows the marketing shell to a signed-out visitor', () => {
-		expect(resolveHomeOutcome(undefined)).toEqual({ kind: 'marketing' });
+		expect(resolveHomeOutcome(undefined, undefined)).toEqual({ kind: 'marketing' });
 	});
 
-	it('redirects a signed-in visitor with memberships to the first one', () => {
+	it('redirects a signed-in visitor to the resolved team', () => {
 		const me: Me = { email: 'a@example.test', memberships, user_id: 'u1' };
-		expect(resolveHomeOutcome(me)).toEqual({ kind: 'redirect', teamId: 'a' });
+		expect(resolveHomeOutcome(me, 'a')).toEqual({ kind: 'redirect', teamId: 'a' });
 	});
 
-	it('shows the no-team outcome for a signed-in visitor with no memberships', () => {
+	/**
+	 * The property Task 7 adds: the redirect target is whatever team id the
+	 * loader resolved — via `getCurrentTeamId`, which wraps
+	 * `resolveCurrentTeam` around the `team` cookie — not hardcoded to the
+	 * first membership. `resolveHomeOutcome` itself no longer picks a
+	 * membership at all; it only turns an already-resolved id into an
+	 * outcome, so passing a non-first id through unchanged is exactly what
+	 * proves that. `resolveCurrentTeam`'s own tests in
+	 * `lib/current-team.test.ts` cover the cookie-vs-first-membership
+	 * decision, including the "removed from that team" falsification.
+	 */
+	it('redirects to the remembered team, not necessarily the first membership', () => {
+		const me: Me = { email: 'a@example.test', memberships, user_id: 'u1' };
+		expect(resolveHomeOutcome(me, 'b')).toEqual({ kind: 'redirect', teamId: 'b' });
+	});
+
+	it('shows the no-team outcome for a signed-in visitor with no resolved team', () => {
 		const me: Me = { email: 'a@example.test', memberships: [], user_id: 'u1' };
-		expect(resolveHomeOutcome(me)).toEqual({ kind: 'noTeam' });
+		expect(resolveHomeOutcome(me, undefined)).toEqual({ kind: 'noTeam' });
 	});
 });
