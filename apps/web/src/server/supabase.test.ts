@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createSupabase } from './supabase';
+import { createCookieAdapter, createSupabase } from './supabase';
 
 /**
  * The adapter's write path is the one that looks optional and is not.
@@ -36,19 +36,21 @@ describe('createSupabase', () => {
 		expect(client).toBeDefined();
 		expect(request.headers.get('cookie')).toContain('sb-access-token=abc');
 	});
+});
 
+/**
+ * createCookieAdapter is a pure function of (request, headers) — no shared
+ * state, so unlike createSupabase it needs no env stubbing and its `setAll`
+ * can be called directly, the same way @supabase/ssr calls it during sign-in
+ * and refresh.
+ */
+describe('createCookieAdapter', () => {
 	it('writes cookies onto the response headers', () => {
 		const request = new Request('https://example.test/');
 		const headers = new Headers();
+		const { setAll } = createCookieAdapter(request, headers);
 
-		createSupabase(request, headers);
-		// The adapter is exercised directly: @supabase/ssr calls setAll during
-		// sign-in and refresh, and nothing else in the app would notice if it
-		// were a no-op.
-		// oxlint-disable-next-line no-underscore-dangle
-		const setAll = globalThis.__lastSetAll;
-		expect(setAll).toBeTypeOf('function');
-		setAll?.([{ name: 'sb-x', value: 'y', options: {} }]);
+		setAll([{ name: 'sb-x', value: 'y', options: {} }]);
 
 		expect(headers.get('set-cookie')).toContain('sb-x=y');
 	});
@@ -56,14 +58,54 @@ describe('createSupabase', () => {
 	it('marks auth cookies httpOnly, Secure and SameSite=Lax', () => {
 		const request = new Request('https://example.test/');
 		const headers = new Headers();
-		createSupabase(request, headers);
-		// oxlint-disable-next-line no-underscore-dangle
-		const setAll = globalThis.__lastSetAll;
-		setAll?.([{ name: 'sb-x', value: 'y', options: {} }]);
+		const { setAll } = createCookieAdapter(request, headers);
+
+		setAll([{ name: 'sb-x', value: 'y', options: {} }]);
 
 		const cookie = headers.get('set-cookie') ?? '';
 		expect(cookie).toContain('HttpOnly');
 		expect(cookie).toContain('SameSite=Lax');
 		expect(cookie).toContain('Path=/');
+	});
+
+	it('reflects a non-lax SameSite value instead of hardcoding Lax', () => {
+		// Regression test for a finding where `serialize` read
+		// `options.sameSite` only to decide *whether* to emit the attribute,
+		// then always wrote the literal string `Lax` regardless of the actual
+		// value — correct by accident, since every cookie in this codebase
+		// resolves to `lax` today, and undetectable by a test asserting the
+		// literal `SameSite=Lax` no matter what went in.
+		const request = new Request('https://example.test/');
+		const headers = new Headers();
+		const { setAll } = createCookieAdapter(request, headers);
+
+		setAll([{ name: 'sb-x', value: 'y', options: { sameSite: 'strict' } }]);
+
+		expect(headers.get('set-cookie')).toContain('SameSite=Strict');
+	});
+
+	it('applies the response headers @supabase/ssr passes alongside cookies', () => {
+		// @supabase/ssr calls setAll with a second argument on every write — a
+		// Cache-Control/Expires/Pragma bundle — so that a CDN or reverse proxy
+		// in front of this app never caches a response that carries one
+		// person's session cookie for another. A `setAll` that declares only
+		// the cookies parameter silently drops this argument: TypeScript does
+		// not catch it, because a callback declaring fewer parameters than its
+		// type allows is structurally valid.
+		const request = new Request('https://example.test/');
+		const headers = new Headers();
+		const { setAll } = createCookieAdapter(request, headers);
+
+		setAll([], {
+			'Cache-Control': 'private, no-cache, no-store, must-revalidate, max-age=0',
+			Expires: '0',
+			Pragma: 'no-cache',
+		});
+
+		expect(headers.get('cache-control')).toBe(
+			'private, no-cache, no-store, must-revalidate, max-age=0',
+		);
+		expect(headers.get('expires')).toBe('0');
+		expect(headers.get('pragma')).toBe('no-cache');
 	});
 });

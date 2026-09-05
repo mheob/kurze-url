@@ -19,12 +19,23 @@ export const SUPABASE_COOKIE_OPTIONS: CookieOptions = {
 	path: '/',
 };
 
+// Mirrors the `cookie` package's own `sameSite` mapping (the same package
+// @supabase/ssr's `CookieOptions` type is defined against): `true` and
+// `'strict'` both serialize to `Strict`; only `'none'` serializes to `None`.
+// Anything else — in practice just `'lax'` — serializes to `Lax`. Called only
+// when `options.sameSite` is truthy, so `false` never reaches here.
+function sameSiteValue(sameSite: NonNullable<CookieOptions['sameSite']>): string {
+	if (sameSite === true || sameSite === 'strict') return 'Strict';
+	if (sameSite === 'none') return 'None';
+	return 'Lax';
+}
+
 function serialize(name: string, value: string, options: CookieOptions): string {
 	const parts = [`${name}=${value}`, `Path=${options.path ?? '/'}`];
 	if (options.maxAge !== undefined) parts.push(`Max-Age=${options.maxAge}`);
 	if (options.httpOnly) parts.push('HttpOnly');
 	if (options.secure) parts.push('Secure');
-	if (options.sameSite) parts.push(`SameSite=Lax`);
+	if (options.sameSite) parts.push(`SameSite=${sameSiteValue(options.sameSite)}`);
 	return parts.join('; ');
 }
 
@@ -42,15 +53,51 @@ function parse(cookieHeader: string | null): { name: string; value: string }[] {
 		.filter((c) => c.name !== '');
 }
 
-type SetAllCookies = (cookies: { name: string; value: string; options: CookieOptions }[]) => void;
-
-declare global {
-	// A real ambient global augmentation, not a cast: `globalThis.x = y` needs
-	// `var` here because TypeScript only adds `let`/`const` declarations to
-	// module scope, never to the global object, so a block-scoped declaration
-	// would leave `__lastSetAll` typed but never actually settable below.
-	// oxlint-disable-next-line no-var, no-underscore-dangle
-	var __lastSetAll: SetAllCookies | undefined;
+/**
+ * Pure request/response binding, with no shared state of any kind: the only
+ * seam @supabase/ssr needs into cookies, factored out of `createSupabase` so
+ * it can be exercised directly in tests instead of through a global.
+ *
+ * @supabase/ssr's own `SetAllCookies` type allows `setAll` to return
+ * `Promise<void>`, since a custom cookie store (e.g. Next.js's async cookie
+ * jar) may need one. This adapter never awaits anything — `headers.append`
+ * and `headers.set` are both synchronous — so `setAll` is typed here as
+ * returning plain `void`, a supertype callers may still pass wherever
+ * `Promise<void> | void` is expected. Typing it that way, rather than
+ * importing @supabase/ssr's own type, is also what keeps a bare call to
+ * `setAll(...)` in a test from tripping `no-floating-promises`.
+ *
+ * The second `setAll` argument — headers @supabase/ssr wants applied to the
+ * response alongside the cookies, always `Cache-Control`/`Expires`/`Pragma`
+ * in practice, so a CDN or reverse proxy in front of this app never caches a
+ * response that sets one person's session cookie for another — is declared
+ * optional here only so tests exercising the cookie half alone can call
+ * `setAll` with one argument; @supabase/ssr itself always passes it.
+ */
+export function createCookieAdapter(
+	request: Request,
+	headers: Headers,
+): {
+	getAll: () => { name: string; value: string }[];
+	setAll: (
+		cookies: { name: string; value: string; options: CookieOptions }[],
+		responseHeaders?: Record<string, string>,
+	) => void;
+} {
+	return {
+		getAll: () => parse(request.headers.get('cookie')),
+		setAll: (cookies, responseHeaders) => {
+			for (const { name, value, options } of cookies) {
+				headers.append(
+					'set-cookie',
+					serialize(name, value, { ...SUPABASE_COOKIE_OPTIONS, ...options }),
+				);
+			}
+			for (const [key, value] of Object.entries(responseHeaders ?? {})) {
+				headers.set(key, value);
+			}
+		},
+	};
 }
 
 /**
@@ -66,21 +113,7 @@ export function createSupabase(request: Request, headers: Headers): SupabaseClie
 		throw new Error('SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY are required');
 	}
 
-	const setAll: SetAllCookies = (cookies) => {
-		for (const { name, value, options } of cookies) {
-			headers.append(
-				'set-cookie',
-				serialize(name, value, { ...SUPABASE_COOKIE_OPTIONS, ...options }),
-			);
-		}
-	};
-	// Exposed for the adapter's own tests: @supabase/ssr only calls setAll
-	// during sign-in and refresh, so nothing else in the app would notice a
-	// no-op write path.
-	// oxlint-disable-next-line no-underscore-dangle
-	globalThis.__lastSetAll = setAll;
-
 	return createServerClient(url, key, {
-		cookies: { getAll: () => parse(request.headers.get('cookie')), setAll },
+		cookies: createCookieAdapter(request, headers),
 	});
 }
