@@ -1,4 +1,6 @@
-import { expect, test } from '@playwright/test';
+import { expect } from '@playwright/test';
+
+import { test } from './fixtures/auth';
 
 /**
  * The half of the no-hardcoded-string rule that react/jsx-no-literals cannot
@@ -28,6 +30,7 @@ async function visibleText(
 	baseURL: string,
 	language: string,
 	path: string,
+	identicalByDesign: ReadonlySet<string> = IDENTICAL_BY_DESIGN,
 ): Promise<string[]> {
 	// Playwright derives a cookie's domain from `url`, not from wherever
 	// `page.goto` later navigates — it has to be the fixture's `baseURL`, the
@@ -56,7 +59,7 @@ async function visibleText(
 			.flatMap((value) => (value ?? '').split('\n'))
 			.map((value) => value.trim())
 			.filter((value) => value.length > 0 && !/^[\d\s\p{P}]+$/u.test(value))
-			.filter((value) => !IDENTICAL_BY_DESIGN.has(value))
+			.filter((value) => !identicalByDesign.has(value))
 	);
 }
 
@@ -73,6 +76,94 @@ for (const path of PATHS) {
 
 		const english = new Set(await visibleText(page, baseURL, 'en', path));
 		const german = await visibleText(page, baseURL, 'de', path);
+
+		const untranslated = german.filter((value) => english.has(value));
+
+		expect(
+			untranslated,
+			`these strings did not change with the language: ${untranslated.join(', ')}`,
+		).toEqual([]);
+	});
+}
+
+/**
+ * The screens people actually use, reached through the same `teamId` fixture
+ * `links.spec.ts` uses — `test` above is `./fixtures/auth`'s extended one, a
+ * superset of `@playwright/test`'s own, so the loop over the public `PATHS`
+ * above never pays for provisioning a team it never asks for: a fixture only
+ * runs for a test that destructures it.
+ */
+const AUTHENTICATED_PATHS = ['links', 'links/new'] as const;
+
+/**
+ * What the `links` case below fills into the create form — known upfront,
+ * unlike the short URL the API generates for it, which has to be read off
+ * the page instead (see the comment at that read).
+ */
+const I18N_CRAWL_DESTINATION_URL = 'https://example.org/i18n-crawl';
+
+for (const suffix of AUTHENTICATED_PATHS) {
+	test(`no user-facing string is identical across languages (authenticated /${suffix})`, async ({
+		page,
+		baseURL,
+		teamId,
+		teamName,
+	}) => {
+		if (!baseURL) throw new Error('baseURL fixture is unset — check playwright.config.ts');
+
+		// Populated only for `links` below, once that link's own destination and
+		// short URL are known — see the long comment above `identicalByDesign`
+		// for why these join `teamName` in the same exclusion Set.
+		const linkStrings: string[] = [];
+
+		if (suffix === 'links') {
+			// A freshly provisioned team starts with zero links, and `LinkList`'s
+			// empty-state branch (src/components/link-list.tsx) never renders the
+			// `.invalid`-domain notice, the per-link edit link, or the pagination
+			// nav — all real, translated strings this crawl would otherwise miss.
+			// Created once, before either language visits the page, so both passes
+			// compare the same rendered list.
+			await page.goto(`/teams/${teamId}/links/new`);
+			await page.getByLabel(/destination/i).fill(I18N_CRAWL_DESTINATION_URL);
+			await page.getByRole('button', { name: /save/i }).click();
+			await expect(page.getByText(I18N_CRAWL_DESTINATION_URL)).toBeVisible();
+
+			// `link-list.tsx` renders this same link's `short_url` as the visible
+			// text of a plain `<a href>` — the one element on this page whose
+			// `href` is an absolute http(s) URL; every other link here is a
+			// TanStack Router `<Link>` to an app-relative path. The slug inside it
+			// is generated server-side, so there is no formula to reconstruct it
+			// from — reading it off the page it actually rendered is the only way
+			// to get the exact value, and a locator that's supposed to match
+			// exactly one element fails loudly rather than silently if that
+			// assumption ever stops holding.
+			const shortUrl = await page.locator('a[href^="http"]').innerText();
+			linkStrings.push(I18N_CRAWL_DESTINATION_URL, shortUrl);
+		}
+
+		// Every authenticated page renders `AuthedShell` -> `TeamSwitcher`, which
+		// prints `membership.name` — this run's `teamName` fixture value — as
+		// plain link text. That is user data, not UI copy: a real Verein's own
+		// name would sit in that exact spot and would be exactly as identical
+		// across languages, because nobody translates an association's name
+		// (any more than they would translate "Bürgerinitiative Lindenstraße
+		// e.V." into English for the English UI — it already is what it is,
+		// regardless of language). The same is true of a link's destination and
+		// short URL (`linkStrings`, above, populated only when `links` created
+		// one): a real Verein's own link would render its own destination and
+		// short URL in that exact spot, identically in both languages, for the
+		// same reason — nobody translates a URL either. Allowing the *literal*
+		// strings this run's own fixture and link creation produced — reusing
+		// the module's own exclusion Set rather than a second mechanism — has no
+		// blind spot: a pattern-based exclusion (a UUID shape, an `e2e ` prefix,
+		// "anything that looks like a URL") would just as happily swallow a real
+		// hardcoded string that happened to sit next to this one, which is
+		// exactly the false negative this spec exists to prevent.
+		const identicalByDesign = new Set([...IDENTICAL_BY_DESIGN, teamName, ...linkStrings]);
+
+		const path = `/teams/${teamId}/${suffix}`;
+		const english = new Set(await visibleText(page, baseURL, 'en', path, identicalByDesign));
+		const german = await visibleText(page, baseURL, 'de', path, identicalByDesign);
 
 		const untranslated = german.filter((value) => english.has(value));
 

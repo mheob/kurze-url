@@ -5,6 +5,8 @@
 import { AxeBuilder } from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 
+import { waitForHydration } from './fixtures/hydration';
+
 const THEMES = ['light', 'dark'] as const;
 const LANGUAGES = ['en', 'de'] as const;
 
@@ -19,7 +21,14 @@ test('renders server-side', async ({ page }) => {
 
 test('keeps the theme across a reload', async ({ page }) => {
 	await page.goto('/');
-	await page.getByRole('button', { name: /dark mode|dunklen Modus/ }).click();
+
+	// Same hazard `createLink` hit in `links.spec.ts`: this page is
+	// server-rendered, so the toggle is clickable before React attaches a
+	// handler to it, and a click in that window does nothing at all. See
+	// `waitForHydration`.
+	const toggle = page.getByRole('button', { name: /dark mode|dunklen Modus/ });
+	await waitForHydration(toggle);
+	await toggle.click();
 	await expect(page.locator('html')).toHaveClass(/dark/);
 
 	await page.reload();

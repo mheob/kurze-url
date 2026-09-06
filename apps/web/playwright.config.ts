@@ -38,6 +38,14 @@ export default defineConfig({
 	testDir: './e2e',
 	use: {
 		baseURL,
+		// Only on failure, and only kept for one: a passing run writes nothing,
+		// so this costs nothing until something breaks. The suite runs against a
+		// live preview deployment where a failure can come from the deployment
+		// rather than the code, and the console output alone ("element(s) not
+		// found") never distinguishes the two — the trace and the screenshot of
+		// what was actually on screen do. CI uploads `test-results/` on failure.
+		screenshot: 'only-on-failure',
+		trace: 'retain-on-failure',
 		...(bypassSecret && {
 			extraHTTPHeaders: { 'x-vercel-protection-bypass': bypassSecret },
 		}),

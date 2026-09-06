@@ -239,3 +239,35 @@ jobs:
           # without it, so a missing secret fails the job instead of the check
           # silently becoming meaningless.
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          # fixtures/auth.ts mints a signed-in session via the Supabase Admin
+          # API instead of driving the login UI, and throws by design if
+          # either of these is missing — the same failure the fixture exists
+          # to catch (specs once ran signed out and passed against Vercel's
+          # login page). The key is the kurze-url-preview project's, never
+          # production's — do not "fix" this by swapping in production's.
+          SUPABASE_URL: ${{ vars.SUPABASE_PREVIEW_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # Seeding `team`/`team_member` goes over a direct Postgres
+          # connection now, not PostgREST — this product never talks to
+          # PostgREST anywhere else, so the e2e suite shouldn't depend on it
+          # either. Must be kurze-url-preview's connection string, in its
+          # transaction-pooler form (IPv6-only direct connections don't work
+          # here — Vercel has no IPv6 egress, and this project has already
+          # hit that once) — never production's: the whole reason a second
+          # Supabase project exists is that this suite writes rows.
+          E2E_DATABASE_URL: ${{ secrets.E2E_DATABASE_URL }}
+
+      # Playwright's console output stops at "element(s) not found"; the trace,
+      # screenshot and DOM snapshot that say *why* live in test-results/, which
+      # goes away with the runner unless it is uploaded. This suite runs against
+      # a live preview deployment, so it can fail for reasons the source alone
+      # cannot explain — a cold start over the assertion timeout, a transient
+      # API error — and without the artifacts the only way to look at one is to
+      # push again and hope it reproduces.
+      - name: Upload Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-results
+          path: apps/web/test-results/
+          retention-days: 7
