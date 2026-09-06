@@ -380,6 +380,9 @@
 					"email": {
 						"type": "string"
 					},
+					"is_maintainer": {
+						"type": "boolean"
+					},
 					"memberships": {
 						"items": {
 							"$ref": "#/components/schemas/TeamMembership"
@@ -390,7 +393,7 @@
 						"type": "string"
 					}
 				},
-				"required": ["user_id", "email", "memberships"],
+				"required": ["user_id", "email", "is_maintainer", "memberships"],
 				"type": "object"
 			},
 			"Member": {

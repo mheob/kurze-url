@@ -395,3 +395,28 @@ func TestMeReturnsAnEmptyMembershipListForANewUser(t *testing.T) {
 	require.Contains(t, rec.Body.String(), `"memberships":[]`,
 		"a user with no teams must get [], not null")
 }
+
+func TestMeReportsMaintainerStatus(t *testing.T) {
+	f := newTenancyFixture(t)
+
+	// The fixture makes the owner the instance maintainer and nobody else, the
+	// same arrangement TestCreateTeamIsRefusedForANonMaintainer relies on. Both
+	// directions are asserted from one fixture: a flag that is always true, or
+	// always false, would satisfy either half on its own.
+	for _, want := range []struct {
+		as           testUser
+		isMaintainer bool
+	}{
+		{as: f.members[authz.RoleOwner], isMaintainer: true},
+		{as: f.members[authz.RoleAdmin], isMaintainer: false},
+	} {
+		rec := f.do(t, want.as, http.MethodGet, "/v1/me", nil)
+
+		require.Equal(t, http.StatusOK, rec.Code)
+		body := decode[struct {
+			IsMaintainer bool `json:"is_maintainer"`
+		}](t, rec)
+		require.Equal(t, want.isMaintainer, body.IsMaintainer,
+			"POST /v1/teams gates on exactly this, so the frontend has to be told the same answer")
+	}
+}

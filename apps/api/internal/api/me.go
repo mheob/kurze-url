@@ -17,11 +17,20 @@ type TeamMembership struct {
 }
 
 // MeOutput is the body of GET /v1/me.
+//
+// IsMaintainer mirrors the check POST /v1/teams enforces (`createTeam`, via
+// Config.IsMaintainer). The frontend cannot derive it: MAINTAINER_USER_IDS is
+// deploy-time configuration on this service, invisible to the browser. Without
+// it the web app can only offer team creation to everyone and let the 403
+// arrive after the form is filled in, which reads as a broken feature rather
+// than as one that was never for you. It tells the caller nothing they could
+// not learn by posting once.
 type MeOutput struct {
 	Body struct {
-		UserID      uuid.UUID        `json:"user_id"`
-		Email       string           `json:"email"`
-		Memberships []TeamMembership `json:"memberships"`
+		UserID       uuid.UUID        `json:"user_id"`
+		Email        string           `json:"email"`
+		IsMaintainer bool             `json:"is_maintainer"`
+		Memberships  []TeamMembership `json:"memberships"`
 	}
 }
 
@@ -57,6 +66,7 @@ func (d Deps) registerMe(api huma.API) {
 		out := &MeOutput{}
 		out.Body.UserID = claims.UserID
 		out.Body.Email = claims.Email
+		out.Body.IsMaintainer = d.Config.IsMaintainer(claims.UserID)
 		out.Body.Memberships = memberships
 		return out, nil
 	})
