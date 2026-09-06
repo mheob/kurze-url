@@ -646,6 +646,13 @@ func TestDomainQueriesFilterByTeam(t *testing.T) {
 		require.NoError(t, err)
 		require.Zero(t, count)
 	})
+
+	t.Run("CountDomainsForTeam counts only this team's domains", func(t *testing.T) {
+		count, err := q.CountDomainsForTeam(ctx, teamID)
+		require.NoError(t, err)
+		require.EqualValues(t, 1, count,
+			"the count must include only this team's own domain (mine), not otherTeamID's (theirs)")
+	})
 }
 
 func ptr[T any](v T) *T { return &v }
