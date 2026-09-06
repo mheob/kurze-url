@@ -12,6 +12,13 @@ allowBuilds:
   # project doesn't add — only `msw/node`'s setupServer is used in tests.
   msw: true
 
+# `@hey-api/json-schema-ref-parser` pins js-yaml 4.2.0, which carries two high-severity
+# advisories (GHSA-52cp-r559-cp3m, GHSA-5p4m-2wfm-xmqj) fixed in 4.3.1. Nothing else in the
+# tree is on 4.2.0 — the rest already resolve to 4.3.2 — so this only pulls that one
+# dependency forward onto the version everything else uses. Drop it once the parent bumps.
+overrides:
+  js-yaml@4.2.0: ^4.3.2
+
 # Exclude trusted packages from the age gate
 minimumReleaseAgeExclude:
   - "@mheob/*"
