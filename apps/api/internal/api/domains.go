@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -118,6 +119,19 @@ type VerifyDomainOutput struct {
 	}
 }
 
+// DeleteDomainInput declares its authorization in its type: DomainAdminScope
+// resolves which team owns the domain and requires at least the admin
+// role — the same threshold create-domain and verify-domain use, since
+// deleting a domain takes every link on it along.
+type DeleteDomainInput struct {
+	authz.DomainAdminScope
+}
+
+// DeleteDomainOutput carries no body: a successful delete is 204 No Content.
+type DeleteDomainOutput struct {
+	Status int
+}
+
 func (d Deps) registerDomains(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID:   "create-domain",
@@ -155,6 +169,16 @@ func (d Deps) registerDomains(api huma.API) {
 		Tags:        []string{"Domains"},
 		Security:    []map[string][]string{{"bearerAuth": {}}},
 	}, d.verifyDomain)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "delete-domain",
+		Method:        http.MethodDelete,
+		Path:          "/v1/domains/{domain_id}",
+		Summary:       "Delete a domain, refused while links still use it",
+		Tags:          []string{"Domains"},
+		DefaultStatus: http.StatusNoContent,
+		Security:      []map[string][]string{{"bearerAuth": {}}},
+	}, d.deleteDomain)
 }
 
 func (d Deps) createDomain(ctx context.Context, in *CreateDomainInput) (*DomainOutput, error) {
@@ -355,6 +379,14 @@ func (d Deps) verifyDomain(ctx context.Context, in *VerifyDomainInput) (*VerifyD
 		// producing two verified rows the redirect path would have to
 		// choose between.
 		return nil, huma.Error409Conflict("another team has already verified this hostname")
+	case errors.Is(err, pgx.ErrNoRows):
+		// MarkDomainVerified filters by id and team_id and found no row: the
+		// domain existed when GetDomainForTeam loaded it above, but a
+		// concurrent delete-domain call from another admin of the same team
+		// removed it before this write landed. Before delete-domain existed
+		// this was truly impossible and belonged in the generic 500 branch
+		// below; now it is a benign race between two admins, so 404.
+		return nil, huma.Error404NotFound("domain not found")
 	case err != nil:
 		d.Log.Error("verify domain", "error", err, "domain_id", domain.ID)
 		return nil, huma.Error500InternalServerError("could not verify the domain")
@@ -418,6 +450,89 @@ func (d Deps) getDomain(ctx context.Context, in *GetDomainInput) (*DomainOutput,
 	}
 
 	return &DomainOutput{Status: http.StatusOK, Body: domainResponse(row, d.Config.DomainDNSTarget)}, nil
+}
+
+// errDomainHasLinks travels out of the transaction so the refusal becomes a
+// 409 rather than a 500. It never reaches the client. link.domain_id is on
+// delete cascade, and link_click_stats has no raw click table behind it — a
+// deleted link's rollups cannot be recomputed from anything, so refusal
+// (never a warning) is the only design under which an accidental delete
+// cannot destroy that data.
+var errDomainHasLinks = errors.New("api: domain still has links")
+
+func (d Deps) deleteDomain(ctx context.Context, in *DeleteDomainInput) (*DeleteDomainOutput, error) {
+	member := in.Member()
+	domain := in.Domain()
+
+	// Loaded ahead of the transaction only for the hostname: audit_log.metadata
+	// rejects any key whose word segments include "token", and the token is
+	// not what a reviewer of this log wants anyway — hostname is. The count
+	// and the delete themselves both happen inside the transaction below, not
+	// this read, so nothing can slip a link in between them.
+	row, err := d.Queries.GetDomainForTeam(ctx, db.GetDomainForTeamParams{
+		ID: domain.ID, TeamID: member.TeamID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, huma.Error404NotFound("domain not found")
+	}
+	if err != nil {
+		d.Log.Error("get domain", "error", err, "domain_id", domain.ID)
+		return nil, huma.Error500InternalServerError("could not delete the domain")
+	}
+
+	var linkCount int64
+	err = db.InTx(ctx, d.Pool, func(q *db.Queries) error {
+		// There is no RLS: this filters by team_id even though the scope
+		// already authorized the caller for member.TeamID. link.team_id is
+		// denormalized precisely so this needs no join.
+		count, err := q.CountLinksForDomain(ctx, db.CountLinksForDomainParams{
+			DomainID: domain.ID, TeamID: member.TeamID,
+		})
+		if err != nil {
+			return err
+		}
+		if count > 0 {
+			linkCount = count
+			return errDomainHasLinks
+		}
+
+		// DeleteDomain has no RETURNING clause, so a race is checked via its
+		// row count rather than pgx.ErrNoRows: if another admin of this same
+		// team deleted this domain between the read above and this
+		// transaction, rows is 0 here and that must not be reported as
+		// success with an audit entry for a domain that is already gone.
+		rows, err := q.DeleteDomain(ctx, db.DeleteDomainParams{
+			ID: domain.ID, TeamID: member.TeamID,
+		})
+		if err != nil {
+			return err
+		}
+		if rows == 0 {
+			return pgx.ErrNoRows
+		}
+
+		return audit.Log(ctx, q, audit.Entry{
+			TeamID:      member.TeamID,
+			ActorUserID: member.UserID,
+			Action:      audit.ActionDomainDeleted,
+			EntityType:  audit.EntityDomain,
+			EntityID:    domain.ID,
+			Metadata:    map[string]any{"hostname": row.Hostname},
+		})
+	})
+
+	switch {
+	case errors.Is(err, errDomainHasLinks):
+		return nil, huma.Error409Conflict(fmt.Sprintf(
+			"%d link(s) still use this domain; delete them first", linkCount))
+	case errors.Is(err, pgx.ErrNoRows):
+		return nil, huma.Error404NotFound("domain not found")
+	case err != nil:
+		d.Log.Error("delete domain", "error", err, "domain_id", domain.ID)
+		return nil, huma.Error500InternalServerError("could not delete the domain")
+	}
+
+	return &DeleteDomainOutput{Status: http.StatusNoContent}, nil
 }
 
 // domainFromListRow adapts ListDomainsForTeam's row shape (which carries the

@@ -140,6 +140,13 @@ type tenancyFixture struct {
 	folderID       uuid.UUID
 	tagID          uuid.UUID
 
+	// emptyDomainID is a second team-owned, verified domain with no link on
+	// it — unlike teamDomainID, which always carries the "fixture" link.
+	// TestRolePermissionMatrix's delete-domain case needs a domain it can
+	// actually delete; deleting teamDomainID would 409 for every role at or
+	// above admin, since it has a link.
+	emptyDomainID uuid.UUID
+
 	// otherTeamID and otherAdmin are a second, independent team with a single
 	// admin member. Domain claims are deliberately not unique per hostname —
 	// several teams may hold one on the same hostname at once — so proving
@@ -249,6 +256,12 @@ func newTenancyFixture(t *testing.T) *tenancyFixture {
 		 values ($1, $2, 'fixture', 'https://example.org/fixture', $3) returning id`,
 		teamDomainID, teamID, members[authz.RoleOwner].id).Scan(&linkID))
 
+	var emptyDomainID uuid.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`insert into domain (team_id, hostname, verification_status, verified_at)
+		 values ($1, $2, 'verified', now()) returning id`,
+		teamID, "empty-"+suffix+".test").Scan(&emptyDomainID))
+
 	var folderID uuid.UUID
 	require.NoError(t, pool.QueryRow(ctx,
 		`insert into folder (team_id, name) values ($1, 'fixture') returning id`,
@@ -316,6 +329,7 @@ func newTenancyFixture(t *testing.T) *tenancyFixture {
 		sharedDomainID: sharedDomainID,
 		teamDomainID:   teamDomainID,
 		teamHostname:   teamHostname,
+		emptyDomainID:  emptyDomainID,
 		linkID:         linkID,
 		folderID:       folderID,
 		tagID:          tagID,

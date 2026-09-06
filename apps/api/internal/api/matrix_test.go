@@ -72,6 +72,12 @@ var teamScopedCases = []matrixCase{
 	{"list-domains", http.MethodGet, "/v1/teams/{team}/domains", nil, authz.RoleViewer},
 	{"get-domain", http.MethodGet, "/v1/domains/{domain}", nil, authz.RoleViewer},
 	{"verify-domain", http.MethodPost, "/v1/domains/{domain}/verify", nil, authz.RoleAdmin},
+	// {empty_domain}, not {domain}: {domain} (f.teamDomainID) always carries a
+	// link, and deleting it would 409 for admin and owner instead of the 2xx
+	// the "must be allowed" branch below asserts. {empty_domain} is a second
+	// domain seeded with no link, so the delete this case drives actually
+	// succeeds for the roles that are allowed to call it.
+	{"delete-domain", http.MethodDelete, "/v1/domains/{empty_domain}", nil, authz.RoleAdmin},
 }
 
 // notTeamScoped names the authenticated operations that legitimately carry no
@@ -100,6 +106,7 @@ func renderPath(f *tenancyFixture, template string) string {
 	path = strings.ReplaceAll(path, "{link}", f.linkID.String())
 	path = strings.ReplaceAll(path, "{folder}", f.folderID.String())
 	path = strings.ReplaceAll(path, "{tag}", f.tagID.String())
+	path = strings.ReplaceAll(path, "{empty_domain}", f.emptyDomainID.String())
 	path = strings.ReplaceAll(path, "{domain}", f.teamDomainID.String())
 	return path
 }

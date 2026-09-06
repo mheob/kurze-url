@@ -675,6 +675,36 @@ export type VerifyDomainOutputBodyWritable = {
     reason: 'token_missing' | 'token_mismatch' | 'unreachable';
 };
 
+export type DeleteDomainData = {
+    body?: never;
+    path: {
+        /**
+         * The domain this request operates on.
+         */
+        domain_id: string;
+    };
+    query?: never;
+    url: '/v1/domains/{domain_id}';
+};
+
+export type DeleteDomainErrors = {
+    /**
+     * Error
+     */
+    default: ErrorModel;
+};
+
+export type DeleteDomainError = DeleteDomainErrors[keyof DeleteDomainErrors];
+
+export type DeleteDomainResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type DeleteDomainResponse = DeleteDomainResponses[keyof DeleteDomainResponses];
+
 export type GetDomainData = {
     body?: never;
     path: {

@@ -963,6 +963,43 @@
 	"openapi": "3.1.0",
 	"paths": {
 		"/v1/domains/{domain_id}": {
+			"delete": {
+				"operationId": "delete-domain",
+				"parameters": [
+					{
+						"description": "The domain this request operates on.",
+						"in": "path",
+						"name": "domain_id",
+						"required": true,
+						"schema": {
+							"description": "The domain this request operates on.",
+							"type": "string"
+						}
+					}
+				],
+				"responses": {
+					"204": {
+						"description": "No Content"
+					},
+					"default": {
+						"content": {
+							"application/problem+json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorModel"
+								}
+							}
+						},
+						"description": "Error"
+					}
+				},
+				"security": [
+					{
+						"bearerAuth": []
+					}
+				],
+				"summary": "Delete a domain, refused while links still use it",
+				"tags": ["Domains"]
+			},
 			"get": {
 				"operationId": "get-domain",
 				"parameters": [

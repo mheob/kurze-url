@@ -275,6 +275,61 @@ func TestVerifyIsRefusedBelowAdmin(t *testing.T) {
 	require.Equal(t, http.StatusForbidden, rec.Code)
 }
 
+func TestDeleteDomainIsRefusedWhileLinksExist(t *testing.T) {
+	// link.domain_id is on delete cascade, and link_click_stats has no raw
+	// click table behind it — those rollups cannot be recomputed from
+	// anything. "Impossible" is worth more here than "warned".
+	f := newTenancyFixture(t)
+	claim := verifiedDomain(t, f, "links.verein.test")
+	createLinkOn(t, f, claim.ID)
+
+	rec := f.do(t, f.members[authz.RoleAdmin], http.MethodDelete,
+		"/v1/domains/"+claim.ID.String(), nil)
+
+	require.Equal(t, http.StatusConflict, rec.Code)
+	require.Contains(t, rec.Body.String(), "1",
+		"the count is what tells the team how much work removing it is")
+
+	var stillThere int
+	require.NoError(t, f.pool.QueryRow(t.Context(),
+		`select count(*) from domain where id = $1`, claim.ID).Scan(&stillThere))
+	require.Equal(t, 1, stillThere)
+}
+
+func TestDeleteDomainSucceedsWhenEmpty(t *testing.T) {
+	f := newTenancyFixture(t)
+	claim := claimDomain(t, f, "links.verein.test")
+
+	rec := f.do(t, f.members[authz.RoleAdmin], http.MethodDelete,
+		"/v1/domains/"+claim.ID.String(), nil)
+
+	require.Equal(t, http.StatusNoContent, rec.Code)
+}
+
+func TestDeleteDomainIsRefusedBelowAdmin(t *testing.T) {
+	f := newTenancyFixture(t)
+	claim := claimDomain(t, f, "links.verein.test")
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodDelete,
+		"/v1/domains/"+claim.ID.String(), nil)
+
+	require.Equal(t, http.StatusForbidden, rec.Code)
+
+	var stillThere int
+	require.NoError(t, f.pool.QueryRow(t.Context(),
+		`select count(*) from domain where id = $1`, claim.ID).Scan(&stillThere))
+	require.Equal(t, 1, stillThere)
+}
+
+func TestDeleteDomainIs404ForANonMember(t *testing.T) {
+	f := newTenancyFixture(t)
+	claim := claimDomain(t, f, "links.verein.test")
+
+	rec := f.do(t, f.stranger, http.MethodDelete, "/v1/domains/"+claim.ID.String(), nil)
+
+	require.Equal(t, http.StatusNotFound, rec.Code)
+}
+
 // claimDomain claims a hostname for the fixture's own team as its admin.
 func claimDomain(t *testing.T, f *tenancyFixture, hostname string) api.Domain {
 	t.Helper()
@@ -292,11 +347,7 @@ func claimDomainAs(
 }
 
 // verifiedDomain claims a hostname and marks it verified directly, because
-// the HTTP path to verified needs DNS this test has no control over. Added
-// now so task 9 (verify-domain) and task 10 (delete-domain) find it here
-// rather than each inventing their own; this task's own tests do not call it.
-//
-//nolint:unused // see comment above
+// the HTTP path to verified needs DNS this test has no control over.
 func verifiedDomain(t *testing.T, f *tenancyFixture, hostname string) api.Domain {
 	t.Helper()
 	claimed := claimDomain(t, f, hostname)
@@ -309,10 +360,7 @@ func verifiedDomain(t *testing.T, f *tenancyFixture, hostname string) api.Domain
 }
 
 // createLinkOn puts one link on a domain, so the delete guard has something
-// to refuse over. Added now so task 10 (delete-domain) finds it here; this
-// task's own tests do not call it.
-//
-//nolint:unused // see comment above
+// to refuse over.
 func createLinkOn(t *testing.T, f *tenancyFixture, domainID uuid.UUID) {
 	t.Helper()
 	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPost,
