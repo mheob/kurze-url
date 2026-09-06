@@ -246,10 +246,14 @@ func newTenancyFixture(t *testing.T) *tenancyFixture {
 	var otherTeamID uuid.UUID
 	require.NoError(t, pool.QueryRow(ctx,
 		`insert into team (name) values ($1) returning id`, "Anderer Verein "+suffix).Scan(&otherTeamID))
+	otherAdmin := seedAuthUser(ctx, t, pool, "other-admin-"+suffix+"@verein.test")
+	// Registered after seedAuthUser(otherAdmin) so LIFO deletes the team
+	// first, same ordering as the members/teamID block above: the team_id
+	// cascade removes team_member regardless of whether auth.users still
+	// exists, so this does not depend on team_member.user_id also cascading.
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), `delete from team where id = $1`, otherTeamID)
 	})
-	otherAdmin := seedAuthUser(ctx, t, pool, "other-admin-"+suffix+"@verein.test")
 	_, err := pool.Exec(ctx,
 		`insert into team_member (team_id, user_id, role) values ($1, $2, 'admin')`,
 		otherTeamID, otherAdmin.id)
