@@ -20,9 +20,23 @@ import { withRelatedProject } from '@vercel/related-projects';
  * app talks to the matching preview of the API rather than to production.
  */
 export function apiBaseUrl(): string {
+	// API_HOST wins outright instead of being withRelatedProject's `defaultHost`,
+	// which is consulted only when the lookup finds nothing. The Go router matches
+	// its own hostname exactly (`API_HOSTNAME`) and treats every other Host header
+	// as a short-link domain, so these two settings have to name the same host.
+	// When production moved onto its custom domain, related-projects kept
+	// resolving the API project's `*.vercel.app` alias: every `/v1` call arrived
+	// at the redirect surface, was read as a slug, and 404'd. Nothing raised — the
+	// health probe simply reported the API unreachable while it was healthy. An
+	// explicit host is the one setting Vercel cannot change out from under this.
+	const explicitHost = process.env.API_HOST;
+	if (explicitHost) return explicitHost;
+
+	// Left unset outside production on purpose: this lookup is what pairs a
+	// preview of this app with the matching preview of the API.
 	return withRelatedProject({
 		projectName: 'kurze-url-api',
-		defaultHost: process.env.API_HOST ?? 'http://localhost:8080',
+		defaultHost: 'http://localhost:8080',
 	});
 }
 
