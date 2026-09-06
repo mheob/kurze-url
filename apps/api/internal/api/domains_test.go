@@ -238,7 +238,8 @@ func TestVerifyAlreadyVerifiedSkipsTheProbe(t *testing.T) {
 	f := newTenancyFixture(t)
 	f.domainVerifier.reason = domainverify.ReasonNone
 
-	claim := claimDomain(t, f, "already-verified.verein.test")
+	hostname := "already-verified-" + uuid.NewString()[:8] + ".verein.test"
+	claim := claimDomain(t, f, hostname)
 
 	first := f.do(t, f.members[authz.RoleAdmin], http.MethodPost,
 		"/v1/domains/"+claim.ID.String()+"/verify", nil)
