@@ -73,7 +73,7 @@ export async function fetchCurrentUser(): Promise<Me | undefined> {
 // `Theme` are the same kind of exception.
 export type HomeOutcome =
 	| { kind: 'marketing' }
-	| { kind: 'noTeam' }
+	| { kind: 'noTeam'; isMaintainer: boolean }
 	| { kind: 'redirect'; teamId: string };
 
 /**
@@ -94,7 +94,11 @@ export type HomeOutcome =
 export function resolveHomeOutcome(me: Me | undefined, teamId: string | undefined): HomeOutcome {
 	if (!me) return { kind: 'marketing' };
 
-	return teamId ? { kind: 'redirect', teamId } : { kind: 'noTeam' };
+	// `isMaintainer` rides on the outcome rather than being read off `me` in
+	// the component: this is the one place that already decides what a signed-in
+	// visitor without a team sees, and a maintainer's answer ("create one") is a
+	// different answer, not different chrome around the same one.
+	return teamId ? { kind: 'redirect', teamId } : { isMaintainer: me.is_maintainer, kind: 'noTeam' };
 }
 
 export const Route = createFileRoute('/')({
@@ -120,7 +124,19 @@ function Home() {
 			<SiteHeader theme={theme} />
 			<main className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
 				{outcome.kind === 'noTeam' ? (
-					<p className="text-muted-foreground max-w-prose">{t('teams.none')}</p>
+					<>
+						<p className="text-muted-foreground max-w-prose">
+							{outcome.isMaintainer ? t('teams.noneMaintainer') : t('teams.none')}
+						</p>
+						{/* The bootstrap case: a maintainer signing in to a fresh instance has
+						    no team, so no `_authed` chrome to reach team creation from. Without
+						    this link the first team can only be made with SQL. */}
+						{outcome.isMaintainer ? (
+							<Link className={buttonVariants({ variant: 'default' })} to="/teams/new">
+								{t('teams.create')}
+							</Link>
+						) : null}
+					</>
 				) : (
 					<>
 						<h1 className="text-3xl font-bold">{t('home.heading')}</h1>

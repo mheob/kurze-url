@@ -33,7 +33,12 @@
 		"signOut": "Abmelden"
 	},
 	"teams": {
+		"create": "Verein anlegen",
+		"name": "Vereinsname",
+		"nameRequired": "Ein Vereinsname ist erforderlich.",
 		"none": "Du gehörst noch keinem Verein an. Frag die Person, die dich eingeladen hat, ob sie dich hinzufügen kann.",
+		"noneMaintainer": "Du gehörst noch keinem Verein an. Als Betreiber kannst du einen anlegen.",
+		"save": "Speichern",
 		"switcherLabel": "Vereine"
 	},
 	"links": {

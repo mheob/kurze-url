@@ -196,6 +196,7 @@ export type MeOutputBody = {
      */
     readonly $schema?: string;
     email: string;
+    is_maintainer: boolean;
     memberships: Array<TeamMembership> | null;
     user_id: string;
 };
@@ -487,6 +488,7 @@ export type LinkWritable = {
 
 export type MeOutputBodyWritable = {
     email: string;
+    is_maintainer: boolean;
     memberships: Array<TeamMembership> | null;
     user_id: string;
 };
