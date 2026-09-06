@@ -45,6 +45,18 @@ describe('LoginForm', () => {
 		expect(await screen.findByText(/on its way|unterwegs/i)).toBeInTheDocument();
 	});
 
+	it('puts the form inside a main landmark', () => {
+		// axe's `region` rule fails any content outside every landmark and
+		// `landmark-one-main` wants exactly one `<main>` per document. This page
+		// renders no other chrome, so the form itself has to be inside it — a
+		// bare `<form>` here means a screen reader user has no landmark to jump
+		// to and the e2e accessibility scan fails the whole page.
+		renderLoginForm();
+		expect(screen.getByRole('main')).toContainElement(
+			screen.getByRole('button', { name: /link/i }),
+		);
+	});
+
 	it('labels the field, so it is reachable without a mouse', async () => {
 		// An input with only a placeholder passes a visual review and fails a
 		// screen reader. Accessibility is a CI gate here, not a preference.
