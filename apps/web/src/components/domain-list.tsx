@@ -42,14 +42,23 @@ function statusLabel(t: TFunction, status: string): string {
 /**
  * Exhaustive over `VerifyReason` — the enum tag Task 9 added to
  * `VerifyDomainOutput.Body.Reason` specifically so this can switch instead of
- * falling back to a generic "not verified" message. `default` narrows
- * `reason` to `never` for every value this union actually admits today, so
- * it only ever runs — echoing the raw value, the same fallback
- * `statusLabel` above uses — if a later reason is added here before its
- * catalogue entry exists.
+ * falling back to a generic "not verified" message. The `''` case is the
+ * empty-string success value a later contract fix added to the enum
+ * (`domainverify.ReasonNone`, echoed back unchanged on the success path) —
+ * this function is only ever called from behind a truthy `pendingReason`
+ * check at the call site below, so `''` never actually reaches here, but the
+ * union includes it now and the switch stays exhaustive rather than leaning
+ * on `default` for a value the type already names. `default` itself is kept
+ * for every value this union does *not* yet admit — it narrows `reason` to
+ * `never` today, so it only ever runs — echoing the raw value, the same
+ * fallback `statusLabel` above uses — if a later reason is added here before
+ * its catalogue entry exists.
  */
 function reasonLabel(t: TFunction, reason: VerifyReason): string {
 	switch (reason) {
+		case '': {
+			return reason;
+		}
 		case 'token_missing': {
 			return t('domains.reason.token_missing');
 		}
@@ -119,23 +128,32 @@ export function DomainList({
 								<table>
 									<thead>
 										<tr>
+											<th scope="col">{t('domains.recordType')}</th>
 											<th scope="col">{t('domains.recordName')}</th>
 											<th scope="col">{t('domains.recordValue')}</th>
 										</tr>
 									</thead>
 									<tbody>
 										<tr>
+											<td>{t('domains.recordTypeTxt')}</td>
 											<td>{domain.records.txt.name}</td>
 											<td>
 												{domain.records.txt.value}
-												<CopyButton value={domain.records.txt.value} />
+												<CopyButton
+													label={t('domains.copyTxtValue')}
+													value={domain.records.txt.value}
+												/>
 											</td>
 										</tr>
 										<tr>
+											<td>{t('domains.recordTypeCname')}</td>
 											<td>{domain.records.cname.name}</td>
 											<td>
 												{domain.records.cname.value}
-												<CopyButton value={domain.records.cname.value} />
+												<CopyButton
+													label={t('domains.copyCnameValue')}
+													value={domain.records.cname.value}
+												/>
 											</td>
 										</tr>
 									</tbody>

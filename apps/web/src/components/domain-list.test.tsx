@@ -63,6 +63,28 @@ describe('DomainList', () => {
 		expect(screen.getByText('cname.vercel-dns.com')).toBeInTheDocument();
 	});
 
+	it('labels which record is TXT and which is CNAME', () => {
+		// The record type is the first thing a Verein must pick from their
+		// registrar's dropdown before they can enter anything at all — nothing
+		// else on this screen said "TXT" or "CNAME" before this fix, only an
+		// inference from the name/value shapes a non-technical reader cannot
+		// be expected to make.
+		renderList([pendingDomain]);
+
+		expect(screen.getByText('TXT')).toBeInTheDocument();
+		expect(screen.getByText('CNAME')).toBeInTheDocument();
+	});
+
+	it('gives each record value copy button a distinct accessible name', () => {
+		// Two `CopyButton`s in the same row, each labelled plain "Copy", are
+		// ambiguous to anyone tabbing through them rather than reading the
+		// row visually.
+		renderList([pendingDomain]);
+
+		expect(screen.getByRole('button', { name: 'Copy the TXT record value' })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Copy the CNAME record value' })).toBeInTheDocument();
+	});
+
 	it('hides the records once the domain works', () => {
 		renderList([verifiedDomain]);
 		expect(screen.queryByText(/_kurze-url-challenge/)).not.toBeInTheDocument();
@@ -76,6 +98,27 @@ describe('DomainList', () => {
 		// docstring for why a single reason slot is enough for this screen.
 		renderList([pendingDomain], { pendingReason: 'unreachable', verifyingId: pendingDomain.id });
 		expect(screen.getByText(/does not reach us yet/i)).toBeInTheDocument();
+	});
+
+	it('explains a missing TXT record', () => {
+		// The switch in `reasonLabel` is mechanical across all three reasons,
+		// but only `unreachable` had a text-level assertion — `token_missing`
+		// and `token_mismatch` were an inherited gap from the brief's own
+		// illustrative test, not something to leave uncovered now it is
+		// noticed.
+		renderList([pendingDomain], {
+			pendingReason: 'token_missing',
+			verifyingId: pendingDomain.id,
+		});
+		expect(screen.getByText(/txt record is not visible yet/i)).toBeInTheDocument();
+	});
+
+	it('explains a TXT record whose value does not match', () => {
+		renderList([pendingDomain], {
+			pendingReason: 'token_mismatch',
+			verifyingId: pendingDomain.id,
+		});
+		expect(screen.getByText(/its value does not match/i)).toBeInTheDocument();
 	});
 
 	it('does not explain a reason that belongs to a different domain', () => {

@@ -80,8 +80,13 @@
 		"verified": "Working",
 		"failed": "Another team verified this hostname first",
 		"recordsHeading": "Create these two DNS records",
+		"recordType": "Type",
+		"recordTypeTxt": "TXT",
+		"recordTypeCname": "CNAME",
 		"recordName": "Name",
 		"recordValue": "Value",
+		"copyTxtValue": "Copy the TXT record value",
+		"copyCnameValue": "Copy the CNAME record value",
 		"verify": "Check now",
 		"truncated": "Showing the first {{count}} of {{total}} domains.",
 		"reason": {
