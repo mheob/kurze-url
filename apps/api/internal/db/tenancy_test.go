@@ -624,6 +624,14 @@ func TestDomainQueriesFilterByTeam(t *testing.T) {
 		}
 	})
 
+	t.Run("LockDomainForTeam refuses another team's domain", func(t *testing.T) {
+		_, err := q.LockDomainForTeam(ctx, db.LockDomainForTeamParams{
+			ID: theirs.ID, TeamID: teamID,
+		})
+		require.ErrorIs(t, err, pgx.ErrNoRows,
+			"without the team_id filter this locks and returns another team's domain")
+	})
+
 	t.Run("DeleteDomain refuses another team's domain", func(t *testing.T) {
 		affected, err := q.DeleteDomain(ctx, db.DeleteDomainParams{
 			ID: theirs.ID, TeamID: teamID,

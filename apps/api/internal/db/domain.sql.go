@@ -43,7 +43,12 @@ type CountLinksForDomainParams struct {
 
 // CountLinksForDomain answers "would deleting this domain destroy anything?".
 // link.team_id is denormalized precisely so this needs no join, and it is
-// filtered here even though the scope already authorized the caller.
+// filtered here even though the scope already authorized the caller. This
+// guard counts by (domain_id, team_id), while the cascade that actually runs
+// on delete (link.domain_id references domain(id) on delete cascade)
+// destroys by domain_id alone — asymmetric, but harmless: a domain's
+// team_id never changes, so every link this count can see is exactly every
+// link the cascade will remove.
 func (q *Queries) CountLinksForDomain(ctx context.Context, arg CountLinksForDomainParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countLinksForDomain, arg.DomainID, arg.TeamID)
 	var count int64
@@ -269,6 +274,54 @@ func (q *Queries) ListDomainsForTeam(ctx context.Context, arg ListDomainsForTeam
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockDomainForTeam = `-- name: LockDomainForTeam :one
+
+select id, team_id, hostname, verification_status, vercel_domain_ref, created_at, verified_at, verification_token
+from domain
+where id = $1 and team_id = $2::uuid
+for update
+`
+
+type LockDomainForTeamParams struct {
+	ID     uuid.UUID
+	TeamID uuid.UUID
+}
+
+// LockDomainForTeam takes out the row lock that makes delete-domain's
+// count-then-delete race-free. db.InTx runs at READ COMMITTED (pool.Begin
+// with no options), so being in one transaction does not by itself make
+// CountLinksForDomain's read and DeleteDomain's write atomic with respect to
+// a concurrent createLink: link.domain_id's foreign key takes only FOR KEY
+// SHARE on the domain row while its own transaction is still open, which is
+// invisible to a READ COMMITTED count in a different transaction. Without a
+// stronger lock here, a link can be inserted and committed *between* the
+// count and the delete, so the count sees 0, the delete proceeds, and the
+// cascade destroys the link that got in first.
+//
+// FOR UPDATE specifically: FOR NO KEY UPDATE does not conflict with the
+// foreign key's FOR KEY SHARE, so it would leave this exact hole open.
+// FOR UPDATE does conflict, so a concurrent createLink either committed
+// before this lock is taken (the count then sees it and returns 409) or
+// blocks until this transaction ends, and then fails its own foreign key
+// check against a domain that is already gone.
+//
+// Called first, before CountLinksForDomain, inside the same transaction.
+func (q *Queries) LockDomainForTeam(ctx context.Context, arg LockDomainForTeamParams) (Domain, error) {
+	row := q.db.QueryRow(ctx, lockDomainForTeam, arg.ID, arg.TeamID)
+	var i Domain
+	err := row.Scan(
+		&i.ID,
+		&i.TeamID,
+		&i.Hostname,
+		&i.VerificationStatus,
+		&i.VercelDomainRef,
+		&i.CreatedAt,
+		&i.VerifiedAt,
+		&i.VerificationToken,
+	)
+	return i, err
 }
 
 const markDomainVerified = `-- name: MarkDomainVerified :one

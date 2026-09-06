@@ -115,13 +115,44 @@ where hostname = $1
 
 -- CountLinksForDomain answers "would deleting this domain destroy anything?".
 -- link.team_id is denormalized precisely so this needs no join, and it is
--- filtered here even though the scope already authorized the caller.
+-- filtered here even though the scope already authorized the caller. This
+-- guard counts by (domain_id, team_id), while the cascade that actually runs
+-- on delete (link.domain_id references domain(id) on delete cascade)
+-- destroys by domain_id alone — asymmetric, but harmless: a domain's
+-- team_id never changes, so every link this count can see is exactly every
+-- link the cascade will remove.
 
 -- name: CountLinksForDomain :one
 select count(*)
 from link
 where domain_id = sqlc.arg(domain_id)::uuid
   and team_id = sqlc.arg(team_id)::uuid;
+
+-- LockDomainForTeam takes out the row lock that makes delete-domain's
+-- count-then-delete race-free. db.InTx runs at READ COMMITTED (pool.Begin
+-- with no options), so being in one transaction does not by itself make
+-- CountLinksForDomain's read and DeleteDomain's write atomic with respect to
+-- a concurrent createLink: link.domain_id's foreign key takes only FOR KEY
+-- SHARE on the domain row while its own transaction is still open, which is
+-- invisible to a READ COMMITTED count in a different transaction. Without a
+-- stronger lock here, a link can be inserted and committed *between* the
+-- count and the delete, so the count sees 0, the delete proceeds, and the
+-- cascade destroys the link that got in first.
+--
+-- FOR UPDATE specifically: FOR NO KEY UPDATE does not conflict with the
+-- foreign key's FOR KEY SHARE, so it would leave this exact hole open.
+-- FOR UPDATE does conflict, so a concurrent createLink either committed
+-- before this lock is taken (the count then sees it and returns 409) or
+-- blocks until this transaction ends, and then fails its own foreign key
+-- check against a domain that is already gone.
+--
+-- Called first, before CountLinksForDomain, inside the same transaction.
+
+-- name: LockDomainForTeam :one
+select *
+from domain
+where id = $1 and team_id = sqlc.arg(team_id)::uuid
+for update;
 
 -- name: DeleteDomain :execrows
 delete from domain

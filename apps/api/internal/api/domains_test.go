@@ -280,7 +280,11 @@ func TestDeleteDomainIsRefusedWhileLinksExist(t *testing.T) {
 	// click table behind it — those rollups cannot be recomputed from
 	// anything. "Impossible" is worth more here than "warned".
 	f := newTenancyFixture(t)
-	claim := verifiedDomain(t, f, "links.verein.test")
+	// domain_hostname_verified_key is a globally unique partial index on
+	// hostname where verification_status = 'verified' — a bare literal here
+	// would collide with a row a killed run left behind, wedging every later
+	// run at the verify step below until someone cleans the database by hand.
+	claim := verifiedDomain(t, f, "has-links-"+uuid.NewString()[:8]+".verein.test")
 	createLinkOn(t, f, claim.ID)
 
 	rec := f.do(t, f.members[authz.RoleAdmin], http.MethodDelete,
@@ -294,6 +298,15 @@ func TestDeleteDomainIsRefusedWhileLinksExist(t *testing.T) {
 	require.NoError(t, f.pool.QueryRow(t.Context(),
 		`select count(*) from domain where id = $1`, claim.ID).Scan(&stillThere))
 	require.Equal(t, 1, stillThere)
+
+	// The domain row surviving is not the thing that cannot be recomputed —
+	// the link and its rollups are. Assert the link itself is still there,
+	// promoting the falsification probe (see task-10-report.md) into a
+	// permanent assertion.
+	var linksRemaining int
+	require.NoError(t, f.pool.QueryRow(t.Context(),
+		`select count(*) from link where domain_id = $1`, claim.ID).Scan(&linksRemaining))
+	require.Equal(t, 1, linksRemaining, "the link must survive a refused delete")
 }
 
 func TestDeleteDomainSucceedsWhenEmpty(t *testing.T) {
@@ -304,6 +317,13 @@ func TestDeleteDomainSucceedsWhenEmpty(t *testing.T) {
 		"/v1/domains/"+claim.ID.String(), nil)
 
 	require.Equal(t, http.StatusNoContent, rec.Code)
+
+	var hostname string
+	require.NoError(t, f.pool.QueryRow(t.Context(),
+		`select metadata->>'hostname' from audit_log
+		 where action = 'domain.deleted' and entity_id = $1`, claim.ID).Scan(&hostname))
+	require.Equal(t, claim.Hostname, hostname,
+		"the audit row must name the hostname, since entity_id alone points at a row that is gone")
 }
 
 func TestDeleteDomainIsRefusedBelowAdmin(t *testing.T) {

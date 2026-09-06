@@ -65,8 +65,8 @@ var teamScopedCases = []matrixCase{
 	// A domain is not content the way a link, folder or tag is: it is the
 	// namespace that content lives in, and losing it takes every link on it
 	// along. That belongs with member management (admin), not with content
-	// (editor) — create-domain, verify-domain and, later, delete-domain
-	// all sit at admin. get-domain and list-domains are reads, so viewer.
+	// (editor) — create-domain, verify-domain and delete-domain all sit at
+	// admin. get-domain and list-domains are reads, so viewer.
 	{"create-domain", http.MethodPost, "/v1/teams/{team}/domains",
 		map[string]string{"hostname": "matrix.verein.test"}, authz.RoleAdmin},
 	{"list-domains", http.MethodGet, "/v1/teams/{team}/domains", nil, authz.RoleViewer},

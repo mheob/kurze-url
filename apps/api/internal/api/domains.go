@@ -464,24 +464,24 @@ func (d Deps) deleteDomain(ctx context.Context, in *DeleteDomainInput) (*DeleteD
 	member := in.Member()
 	domain := in.Domain()
 
-	// Loaded ahead of the transaction only for the hostname: audit_log.metadata
-	// rejects any key whose word segments include "token", and the token is
-	// not what a reviewer of this log wants anyway — hostname is. The count
-	// and the delete themselves both happen inside the transaction below, not
-	// this read, so nothing can slip a link in between them.
-	row, err := d.Queries.GetDomainForTeam(ctx, db.GetDomainForTeamParams{
-		ID: domain.ID, TeamID: member.TeamID,
-	})
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, huma.Error404NotFound("domain not found")
-	}
-	if err != nil {
-		d.Log.Error("get domain", "error", err, "domain_id", domain.ID)
-		return nil, huma.Error500InternalServerError("could not delete the domain")
-	}
-
 	var linkCount int64
-	err = db.InTx(ctx, d.Pool, func(q *db.Queries) error {
+	err := db.InTx(ctx, d.Pool, func(q *db.Queries) error {
+		// LockDomainForTeam is the first statement in this transaction, ahead
+		// of CountLinksForDomain, and takes FOR UPDATE specifically. db.InTx
+		// runs at READ COMMITTED, so a concurrent createLink's FOR KEY SHARE
+		// on this row (taken by link.domain_id's foreign key, before that
+		// transaction has even committed) is otherwise invisible to the count
+		// below — that is the race this lock closes; see the query's comment
+		// in queries/domain.sql for the full sequence. It also gives us the
+		// row, so this doubles as the pre-transaction GetDomainForTeam read
+		// this handler used to make solely for the hostname.
+		row, err := q.LockDomainForTeam(ctx, db.LockDomainForTeamParams{
+			ID: domain.ID, TeamID: member.TeamID,
+		})
+		if err != nil {
+			return err
+		}
+
 		// There is no RLS: this filters by team_id even though the scope
 		// already authorized the caller for member.TeamID. link.team_id is
 		// denormalized precisely so this needs no join.
@@ -496,11 +496,10 @@ func (d Deps) deleteDomain(ctx context.Context, in *DeleteDomainInput) (*DeleteD
 			return errDomainHasLinks
 		}
 
-		// DeleteDomain has no RETURNING clause, so a race is checked via its
-		// row count rather than pgx.ErrNoRows: if another admin of this same
-		// team deleted this domain between the read above and this
-		// transaction, rows is 0 here and that must not be reported as
-		// success with an audit entry for a domain that is already gone.
+		// The row is locked and owned by this transaction until it commits or
+		// rolls back, so no concurrent delete-domain call can have removed it
+		// out from under us — DeleteDomain's row count is checked anyway, as
+		// defense in depth rather than a reachable path.
 		rows, err := q.DeleteDomain(ctx, db.DeleteDomainParams{
 			ID: domain.ID, TeamID: member.TeamID,
 		})
