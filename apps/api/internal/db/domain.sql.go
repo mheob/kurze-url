@@ -46,7 +46,7 @@ const upsertSharedDomain = `-- name: UpsertSharedDomain :one
 
 insert into domain (team_id, hostname, verification_status, verified_at)
 values (null, $1, 'verified', now())
-on conflict (hostname) do update
+on conflict (hostname) where verification_status = 'verified' do update
   set verification_status = 'verified',
       verified_at = coalesce(domain.verified_at, now())
   where domain.team_id is null
@@ -62,10 +62,21 @@ type UpsertSharedDomainRow struct {
 // hostname: every team may create links on it. Every other row belongs to
 // exactly one team.
 // UpsertSharedDomain provisions the instance's shared hostname at boot. The
-// WHERE clause on the conflict branch is the safety catch: if the hostname is
-// already registered as some team's verified custom domain, no row is updated
-// and no row is returned, so the :one query fails with pgx.ErrNoRows rather
-// than silently seizing a hostname a team owns.
+// conflict target repeats domain_hostname_verified_key's own predicate
+// (verification_status = 'verified') because Postgres will only match a
+// partial unique index when the ON CONFLICT clause names that same
+// predicate. One consequence falls out of that: a *pending* claim on this
+// hostname by some team no longer collides at boot, so this insert lands
+// beside it as a second, verified row — and that team's claim can now never
+// verify, since only one verified row per hostname is allowed. That is the
+// "a claim is not a reservation" rule this migration introduces, working as
+// intended, not a gap in this query. It also narrows ErrHostnameClaimed (see
+// bootstrap.go) to what it always meant: a hostname a team has *verified*,
+// not merely asked for. The WHERE clause on the DO UPDATE branch is the
+// remaining safety catch: if the hostname is already some team's *verified*
+// custom domain, no row is updated and no row is returned, so the :one query
+// fails with pgx.ErrNoRows rather than silently seizing a hostname a team
+// owns.
 func (q *Queries) UpsertSharedDomain(ctx context.Context, hostname string) (UpsertSharedDomainRow, error) {
 	row := q.db.QueryRow(ctx, upsertSharedDomain, hostname)
 	var i UpsertSharedDomainRow

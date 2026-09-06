@@ -22,7 +22,7 @@ insert into domain (id, team_id, hostname, verification_status, verified_at)
 values ('00000000-0000-0000-0000-0000000000c1',
         '00000000-0000-0000-0000-0000000000b1',
         'short.test', 'verified', now())
-on conflict (hostname) do nothing;
+on conflict (id) do nothing;
 
 insert into link (id, domain_id, team_id, slug, destination_url, created_by)
 values ('00000000-0000-0000-0000-0000000000d1',

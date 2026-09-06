@@ -37,6 +37,41 @@ func TestUpsertSharedDomainIsIdempotent(t *testing.T) {
 	require.Equal(t, "verified", status, "an unverified domain serves no links")
 }
 
+func TestUpsertSharedDomainIgnoresAPendingClaim(t *testing.T) {
+	pool := testPool(t)
+	ctx := context.Background()
+	queries := db.New(pool)
+
+	hostname := "pending-" + uuid.NewString()[:8] + ".test"
+	var teamID uuid.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`insert into team (name) values ('claims a hostname') returning id`).Scan(&teamID))
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `delete from team where id = $1`, teamID)
+		_, _ = pool.Exec(context.Background(), `delete from domain where hostname = $1`, hostname)
+	})
+	_, err := pool.Exec(ctx,
+		`insert into domain (team_id, hostname, verification_status)
+		 values ($1, $2, 'pending')`, teamID, hostname)
+	require.NoError(t, err)
+
+	shared, err := queries.UpsertSharedDomain(ctx, hostname)
+	require.NoError(t, err, "a pending claim must not block provisioning the shared row")
+
+	var pendingTeamID uuid.UUID
+	var pendingStatus string
+	require.NoError(t, pool.QueryRow(ctx,
+		`select team_id, verification_status from domain where team_id = $1 and hostname = $2`,
+		teamID, hostname).Scan(&pendingTeamID, &pendingStatus))
+	require.Equal(t, teamID, pendingTeamID, "the team's own claim row must be untouched")
+	require.Equal(t, "pending", pendingStatus, "provisioning must not verify someone else's claim")
+
+	var sharedTeamID *uuid.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`select team_id from domain where id = $1`, shared.ID).Scan(&sharedTeamID))
+	require.Nil(t, sharedTeamID, "the shared row sits beside the claim, team-less")
+}
+
 func TestUpsertSharedDomainRefusesToHijackATeamsDomain(t *testing.T) {
 	pool := testPool(t)
 	ctx := context.Background()
