@@ -413,7 +413,7 @@ export type VerifyDomainOutputBody = {
      */
     readonly $schema?: string;
     domain: Domain;
-    reason: 'token_missing' | 'token_mismatch' | 'unreachable';
+    reason: '' | 'token_missing' | 'token_mismatch' | 'unreachable';
 };
 
 export type AddMemberInputBodyWritable = {
@@ -672,7 +672,7 @@ export type UpdateTeamInputBodyWritable = {
 
 export type VerifyDomainOutputBodyWritable = {
     domain: DomainWritable;
-    reason: 'token_missing' | 'token_mismatch' | 'unreachable';
+    reason: '' | 'token_missing' | 'token_mismatch' | 'unreachable';
 };
 
 export type DeleteDomainData = {

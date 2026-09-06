@@ -114,8 +114,12 @@ type VerifyDomainOutput struct {
 		// Reason is empty on success (including the already-verified
 		// short-circuit) and one of domainverify's Reason values otherwise —
 		// "token_missing", "token_mismatch" or "unreachable" — so a Verein
-		// that cannot see which half failed cannot fix it.
-		Reason string `json:"reason" enum:"token_missing,token_mismatch,unreachable"`
+		// that cannot see which half failed cannot fix it. The empty string
+		// is a real, valid value on the success path (domainverify.ReasonNone),
+		// not merely the zero value of an unset field, so it belongs in the
+		// enum rather than making the field optional — that would change the
+		// JSON shape for a case that already works.
+		Reason string `json:"reason" enum:",token_missing,token_mismatch,unreachable"`
 	}
 }
 

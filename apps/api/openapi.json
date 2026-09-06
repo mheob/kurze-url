@@ -939,7 +939,7 @@
 						"$ref": "#/components/schemas/Domain"
 					},
 					"reason": {
-						"enum": ["token_missing", "token_mismatch", "unreachable"],
+						"enum": ["", "token_missing", "token_mismatch", "unreachable"],
 						"type": "string"
 					}
 				},
