@@ -9,7 +9,16 @@ export function SiteFooter({ apiStatus }: { readonly apiStatus: string }) {
 	const { t } = useTranslation();
 
 	return (
-		<footer className="border-border text-muted-foreground flex flex-col gap-1 border-t px-6 py-4 text-sm">
+		<footer
+			className="border-border text-muted-foreground flex flex-col gap-1 border-t px-6 py-4 text-sm"
+			// Machine-readable twin of the sentence below, and the only signal the
+			// e2e suite has that the deployment it is about to test is wired to a
+			// real API. `e2e/global-setup.ts` refuses to run when this is anything
+			// but 'ok'. Reading the prose instead would couple that check to a
+			// translated string; reading nothing at all is what let a whole suite
+			// run against a preview whose paired API had never been built.
+			data-api-status={apiStatus}
+		>
 			<p>{t('footer.tagline')}</p>
 			{/* apiStatus is a technical value ('ok' | 'unreachable' | 'unknown'), not
 			    prose — only the surrounding label is translated; the value itself is
