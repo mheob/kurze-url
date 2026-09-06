@@ -21,10 +21,11 @@ export type ApiFailure =
 	| { kind: 'domainHasLinks'; count: number }
 	| { kind: 'unknown' };
 
-/** The one `ErrorDetail` field this module reads; see `apps/api/openapi.json`. */
+/** The `ErrorDetail` fields this module reads; see `apps/api/openapi.json`. */
 interface ProblemDetail {
 	readonly location?: string;
 	readonly message?: string;
+	readonly value?: unknown;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -79,32 +80,28 @@ function fieldsOf(error: unknown): Record<string, string> {
 	return fields;
 }
 
-function detailOf(error: unknown): string | undefined {
-	if (!isRecord(error)) return undefined;
-	const { detail } = error;
-	return typeof detail === 'string' ? detail : undefined;
-}
-
 /**
  * `deleteDomain` in apps/api/internal/api/domains.go is the only place a 409
- * carries a link count, and it puts it nowhere but the free-text `detail`:
- * `huma.Error409Conflict(fmt.Sprintf("%d link(s) still use this domain; delete
- * them first", linkCount))`. There is no separate structured field for it.
- * The count is the whole reason `domains_test.go`'s own
- * `TestDeleteDomainIsRefusedWhileLinksExist` asserts `rec.Body.String()`
- * contains it — this reads the same guaranteed leading digits, not the
- * sentence around them, so nothing here ever displays the raw English text
- * to a user.
+ * carries a link count, and it sends it as a typed `ErrorDetail` alongside
+ * the free-text `detail`: `Location: "path.domain_id", Value: linkCount` —
+ * see the comment on that call for why that `Location` string was chosen.
+ * Reading the typed value here, rather than parsing it out of `detail`'s
+ * prose, means a reworded message can never silently break this: if the
+ * typed detail ever stops arriving, this returns `undefined`, exactly like a
+ * 409 that never carried one — there is deliberately no regex fallback onto
+ * `detail`, since that would let this exact drift happen quietly again.
  *
- * A 409 with no leading digit — the *verify* endpoint's own unrelated
- * conflict ("another team has already verified this hostname") — must not be
- * misread as a blocked deletion with an invented count, so this returns
- * `undefined` rather than `0` when nothing matches.
+ * The *verify* endpoint's own unrelated conflict ("another team has already
+ * verified this hostname") carries no `ErrorDetail` at all, so it falls
+ * through to `undefined` here too, never an invented count.
  */
 function blockingLinkCountOf(error: unknown): number | undefined {
-	const detail = detailOf(error);
-	const match = detail === undefined ? null : /^(\d+)\s+link/.exec(detail);
-	return match ? Number(match[1]) : undefined;
+	for (const detail of problemDetailsOf(error)) {
+		if (detail.location === 'path.domain_id' && typeof detail.value === 'number') {
+			return detail.value;
+		}
+	}
+	return undefined;
 }
 
 export function classifyApiError(error: unknown): ApiFailure {

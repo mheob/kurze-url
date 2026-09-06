@@ -19,6 +19,7 @@ import { classifyApiError } from './api-errors';
 interface FakeProblemDetail {
 	readonly location?: string;
 	readonly message?: string;
+	readonly value?: unknown;
 }
 
 interface FakeProblem {
@@ -54,30 +55,61 @@ describe('classifyApiError', () => {
 	});
 
 	it('maps a 409 with a blocking link count onto domainHasLinks', () => {
-		// apps/api/internal/api/domains.go's deleteDomain: `huma.Error409Conflict(fmt.Sprintf(
-		// "%d link(s) still use this domain; delete them first", linkCount))` — the count sits
-		// at the front of `detail`, the only place the wire response carries it.
+		// apps/api/internal/api/domains.go's deleteDomain attaches this exact
+		// shape via `&huma.ErrorDetail{Location: "path.domain_id", Value:
+		// linkCount}` alongside the free-text `detail` — the typed `value` is
+		// what this reads, not any digit inside `detail`'s prose (that prose can
+		// be reworded freely; see the "does not depend on the message wording"
+		// test below).
 		const failure = classifyApiError(
-			problem(409, undefined, '3 link(s) still use this domain; delete them first'),
+			problem(
+				409,
+				[{ location: 'path.domain_id', value: 3 }],
+				'3 link(s) still use this domain; delete them first',
+			),
 		);
 		expect(failure).toStrictEqual({ count: 3, kind: 'domainHasLinks' });
 	});
 
 	it('reads a singular blocking link count the same way', () => {
 		const failure = classifyApiError(
-			problem(409, undefined, '1 link(s) still use this domain; delete them first'),
+			problem(
+				409,
+				[{ location: 'path.domain_id', value: 1 }],
+				'1 link(s) still use this domain; delete them first',
+			),
 		);
 		expect(failure).toStrictEqual({ count: 1, kind: 'domainHasLinks' });
 	});
 
-	it('falls back to unknown for a 409 with no parseable count', () => {
+	it('does not depend on the message wording, only the typed value', () => {
+		// Falsifies the coupling the prior, regex-based implementation had: the
+		// same typed `errors` entry classifies the same way no matter how
+		// `detail`'s prose is worded, reordered, or missing entirely.
+		const failure = classifyApiError(
+			problem(409, [{ location: 'path.domain_id', value: 3 }], 'only 3 more links to go'),
+		);
+		expect(failure).toStrictEqual({ count: 3, kind: 'domainHasLinks' });
+	});
+
+	it('falls back to unknown for a 409 with no typed value at all', () => {
 		// The verify endpoint has its own, unrelated 409 — "another team has
-		// already verified this hostname" — with no link count in it at all.
+		// already verified this hostname" — and attaches no ErrorDetail at all.
 		// That must not be misread as a domainHasLinks failure with an invented
 		// count of zero or one.
 		const failure = classifyApiError(
 			problem(409, undefined, 'another team has already verified this hostname'),
 		);
+		expect(failure).toStrictEqual({ kind: 'unknown' });
+	});
+
+	it('ignores an errors entry at an unrelated location', () => {
+		const failure = classifyApiError(problem(409, [{ location: 'body.hostname', value: 3 }]));
+		expect(failure).toStrictEqual({ kind: 'unknown' });
+	});
+
+	it('ignores a path.domain_id entry whose value is not a number', () => {
+		const failure = classifyApiError(problem(409, [{ location: 'path.domain_id', value: '3' }]));
 		expect(failure).toStrictEqual({ kind: 'unknown' });
 	});
 
