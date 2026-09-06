@@ -16,6 +16,24 @@ import (
 	"github.com/mheob/kurze-url/apps/api/internal/domainverify"
 )
 
+// domainVerifier is the slice of domainverify this package needs to decide
+// whether a claimed hostname may serve a team's links: does the published
+// TXT token match, and does the hostname reach this API. Declared here, next
+// to its consumer — the same as Inviter in api.go — so handler tests can
+// substitute a stub without a real DNS lookup or TLS handshake.
+// domainverify.NewVerifier's *Verifier, wired into Deps.DomainVerifier once
+// in cmd/api/main.go, is the production implementation.
+type domainVerifier interface {
+	Check(ctx context.Context, hostname, token string) (domainverify.Reason, error)
+}
+
+// domainVerifyTimeout bounds the whole verify-domain request. Check's own
+// HTTPS probe already carries its own 5s budget, but the DNS lookup ahead of
+// it inherits only the context this handler passes in — without an explicit
+// bound here, a Verein whose nameserver never answers could hold this
+// request open indefinitely.
+const domainVerifyTimeout = 10 * time.Second
+
 // Domain is a domain as the API reports it. VerificationToken and Records are
 // included on every read, not just on creation: the screen that shows a
 // Verein what to put in DNS has to be able to show it again tomorrow.
@@ -77,6 +95,29 @@ type GetDomainInput struct {
 	authz.DomainViewerScope
 }
 
+// VerifyDomainInput declares its authorization in its type: DomainAdminScope
+// resolves which team owns the domain and requires at least the admin
+// role — the same threshold create-domain uses, since verifying decides
+// which team's links a hostname actually serves.
+type VerifyDomainInput struct {
+	authz.DomainAdminScope
+}
+
+// VerifyDomainOutput carries the domain unchanged plus a reason. A failed
+// check is not an error: under maintainer-in-the-loop provisioning,
+// "unreachable" is the normal state until the maintainer has added the
+// hostname to the Vercel project.
+type VerifyDomainOutput struct {
+	Body struct {
+		Domain Domain `json:"domain"`
+		// Reason is empty on success (including the already-verified
+		// short-circuit) and one of domainverify's Reason values otherwise —
+		// "token_missing", "token_mismatch" or "unreachable" — so a Verein
+		// that cannot see which half failed cannot fix it.
+		Reason string `json:"reason"`
+	}
+}
+
 func (d Deps) registerDomains(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID:   "create-domain",
@@ -105,6 +146,15 @@ func (d Deps) registerDomains(api huma.API) {
 		Tags:        []string{"Domains"},
 		Security:    []map[string][]string{{"bearerAuth": {}}},
 	}, d.getDomain)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "verify-domain",
+		Method:      http.MethodPost,
+		Path:        "/v1/domains/{domain_id}/verify",
+		Summary:     "Check a claimed domain's DNS token and reachability",
+		Tags:        []string{"Domains"},
+		Security:    []map[string][]string{{"bearerAuth": {}}},
+	}, d.verifyDomain)
 }
 
 func (d Deps) createDomain(ctx context.Context, in *CreateDomainInput) (*DomainOutput, error) {
@@ -180,6 +230,139 @@ func (d Deps) allowDomainClaim(ctx context.Context, userID uuid.UUID) error {
 		return huma.Error429TooManyRequests("too many domains claimed; try again later")
 	}
 	return nil
+}
+
+// allowDomainVerify rate-limits verification attempts on both axes: the
+// domain being checked and the user calling. Each call costs a DNS lookup
+// and a TLS connection to a third party, and either axis alone could be
+// abused past a single limit — one member retrying rapidly on one domain, or
+// one caller sweeping many domains. A Redis outage must not stop a Verein
+// verifying a domain, the same choice allowLinkCreate makes: log and allow
+// rather than fail the request when the limiter itself errors.
+func (d Deps) allowDomainVerify(ctx context.Context, domainID, userID uuid.UUID) error {
+	if d.Cache == nil || d.Config.DomainVerifyRateLimitPerHour <= 0 {
+		return nil
+	}
+
+	for _, key := range []string{
+		"rl:domain-verify:domain:" + domainID.String(),
+		"rl:domain-verify:user:" + userID.String(),
+	} {
+		ok, _, err := d.Cache.Allow(ctx, key, d.Config.DomainVerifyRateLimitPerHour, time.Hour)
+		if err != nil {
+			d.Log.Error("domain verify rate limit check failed", "error", err)
+			continue
+		}
+		if !ok {
+			return huma.Error429TooManyRequests("too many verification attempts; try again later")
+		}
+	}
+	return nil
+}
+
+func (d Deps) verifyDomain(ctx context.Context, in *VerifyDomainInput) (*VerifyDomainOutput, error) {
+	member := in.Member()
+	domain := in.Domain()
+
+	if err := d.allowDomainVerify(ctx, domain.ID, member.UserID); err != nil {
+		return nil, err
+	}
+
+	// There is no RLS: this filters by team_id even though the scope already
+	// authorized the caller for member.TeamID, the same reason getDomain
+	// filters below it.
+	row, err := d.Queries.GetDomainForTeam(ctx, db.GetDomainForTeamParams{
+		ID: domain.ID, TeamID: member.TeamID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, huma.Error404NotFound("domain not found")
+	}
+	if err != nil {
+		d.Log.Error("get domain", "error", err, "domain_id", domain.ID)
+		return nil, huma.Error500InternalServerError("could not load the domain")
+	}
+
+	if row.VerificationStatus == "verified" {
+		// No point paying for a DNS lookup and a TLS handshake to learn what
+		// the row already says.
+		out := &VerifyDomainOutput{}
+		out.Body.Domain = domainResponse(row, d.Config.DomainDNSTarget)
+		return out, nil
+	}
+
+	token := ""
+	if row.VerificationToken != nil {
+		token = *row.VerificationToken
+	}
+
+	// Check's own DNS lookup has no timeout of its own: its HTTPS probe
+	// carries its own 5s budget, but LookupTXT inherits only the context
+	// passed in here.
+	checkCtx, cancel := context.WithTimeout(ctx, domainVerifyTimeout)
+	defer cancel()
+
+	reason, err := d.DomainVerifier.Check(checkCtx, row.Hostname, token)
+	if err != nil {
+		d.Log.Error("verify domain", "error", err, "domain_id", domain.ID)
+		return nil, huma.Error500InternalServerError("could not verify the domain")
+	}
+
+	if reason != domainverify.ReasonNone {
+		// "Not ready yet" is the expected answer, not a failure: under
+		// maintainer-in-the-loop provisioning, "unreachable" is the normal
+		// state until the maintainer has added the hostname to the Vercel
+		// project. A 200 with the unchanged domain and the reason lets a
+		// Verein see which half to fix.
+		out := &VerifyDomainOutput{}
+		out.Body.Domain = domainResponse(row, d.Config.DomainDNSTarget)
+		out.Body.Reason = string(reason)
+		return out, nil
+	}
+
+	var verified db.Domain
+	err = db.InTx(ctx, d.Pool, func(q *db.Queries) error {
+		v, err := q.MarkDomainVerified(ctx, db.MarkDomainVerifiedParams{
+			ID: domain.ID, TeamID: member.TeamID,
+		})
+		if err != nil {
+			return err
+		}
+		verified = v
+
+		if err := q.FailCompetingClaims(ctx, db.FailCompetingClaimsParams{
+			Hostname: v.Hostname, KeepID: v.ID,
+		}); err != nil {
+			return err
+		}
+
+		// hostname, never the token: audit_log.metadata rejects any key
+		// whose word segments include "token".
+		return audit.Log(ctx, q, audit.Entry{
+			TeamID:      member.TeamID,
+			ActorUserID: member.UserID,
+			Action:      audit.ActionDomainVerified,
+			EntityType:  audit.EntityDomain,
+			EntityID:    v.ID,
+			Metadata:    map[string]any{"hostname": v.Hostname},
+		})
+	})
+
+	switch {
+	case isUniqueViolation(err):
+		// Another team verified this hostname first. Both proved they
+		// control the zone — which can happen legitimately during a
+		// handover — and the index makes the second one lose rather than
+		// producing two verified rows the redirect path would have to
+		// choose between.
+		return nil, huma.Error409Conflict("another team has already verified this hostname")
+	case err != nil:
+		d.Log.Error("verify domain", "error", err, "domain_id", domain.ID)
+		return nil, huma.Error500InternalServerError("could not verify the domain")
+	}
+
+	out := &VerifyDomainOutput{}
+	out.Body.Domain = domainResponse(verified, d.Config.DomainDNSTarget)
+	return out, nil
 }
 
 func (d Deps) listDomains(ctx context.Context, in *ListDomainsInput) (*ListDomainsOutput, error) {

@@ -71,6 +71,7 @@ var teamScopedCases = []matrixCase{
 		map[string]string{"hostname": "matrix.verein.test"}, authz.RoleAdmin},
 	{"list-domains", http.MethodGet, "/v1/teams/{team}/domains", nil, authz.RoleViewer},
 	{"get-domain", http.MethodGet, "/v1/domains/{domain}", nil, authz.RoleViewer},
+	{"verify-domain", http.MethodPost, "/v1/domains/{domain}/verify", nil, authz.RoleAdmin},
 }
 
 // notTeamScoped names the authenticated operations that legitimately carry no

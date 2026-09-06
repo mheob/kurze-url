@@ -139,6 +139,57 @@ func TestGetDomainIs404ForANonMember(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, rec.Code)
 }
 
+func TestVerifyReportsWhichHalfIsMissing(t *testing.T) {
+	f := newTenancyFixture(t)
+	f.verifier.reason = domainverify.ReasonTokenMissing
+
+	claim := claimDomain(t, f, "links.verein.test")
+
+	rec := f.do(t, f.members[authz.RoleAdmin], http.MethodPost,
+		"/v1/domains/"+claim.ID.String()+"/verify", nil)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := decode[struct {
+		Domain api.Domain `json:"domain"`
+		Reason string     `json:"reason"`
+	}](t, rec)
+	require.Equal(t, "pending", body.Domain.VerificationStatus)
+	require.Equal(t, "token_missing", body.Reason,
+		"a Verein that cannot see which half failed cannot fix it")
+}
+
+func TestVerifySucceedsAndSettlesCompetingClaims(t *testing.T) {
+	f := newTenancyFixture(t)
+	f.verifier.reason = domainverify.ReasonNone
+
+	mine := claimDomain(t, f, "contested.verein.test")
+	theirs := claimDomainAs(t, f, f.otherAdmin, f.otherTeamID, "contested.verein.test")
+
+	rec := f.do(t, f.members[authz.RoleAdmin], http.MethodPost,
+		"/v1/domains/"+mine.ID.String()+"/verify", nil)
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	require.Equal(t, "verified", decode[struct {
+		Domain api.Domain `json:"domain"`
+	}](t, rec).Domain.VerificationStatus)
+
+	var status string
+	require.NoError(t, f.pool.QueryRow(t.Context(),
+		`select verification_status from domain where id = $1`, theirs.ID).Scan(&status))
+	require.Equal(t, "failed", status,
+		"the losing claim must be answered, not left pending forever")
+}
+
+func TestVerifyIsRefusedBelowAdmin(t *testing.T) {
+	f := newTenancyFixture(t)
+	claim := claimDomain(t, f, "links.verein.test")
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPost,
+		"/v1/domains/"+claim.ID.String()+"/verify", nil)
+
+	require.Equal(t, http.StatusForbidden, rec.Code)
+}
+
 // claimDomain claims a hostname for the fixture's own team as its admin.
 func claimDomain(t *testing.T, f *tenancyFixture, hostname string) api.Domain {
 	t.Helper()

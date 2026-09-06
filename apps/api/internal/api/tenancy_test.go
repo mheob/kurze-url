@@ -28,6 +28,7 @@ import (
 	"github.com/mheob/kurze-url/apps/api/internal/cache"
 	"github.com/mheob/kurze-url/apps/api/internal/config"
 	"github.com/mheob/kurze-url/apps/api/internal/db"
+	"github.com/mheob/kurze-url/apps/api/internal/domainverify"
 )
 
 var (
@@ -100,6 +101,21 @@ type testUser struct {
 	email string
 }
 
+// stubDomainVerifier lets a test dictate the outcome of a domain
+// verification check without a real DNS lookup or TLS handshake to a third
+// party. It is assigned into Deps.DomainVerifier as a pointer, so a test can
+// mutate f.verifier.reason after the fixture is built and have the
+// already-registered handler see the change — unlike a Config field, this
+// needs no f.rebuildRouter() call.
+type stubDomainVerifier struct {
+	reason domainverify.Reason
+	err    error
+}
+
+func (s *stubDomainVerifier) Check(context.Context, string, string) (domainverify.Reason, error) {
+	return s.reason, s.err
+}
+
 // tenancyFixture is one team with one member per role, a stranger who belongs
 // to no team, a real JWKS-backed verifier and a wired /v1 router.
 type tenancyFixture struct {
@@ -111,6 +127,7 @@ type tenancyFixture struct {
 	members  map[authz.Role]testUser
 	stranger testUser
 	invites  *fakeInviter
+	verifier *stubDomainVerifier
 
 	sharedDomainID uuid.UUID
 	teamDomainID   uuid.UUID
@@ -273,6 +290,7 @@ func newTenancyFixture(t *testing.T) *tenancyFixture {
 	cfg.LinkCreateRateLimitPerMin = 100
 
 	invites := &fakeInviter{userID: uuid.New(), t: t, pool: pool}
+	domainVerifierStub := &stubDomainVerifier{reason: domainverify.ReasonNone}
 
 	// The redirect helper below exercises the real HandleRedirect, which
 	// records a click on every successful redirect — so this fixture needs a
@@ -290,6 +308,7 @@ func newTenancyFixture(t *testing.T) *tenancyFixture {
 		members:        members,
 		stranger:       stranger,
 		invites:        invites,
+		verifier:       domainVerifierStub,
 		sharedDomainID: sharedDomainID,
 		teamDomainID:   teamDomainID,
 		teamHostname:   teamHostname,
@@ -299,15 +318,16 @@ func newTenancyFixture(t *testing.T) *tenancyFixture {
 		otherTeamID:    otherTeamID,
 		otherAdmin:     otherAdmin,
 		deps: api.Deps{
-			Config:       cfg,
-			SharedDomain: api.SharedDomain{ID: sharedDomainID, Hostname: sharedHostname},
-			Queries:      db.New(pool),
-			Pool:         pool,
-			Cache:        redis,
-			Verifier:     verifier,
-			Admin:        invites,
-			Recorder:     recorder,
-			Log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+			Config:         cfg,
+			SharedDomain:   api.SharedDomain{ID: sharedDomainID, Hostname: sharedHostname},
+			Queries:        db.New(pool),
+			Pool:           pool,
+			Cache:          redis,
+			Verifier:       verifier,
+			DomainVerifier: domainVerifierStub,
+			Admin:          invites,
+			Recorder:       recorder,
+			Log:            slog.New(slog.NewTextHandler(io.Discard, nil)),
 		},
 	}
 
