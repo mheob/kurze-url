@@ -10,10 +10,15 @@ import { generatedFiles } from './generated.config.ts';
 
 // better-tailwindcss resolves its `tailwindcss` install and CSS entry point relative to a
 // `cwd` it defaults to the process cwd (the repo root, which has no `tailwindcss` package of
-// its own — it lives in apps/web's node_modules). Every rule needs both options repeated
-// because oxlint's top-level `settings` only forwards its own known plugin keys (react,
-// jsx-a11y, next, jest, jsdoc, vitest) — a `better-tailwindcss` entry there is silently
-// dropped, never reaching the plugin.
+// its own — it lives in apps/web's node_modules).
+//
+// Both options are repeated on every rule below, and still have to be: oxlint's top-level
+// `settings` only forwards its own known plugin keys, so a `better-tailwindcss` entry there
+// is silently dropped. `@mheob/oxlint-config` v4 passes them that way — which is why its
+// rule severities are kept but its options are overridden here. Relying on the shared
+// config alone makes oxlint print "Tailwind CSS is not installed. Disabling rule
+// better-tailwindcss/…" eight times and lint every class name as if the plugin were absent;
+// with the options restored, a bogus class is an error again.
 const tailwindPluginOptions = { cwd: 'apps/web', entryPoint: 'src/styles/app.css' };
 
 // `dark` is applied to `<html>` as a plain toggle class (see Task 6's root route) so that
@@ -21,13 +26,18 @@ const tailwindPluginOptions = { cwd: 'apps/web', entryPoint: 'src/styles/app.css
 // selector hook, not a generated Tailwind utility, so `no-unknown-classes`'s "is this a real
 // class" check can't recognise it and flags it as unknown. Anchored so it only matches the
 // bare class, never a real `dark:`-prefixed utility.
-const noUnknownClassesOptions = { ...tailwindPluginOptions, ignore: ['^dark$'] };
+const ignoredClasses = ['^dark$'];
 
 export default defineConfig({
 	// baseJsConfig already extends baseConfig — literally the same object, verified
 	// by comparing the resolved rule sets: 529 rules either way, no severity
 	// changes. Listing both would be redundant, not additive.
-	extends: [baseJsConfig, reactConfig, storybookConfig, tailwindcssConfig],
+	extends: [
+		baseJsConfig,
+		reactConfig,
+		storybookConfig,
+		tailwindcssConfig({ ignoredClasses, options: tailwindPluginOptions }),
+	],
 	// Shared with oxfmt. See generated.config.ts for why both tools skip these.
 	ignorePatterns: generatedFiles,
 	overrides: [
@@ -65,14 +75,4 @@ export default defineConfig({
 			plugins: ['vitest'],
 		},
 	],
-	rules: {
-		'better-tailwindcss/enforce-canonical-classes': ['warn', tailwindPluginOptions],
-		'better-tailwindcss/enforce-consistent-class-order': ['warn', tailwindPluginOptions],
-		'better-tailwindcss/enforce-consistent-line-wrapping': ['warn', tailwindPluginOptions],
-		'better-tailwindcss/no-conflicting-classes': ['error', tailwindPluginOptions],
-		'better-tailwindcss/no-deprecated-classes': ['warn', tailwindPluginOptions],
-		'better-tailwindcss/no-duplicate-classes': ['warn', tailwindPluginOptions],
-		'better-tailwindcss/no-unknown-classes': ['error', noUnknownClassesOptions],
-		'better-tailwindcss/no-unnecessary-whitespace': ['warn', tailwindPluginOptions],
-	},
 });
