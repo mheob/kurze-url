@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
+import { Route as AuthedTeamsNewRouteImport } from './routes/_authed/teams.new'
 import { Route as AuthedTeamsTeamIdLinksIndexRouteImport } from './routes/_authed/teams.$teamId.links.index'
 import { Route as AuthedTeamsTeamIdLinksLinkIdRouteImport } from './routes/_authed/teams.$teamId.links.$linkId'
 import { Route as AuthedTeamsTeamIdLinksNewRouteImport } from './routes/_authed/teams.$teamId.links.new'
@@ -35,6 +36,11 @@ const AuthCallbackRoute = AuthCallbackRouteImport.update({
   id: '/auth/callback',
   path: '/auth/callback',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AuthedTeamsNewRoute = AuthedTeamsNewRouteImport.update({
+  id: '/teams/new',
+  path: '/teams/new',
+  getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedTeamsTeamIdLinksIndexRoute =
   AuthedTeamsTeamIdLinksIndexRouteImport.update({
@@ -59,6 +65,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/teams/new': typeof AuthedTeamsNewRoute
   '/teams/$teamId/links/$linkId': typeof AuthedTeamsTeamIdLinksLinkIdRoute
   '/teams/$teamId/links/new': typeof AuthedTeamsTeamIdLinksNewRoute
   '/teams/$teamId/links/': typeof AuthedTeamsTeamIdLinksIndexRoute
@@ -67,6 +74,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/teams/new': typeof AuthedTeamsNewRoute
   '/teams/$teamId/links/$linkId': typeof AuthedTeamsTeamIdLinksLinkIdRoute
   '/teams/$teamId/links/new': typeof AuthedTeamsTeamIdLinksNewRoute
   '/teams/$teamId/links': typeof AuthedTeamsTeamIdLinksIndexRoute
@@ -77,6 +85,7 @@ export interface FileRoutesById {
   '/_authed': typeof AuthedRouteWithChildren
   '/login': typeof LoginRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/_authed/teams/new': typeof AuthedTeamsNewRoute
   '/_authed/teams/$teamId/links/$linkId': typeof AuthedTeamsTeamIdLinksLinkIdRoute
   '/_authed/teams/$teamId/links/new': typeof AuthedTeamsTeamIdLinksNewRoute
   '/_authed/teams/$teamId/links/': typeof AuthedTeamsTeamIdLinksIndexRoute
@@ -87,6 +96,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/auth/callback'
+    | '/teams/new'
     | '/teams/$teamId/links/$linkId'
     | '/teams/$teamId/links/new'
     | '/teams/$teamId/links/'
@@ -95,6 +105,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/auth/callback'
+    | '/teams/new'
     | '/teams/$teamId/links/$linkId'
     | '/teams/$teamId/links/new'
     | '/teams/$teamId/links'
@@ -104,6 +115,7 @@ export interface FileRouteTypes {
     | '/_authed'
     | '/login'
     | '/auth/callback'
+    | '/_authed/teams/new'
     | '/_authed/teams/$teamId/links/$linkId'
     | '/_authed/teams/$teamId/links/new'
     | '/_authed/teams/$teamId/links/'
@@ -146,6 +158,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authed/teams/new': {
+      id: '/_authed/teams/new'
+      path: '/teams/new'
+      fullPath: '/teams/new'
+      preLoaderRoute: typeof AuthedTeamsNewRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/teams/$teamId/links/': {
       id: '/_authed/teams/$teamId/links/'
       path: '/teams/$teamId/links'
@@ -171,12 +190,14 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthedRouteChildren {
+  AuthedTeamsNewRoute: typeof AuthedTeamsNewRoute
   AuthedTeamsTeamIdLinksLinkIdRoute: typeof AuthedTeamsTeamIdLinksLinkIdRoute
   AuthedTeamsTeamIdLinksNewRoute: typeof AuthedTeamsTeamIdLinksNewRoute
   AuthedTeamsTeamIdLinksIndexRoute: typeof AuthedTeamsTeamIdLinksIndexRoute
 }
 
 const AuthedRouteChildren: AuthedRouteChildren = {
+  AuthedTeamsNewRoute: AuthedTeamsNewRoute,
   AuthedTeamsTeamIdLinksLinkIdRoute: AuthedTeamsTeamIdLinksLinkIdRoute,
   AuthedTeamsTeamIdLinksNewRoute: AuthedTeamsTeamIdLinksNewRoute,
   AuthedTeamsTeamIdLinksIndexRoute: AuthedTeamsTeamIdLinksIndexRoute,

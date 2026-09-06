@@ -41,7 +41,7 @@ describe('fetchCurrentUser', () => {
 	});
 
 	it('returns the session when there is one', async () => {
-		const me: Me = { email: 'a@example.test', memberships, user_id: 'u1' };
+		const me: Me = { email: 'a@example.test', is_maintainer: false, memberships, user_id: 'u1' };
 		mocks.fetchMe.mockResolvedValueOnce(me);
 		await expect(fetchCurrentUser()).resolves.toEqual(me);
 	});
@@ -53,7 +53,7 @@ describe('resolveHomeOutcome', () => {
 	});
 
 	it('redirects a signed-in visitor to the resolved team', () => {
-		const me: Me = { email: 'a@example.test', memberships, user_id: 'u1' };
+		const me: Me = { email: 'a@example.test', is_maintainer: false, memberships, user_id: 'u1' };
 		expect(resolveHomeOutcome(me, 'a')).toEqual({ kind: 'redirect', teamId: 'a' });
 	});
 
@@ -69,12 +69,38 @@ describe('resolveHomeOutcome', () => {
 	 * decision, including the "removed from that team" falsification.
 	 */
 	it('redirects to the remembered team, not necessarily the first membership', () => {
-		const me: Me = { email: 'a@example.test', memberships, user_id: 'u1' };
+		const me: Me = { email: 'a@example.test', is_maintainer: false, memberships, user_id: 'u1' };
 		expect(resolveHomeOutcome(me, 'b')).toEqual({ kind: 'redirect', teamId: 'b' });
 	});
 
 	it('shows the no-team outcome for a signed-in visitor with no resolved team', () => {
-		const me: Me = { email: 'a@example.test', memberships: [], user_id: 'u1' };
-		expect(resolveHomeOutcome(me, undefined)).toEqual({ kind: 'noTeam' });
+		const me: Me = {
+			email: 'a@example.test',
+			is_maintainer: false,
+			memberships: [],
+			user_id: 'u1',
+		};
+		expect(resolveHomeOutcome(me, undefined)).toEqual({ isMaintainer: false, kind: 'noTeam' });
+	});
+
+	/**
+	 * The bootstrap case. A maintainer signing in to an instance with no teams
+	 * never enters `_authed`, so the shell's own "create team" control is out of
+	 * reach — `/` is the only page they see, and this flag is what decides
+	 * whether it offers them a way forward or a dead end telling them to ask
+	 * whoever invited them. Before this, the first team could only be created
+	 * with SQL against the database.
+	 */
+	it('tells the no-team outcome whether this visitor may create a team', () => {
+		const maintainer: Me = {
+			email: 'a@example.test',
+			is_maintainer: true,
+			memberships: [],
+			user_id: 'u1',
+		};
+		expect(resolveHomeOutcome(maintainer, undefined)).toEqual({
+			isMaintainer: true,
+			kind: 'noTeam',
+		});
 	});
 });

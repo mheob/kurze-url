@@ -33,7 +33,12 @@
 		"signOut": "Sign out"
 	},
 	"teams": {
+		"create": "Create team",
+		"name": "Team name",
+		"nameRequired": "A team name is required.",
 		"none": "You are not a member of any team yet. Ask the person who invited you to add you to one.",
+		"noneMaintainer": "You are not a member of any team yet. As a maintainer you can create one.",
+		"save": "Save",
 		"switcherLabel": "Teams"
 	},
 	"links": {

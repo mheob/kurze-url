@@ -26,12 +26,14 @@ const memberships: Membership[] = [
  */
 function renderShell(props: {
 	readonly currentTeamId?: string;
+	readonly isMaintainer?: boolean;
 	readonly memberships?: readonly Membership[];
 	readonly onSignOut?: () => void;
 	readonly signingOut?: boolean;
 }): ReturnType<typeof render> {
 	const {
 		currentTeamId = 'a',
+		isMaintainer = false,
 		memberships: membershipsProp = memberships,
 		onSignOut = vi.fn(),
 		signingOut = false,
@@ -41,6 +43,7 @@ function renderShell(props: {
 		component: () => (
 			<AuthedShell
 				currentTeamId={currentTeamId}
+				isMaintainer={isMaintainer}
 				memberships={membershipsProp}
 				onSignOut={onSignOut}
 				signingOut={signingOut}
@@ -52,9 +55,14 @@ function renderShell(props: {
 		getParentRoute: () => rootRoute,
 		path: '/teams/$teamId/links',
 	});
+	const newTeamRoute = createRoute({
+		component: () => null,
+		getParentRoute: () => rootRoute,
+		path: '/teams/new',
+	});
 	const router = createRouter({
 		history: createMemoryHistory({ initialEntries: ['/'] }),
-		routeTree: rootRoute.addChildren([linksRoute]),
+		routeTree: rootRoute.addChildren([linksRoute, newTeamRoute]),
 	});
 
 	return render(
@@ -86,6 +94,23 @@ describe('AuthedShell', () => {
 	it('disables the sign-out control while a sign-out is already in flight', async () => {
 		renderShell({ signingOut: true });
 		expect(await screen.findByRole('button', { name: 'Sign out' })).toBeDisabled();
+	});
+
+	it('offers team creation to a maintainer', async () => {
+		// A maintainer who already belongs to a team never sees `/`'s own
+		// "create team" link, because `/` redirects them straight into their
+		// team. Without this control they would have no way to reach
+		// `/teams/new` from inside the app at all.
+		renderShell({ isMaintainer: true });
+		expect(await screen.findByRole('link', { name: 'Create team' })).toBeInTheDocument();
+	});
+
+	it('hides team creation from everyone else', async () => {
+		// `POST /v1/teams` answers a non-maintainer with 403 and the route
+		// itself 404s, so a visible control here would only ever be a dead end.
+		renderShell({ isMaintainer: false });
+		expect(await screen.findByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+		expect(screen.queryByRole('link', { name: 'Create team' })).not.toBeInTheDocument();
 	});
 
 	it('omits the team switcher when there is no resolved current team', async () => {

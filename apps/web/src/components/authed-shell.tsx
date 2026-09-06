@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 
 import type { Membership } from '../routes/_authed';
@@ -6,6 +7,10 @@ import { Button } from './ui/button';
 
 interface AuthedShellProps {
 	readonly currentTeamId: string | undefined;
+	// Whether to offer team creation at all. `/` covers the maintainer who has
+	// no team yet; this covers the one who does, and who would otherwise have
+	// no way back to `/teams/new` from inside the app.
+	readonly isMaintainer: boolean;
 	readonly memberships: readonly Membership[];
 	readonly onSignOut: () => void;
 	readonly signingOut: boolean;
@@ -29,6 +34,7 @@ interface AuthedShellProps {
  */
 export function AuthedShell({
 	currentTeamId,
+	isMaintainer,
 	memberships,
 	onSignOut,
 	signingOut,
@@ -40,9 +46,12 @@ export function AuthedShell({
 			{currentTeamId && memberships.length > 0 ? (
 				<TeamSwitcher currentTeamId={currentTeamId} memberships={memberships} />
 			) : null}
-			<Button disabled={signingOut} onClick={onSignOut} type="button" variant="outline">
-				{t('auth.signOut')}
-			</Button>
+			<div className="flex items-center gap-2">
+				{isMaintainer ? <Link to="/teams/new">{t('teams.create')}</Link> : null}
+				<Button disabled={signingOut} onClick={onSignOut} type="button" variant="outline">
+					{t('auth.signOut')}
+				</Button>
+			</div>
 		</header>
 	);
 }

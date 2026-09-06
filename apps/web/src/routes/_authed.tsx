@@ -34,6 +34,12 @@ export interface Membership {
 
 export interface Me {
 	email: string;
+	// Mirrors the check `POST /v1/teams` enforces. Nothing in the browser can
+	// derive it — `MAINTAINER_USER_IDS` is deploy-time configuration on the Go
+	// service — so the API reports it and the routes below gate on it rather
+	// than offering team creation to everyone and letting a 403 arrive after
+	// the form is filled in. See `MeOutput` in `apps/api/internal/api/me.go`.
+	is_maintainer: boolean;
 	memberships: Membership[];
 	user_id: string;
 }
@@ -69,7 +75,12 @@ export const fetchMe = createServerFn({ method: 'GET' }).handler(async (): Promi
 	flushSessionCookies(headers);
 
 	const { data } = await getMe({ client: authedApiClient(accessToken), throwOnError: true });
-	return { email: data.email, memberships: data.memberships ?? [], user_id: data.user_id };
+	return {
+		email: data.email,
+		is_maintainer: data.is_maintainer,
+		memberships: data.memberships ?? [],
+		user_id: data.user_id,
+	};
 });
 
 /**
@@ -138,6 +149,7 @@ function AuthedLayout(): React.JSX.Element {
 		<>
 			<AuthedShell
 				currentTeamId={teamId ?? me.memberships[0]?.team_id}
+				isMaintainer={me.is_maintainer}
 				memberships={me.memberships}
 				onSignOut={() => signOutMutation.mutate()}
 				signingOut={signOutMutation.isPending}
