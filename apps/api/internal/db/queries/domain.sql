@@ -39,3 +39,82 @@ from domain
 where id = $1
   and verification_status = 'verified'
   and (team_id is null or team_id = sqlc.arg(team_id)::uuid);
+
+-- CreateDomainClaim records a team's claim on a hostname. It is a claim, not
+-- a reservation: several teams may hold one on the same hostname, and the
+-- partial unique index decides the winner at verification time.
+
+-- The team_id param is cast explicitly, same as GetDomainForTeam and its
+-- siblings below: domain.team_id is nullable at the column level (the shared
+-- hostname has none), and without the cast sqlc infers a nullable *uuid.UUID
+-- parameter here too — but a claim always has a real, non-null owning team,
+-- so the cast keeps the generated Go type honest about that.
+
+-- name: CreateDomainClaim :one
+insert into domain (team_id, hostname, verification_token)
+values (sqlc.arg(team_id)::uuid, sqlc.arg(hostname), sqlc.arg(verification_token))
+returning *;
+
+-- ListDomainsForTeam casts team_id for the same reason CreateDomainClaim does
+-- just above: the column is nullable, this query is never called with a null
+-- team.
+
+-- name: ListDomainsForTeam :many
+select *, count(*) over () as total_count
+from domain
+where team_id = sqlc.arg(team_id)::uuid
+order by hostname
+limit sqlc.arg('limit') offset sqlc.arg('offset');
+
+-- name: GetDomainForTeam :one
+select *
+from domain
+where id = $1 and team_id = sqlc.arg(team_id)::uuid;
+
+-- GetDomainScope discovers the owning team from a domain ID alone, so it
+-- cannot filter by the answer — the same exception GetTagScope is. team_id is
+-- nullable because the shared hostname has none; the resolver treats that null
+-- as "not found", because nobody administers the shared domain through this
+-- API.
+
+-- name: GetDomainScope :one
+select id, team_id
+from domain
+where id = $1;
+
+-- MarkDomainVerified is the transition. It fails with a unique violation when
+-- another team already holds this hostname as verified, which is exactly the
+-- race the partial index exists to lose safely.
+
+-- name: MarkDomainVerified :one
+update domain
+set verification_status = 'verified',
+    verified_at = now()
+where id = $1 and team_id = sqlc.arg(team_id)::uuid
+returning *;
+
+-- FailCompetingClaims settles the other claims on a hostname once one wins.
+-- They are marked rather than deleted so the losing team sees an answer
+-- instead of a vanished row. A failed row blocks nothing: the unique index
+-- covers verified rows only.
+
+-- name: FailCompetingClaims :exec
+update domain
+set verification_status = 'failed'
+where hostname = $1
+  and id <> sqlc.arg(keep_id)::uuid
+  and verification_status <> 'verified';
+
+-- CountLinksForDomain answers "would deleting this domain destroy anything?".
+-- link.team_id is denormalized precisely so this needs no join, and it is
+-- filtered here even though the scope already authorized the caller.
+
+-- name: CountLinksForDomain :one
+select count(*)
+from link
+where domain_id = sqlc.arg(domain_id)::uuid
+  and team_id = sqlc.arg(team_id)::uuid;
+
+-- name: DeleteDomain :execrows
+delete from domain
+where id = $1 and team_id = sqlc.arg(team_id)::uuid;

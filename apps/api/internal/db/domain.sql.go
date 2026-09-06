@@ -7,9 +7,163 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
+
+const countLinksForDomain = `-- name: CountLinksForDomain :one
+
+select count(*)
+from link
+where domain_id = $1::uuid
+  and team_id = $2::uuid
+`
+
+type CountLinksForDomainParams struct {
+	DomainID uuid.UUID
+	TeamID   uuid.UUID
+}
+
+// CountLinksForDomain answers "would deleting this domain destroy anything?".
+// link.team_id is denormalized precisely so this needs no join, and it is
+// filtered here even though the scope already authorized the caller.
+func (q *Queries) CountLinksForDomain(ctx context.Context, arg CountLinksForDomainParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countLinksForDomain, arg.DomainID, arg.TeamID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const createDomainClaim = `-- name: CreateDomainClaim :one
+
+
+insert into domain (team_id, hostname, verification_token)
+values ($1::uuid, $2, $3)
+returning id, team_id, hostname, verification_status, vercel_domain_ref, created_at, verified_at, verification_token
+`
+
+type CreateDomainClaimParams struct {
+	TeamID            uuid.UUID
+	Hostname          string
+	VerificationToken *string
+}
+
+// CreateDomainClaim records a team's claim on a hostname. It is a claim, not
+// a reservation: several teams may hold one on the same hostname, and the
+// partial unique index decides the winner at verification time.
+// The team_id param is cast explicitly, same as GetDomainForTeam and its
+// siblings below: domain.team_id is nullable at the column level (the shared
+// hostname has none), and without the cast sqlc infers a nullable *uuid.UUID
+// parameter here too — but a claim always has a real, non-null owning team,
+// so the cast keeps the generated Go type honest about that.
+func (q *Queries) CreateDomainClaim(ctx context.Context, arg CreateDomainClaimParams) (Domain, error) {
+	row := q.db.QueryRow(ctx, createDomainClaim, arg.TeamID, arg.Hostname, arg.VerificationToken)
+	var i Domain
+	err := row.Scan(
+		&i.ID,
+		&i.TeamID,
+		&i.Hostname,
+		&i.VerificationStatus,
+		&i.VercelDomainRef,
+		&i.CreatedAt,
+		&i.VerifiedAt,
+		&i.VerificationToken,
+	)
+	return i, err
+}
+
+const deleteDomain = `-- name: DeleteDomain :execrows
+delete from domain
+where id = $1 and team_id = $2::uuid
+`
+
+type DeleteDomainParams struct {
+	ID     uuid.UUID
+	TeamID uuid.UUID
+}
+
+func (q *Queries) DeleteDomain(ctx context.Context, arg DeleteDomainParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteDomain, arg.ID, arg.TeamID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const failCompetingClaims = `-- name: FailCompetingClaims :exec
+
+update domain
+set verification_status = 'failed'
+where hostname = $1
+  and id <> $2::uuid
+  and verification_status <> 'verified'
+`
+
+type FailCompetingClaimsParams struct {
+	Hostname string
+	KeepID   uuid.UUID
+}
+
+// FailCompetingClaims settles the other claims on a hostname once one wins.
+// They are marked rather than deleted so the losing team sees an answer
+// instead of a vanished row. A failed row blocks nothing: the unique index
+// covers verified rows only.
+func (q *Queries) FailCompetingClaims(ctx context.Context, arg FailCompetingClaimsParams) error {
+	_, err := q.db.Exec(ctx, failCompetingClaims, arg.Hostname, arg.KeepID)
+	return err
+}
+
+const getDomainForTeam = `-- name: GetDomainForTeam :one
+select id, team_id, hostname, verification_status, vercel_domain_ref, created_at, verified_at, verification_token
+from domain
+where id = $1 and team_id = $2::uuid
+`
+
+type GetDomainForTeamParams struct {
+	ID     uuid.UUID
+	TeamID uuid.UUID
+}
+
+func (q *Queries) GetDomainForTeam(ctx context.Context, arg GetDomainForTeamParams) (Domain, error) {
+	row := q.db.QueryRow(ctx, getDomainForTeam, arg.ID, arg.TeamID)
+	var i Domain
+	err := row.Scan(
+		&i.ID,
+		&i.TeamID,
+		&i.Hostname,
+		&i.VerificationStatus,
+		&i.VercelDomainRef,
+		&i.CreatedAt,
+		&i.VerifiedAt,
+		&i.VerificationToken,
+	)
+	return i, err
+}
+
+const getDomainScope = `-- name: GetDomainScope :one
+
+select id, team_id
+from domain
+where id = $1
+`
+
+type GetDomainScopeRow struct {
+	ID     uuid.UUID
+	TeamID *uuid.UUID
+}
+
+// GetDomainScope discovers the owning team from a domain ID alone, so it
+// cannot filter by the answer — the same exception GetTagScope is. team_id is
+// nullable because the shared hostname has none; the resolver treats that null
+// as "not found", because nobody administers the shared domain through this
+// API.
+func (q *Queries) GetDomainScope(ctx context.Context, id uuid.UUID) (GetDomainScopeRow, error) {
+	row := q.db.QueryRow(ctx, getDomainScope, id)
+	var i GetDomainScopeRow
+	err := row.Scan(&i.ID, &i.TeamID)
+	return i, err
+}
 
 const getLinkableDomain = `-- name: GetLinkableDomain :one
 
@@ -38,6 +192,99 @@ func (q *Queries) GetLinkableDomain(ctx context.Context, arg GetLinkableDomainPa
 	row := q.db.QueryRow(ctx, getLinkableDomain, arg.ID, arg.TeamID)
 	var i GetLinkableDomainRow
 	err := row.Scan(&i.ID, &i.Hostname)
+	return i, err
+}
+
+const listDomainsForTeam = `-- name: ListDomainsForTeam :many
+
+select id, team_id, hostname, verification_status, vercel_domain_ref, created_at, verified_at, verification_token, count(*) over () as total_count
+from domain
+where team_id = $1::uuid
+order by hostname
+limit $3 offset $2
+`
+
+type ListDomainsForTeamParams struct {
+	TeamID uuid.UUID
+	Offset int32
+	Limit  int32
+}
+
+type ListDomainsForTeamRow struct {
+	ID                 uuid.UUID
+	TeamID             *uuid.UUID
+	Hostname           string
+	VerificationStatus string
+	VercelDomainRef    *string
+	CreatedAt          time.Time
+	VerifiedAt         *time.Time
+	VerificationToken  *string
+	TotalCount         int64
+}
+
+// ListDomainsForTeam casts team_id for the same reason CreateDomainClaim does
+// just above: the column is nullable, this query is never called with a null
+// team.
+func (q *Queries) ListDomainsForTeam(ctx context.Context, arg ListDomainsForTeamParams) ([]ListDomainsForTeamRow, error) {
+	rows, err := q.db.Query(ctx, listDomainsForTeam, arg.TeamID, arg.Offset, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDomainsForTeamRow{}
+	for rows.Next() {
+		var i ListDomainsForTeamRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TeamID,
+			&i.Hostname,
+			&i.VerificationStatus,
+			&i.VercelDomainRef,
+			&i.CreatedAt,
+			&i.VerifiedAt,
+			&i.VerificationToken,
+			&i.TotalCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markDomainVerified = `-- name: MarkDomainVerified :one
+
+update domain
+set verification_status = 'verified',
+    verified_at = now()
+where id = $1 and team_id = $2::uuid
+returning id, team_id, hostname, verification_status, vercel_domain_ref, created_at, verified_at, verification_token
+`
+
+type MarkDomainVerifiedParams struct {
+	ID     uuid.UUID
+	TeamID uuid.UUID
+}
+
+// MarkDomainVerified is the transition. It fails with a unique violation when
+// another team already holds this hostname as verified, which is exactly the
+// race the partial index exists to lose safely.
+func (q *Queries) MarkDomainVerified(ctx context.Context, arg MarkDomainVerifiedParams) (Domain, error) {
+	row := q.db.QueryRow(ctx, markDomainVerified, arg.ID, arg.TeamID)
+	var i Domain
+	err := row.Scan(
+		&i.ID,
+		&i.TeamID,
+		&i.Hostname,
+		&i.VerificationStatus,
+		&i.VercelDomainRef,
+		&i.CreatedAt,
+		&i.VerifiedAt,
+		&i.VerificationToken,
+	)
 	return i, err
 }
 
