@@ -98,6 +98,96 @@ func TestCheck(t *testing.T) {
 			"_kurze-url-challenge.links.verein.de",
 			domainverify.ChallengeName("links.verein.de"))
 	})
+
+	// The subtests below exercise the success predicate itself. Before these
+	// existed, the status-code check, the body match, and the io.LimitReader
+	// cap could all have been deleted and the suite would have stayed green —
+	// "reports unreachable when the probe fails" above only ever drove the
+	// probe through a transport error, never a response.
+
+	t.Run("reports unreachable for 200 with the wrong body", func(t *testing.T) {
+		v := &domainverify.Verifier{
+			Resolver: fakeResolver{values: []string{"tok-a"}},
+			Client: &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(`{"status":"nope"}`)),
+					Request:    r,
+				}, nil
+			})},
+		}
+		reason, err := v.Check(t.Context(), "links.verein.de", "tok-a")
+		require.NoError(t, err)
+		require.Equal(t, domainverify.ReasonUnreachable, reason)
+	})
+
+	t.Run("reports unreachable for a non-200 with the right body", func(t *testing.T) {
+		v := &domainverify.Verifier{
+			Resolver: fakeResolver{values: []string{"tok-a"}},
+			Client: &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusInternalServerError,
+					Body:       io.NopCloser(strings.NewReader(`{"status":"ok"}`)),
+					Request:    r,
+				}, nil
+			})},
+		}
+		reason, err := v.Check(t.Context(), "links.verein.de", "tok-a")
+		require.NoError(t, err)
+		require.Equal(t, domainverify.ReasonUnreachable, reason)
+	})
+
+	t.Run("reports unreachable when the marker sits past the body cap", func(t *testing.T) {
+		// This pins io.LimitReader(resp.Body, maxProbeBody): the marker is
+		// real, but it sits after byte 4096, so a capped read never sees it.
+		// Without the cap, this subtest would find the marker and wrongly
+		// succeed — that is the failure this subtest exists to catch.
+		oversized := strings.Repeat("x", 5000) + `{"status":"ok"}`
+		v := &domainverify.Verifier{
+			Resolver: fakeResolver{values: []string{"tok-a"}},
+			Client: &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(oversized)),
+					Request:    r,
+				}, nil
+			})},
+		}
+		reason, err := v.Check(t.Context(), "links.verein.de", "tok-a")
+		require.NoError(t, err)
+		require.Equal(t, domainverify.ReasonUnreachable, reason)
+	})
+
+	t.Run("reports unreachable when the probe times out", func(t *testing.T) {
+		v := &domainverify.Verifier{
+			Resolver: fakeResolver{values: []string{"tok-a"}},
+			Client: &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+				<-r.Context().Done()
+				return nil, r.Context().Err()
+			})},
+		}
+		// A short deadline on the context passed in, rather than on
+		// probeTimeout itself, is what keeps this subtest fast: reachable's
+		// own context.WithTimeout(ctx, probeTimeout) takes the earlier of the
+		// two deadlines, so the request's context still expires quickly.
+		ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+		defer cancel()
+		reason, err := v.Check(ctx, "links.verein.de", "tok-a")
+		require.NoError(t, err)
+		require.Equal(t, domainverify.ReasonUnreachable, reason)
+	})
+
+	t.Run("reports mismatch for an empty token without matching a blank record", func(t *testing.T) {
+		// strings.TrimSpace(" ") == "", so without the guard an empty token
+		// would satisfy a zone publishing a whitespace-only TXT record.
+		v := &domainverify.Verifier{
+			Resolver: fakeResolver{values: []string{" "}},
+			Client:   okProbe(),
+		}
+		reason, err := v.Check(t.Context(), "links.verein.de", "")
+		require.NoError(t, err)
+		require.Equal(t, domainverify.ReasonTokenMismatch, reason)
+	})
 }
 
 // The two tests below stand in for the brief's SSRF tests, which turned out

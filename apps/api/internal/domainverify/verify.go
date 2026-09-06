@@ -91,6 +91,16 @@ func refuseNonPublicAddress(_, address string) error {
 // to connect to.
 func NewVerifier() *Verifier {
 	dialer := &net.Dialer{Timeout: probeTimeout}
+	// Rebinding — the first lookup answering with a public address and a
+	// second, later lookup answering with a private one — is structurally
+	// impossible against this dialer: there is exactly one resolution here,
+	// and net.Dialer invokes Control once per connection attempt, passing
+	// the address that attempt is actually about to dial, not a cached
+	// result from an earlier name-to-IP step. There is no separate
+	// check-then-dial-again path for a second lookup to race. If this ever
+	// changes — a second, independent resolution introduced somewhere
+	// between the check and the dial — this comment stops being true before
+	// the hole reopens.
 	dialer.Control = func(network, address string, _ syscall.RawConn) error {
 		return refuseNonPublicAddress(network, address)
 	}
@@ -98,8 +108,26 @@ func NewVerifier() *Verifier {
 	return &Verifier{
 		Resolver: net.DefaultResolver,
 		Client: &http.Client{
-			Timeout:   probeTimeout,
-			Transport: &http.Transport{DialContext: dialer.DialContext},
+			Timeout: probeTimeout,
+			Transport: &http.Transport{
+				DialContext: dialer.DialContext,
+				// This probe is one-shot: one request per Check call, never
+				// reused. Keeping the connection alive would only hold an idle
+				// TCP+TLS socket open for the rest of this long-lived
+				// process's life, one per verified hostname, forever.
+				DisableKeepAlives: true,
+				// Unset defaults to Client.Timeout, which also has to cover
+				// reading the body — naming the handshake's own budget keeps
+				// a slow TLS peer from eating the whole thing before a single
+				// byte of response exists.
+				TLSHandshakeTimeout: probeTimeout,
+				// Unset defaults to 10 MiB (net/http's DefaultMaxHeaderBytes).
+				// The body is capped at maxProbeBody; headers were not,
+				// which let a hostile server push far more into this process
+				// per probe than the "a few kilobytes read" the design calls
+				// for.
+				MaxResponseHeaderBytes: 8 << 10,
+			},
 			// A 302 to 169.254.169.254 would walk straight past the address
 			// check above, because the redirect is followed by a fresh dial the
 			// caller never sees.
@@ -113,7 +141,21 @@ func NewVerifier() *Verifier {
 // Check answers whether hostname may serve this team's links. It returns the
 // first unsatisfied condition; an error means the check could not be
 // performed at all, which is different from a check that ran and said no.
+//
+// hostname must already be normalized: Check interpolates it directly into
+// the probe URL, and NormalizeHostname in this package is the precondition
+// that makes doing so safe — it rejects the scheme/port/path/credential
+// separators, whitespace, and IP literals that would make that interpolation
+// dangerous.
 func (v *Verifier) Check(ctx context.Context, hostname, token string) (Reason, error) {
+	// An empty token would otherwise match a whitespace-only TXT value, since
+	// strings.TrimSpace(value) == "" for one. A claim can never have an empty
+	// token, so treat it as a guaranteed mismatch rather than special-casing
+	// whitespace records below.
+	if token == "" {
+		return ReasonTokenMismatch, nil
+	}
+
 	values, err := v.Resolver.LookupTXT(ctx, ChallengeName(hostname))
 	var dnsErr *net.DNSError
 	switch {
