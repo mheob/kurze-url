@@ -18,44 +18,50 @@ export function LoginForm(): React.JSX.Element {
 	const [email, setEmail] = useState('');
 
 	return (
-		<form
-			onSubmit={(event) => {
-				event.preventDefault();
-				setStatus('pending');
-				// `createSupabase` throws outright when `SUPABASE_URL` or
-				// `SUPABASE_PUBLISHABLE_KEY` is unset (both new env vars this
-				// branch introduces), and the RPC itself can reject on a plain
-				// network failure — either way, an uncaught rejection here used to
-				// leave the button looking clicked with no feedback, forever, on a
-				// misconfigured deployment. `signInWithOtp`'s own failure is never
-				// one of these: `sendMagicLinkFor` deliberately swallows it to keep
-				// this form from becoming an account-enumeration oracle.
-				void sendMagicLink({ data: { email } })
-					.then(() => setStatus('sent'))
-					.catch(() => setStatus('failed'));
-			}}
-		>
-			<h1>{t('auth.signInTitle')}</h1>
-			<label htmlFor="email">{t('auth.emailLabel')}</label>
-			<input
-				autoComplete="email"
-				id="email"
-				name="email"
-				onChange={(event) => setEmail(event.target.value)}
-				required
-				type="email"
-				value={email}
-			/>
-			<Button disabled={status === 'pending'} type="submit">
-				{t('auth.sendLink')}
-			</Button>
-			{/* Announced, not merely rendered: a confirmation — or a failure — a
-			    screen reader never reaches is the same as no feedback at all. */}
-			<p aria-live="polite">
-				{status === 'sent' ? t('auth.linkSent') : null}
-				{status === 'failed' ? t('errors.unknown') : null}
-			</p>
-		</form>
+		// `region` (axe) fails any content that sits outside every landmark,
+		// and this page renders no header or footer of its own — the bare
+		// `<form>` was the whole document. Same one-`<main>`-per-document rule
+		// `_authed.tsx` satisfies for the authenticated tree.
+		<main>
+			<form
+				onSubmit={(event) => {
+					event.preventDefault();
+					setStatus('pending');
+					// `createSupabase` throws outright when `SUPABASE_URL` or
+					// `SUPABASE_PUBLISHABLE_KEY` is unset (both new env vars this
+					// branch introduces), and the RPC itself can reject on a plain
+					// network failure — either way, an uncaught rejection here used to
+					// leave the button looking clicked with no feedback, forever, on a
+					// misconfigured deployment. `signInWithOtp`'s own failure is never
+					// one of these: `sendMagicLinkFor` deliberately swallows it to keep
+					// this form from becoming an account-enumeration oracle.
+					void sendMagicLink({ data: { email } })
+						.then(() => setStatus('sent'))
+						.catch(() => setStatus('failed'));
+				}}
+			>
+				<h1>{t('auth.signInTitle')}</h1>
+				<label htmlFor="email">{t('auth.emailLabel')}</label>
+				<input
+					autoComplete="email"
+					id="email"
+					name="email"
+					onChange={(event) => setEmail(event.target.value)}
+					required
+					type="email"
+					value={email}
+				/>
+				<Button disabled={status === 'pending'} type="submit">
+					{t('auth.sendLink')}
+				</Button>
+				{/* Announced, not merely rendered: a confirmation — or a failure — a
+				    screen reader never reaches is the same as no feedback at all. */}
+				<p aria-live="polite">
+					{status === 'sent' ? t('auth.linkSent') : null}
+					{status === 'failed' ? t('errors.unknown') : null}
+				</p>
+			</form>
+		</main>
 	);
 }
 

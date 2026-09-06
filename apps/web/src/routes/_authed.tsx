@@ -142,8 +142,18 @@ function AuthedLayout(): React.JSX.Element {
 				onSignOut={() => signOutMutation.mutate()}
 				signingOut={signOutMutation.isPending}
 			/>
-			{signOutFailed ? <p role="alert">{t('errors.unknown')}</p> : null}
-			<Outlet />
+			{/* Every authenticated page renders through this one `<Outlet>`, so
+			    the `<main>` belongs here rather than in each child route: axe's
+			    `landmark-one-main` wants exactly one per document, and a per-page
+			    wrapper would either duplicate it or be forgotten on the next
+			    route added. The sign-out failure goes inside it too — `region`
+			    fails any content that sits in no landmark at all, and this
+			    `role="alert"` is the only shell-level node that isn't part of
+			    `AuthedShell`'s own `<header>` banner. */}
+			<main>
+				{signOutFailed ? <p role="alert">{t('errors.unknown')}</p> : null}
+				<Outlet />
+			</main>
 		</>
 	);
 }
