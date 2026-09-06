@@ -118,6 +118,15 @@ type tenancyFixture struct {
 	linkID         uuid.UUID
 	folderID       uuid.UUID
 	tagID          uuid.UUID
+
+	// otherTeamID and otherAdmin are a second, independent team with a single
+	// admin member. Domain claims are deliberately not unique per hostname —
+	// several teams may hold one on the same hostname at once — so proving
+	// that needs two real teams in one fixture, not the two-full-fixtures
+	// pattern organization_isolation_test.go uses for "does team A leak into
+	// team B's list" cases.
+	otherTeamID uuid.UUID
+	otherAdmin  testUser
 }
 
 // seedAuthUser inserts a Supabase auth user. The column list mirrors
@@ -234,6 +243,18 @@ func newTenancyFixture(t *testing.T) *tenancyFixture {
 		`insert into tag (team_id, name) values ($1, 'fixture') returning id`,
 		teamID).Scan(&tagID))
 
+	var otherTeamID uuid.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`insert into team (name) values ($1) returning id`, "Anderer Verein "+suffix).Scan(&otherTeamID))
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `delete from team where id = $1`, otherTeamID)
+	})
+	otherAdmin := seedAuthUser(ctx, t, pool, "other-admin-"+suffix+"@verein.test")
+	_, err := pool.Exec(ctx,
+		`insert into team_member (team_id, user_id, role) values ($1, $2, 'admin')`,
+		otherTeamID, otherAdmin.id)
+	require.NoError(t, err)
+
 	key, jwksURL := startAuthenticatedJWKSServer(t)
 	verifier, err := auth.NewVerifier(ctx, jwksURL, meTestIssuer, meTestAudience)
 	require.NoError(t, err)
@@ -271,6 +292,8 @@ func newTenancyFixture(t *testing.T) *tenancyFixture {
 		linkID:         linkID,
 		folderID:       folderID,
 		tagID:          tagID,
+		otherTeamID:    otherTeamID,
+		otherAdmin:     otherAdmin,
 		deps: api.Deps{
 			Config:       cfg,
 			SharedDomain: api.SharedDomain{ID: sharedDomainID, Hostname: sharedHostname},

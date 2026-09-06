@@ -58,6 +58,7 @@ func (d Deps) RegisterV1(api huma.API) {
 	d.registerLinks(api)
 	d.registerFolders(api)
 	d.registerTags(api)
+	d.registerDomains(api)
 }
 
 // authMiddleware enforces the bearer scheme on exactly the operations that

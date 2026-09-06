@@ -12,6 +12,22 @@ import (
 	"github.com/google/uuid"
 )
 
+const countDomainsForTeam = `-- name: CountDomainsForTeam :one
+
+select count(*) from domain where team_id = $1::uuid
+`
+
+// CountDomainsForTeam backs listDomains' NeedsTotalFallback path, the same
+// way CountTagsForTeam backs listTags: count(*) over () on ListDomainsForTeam
+// reads back only off a row that query actually returned, so a page past the
+// last one needs this plain count instead.
+func (q *Queries) CountDomainsForTeam(ctx context.Context, teamID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countDomainsForTeam, teamID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countLinksForDomain = `-- name: CountLinksForDomain :one
 
 select count(*)

@@ -29,6 +29,17 @@ export type AuditEntry = {
     metadata: unknown;
 };
 
+export type CreateDomainInputBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * A subdomain you control, e.g. links.verein.de. Not an apex.
+     */
+    hostname: string;
+};
+
 export type CreateFolderInputBody = {
     /**
      * A URL to the JSON Schema for this object.
@@ -99,6 +110,30 @@ export type CreateTeamInputBody = {
      * The Verein's display name.
      */
     name: string;
+};
+
+export type DnsRecord = {
+    name: string;
+    value: string;
+};
+
+export type DnsRecords = {
+    cname: DnsRecord;
+    txt: DnsRecord;
+};
+
+export type Domain = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    hostname: string;
+    id: string;
+    records: DnsRecords;
+    team_id: string;
+    verification_status: string;
+    verification_token: string;
+    verified_at: string | null;
 };
 
 export type ErrorDetail = {
@@ -218,6 +253,17 @@ export type PageAuditEntry = {
      */
     readonly $schema?: string;
     items: Array<AuditEntry> | null;
+    page: number;
+    per_page: number;
+    total_count: number;
+};
+
+export type PageDomain = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    items: Array<Domain> | null;
     page: number;
     per_page: number;
     total_count: number;
@@ -372,6 +418,13 @@ export type AddMemberInputBodyWritable = {
     role: 'viewer' | 'editor' | 'admin' | 'owner';
 };
 
+export type CreateDomainInputBodyWritable = {
+    /**
+     * A subdomain you control, e.g. links.verein.de. Not an apex.
+     */
+    hostname: string;
+};
+
 export type CreateFolderInputBodyWritable = {
     /**
      * Trimmed on input. Must not be empty.
@@ -426,6 +479,16 @@ export type CreateTeamInputBodyWritable = {
      * The Verein's display name.
      */
     name: string;
+};
+
+export type DomainWritable = {
+    hostname: string;
+    id: string;
+    records: DnsRecords;
+    team_id: string;
+    verification_status: string;
+    verification_token: string;
+    verified_at: string | null;
 };
 
 export type ErrorModelWritable = {
@@ -502,6 +565,13 @@ export type MemberWritable = {
 
 export type PageAuditEntryWritable = {
     items: Array<AuditEntry> | null;
+    page: number;
+    per_page: number;
+    total_count: number;
+};
+
+export type PageDomainWritable = {
+    items: Array<DomainWritable> | null;
     page: number;
     per_page: number;
     total_count: number;
@@ -590,6 +660,36 @@ export type UpdateTagInputBodyWritable = {
 export type UpdateTeamInputBodyWritable = {
     name: string;
 };
+
+export type GetDomainData = {
+    body?: never;
+    path: {
+        /**
+         * The domain this request operates on.
+         */
+        domain_id: string;
+    };
+    query?: never;
+    url: '/v1/domains/{domain_id}';
+};
+
+export type GetDomainErrors = {
+    /**
+     * Error
+     */
+    default: ErrorModel;
+};
+
+export type GetDomainError = GetDomainErrors[keyof GetDomainErrors];
+
+export type GetDomainResponses = {
+    /**
+     * OK
+     */
+    200: Domain;
+};
+
+export type GetDomainResponse = GetDomainResponses[keyof GetDomainResponses];
 
 export type DeleteFolderData = {
     body?: never;
@@ -1028,6 +1128,75 @@ export type ListAuditLogResponses = {
 };
 
 export type ListAuditLogResponse = ListAuditLogResponses[keyof ListAuditLogResponses];
+
+export type ListDomainsData = {
+    body?: never;
+    path: {
+        /**
+         * The team this request operates on.
+         */
+        team_id: string;
+    };
+    query?: {
+        /**
+         * 1-based page number.
+         */
+        page?: number;
+        /**
+         * Items per page, capped at 100.
+         */
+        per_page?: number;
+    };
+    url: '/v1/teams/{team_id}/domains';
+};
+
+export type ListDomainsErrors = {
+    /**
+     * Error
+     */
+    default: ErrorModel;
+};
+
+export type ListDomainsError = ListDomainsErrors[keyof ListDomainsErrors];
+
+export type ListDomainsResponses = {
+    /**
+     * OK
+     */
+    200: PageDomain;
+};
+
+export type ListDomainsResponse = ListDomainsResponses[keyof ListDomainsResponses];
+
+export type CreateDomainData = {
+    body: CreateDomainInputBodyWritable;
+    path: {
+        /**
+         * The team this request operates on.
+         */
+        team_id: string;
+    };
+    query?: never;
+    url: '/v1/teams/{team_id}/domains';
+};
+
+export type CreateDomainErrors = {
+    /**
+     * Error
+     */
+    default: ErrorModel;
+};
+
+export type CreateDomainError = CreateDomainErrors[keyof CreateDomainErrors];
+
+export type CreateDomainResponses = {
+    /**
+     * Created
+     */
+    201: Domain;
+};
+
+export type CreateDomainResponse = CreateDomainResponses[keyof CreateDomainResponses];
 
 export type ListFoldersData = {
     body?: never;

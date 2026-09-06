@@ -66,6 +66,14 @@ where team_id = sqlc.arg(team_id)::uuid
 order by hostname
 limit sqlc.arg('limit') offset sqlc.arg('offset');
 
+-- CountDomainsForTeam backs listDomains' NeedsTotalFallback path, the same
+-- way CountTagsForTeam backs listTags: count(*) over () on ListDomainsForTeam
+-- reads back only off a row that query actually returned, so a page past the
+-- last one needs this plain count instead.
+
+-- name: CountDomainsForTeam :one
+select count(*) from domain where team_id = sqlc.arg(team_id)::uuid;
+
 -- name: GetDomainForTeam :one
 select *
 from domain

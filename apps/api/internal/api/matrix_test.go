@@ -62,6 +62,15 @@ var teamScopedCases = []matrixCase{
 	{"update-tag", http.MethodPatch, "/v1/tags/{tag}",
 		map[string]string{"name": "Matrix umbenannt"}, authz.RoleEditor},
 	{"delete-tag", http.MethodDelete, "/v1/tags/{tag}", nil, authz.RoleEditor},
+	// A domain is not content the way a link, folder or tag is: it is the
+	// namespace that content lives in, and losing it takes every link on it
+	// along. That belongs with member management (admin), not with content
+	// (editor) — create-domain and, later, verify-domain and delete-domain
+	// all sit at admin. get-domain and list-domains are reads, so viewer.
+	{"create-domain", http.MethodPost, "/v1/teams/{team}/domains",
+		map[string]string{"hostname": "matrix.verein.test"}, authz.RoleAdmin},
+	{"list-domains", http.MethodGet, "/v1/teams/{team}/domains", nil, authz.RoleViewer},
+	{"get-domain", http.MethodGet, "/v1/domains/{domain}", nil, authz.RoleViewer},
 }
 
 // notTeamScoped names the authenticated operations that legitimately carry no
@@ -90,6 +99,7 @@ func renderPath(f *tenancyFixture, template string) string {
 	path = strings.ReplaceAll(path, "{link}", f.linkID.String())
 	path = strings.ReplaceAll(path, "{folder}", f.folderID.String())
 	path = strings.ReplaceAll(path, "{tag}", f.tagID.String())
+	path = strings.ReplaceAll(path, "{domain}", f.teamDomainID.String())
 	return path
 }
 
