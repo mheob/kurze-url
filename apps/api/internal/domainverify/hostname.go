@@ -55,9 +55,21 @@ func NormalizeHostname(raw string, reserved []string) (string, error) {
 	if len(labels) < 2 {
 		return "", fmt.Errorf("%w: %q has no dot", ErrMalformed, raw)
 	}
+	// idna.Lookup sets verifyDNSLength: false — only the separate
+	// idna.Registration profile checks the wire-format DNS limits, so
+	// ToASCII above happily accepted a name of any length. Without this
+	// check an oversized hostname would sit in domain.hostname as junk that
+	// can never verify, and the TXT challenge name would later be built by
+	// prefixing a label onto it regardless.
+	if len(ascii) > 253 {
+		return "", fmt.Errorf("%w: %q is %d octets, over the 253-octet limit", ErrMalformed, raw, len(ascii))
+	}
 	for _, label := range labels {
 		if label == "" {
 			return "", fmt.Errorf("%w: %q has an empty label", ErrMalformed, raw)
+		}
+		if len(label) > 63 {
+			return "", fmt.Errorf("%w: %q has a label over 63 octets", ErrMalformed, raw)
 		}
 	}
 	// Two labels is a registrable domain in the common case. This is a

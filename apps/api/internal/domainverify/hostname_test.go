@@ -1,6 +1,7 @@
 package domainverify_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -54,5 +55,36 @@ func TestNormalizeHostname(t *testing.T) {
 			_, err := domainverify.NormalizeHostname(own, reserved)
 			require.ErrorIs(t, err, domainverify.ErrReserved, own)
 		}
+	})
+
+	t.Run("rejects a hostname over 253 octets", func(t *testing.T) {
+		// 131 single-octet labels joined by dots: 131 + 130 = 261 octets.
+		// Each label is tiny, so this isolates the total-length check from
+		// the per-label one.
+		long := strings.Repeat("a.", 130) + "a"
+		_, err := domainverify.NormalizeHostname(long, reserved)
+		require.ErrorIs(t, err, domainverify.ErrMalformed)
+	})
+
+	t.Run("rejects a label over 63 octets", func(t *testing.T) {
+		// One 64-octet label plus ".com": 68 octets total, well under the
+		// 253 limit, so this isolates the per-label check.
+		long := strings.Repeat("x", 64) + ".com"
+		_, err := domainverify.NormalizeHostname(long, reserved)
+		require.ErrorIs(t, err, domainverify.ErrMalformed)
+	})
+
+	t.Run("accepts a hostname at exactly the DNS length limits", func(t *testing.T) {
+		// Three 63-octet labels plus a 61-octet label, joined by three dots:
+		// 63*3 + 61 + 3 = 253 octets total, with 63-octet labels at their
+		// own limit. An off-by-one here would reject a Verein's hostname
+		// that is in fact valid.
+		atLimit := strings.Repeat("a", 63) + "." + strings.Repeat("a", 63) + "." +
+			strings.Repeat("a", 63) + "." + strings.Repeat("b", 61)
+		require.Len(t, atLimit, 253)
+
+		got, err := domainverify.NormalizeHostname(atLimit, reserved)
+		require.NoError(t, err)
+		require.Equal(t, atLimit, got)
 	})
 }
