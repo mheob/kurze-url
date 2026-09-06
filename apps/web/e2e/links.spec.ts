@@ -6,6 +6,7 @@ import { AxeBuilder } from '@axe-core/playwright';
 import { expect, type Page } from '@playwright/test';
 
 import { test } from './fixtures/auth';
+import { waitForHydration } from './fixtures/hydration';
 
 /**
  * Shared by every test below that needs a non-empty list. `LinkList`'s own
@@ -19,7 +20,15 @@ import { test } from './fixtures/auth';
  */
 async function createLink(page: Page, teamId: string, destinationUrl: string): Promise<void> {
 	await page.goto(`/teams/${teamId}/links/new`);
-	await page.getByLabel(/destination/i).fill(destinationUrl);
+
+	// Not decorative: `goto` resolves on `load`, which this server-rendered
+	// form reaches well before React wires it up, and a value typed in that
+	// window never reaches React's state — the form then submits empty. See
+	// `waitForHydration`.
+	const destination = page.getByLabel(/destination/i);
+	await waitForHydration(destination);
+
+	await destination.fill(destinationUrl);
 	await page.getByRole('button', { name: /save/i }).click();
 
 	// The create route navigates back to the list on success, so waiting for
