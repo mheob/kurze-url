@@ -206,3 +206,25 @@ func TestLinkUpdateMetadataMayNotCarryAPassword(t *testing.T) {
 	require.ErrorIs(t, err, audit.ErrForbiddenMetadata,
 		"the denylist must still fire for a link entry, not only a team one")
 }
+
+func TestDomainActionsAreInTheTaxonomy(t *testing.T) {
+	for _, action := range []audit.Action{
+		audit.ActionDomainClaimed,
+		audit.ActionDomainVerified,
+		audit.ActionDomainDeleted,
+	} {
+		require.NoError(t, audit.CheckAction(action), action)
+	}
+}
+
+func TestDomainMetadataMayNotCarryTheToken(t *testing.T) {
+	// forbiddenMetadataKeys matches the word segment "token", and
+	// verification_token matches it. This is a trap rather than a nuisance: the
+	// obvious metadata for a claim is the whole row.
+	err := audit.Log(context.Background(), nil, audit.Entry{
+		Action:     audit.ActionDomainClaimed,
+		EntityType: audit.EntityDomain,
+		Metadata:   map[string]any{"verification_token": "tok-a"},
+	})
+	require.ErrorIs(t, err, audit.ErrForbiddenMetadata)
+}

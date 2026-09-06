@@ -56,10 +56,18 @@ type Config struct {
 	SupabaseAuthURL        string
 	SupabaseServiceRoleKey string
 
-	RedirectRateLimitPerMin   int
-	PasswordRateLimitPerMin   int
-	LinkCreateRateLimitPerMin int
-	InviteRateLimitPerHour    int
+	RedirectRateLimitPerMin      int
+	PasswordRateLimitPerMin      int
+	LinkCreateRateLimitPerMin    int
+	InviteRateLimitPerHour       int
+	DomainClaimRateLimitPerHour  int
+	DomainVerifyRateLimitPerHour int
+
+	// DomainDNSTarget is what a Verein is told to point their CNAME at. It is
+	// configuration rather than a constant because Vercel assigns per-project
+	// DNS targets alongside the generic cname.vercel-dns.com, and which one to
+	// publish is unconfirmed until the first real domain is set up.
+	DomainDNSTarget string
 
 	LinkCacheTTL     time.Duration
 	NotFoundCacheTTL time.Duration
@@ -141,6 +149,14 @@ func Load() (Config, error) {
 	if cfg.InviteRateLimitPerHour, err = envInt("RATE_LIMIT_INVITE_PER_HOUR", 20); err != nil {
 		return Config{}, err
 	}
+	if cfg.DomainClaimRateLimitPerHour, err = envInt("RATE_LIMIT_DOMAIN_CLAIM_PER_HOUR", 5); err != nil {
+		return Config{}, err
+	}
+	if cfg.DomainVerifyRateLimitPerHour, err = envInt("RATE_LIMIT_DOMAIN_VERIFY_PER_HOUR", 20); err != nil {
+		return Config{}, err
+	}
+
+	cfg.DomainDNSTarget = env("DOMAIN_DNS_TARGET", "cname.vercel-dns.com")
 
 	return cfg, nil
 }

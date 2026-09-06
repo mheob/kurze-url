@@ -51,6 +51,10 @@ const (
 	ActionTagCreated Action = "tag.created"
 	ActionTagUpdated Action = "tag.updated"
 	ActionTagDeleted Action = "tag.deleted"
+
+	ActionDomainClaimed  Action = "domain.claimed"
+	ActionDomainVerified Action = "domain.verified"
+	ActionDomainDeleted  Action = "domain.deleted"
 )
 
 // Entity types match the table names.
@@ -60,6 +64,7 @@ const (
 	EntityLink       = "link"
 	EntityFolder     = "folder"
 	EntityTag        = "tag"
+	EntityDomain     = "domain"
 )
 
 var (
@@ -88,6 +93,9 @@ var knownActions = map[Action]struct{}{
 	ActionTagCreated:        {},
 	ActionTagUpdated:        {},
 	ActionTagDeleted:        {},
+	ActionDomainClaimed:     {},
+	ActionDomainVerified:    {},
+	ActionDomainDeleted:     {},
 }
 
 // forbiddenMetadataKeys are the canonical, lowercase, singular words a
