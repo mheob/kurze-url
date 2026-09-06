@@ -526,8 +526,22 @@ func (d Deps) deleteDomain(ctx context.Context, in *DeleteDomainInput) (*DeleteD
 
 	switch {
 	case errors.Is(err, errDomainHasLinks):
-		return nil, huma.Error409Conflict(fmt.Sprintf(
-			"%d link(s) still use this domain; delete them first", linkCount))
+		// The count also has to survive on the wire as a typed value, not only
+		// inside the prose: apps/web/src/lib/api-errors.ts reads it back out to
+		// decide the 409 is a domainHasLinks failure and to render the count, and
+		// a reworded message must not be able to break that silently. Location is
+		// "path.domain_id" because that is the one path parameter this whole
+		// operation has — there being exactly one candidate is what makes it a
+		// stable key for the frontend to match against, not because Value here is
+		// the domain_id's own value (a UUID); it deliberately is not, it is the
+		// blocking link count. This is the ErrorDetail.Value field's documented
+		// escape hatch for exactly this ("echoed back to the client to help with
+		// debugging"), reused for a business fact instead of an echoed request
+		// value — still the stock RFC 9457 ErrorModel, no custom error type.
+		return nil, huma.Error409Conflict(
+			fmt.Sprintf("%d link(s) still use this domain; delete them first", linkCount),
+			&huma.ErrorDetail{Location: "path.domain_id", Value: linkCount},
+		)
 	case errors.Is(err, pgx.ErrNoRows):
 		return nil, huma.Error404NotFound("domain not found")
 	case err != nil:

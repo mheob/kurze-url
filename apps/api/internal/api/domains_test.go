@@ -291,8 +291,22 @@ func TestDeleteDomainIsRefusedWhileLinksExist(t *testing.T) {
 		"/v1/domains/"+claim.ID.String(), nil)
 
 	require.Equal(t, http.StatusConflict, rec.Code)
-	require.Contains(t, rec.Body.String(), "1",
-		"the count is what tells the team how much work removing it is")
+
+	// The count is what tells the team how much work removing it is, and the
+	// frontend reads it back as a typed value (apps/web/src/lib/api-errors.ts),
+	// not by pattern-matching the prose in `detail` — so assert the same thing
+	// it does: the ErrorDetail's `value`, keyed by its `location`, not a digit
+	// somewhere in the body. A reworded `detail` message must not be able to
+	// break this.
+	body := decode[struct {
+		Errors []struct {
+			Location string `json:"location"`
+			Value    int64  `json:"value"`
+		} `json:"errors"`
+	}](t, rec)
+	require.Len(t, body.Errors, 1)
+	require.Equal(t, "path.domain_id", body.Errors[0].Location)
+	require.Equal(t, int64(1), body.Errors[0].Value)
 
 	var stillThere int
 	require.NoError(t, f.pool.QueryRow(t.Context(),
