@@ -9,15 +9,16 @@
  * (RFC 9457), and with `throwOnError: true` — the convention already
  * established in `src/server/health.ts` and `src/routes/_authed.tsx` — the
  * generated client throws that parsed JSON body directly. There is no
- * `.response`/`.error` wrapper around it; `status` and `errors` sit at the
- * top level. See api-errors.test.ts for the divergence from an earlier,
- * unverified assumption about this shape.
+ * `.response`/`.error` wrapper around it; `status`, `errors`, and `detail`
+ * all sit at the top level. See api-errors.test.ts for the divergence from
+ * an earlier, unverified assumption about this shape.
  */
 export type ApiFailure =
 	| { kind: 'unauthenticated' }
 	| { kind: 'notFound' }
 	| { kind: 'rateLimited' }
 	| { kind: 'fields'; fields: Record<string, string> }
+	| { kind: 'domainHasLinks'; count: number }
 	| { kind: 'unknown' };
 
 /** The one `ErrorDetail` field this module reads; see `apps/api/openapi.json`. */
@@ -78,6 +79,34 @@ function fieldsOf(error: unknown): Record<string, string> {
 	return fields;
 }
 
+function detailOf(error: unknown): string | undefined {
+	if (!isRecord(error)) return undefined;
+	const { detail } = error;
+	return typeof detail === 'string' ? detail : undefined;
+}
+
+/**
+ * `deleteDomain` in apps/api/internal/api/domains.go is the only place a 409
+ * carries a link count, and it puts it nowhere but the free-text `detail`:
+ * `huma.Error409Conflict(fmt.Sprintf("%d link(s) still use this domain; delete
+ * them first", linkCount))`. There is no separate structured field for it.
+ * The count is the whole reason `domains_test.go`'s own
+ * `TestDeleteDomainIsRefusedWhileLinksExist` asserts `rec.Body.String()`
+ * contains it — this reads the same guaranteed leading digits, not the
+ * sentence around them, so nothing here ever displays the raw English text
+ * to a user.
+ *
+ * A 409 with no leading digit — the *verify* endpoint's own unrelated
+ * conflict ("another team has already verified this hostname") — must not be
+ * misread as a blocked deletion with an invented count, so this returns
+ * `undefined` rather than `0` when nothing matches.
+ */
+function blockingLinkCountOf(error: unknown): number | undefined {
+	const detail = detailOf(error);
+	const match = detail === undefined ? null : /^(\d+)\s+link/.exec(detail);
+	return match ? Number(match[1]) : undefined;
+}
+
 export function classifyApiError(error: unknown): ApiFailure {
 	const status = statusOf(error);
 
@@ -87,6 +116,11 @@ export function classifyApiError(error: unknown): ApiFailure {
 	// internal/authz withholds.
 	if (status === 403 || status === 404) return { kind: 'notFound' };
 	if (status === 429) return { kind: 'rateLimited' };
+
+	if (status === 409) {
+		const count = blockingLinkCountOf(error);
+		if (count !== undefined) return { count, kind: 'domainHasLinks' };
+	}
 
 	if (status === 400 || status === 422) {
 		const fields = fieldsOf(error);

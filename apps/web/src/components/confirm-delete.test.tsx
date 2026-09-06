@@ -12,10 +12,15 @@ import { ConfirmDelete } from './confirm-delete';
  * sample test for this component omitted it, which would fail at render
  * time, not merely produce untranslated text.
  */
-function renderWith(onConfirm: () => void): ReturnType<typeof render> {
+const defaultQuestion = 'Delete this link? Anyone who already has the short URL will get a 404.';
+
+function renderWith(
+	onConfirm: () => void,
+	question: string = defaultQuestion,
+): ReturnType<typeof render> {
 	return render(
 		<I18nextProvider i18n={createI18n('en')}>
-			<ConfirmDelete label="Delete" onConfirm={onConfirm} />
+			<ConfirmDelete label="Delete" onConfirm={onConfirm} question={question} />
 		</I18nextProvider>,
 	);
 }
@@ -51,6 +56,24 @@ describe('ConfirmDelete', () => {
 		expect(
 			screen.getByRole('alertdialog', {
 				name: 'Delete this link? Anyone who already has the short URL will get a 404.',
+			}),
+		).toBeInTheDocument();
+	});
+
+	/**
+	 * `question` is a prop, not text this component invents itself — it is
+	 * about to be reused by the team domains screen for a delete with an
+	 * entirely different consequence than a link's, and a hardcoded link
+	 * sentence would be wrong there.
+	 */
+	it('renders whatever question the caller supplies, not a fixed one', async () => {
+		const onConfirm = vi.fn();
+		renderWith(onConfirm, 'Delete links.verein.test? You will need to verify it again.');
+
+		await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
+		expect(
+			screen.getByRole('alertdialog', {
+				name: 'Delete links.verein.test? You will need to verify it again.',
 			}),
 		).toBeInTheDocument();
 	});

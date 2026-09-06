@@ -88,6 +88,10 @@
 		"copyTxtValue": "Copy the TXT record value",
 		"copyCnameValue": "Copy the CNAME record value",
 		"verify": "Check now",
+		"delete": "Delete {{hostname}}",
+		"deleteQuestion": "Delete {{hostname}}? Adding the hostname back later starts verification from scratch.",
+		"deleteBlockedByLinks_one": "This domain still has 1 link. Delete it first.",
+		"deleteBlockedByLinks_other": "This domain still has {{count}} links. Delete them first.",
 		"truncated": "Showing the first {{count}} of {{total}} domains.",
 		"reason": {
 			"token_missing": "The TXT record is not visible yet. DNS changes can take a few hours.",

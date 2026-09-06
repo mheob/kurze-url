@@ -1,6 +1,6 @@
 import type { Domain as ApiDomain } from '@kurze-url/api-client';
 import type { Meta, StoryObj } from '@storybook/tanstack-react';
-import { fn } from 'storybook/test';
+import { expect, fn, userEvent, within } from 'storybook/test';
 
 import { DomainList } from './domain-list';
 
@@ -22,6 +22,16 @@ function domain(overrides: Partial<ApiDomain> = {}): ApiDomain {
 }
 
 const meta = {
+	// Shared across every story below: every story here renders exactly one
+	// domain list with no delete in flight, unless it says otherwise.
+	args: {
+		deleteBlockedCount: undefined,
+		deletingId: null,
+		onDelete: fn(),
+		onVerify: fn(),
+		pendingReason: undefined,
+		verifyingId: null,
+	},
 	component: DomainList,
 	title: 'Domains/DomainList',
 } satisfies Meta<typeof DomainList>;
@@ -30,12 +40,12 @@ export default meta;
 
 /** A team with no custom domain yet — links keep using the shared instance hostname. */
 export const Empty: StoryObj<typeof meta> = {
-	args: { domains: [], onVerify: fn(), pendingReason: undefined, verifyingId: null },
+	args: { domains: [] },
 };
 
 /** A freshly claimed hostname: both DNS records are the whole point of this screen. */
 export const Pending: StoryObj<typeof meta> = {
-	args: { domains: [domain()], onVerify: fn(), pendingReason: undefined, verifyingId: null },
+	args: { domains: [domain()] },
 };
 
 /**
@@ -46,7 +56,6 @@ export const Pending: StoryObj<typeof meta> = {
 export const PendingUnreachable: StoryObj<typeof meta> = {
 	args: {
 		domains: [domain()],
-		onVerify: fn(),
 		pendingReason: 'unreachable',
 		verifyingId: 'domain-1',
 	},
@@ -56,7 +65,6 @@ export const PendingUnreachable: StoryObj<typeof meta> = {
 export const PendingTokenMismatch: StoryObj<typeof meta> = {
 	args: {
 		domains: [domain()],
-		onVerify: fn(),
 		pendingReason: 'token_mismatch',
 		verifyingId: 'domain-1',
 	},
@@ -66,9 +74,6 @@ export const PendingTokenMismatch: StoryObj<typeof meta> = {
 export const Verified: StoryObj<typeof meta> = {
 	args: {
 		domains: [domain({ verification_status: 'verified', verified_at: '2026-01-01T00:00:00Z' })],
-		onVerify: fn(),
-		pendingReason: undefined,
-		verifyingId: null,
 	},
 };
 
@@ -76,9 +81,6 @@ export const Verified: StoryObj<typeof meta> = {
 export const Failed: StoryObj<typeof meta> = {
 	args: {
 		domains: [domain({ verification_status: 'failed' })],
-		onVerify: fn(),
-		pendingReason: undefined,
-		verifyingId: null,
 	},
 };
 
@@ -102,8 +104,30 @@ export const Mixed: StoryObj<typeof meta> = {
 				verification_token: 'f6e5d4c3b2a1',
 			}),
 		],
-		onVerify: fn(),
-		pendingReason: undefined,
-		verifyingId: null,
 	},
+};
+
+/**
+ * The armed, labelled-alertdialog state of a row's delete control, reached
+ * the same way `ConfirmDelete`'s own `Armed` story reaches it — a `play`
+ * function, since `armed` is internal `useState` with no args-only way in.
+ * This is what proves the dialog still passes axe once nested inside a list
+ * row, not only in `ConfirmDelete`'s own isolated story.
+ */
+export const DeleteArmed: StoryObj<typeof meta> = {
+	args: { domains: [domain()] },
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await userEvent.click(canvas.getByRole('button', { name: 'Delete links.verein.test' }));
+		await expect(canvas.getByRole('alertdialog')).toBeInTheDocument();
+	},
+};
+
+/**
+ * The API refuses to delete a domain that still has links (409) — the
+ * blocking count is the whole point of the refusal, so it renders next to
+ * the row it is about rather than collapsing into a generic error.
+ */
+export const DeleteBlockedByLinks: StoryObj<typeof meta> = {
+	args: { deleteBlockedCount: 3, deletingId: 'domain-1', domains: [domain()] },
 };

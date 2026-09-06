@@ -210,6 +210,7 @@ function RouteComponent(): React.JSX.Element {
 				onConfirm={() => {
 					deleteMutation.mutate();
 				}}
+				question={t('links.deleteQuestion')}
 			/>
 		</>
 	);

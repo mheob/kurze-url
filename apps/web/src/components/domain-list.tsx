@@ -2,6 +2,7 @@ import type { Domain, VerifyDomainOutputBody } from '@kurze-url/api-client';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 
+import { ConfirmDelete } from './confirm-delete';
 import { CopyButton } from './copy-button';
 import { Button } from './ui/button';
 
@@ -9,6 +10,12 @@ type VerifyReason = VerifyDomainOutputBody['reason'];
 
 interface DomainListProps {
 	readonly domains: readonly Domain[];
+	// Set only for whichever domain `deletingId` names — same one-slot
+	// correlation `pendingReason`/`verifyingId` already use below, and for the
+	// same reason: only one delete can be in flight at a time.
+	readonly deleteBlockedCount?: number;
+	readonly deletingId: string | null;
+	readonly onDelete: (domainId: string) => void;
 	readonly onVerify: (domainId: string) => void;
 	// Set only for whichever domain `verifyingId` names — see the docstring
 	// below for why one slot, not a per-domain map, is enough here.
@@ -77,29 +84,36 @@ function reasonLabel(t: TFunction, reason: VerifyReason): string {
 /**
  * Presentational and prop-driven, the same contract as `LinkList`: it takes
  * the already-fetched domains as a prop rather than calling
- * `useSuspenseQuery` itself, and a callback (`onVerify`) for the one action
- * it offers rather than owning a mutation. `teams.$teamId.domains.tsx` is the
- * only caller, wiring this to the query cache and the verify mutation;
- * `domain-list.test.tsx` renders it directly with hand-built `Domain`
- * fixtures instead.
+ * `useSuspenseQuery` itself, and callbacks (`onVerify`, `onDelete`) for the
+ * actions it offers rather than owning a mutation. `teams.$teamId.domains.tsx`
+ * is the only caller, wiring this to the query cache and the verify/delete
+ * mutations; `domain-list.test.tsx` renders it directly with hand-built
+ * `Domain` fixtures instead.
  *
- * `pendingReason` is scoped to a single domain via `verifyingId` rather than
- * a per-domain map: a team's domain list is expected to stay small
+ * `pendingReason` is scoped to a single domain via `verifyingId`, and
+ * `deleteBlockedCount` the same way via `deletingId`, rather than either
+ * being a per-domain map: a team's domain list is expected to stay small
  * (`server/domains.ts`'s own reasoning for omitting pagination), the route
- * only ever runs one verify check at a time, and `verifyingId` already names
- * which domain that check was for — so one reason slot, correlated by id,
- * is enough. A reason is only ever rendered under the row whose id matches
- * `verifyingId`; it is silently ignored for every other row rather than
- * misattributed to one it was never about.
+ * only ever runs one verify check or one delete at a time, and `verifyingId`/
+ * `deletingId` already name which domain that action was for — so one slot
+ * each, correlated by id, is enough. Neither is ever rendered under a row
+ * whose id doesn't match; it is silently ignored for every other row rather
+ * than misattributed to one it was never about.
  *
  * DNS records and the "Check now" button render only for a `pending`
  * domain: a `verified` one has nothing left to check (Task 13's own
  * requirement — instructions are not decoration once the domain works), and
  * a `failed` one lost the hostname to another team's earlier verification,
- * so re-checking the same DNS records could never change the outcome.
+ * so re-checking the same DNS records could never change the outcome. The
+ * delete control has no such restriction — every domain, regardless of
+ * status, can be removed; only a domain that still has links refuses (409),
+ * which is what `deleteBlockedCount` surfaces.
  */
 export function DomainList({
+	deleteBlockedCount,
+	deletingId,
 	domains,
+	onDelete,
 	onVerify,
 	pendingReason,
 	verifyingId,
@@ -166,6 +180,14 @@ export function DomainList({
 								</Button>
 							</>
 						) : null}
+						{deletingId === domain.id && deleteBlockedCount !== undefined ? (
+							<output>{t('domains.deleteBlockedByLinks', { count: deleteBlockedCount })}</output>
+						) : null}
+						<ConfirmDelete
+							label={t('domains.delete', { hostname: domain.hostname })}
+							onConfirm={() => onDelete(domain.id)}
+							question={t('domains.deleteQuestion', { hostname: domain.hostname })}
+						/>
 					</li>
 				))}
 			</ul>

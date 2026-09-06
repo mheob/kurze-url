@@ -1,5 +1,6 @@
 import type { Domain as ApiDomain, VerifyDomainOutputBody } from '@kurze-url/api-client';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { I18nextProvider } from 'react-i18next';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -30,20 +31,31 @@ const verifiedDomain = domain({
 	verified_at: '2026-01-01T00:00:00Z',
 });
 
+interface RenderOverrides {
+	readonly deleteBlockedCount?: number;
+	readonly deletingId?: string | null;
+	readonly onDelete?: (domainId: string) => void;
+	readonly pendingReason?: VerifyReason;
+	readonly verifyingId?: string | null;
+}
+
 /**
  * No router in this tree, unlike `link-list.test.tsx`'s `renderWith`:
  * `DomainList` renders no `<Link>` at all — there is no per-domain detail
- * page to navigate to, only an inline `onVerify` callback — so it needs
- * nothing beyond an `I18nextProvider`.
+ * page to navigate to, only inline `onVerify`/`onDelete` callbacks — so it
+ * needs nothing beyond an `I18nextProvider`.
  */
 function renderList(
 	domains: ApiDomain[],
-	overrides: { pendingReason?: VerifyReason; verifyingId?: string | null } = {},
+	overrides: RenderOverrides = {},
 ): ReturnType<typeof render> {
 	return render(
 		<I18nextProvider i18n={createI18n('en')}>
 			<DomainList
+				deleteBlockedCount={overrides.deleteBlockedCount}
+				deletingId={overrides.deletingId ?? null}
 				domains={domains}
+				onDelete={overrides.onDelete ?? vi.fn()}
 				onVerify={vi.fn()}
 				pendingReason={overrides.pendingReason}
 				verifyingId={overrides.verifyingId ?? null}
@@ -154,5 +166,61 @@ describe('DomainList', () => {
 	it('offers a Check now button for every pending domain', () => {
 		renderList([pendingDomain]);
 		expect(screen.getByRole('button', { name: 'Check now' })).toBeInTheDocument();
+	});
+
+	it('gives each domain a distinct, hostname-naming delete button', () => {
+		// A bare "Delete" repeated on every row is ambiguous to anyone tabbing
+		// through them rather than reading the row visually — the same
+		// reasoning that gave the two DNS copy buttons distinct names.
+		const other = domain({ id: 'domain-2', hostname: 'other.verein.test' });
+		renderList([pendingDomain, other]);
+
+		expect(screen.getByRole('button', { name: 'Delete links.verein.test' })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Delete other.verein.test' })).toBeInTheDocument();
+	});
+
+	it('calls onDelete with the id of the domain that was actually confirmed', async () => {
+		// Two domains rendered, and the *second* row confirmed — a test that
+		// always fires on the first row cannot pass by accident.
+		const onDelete = vi.fn();
+		const other = domain({ id: 'domain-2', hostname: 'other.verein.test' });
+		renderList([pendingDomain, other], { onDelete });
+
+		await userEvent.click(screen.getByRole('button', { name: 'Delete other.verein.test' }));
+		await userEvent.click(screen.getByRole('button', { name: 'Yes, delete it' }));
+
+		expect(onDelete).toHaveBeenCalledExactlyOnceWith('domain-2');
+	});
+
+	it('requires confirmation before onDelete fires', async () => {
+		// Nothing restores a deleted domain, and an empty one is gone for good —
+		// one misclick must not be enough.
+		const onDelete = vi.fn();
+		renderList([pendingDomain], { onDelete });
+
+		await userEvent.click(screen.getByRole('button', { name: 'Delete links.verein.test' }));
+		expect(onDelete).not.toHaveBeenCalled();
+	});
+
+	it('renders the blocking-link count on a 409, not a generic failure', () => {
+		// The count is the whole point of the refusal — it tells the team how
+		// much work removing the domain is.
+		renderList([pendingDomain], { deleteBlockedCount: 3, deletingId: pendingDomain.id });
+		expect(
+			screen.getByText('This domain still has 3 links. Delete them first.'),
+		).toBeInTheDocument();
+	});
+
+	it('renders the singular wording for exactly one blocking link', () => {
+		renderList([pendingDomain], { deleteBlockedCount: 1, deletingId: pendingDomain.id });
+		expect(screen.getByText('This domain still has 1 link. Delete it first.')).toBeInTheDocument();
+	});
+
+	it('does not attribute a blocking-link count to a domain it was never about', () => {
+		// `deletingId` matches neither rendered domain here — the same
+		// correlation discipline `verifyingId`/`pendingReason` already follow.
+		const other = domain({ id: 'domain-2', hostname: 'other.verein.test' });
+		renderList([pendingDomain, other], { deleteBlockedCount: 3, deletingId: 'domain-3' });
+		expect(screen.queryByText(/still has 3 links/i)).not.toBeInTheDocument();
 	});
 });

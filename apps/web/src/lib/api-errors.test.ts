@@ -22,13 +22,18 @@ interface FakeProblemDetail {
 }
 
 interface FakeProblem {
+	readonly detail?: string;
 	readonly errors?: readonly FakeProblemDetail[];
 	readonly status: number;
 	readonly title: string;
 }
 
-function problem(status: number, errors?: readonly FakeProblemDetail[]): FakeProblem {
-	return { errors, status, title: 'x' };
+function problem(
+	status: number,
+	errors?: readonly FakeProblemDetail[],
+	detail?: string,
+): FakeProblem {
+	return { detail, errors, status, title: 'x' };
 }
 
 describe('classifyApiError', () => {
@@ -46,6 +51,34 @@ describe('classifyApiError', () => {
 
 	it('maps 429 to rateLimited', () => {
 		expect(classifyApiError(problem(429))).toStrictEqual({ kind: 'rateLimited' });
+	});
+
+	it('maps a 409 with a blocking link count onto domainHasLinks', () => {
+		// apps/api/internal/api/domains.go's deleteDomain: `huma.Error409Conflict(fmt.Sprintf(
+		// "%d link(s) still use this domain; delete them first", linkCount))` — the count sits
+		// at the front of `detail`, the only place the wire response carries it.
+		const failure = classifyApiError(
+			problem(409, undefined, '3 link(s) still use this domain; delete them first'),
+		);
+		expect(failure).toStrictEqual({ count: 3, kind: 'domainHasLinks' });
+	});
+
+	it('reads a singular blocking link count the same way', () => {
+		const failure = classifyApiError(
+			problem(409, undefined, '1 link(s) still use this domain; delete them first'),
+		);
+		expect(failure).toStrictEqual({ count: 1, kind: 'domainHasLinks' });
+	});
+
+	it('falls back to unknown for a 409 with no parseable count', () => {
+		// The verify endpoint has its own, unrelated 409 — "another team has
+		// already verified this hostname" — with no link count in it at all.
+		// That must not be misread as a domainHasLinks failure with an invented
+		// count of zero or one.
+		const failure = classifyApiError(
+			problem(409, undefined, 'another team has already verified this hostname'),
+		);
+		expect(failure).toStrictEqual({ kind: 'unknown' });
 	});
 
 	it('maps 422 field errors onto field names', () => {

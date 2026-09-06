@@ -8,7 +8,12 @@ import { useTranslation } from 'react-i18next';
 import { DomainList } from '../../components/domain-list';
 import { Button } from '../../components/ui/button';
 import { classifyApiError, type ApiFailure } from '../../lib/api-errors';
-import { claimDomainFn, domainsQueryOptions, verifyDomainFn } from '../../server/domains';
+import {
+	claimDomainFn,
+	deleteDomainFn,
+	domainsQueryOptions,
+	verifyDomainFn,
+} from '../../server/domains';
 import { assertMembership } from '../_authed';
 
 type VerifyReason = VerifyDomainOutputBody['reason'];
@@ -87,6 +92,11 @@ function RouteComponent(): React.JSX.Element {
 	// the wrong row, rather than waiting for the new response to arrive.
 	const [verifyingId, setVerifyingId] = useState<string | null>(null);
 	const [pendingReason, setPendingReason] = useState<VerifyReason | undefined>(undefined);
+	// Same one-slot correlation as `verifyingId`/`pendingReason` above, for the
+	// same reason: only one delete is ever in flight at a time, and
+	// `deletingId` already names which domain it was for.
+	const [deletingId, setDeletingId] = useState<string | null>(null);
+	const [deleteFailure, setDeleteFailure] = useState<ApiFailure | null>(null);
 
 	const claimMutation = useMutation({
 		mutationFn: (hostname: string) => claimDomainFn({ data: { hostname, teamId } }),
@@ -143,6 +153,25 @@ function RouteComponent(): React.JSX.Element {
 		},
 	});
 
+	const deleteMutation = useMutation({
+		mutationFn: (domainId: string) => deleteDomainFn({ data: { domainId } }),
+		onError: (error: unknown) => {
+			const classified = classifyApiError(error);
+			if (classified.kind === 'unauthenticated') {
+				void router.navigate({ to: '/login' });
+				return;
+			}
+			setDeleteFailure(classified);
+		},
+		onSuccess: async () => {
+			setDeleteFailure(null);
+			setDeletingId(null);
+			// A domain was removed, not merely one row updated — invalidate rather
+			// than merge, the same reasoning `claimMutation` uses for creation.
+			await queryClient.invalidateQueries({ queryKey: domainsQueryOptions(teamId).queryKey });
+		},
+	});
+
 	const form = useForm({
 		defaultValues: { hostname: '' },
 		onSubmit: ({ value }) => {
@@ -156,11 +185,31 @@ function RouteComponent(): React.JSX.Element {
 		verifyMutation.mutate(domainId);
 	}
 
+	function handleDelete(domainId: string): void {
+		setDeletingId(domainId);
+		setDeleteFailure(null);
+		deleteMutation.mutate(domainId);
+	}
+
 	const fieldError = claimFailure?.kind === 'fields' ? claimFailure.fields.hostname : undefined;
 	// A field error renders on the field itself; a second generic banner for
 	// the same failure is what the create-link route deliberately avoids.
 	const claimMessage =
 		claimFailure && claimFailure.kind !== 'fields' ? t(`errors.${claimFailure.kind}`) : null;
+
+	// `domainHasLinks` renders next to the specific row via `DomainList`'s own
+	// `deleteBlockedCount`/`deletingId` props — the count is the whole point
+	// of the refusal, so it must not collapse into this generic banner. Every
+	// other delete failure (network error, a 404 from a race with another
+	// admin) has no per-domain story to tell, so it falls back here instead,
+	// the same way `claimMessage` does above. `fields` never actually occurs
+	// for a delete, but is excluded for the same type-safety reason it is above.
+	const deleteBlockedCount =
+		deleteFailure?.kind === 'domainHasLinks' ? deleteFailure.count : undefined;
+	const deleteMessage =
+		deleteFailure && deleteFailure.kind !== 'domainHasLinks' && deleteFailure.kind !== 'fields'
+			? t(`errors.${deleteFailure.kind}`)
+			: null;
 
 	return (
 		<>
@@ -172,11 +221,15 @@ function RouteComponent(): React.JSX.Element {
 				<output>{t('domains.truncated', { count: items.length, total: data.total_count })}</output>
 			) : null}
 			<DomainList
+				deleteBlockedCount={deleteBlockedCount}
+				deletingId={deletingId}
 				domains={items}
+				onDelete={handleDelete}
 				onVerify={handleVerify}
 				pendingReason={pendingReason}
 				verifyingId={verifyingId}
 			/>
+			{deleteMessage ? <p role="alert">{deleteMessage}</p> : null}
 			{claimMessage ? <p role="alert">{claimMessage}</p> : null}
 			<form
 				onSubmit={(event) => {

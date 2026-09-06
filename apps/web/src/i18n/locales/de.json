@@ -88,6 +88,10 @@
 		"copyTxtValue": "Wert des TXT-Eintrags kopieren",
 		"copyCnameValue": "Wert des CNAME-Eintrags kopieren",
 		"verify": "Jetzt prüfen",
+		"delete": "{{hostname}} löschen",
+		"deleteQuestion": "{{hostname}} löschen? Wird der Hostname später erneut hinzugefügt, beginnt die Verifizierung von vorn.",
+		"deleteBlockedByLinks_one": "Diese Domain hat noch 1 Link. Lösche ihn zuerst.",
+		"deleteBlockedByLinks_other": "Diese Domain hat noch {{count}} Links. Lösche sie zuerst.",
 		"truncated": "Es werden die ersten {{count}} von {{total}} Domains angezeigt.",
 		"reason": {
 			"token_missing": "Der TXT-Eintrag ist noch nicht sichtbar. DNS-Änderungen können einige Stunden dauern.",

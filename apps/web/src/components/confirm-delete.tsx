@@ -6,22 +6,38 @@ import { Button } from './ui/button';
 interface ConfirmDeleteProps {
 	readonly label: string;
 	readonly onConfirm: () => void;
+	readonly question: string;
 }
 
 /**
- * One misclick must not delete a link: nothing restores it, and its slug may
- * already be printed on a flyer or a poster. The first click only arms the
- * control; a second, explicit click is what actually calls `onConfirm`.
+ * One misclick must not delete something: nothing restores a link, and a
+ * removed domain has to be re-verified from scratch. The first click only
+ * arms the control; a second, explicit click is what actually calls
+ * `onConfirm`.
+ *
+ * `question` is a fully rendered string, not a translation key — the same
+ * convention `label` already used — because the consequence of confirming
+ * differs by what is being deleted (a link's short URL 404ing for everyone
+ * who has it; a domain losing its verification) and only the caller knows
+ * which. This component was link-only until the team domains screen became
+ * its second caller; `links.deleteConfirm`/`links.cancel` stayed as they
+ * were, since "Yes, delete it"/"Cancel" apply to any deletion and needed no
+ * per-caller wording, the same reason `CopyButton`'s visible "Copy" text
+ * stayed put when *its* `label` prop was added for a second caller.
  *
  * `role="alertdialog"` needs an accessible name to mean anything to a screen
  * reader — the plan's own sample rendered a bare `<p role="alertdialog">`
  * with no `aria-label`/`aria-labelledby`, which is exactly the "proper
  * semantics and an accessible name" this task's own instructions call out.
  * `useId()` (not a hardcoded id) is what keeps this safe to render more than
- * once on the same page — e.g. one `ConfirmDelete` per row in a future list
- * view — without two instances colliding on the same id.
+ * once on the same page — one `ConfirmDelete` per row in a list view —
+ * without two instances colliding on the same id.
  */
-export function ConfirmDelete({ label, onConfirm }: ConfirmDeleteProps): React.JSX.Element {
+export function ConfirmDelete({
+	label,
+	onConfirm,
+	question,
+}: ConfirmDeleteProps): React.JSX.Element {
 	const { t } = useTranslation();
 	const [armed, setArmed] = useState(false);
 	const questionId = useId();
@@ -36,7 +52,7 @@ export function ConfirmDelete({ label, onConfirm }: ConfirmDeleteProps): React.J
 
 	return (
 		<div aria-labelledby={questionId} role="alertdialog">
-			<p id={questionId}>{t('links.deleteQuestion')}</p>
+			<p id={questionId}>{question}</p>
 			<Button onClick={onConfirm} type="button">
 				{t('links.deleteConfirm')}
 			</Button>
