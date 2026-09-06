@@ -58,7 +58,7 @@ func Validate(raw string, selfHostnames []string) error {
 		return fmt.Errorf("%w: no host", ErrMalformed)
 	}
 
-	if ip := net.ParseIP(host); ip != nil && !isPublic(ip) {
+	if ip := net.ParseIP(host); ip != nil && !IsPublic(ip) {
 		return fmt.Errorf("%w: %s", ErrPrivateAddress, host)
 	}
 
@@ -71,9 +71,12 @@ func Validate(raw string, selfHostnames []string) error {
 	return nil
 }
 
-// isPublic reports whether an address literal is one a browser could
-// meaningfully be sent to across the internet.
-func isPublic(ip net.IP) bool {
+// IsPublic reports whether an address literal is one a browser could
+// meaningfully be sent to across the internet. Exported because
+// internal/domainverify applies the same predicate to the address a
+// verification probe is about to connect to — the same question, so the same
+// answer, rather than a second copy that drifts.
+func IsPublic(ip net.IP) bool {
 	switch {
 	case ip.IsLoopback(),
 		ip.IsPrivate(),

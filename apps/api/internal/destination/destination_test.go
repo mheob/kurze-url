@@ -1,6 +1,7 @@
 package destination_test
 
 import (
+	"net"
 	"strings"
 	"testing"
 
@@ -83,4 +84,16 @@ func TestValidateRejectsAHostlessURL(t *testing.T) {
 func TestValidateAcceptsAPublicIPLiteral(t *testing.T) {
 	require.NoError(t, destination.Validate("https://93.184.216.34/", self),
 		"only private and local ranges are refused, not IP literals as such")
+}
+
+func TestIsPublicIsReachableByOtherPackages(t *testing.T) {
+	// internal/domainverify checks the address a probe is about to connect to
+	// with this same predicate. Two copies of "is this address routable" would
+	// drift, and the copy that drifts is the one that stops rejecting
+	// link-local addresses.
+	require.False(t, destination.IsPublic(net.ParseIP("169.254.169.254")))
+	require.False(t, destination.IsPublic(net.ParseIP("127.0.0.1")))
+	require.False(t, destination.IsPublic(net.ParseIP("10.0.0.1")))
+	require.False(t, destination.IsPublic(net.ParseIP("::1")))
+	require.True(t, destination.IsPublic(net.ParseIP("93.184.216.34")))
 }
