@@ -68,6 +68,28 @@
 		"deleteConfirm": "Ja, löschen",
 		"cancel": "Abbrechen"
 	},
+	"domains": {
+		"heading": "Deine Domains",
+		"empty": "Noch keine Domains. Deine Links nutzen die gemeinsame Domain.",
+		"hostname": "Domainname",
+		"hostnameHint": "Eine Subdomain, die dir gehört, zum Beispiel links.verein.de",
+		"hostnameRequired": "Ein Domainname ist erforderlich.",
+		"claim": "Domain hinzufügen",
+		"status": "Zustand",
+		"pending": "Wartet auf DNS",
+		"verified": "Funktioniert",
+		"failed": "Ein anderer Verein hat diesen Hostnamen zuerst verifiziert",
+		"recordsHeading": "Erstelle diese zwei DNS-Einträge",
+		"recordName": "Eintragsname",
+		"recordValue": "Wert",
+		"verify": "Jetzt prüfen",
+		"truncated": "Es werden die ersten {{count}} von {{total}} Domains angezeigt.",
+		"reason": {
+			"token_missing": "Der TXT-Eintrag ist noch nicht sichtbar. DNS-Änderungen können einige Stunden dauern.",
+			"token_mismatch": "Ein TXT-Eintrag existiert, aber sein Wert stimmt nicht überein. Prüf auf einen Tippfehler.",
+			"unreachable": "Der Hostname erreicht uns noch nicht. Das ist normal, bis der Betreiber der Instanz ihn hinzugefügt hat."
+		}
+	},
 	"errors": {
 		"rateLimited": "Gerade wurden zu viele Links erstellt. Warte eine Minute und versuch es dann noch mal.",
 		"notFound": "Nicht gefunden.",

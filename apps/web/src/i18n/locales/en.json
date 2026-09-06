@@ -68,6 +68,28 @@
 		"deleteConfirm": "Yes, delete it",
 		"cancel": "Cancel"
 	},
+	"domains": {
+		"heading": "Your domains",
+		"empty": "No domains yet. Your links use the shared domain.",
+		"hostname": "Hostname",
+		"hostnameHint": "A subdomain you control, for example links.verein.de",
+		"hostnameRequired": "A hostname is required.",
+		"claim": "Add domain",
+		"status": "Status",
+		"pending": "Waiting for DNS",
+		"verified": "Working",
+		"failed": "Another team verified this hostname first",
+		"recordsHeading": "Create these two DNS records",
+		"recordName": "Name",
+		"recordValue": "Value",
+		"verify": "Check now",
+		"truncated": "Showing the first {{count}} of {{total}} domains.",
+		"reason": {
+			"token_missing": "The TXT record is not visible yet. DNS changes can take a few hours.",
+			"token_mismatch": "A TXT record exists but its value does not match. Check for a typo.",
+			"unreachable": "The hostname does not reach us yet. This is expected until the instance maintainer has added it."
+		}
+	},
 	"errors": {
 		"rateLimited": "Too many links created just now. Please wait a minute and try again.",
 		"notFound": "Not found.",
