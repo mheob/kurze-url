@@ -9,6 +9,7 @@ import (
 
 	"github.com/mheob/kurze-url/apps/api/internal/api"
 	"github.com/mheob/kurze-url/apps/api/internal/authz"
+	"github.com/mheob/kurze-url/apps/api/internal/domainverify"
 )
 
 func TestClaimDomainReturnsTheRecordsToCreate(t *testing.T) {
@@ -26,7 +27,8 @@ func TestClaimDomainReturnsTheRecordsToCreate(t *testing.T) {
 	require.Equal(t, "_kurze-url-challenge.links.verein.test", body.Records.TXT.Name)
 	require.Equal(t, body.VerificationToken, body.Records.TXT.Value)
 	require.Equal(t, "links.verein.test", body.Records.CNAME.Name)
-	require.NotEmpty(t, body.Records.CNAME.Value)
+	require.Equal(t, f.deps.Config.DomainDNSTarget, body.Records.CNAME.Value,
+		"the CNAME value is what a Verein pastes into their DNS zone; it must be the configured target")
 }
 
 func TestClaimDomainIsRefusedBelowAdmin(t *testing.T) {
@@ -40,14 +42,42 @@ func TestClaimDomainIsRefusedBelowAdmin(t *testing.T) {
 	require.Equal(t, http.StatusForbidden, rec.Code)
 }
 
-func TestClaimDomainRejectsAnApex(t *testing.T) {
+// TestClaimDomainRejectsInvalidHostnames covers all three of
+// NormalizeHostname's failure modes at the HTTP layer, not just the apex
+// case: each must produce a 422 whose body actually carries that error's own
+// wording, since ErrReserved and ErrMalformed share the same 422 line as
+// ErrApex and a wrong mapping would still pass a test that checked only the
+// status code.
+func TestClaimDomainRejectsInvalidHostnames(t *testing.T) {
 	f := newTenancyFixture(t)
 
-	rec := f.do(t, f.members[authz.RoleAdmin], http.MethodPost,
-		"/v1/teams/"+f.teamID.String()+"/domains",
-		map[string]string{"hostname": "verein.test"})
+	// The fixture's own sharedHostname ("shared-<suffix>.test") has only two
+	// labels, so it trips ErrApex before NormalizeHostname ever reaches the
+	// reserved check — that would test the wrong branch. A three-label
+	// hostname that still equals the instance's own SharedDomainHostname is
+	// what actually exercises ErrReserved, so it is set here instead of relied
+	// on from the fixture.
+	f.deps.Config.SharedDomainHostname = "reserved.verein.test"
+	f.rebuildRouter()
 
-	require.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+	for _, tc := range []struct {
+		name     string
+		hostname string
+		wantErr  error
+	}{
+		{"apex", "verein.test", domainverify.ErrApex},
+		{"reserved (the instance's own shared hostname)", "reserved.verein.test", domainverify.ErrReserved},
+		{"malformed", "https://x.verein.test/p", domainverify.ErrMalformed},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := f.do(t, f.members[authz.RoleAdmin], http.MethodPost,
+				"/v1/teams/"+f.teamID.String()+"/domains",
+				map[string]string{"hostname": tc.hostname})
+
+			require.Equal(t, http.StatusUnprocessableEntity, rec.Code, "body: %s", rec.Body.String())
+			require.Contains(t, rec.Body.String(), tc.wantErr.Error())
+		})
+	}
 }
 
 func TestTwoTeamsMayClaimTheSameHostname(t *testing.T) {
@@ -72,6 +102,7 @@ func TestTwoTeamsMayClaimTheSameHostname(t *testing.T) {
 
 func TestListDomainsHidesAnotherTeamsDomains(t *testing.T) {
 	f := newTenancyFixture(t)
+	claimDomainAs(t, f, f.otherAdmin, f.otherTeamID, "hidden.verein.test")
 
 	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
 		"/v1/teams/"+f.teamID.String()+"/domains", nil)
@@ -95,6 +126,8 @@ func TestGetDomainReturnsTheRecordsToCreate(t *testing.T) {
 	require.Equal(t, claimed.Hostname, body.Hostname)
 	require.Equal(t, claimed.VerificationToken, body.VerificationToken,
 		"the token must still be readable on a later GET, not only on the create response")
+	require.Equal(t, "_kurze-url-challenge.links.verein.test", body.Records.TXT.Name)
+	require.Equal(t, body.VerificationToken, body.Records.TXT.Value)
 }
 
 func TestGetDomainIs404ForANonMember(t *testing.T) {
