@@ -72,11 +72,16 @@ func (r QueryDomainResolver) Domain(ctx context.Context, domainID uuid.UUID) (Re
 	if err != nil {
 		return ResolvedDomain{}, fmt.Errorf("authz: load domain scope: %w", err)
 	}
-	// A null team_id is the instance's shared hostname. It belongs to no team,
-	// so no membership can authorize it, and no team may delete the hostname
-	// every other team's links are on. Reported as not-found rather than as a
-	// separate error: from outside, an unadministrable domain and a
-	// nonexistent one are the same thing.
+	return resolvedDomainFrom(row)
+}
+
+// resolvedDomainFrom maps a loaded domain row to the resolver's result. A
+// null team_id is the instance's shared hostname. It belongs to no team, so
+// no membership can authorize it, and no team may delete the hostname every
+// other team's links are on. Reported as not-found rather than as a separate
+// error: from outside, an unadministrable domain and a nonexistent one are
+// the same thing.
+func resolvedDomainFrom(row db.GetDomainScopeRow) (ResolvedDomain, error) {
 	if row.TeamID == nil {
 		return ResolvedDomain{}, ErrDomainNotFound
 	}
