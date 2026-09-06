@@ -81,11 +81,22 @@ export function toDateTimeLocal(expiresAt: string | null): string {
 	return `${year}-${month}-${day}T${hours}:${minutes}`;
 }
 
-/** Seeds `<LinkForm initial>` from the fetched `Link` — a `Pick`, not a spread, so the extra fields `Link` carries (`id`, `state`, `tags`, …) never reach `LinkFormValues` and trip an excess-property error. */
+/**
+ * Seeds `<LinkForm initial>` from the fetched `Link` — a `Pick`, not a
+ * spread, so the extra fields `Link` carries (`id`, `state`, `tags`, …)
+ * never reach `LinkFormValues` and trip an excess-property error.
+ *
+ * `domain_id` is carried through even though this route passes no `domains`
+ * list to `<LinkForm>` (so the picker never renders here, Task 14's own
+ * scope stops at the create route) — `Link.domain_id` is always a concrete
+ * id, never `''`, and `LinkFormValues` requires the field regardless of
+ * whether the picker is shown.
+ */
 function toFormValues(link: Link): LinkFormValues {
 	return {
 		analytics_enabled: link.analytics_enabled,
 		destination_url: link.destination_url,
+		domain_id: link.domain_id,
 		expires_at: toDateTimeLocal(link.expires_at),
 		redirect_type: link.redirect_type,
 		slug: link.slug,

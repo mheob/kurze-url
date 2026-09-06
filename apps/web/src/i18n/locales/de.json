@@ -32,6 +32,11 @@
 		"linkSent": "Falls es zu dieser Adresse ein Konto gibt, ist ein Link unterwegs.",
 		"signOut": "Abmelden"
 	},
+	"nav": {
+		"label": "Bereiche",
+		"links": "Kurzlinks",
+		"domains": "Eigene Domains"
+	},
 	"teams": {
 		"create": "Verein anlegen",
 		"name": "Vereinsname",
@@ -61,6 +66,8 @@
 		"redirect301Warning": "Browser speichern eine 301 zwischen. Klicks werden dann nicht mehr gezählt, und eine spätere Änderung des Ziels erreicht niemanden, der die Seite bereits besucht hat.",
 		"expiresAt": "Läuft ab am",
 		"analyticsEnabled": "Klicks für diesen Link zählen",
+		"domain": "Zieldomain",
+		"domainShared": "Gemeinsame Domain (Standard)",
 		"save": "Speichern",
 		"edit": "Bearbeiten",
 		"delete": "Löschen",

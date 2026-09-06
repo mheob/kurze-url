@@ -26,3 +26,16 @@ export const WithFieldError: StoryObj<typeof meta> = {
 		onSubmit: fn(),
 	},
 };
+
+/**
+ * A team with a verified domain — the only state that renders the domain
+ * picker at all (Task 14), so this is what puts its `<select>`/`<label>`
+ * pairing in front of the a11y addon rather than leaving it unexercised by
+ * every other story here.
+ */
+export const WithDomainPicker: StoryObj<typeof meta> = {
+	args: {
+		domains: [{ hostname: 'links.verein.test', id: 'd1' }],
+		onSubmit: fn(),
+	},
+};

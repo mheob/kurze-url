@@ -32,6 +32,11 @@
 		"linkSent": "If that address has an account, a link is on its way.",
 		"signOut": "Sign out"
 	},
+	"nav": {
+		"label": "Sections",
+		"links": "Links",
+		"domains": "Domains"
+	},
 	"teams": {
 		"create": "Create team",
 		"name": "Team name",
@@ -61,6 +66,8 @@
 		"redirect301Warning": "Browsers cache a 301. Clicks stop being counted, and changing the destination later will not reach anyone who has already visited.",
 		"expiresAt": "Expires at",
 		"analyticsEnabled": "Count clicks for this link",
+		"domain": "Domain",
+		"domainShared": "Shared domain (default)",
 		"save": "Save",
 		"edit": "Edit",
 		"delete": "Delete",
