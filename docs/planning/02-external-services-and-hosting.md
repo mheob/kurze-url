@@ -14,7 +14,7 @@ Status: draft, reflecting decisions made through 2026-09-01. Intended to be refi
 | Compute/hosting | **Vercel** | Native APIs (Go serverless functions), no Docker; one shared multi-tenant instance, not per-Verein self-hosting |
 | CLI auth | OAuth (Authorization Code + PKCE via Supabase's OAuth 2.1 Server), primary; plain API key as fallback, built only once CI/headless use actually comes up | See `01-architecture.md` |
 | Malware/phishing scanning | **Google Safe Browsing API**, free | Licensing accepted 2026-09-01: non-profit/community use is a reasonable read of "non-commercial," no separate formal legal review — see note below |
-| Custom domain provisioning | **Self-service via Vercel's Domain API** | Verein enters their domain in the app UI; backend calls Vercel's SDK to add + verify it (TXT record), no nameserver takeover needed |
+| Custom domain provisioning | **Maintainer-in-the-loop, not self-service** | A Verein claims a hostname in the app; the maintainer adds it to the `kurze-url-api` Vercel project by hand. The backend never calls Vercel. Decided 2026-09-06 — see `docs/superpowers/specs/2026-09-06-custom-domains-design.md` for why the self-service SDK flow sketched below was rejected (a self-mutating deployment token, and an unverified assumption about Hobby-plan API access) |
 | Free-tier scaling | **Reactive**: monitoring + alerts on known ceilings, upgrade when a limit is actually approached | Concrete thresholds decided 2026-09-01 — see "Alert thresholds" below |
 | Transactional email (custom SMTP) | **Resend**, free tier (decided 2026-09-01) | Needed for real team-invite emails — see "Transactional email" below and `06-api-design.md` |
 | Error tracking | **Sentry**, free Developer tier (decided 2026-09-01) | Not just "nice to have" — see "Observability: error tracking" below, ties to a real Vercel Hobby limitation |
@@ -43,7 +43,7 @@ Status: draft, reflecting decisions made through 2026-09-01. Intended to be refi
 
 - Go supported as a first-class serverless function runtime.
 - Cold-start latency is a factor on the redirect path — this is why Redis caching is in MVP scope; the cache absorbs most of the cold-start risk on the hottest path.
-- **Custom domains for multi-tenant use**: Vercel has a documented pattern for exactly this case (SaaS platforms letting customers bring their own domain). Programmatic flow via the Vercel SDK:
+- **Custom domains for multi-tenant use**: Vercel has a documented pattern for exactly this case (SaaS platforms letting customers bring their own domain). **Not what got built** — the 2026-09-06 custom-domains design chose maintainer-in-the-loop provisioning instead (see the decision table above and the design doc it cites) — but the programmatic flow below is what a later switch to self-service would use, so it stays here rather than getting deleted. Via the Vercel SDK:
   1. `projectsAddProjectDomain` — add the tenant's domain to the project.
   2. Vercel attempts automatic SSL issuance; if the domain is already known to Vercel, the tenant must add a TXT record to prove ownership.
   3. `projectsVerifyProjectDomain` / `projectsGetProjectDomain` — check/trigger verification status; poll or webhook until verified.
