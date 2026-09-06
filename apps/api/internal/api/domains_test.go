@@ -141,7 +141,7 @@ func TestGetDomainIs404ForANonMember(t *testing.T) {
 
 func TestVerifyReportsWhichHalfIsMissing(t *testing.T) {
 	f := newTenancyFixture(t)
-	f.verifier.reason = domainverify.ReasonTokenMissing
+	f.domainVerifier.reason = domainverify.ReasonTokenMissing
 
 	claim := claimDomain(t, f, "links.verein.test")
 
@@ -156,14 +156,30 @@ func TestVerifyReportsWhichHalfIsMissing(t *testing.T) {
 	require.Equal(t, "pending", body.Domain.VerificationStatus)
 	require.Equal(t, "token_missing", body.Reason,
 		"a Verein that cannot see which half failed cannot fix it")
+
+	// The response above is built from the row loaded before any write could
+	// happen, so it would still read "pending" even if the handler had wrongly
+	// written "verified" and returned the stale value. Only a direct read of
+	// the row proves nothing was written.
+	var status string
+	require.NoError(t, f.pool.QueryRow(t.Context(),
+		`select verification_status from domain where id = $1`, claim.ID).Scan(&status))
+	require.Equal(t, "pending", status,
+		"a failed check must not write verified to the row")
 }
 
 func TestVerifySucceedsAndSettlesCompetingClaims(t *testing.T) {
 	f := newTenancyFixture(t)
-	f.verifier.reason = domainverify.ReasonNone
+	f.domainVerifier.reason = domainverify.ReasonNone
 
-	mine := claimDomain(t, f, "contested.verein.test")
-	theirs := claimDomainAs(t, f, f.otherAdmin, f.otherTeamID, "contested.verein.test")
+	// Suffixed, unlike the fixture's other literal hostnames: this is the
+	// first test in the suite to actually reach "verified", the one status
+	// the partial unique index makes globally exclusive. A hard-coded value
+	// here would leave a verified row behind if the run were ever killed
+	// mid-test, and every later run would then 409 on this same hostname.
+	hostname := "contested-" + uuid.NewString()[:8] + ".verein.test"
+	mine := claimDomain(t, f, hostname)
+	theirs := claimDomainAs(t, f, f.otherAdmin, f.otherTeamID, hostname)
 
 	rec := f.do(t, f.members[authz.RoleAdmin], http.MethodPost,
 		"/v1/domains/"+mine.ID.String()+"/verify", nil)
@@ -178,6 +194,74 @@ func TestVerifySucceedsAndSettlesCompetingClaims(t *testing.T) {
 		`select verification_status from domain where id = $1`, theirs.ID).Scan(&status))
 	require.Equal(t, "failed", status,
 		"the losing claim must be answered, not left pending forever")
+}
+
+// TestVerifyRefusesASecondTeamsAlreadyVerifiedHostname exercises the 409
+// branch directly. TestVerifySucceedsAndSettlesCompetingClaims proves the
+// losing claim gets answered, but its competing row is "pending" throughout
+// and gets settled by the UPDATE inside FailCompetingClaims — it never
+// attempts a second verified row, so it never touches
+// domain_hostname_verified_key. That index only fires when a second team
+// verifies a hostname another team has already verified, which is what this
+// test does: verify "mine" to completion, then have the other team verify
+// "theirs" on the very same hostname.
+func TestVerifyRefusesASecondTeamsAlreadyVerifiedHostname(t *testing.T) {
+	f := newTenancyFixture(t)
+	f.domainVerifier.reason = domainverify.ReasonNone
+
+	hostname := "double-verify-" + uuid.NewString()[:8] + ".verein.test"
+	mine := claimDomain(t, f, hostname)
+	theirs := claimDomainAs(t, f, f.otherAdmin, f.otherTeamID, hostname)
+
+	first := f.do(t, f.members[authz.RoleAdmin], http.MethodPost,
+		"/v1/domains/"+mine.ID.String()+"/verify", nil)
+	require.Equal(t, http.StatusOK, first.Code, "body: %s", first.Body.String())
+
+	second := f.do(t, f.otherAdmin, http.MethodPost,
+		"/v1/domains/"+theirs.ID.String()+"/verify", nil)
+	require.Equal(t, http.StatusConflict, second.Code, "body: %s", second.Body.String())
+
+	var status string
+	require.NoError(t, f.pool.QueryRow(t.Context(),
+		`select verification_status from domain where id = $1`, theirs.ID).Scan(&status))
+	require.NotEqual(t, "verified", status,
+		"a team must not walk away believing it owns a hostname another team already verified")
+}
+
+// TestVerifyAlreadyVerifiedSkipsTheProbe pins the ordering of the
+// already-verified short-circuit: it must run strictly before Check is ever
+// called. Without a test for this, the check is one refactor away from
+// sliding below the Check call — every other test would stay green, since
+// they all set the stub to ReasonNone, but a verified domain would then be
+// one flaky DNS lookup away from being un-verified by a later probe.
+func TestVerifyAlreadyVerifiedSkipsTheProbe(t *testing.T) {
+	f := newTenancyFixture(t)
+	f.domainVerifier.reason = domainverify.ReasonNone
+
+	claim := claimDomain(t, f, "already-verified.verein.test")
+
+	first := f.do(t, f.members[authz.RoleAdmin], http.MethodPost,
+		"/v1/domains/"+claim.ID.String()+"/verify", nil)
+	require.Equal(t, http.StatusOK, first.Code, "body: %s", first.Body.String())
+	require.Equal(t, "verified", decode[struct {
+		Domain api.Domain `json:"domain"`
+	}](t, first).Domain.VerificationStatus)
+	require.Equal(t, 1, f.domainVerifier.calls)
+
+	// If a later probe would fail, that must never be allowed to matter.
+	f.domainVerifier.reason = domainverify.ReasonUnreachable
+
+	second := f.do(t, f.members[authz.RoleAdmin], http.MethodPost,
+		"/v1/domains/"+claim.ID.String()+"/verify", nil)
+	require.Equal(t, http.StatusOK, second.Code, "body: %s", second.Body.String())
+	body := decode[struct {
+		Domain api.Domain `json:"domain"`
+		Reason string     `json:"reason"`
+	}](t, second)
+	require.Equal(t, "verified", body.Domain.VerificationStatus)
+	require.Empty(t, body.Reason)
+	require.Equal(t, 1, f.domainVerifier.calls,
+		"an already-verified domain must not be re-probed, so calls must stay at 1")
 }
 
 func TestVerifyIsRefusedBelowAdmin(t *testing.T) {

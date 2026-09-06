@@ -104,30 +104,34 @@ type testUser struct {
 // stubDomainVerifier lets a test dictate the outcome of a domain
 // verification check without a real DNS lookup or TLS handshake to a third
 // party. It is assigned into Deps.DomainVerifier as a pointer, so a test can
-// mutate f.verifier.reason after the fixture is built and have the
+// mutate f.domainVerifier.reason after the fixture is built and have the
 // already-registered handler see the change — unlike a Config field, this
-// needs no f.rebuildRouter() call.
+// needs no f.rebuildRouter() call. calls counts every invocation of Check, so
+// a test can pin the already-verified short-circuit: it must stay at 1 even
+// after a later probe would have failed.
 type stubDomainVerifier struct {
 	reason domainverify.Reason
 	err    error
+	calls  int
 }
 
 func (s *stubDomainVerifier) Check(context.Context, string, string) (domainverify.Reason, error) {
+	s.calls++
 	return s.reason, s.err
 }
 
 // tenancyFixture is one team with one member per role, a stranger who belongs
 // to no team, a real JWKS-backed verifier and a wired /v1 router.
 type tenancyFixture struct {
-	deps     api.Deps
-	pool     *pgxpool.Pool
-	key      *ecdsa.PrivateKey
-	router   http.Handler
-	teamID   uuid.UUID
-	members  map[authz.Role]testUser
-	stranger testUser
-	invites  *fakeInviter
-	verifier *stubDomainVerifier
+	deps           api.Deps
+	pool           *pgxpool.Pool
+	key            *ecdsa.PrivateKey
+	router         http.Handler
+	teamID         uuid.UUID
+	members        map[authz.Role]testUser
+	stranger       testUser
+	invites        *fakeInviter
+	domainVerifier *stubDomainVerifier
 
 	sharedDomainID uuid.UUID
 	teamDomainID   uuid.UUID
@@ -308,7 +312,7 @@ func newTenancyFixture(t *testing.T) *tenancyFixture {
 		members:        members,
 		stranger:       stranger,
 		invites:        invites,
-		verifier:       domainVerifierStub,
+		domainVerifier: domainVerifierStub,
 		sharedDomainID: sharedDomainID,
 		teamDomainID:   teamDomainID,
 		teamHostname:   teamHostname,

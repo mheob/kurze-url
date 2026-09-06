@@ -114,7 +114,7 @@ type VerifyDomainOutput struct {
 		// short-circuit) and one of domainverify's Reason values otherwise —
 		// "token_missing", "token_mismatch" or "unreachable" — so a Verein
 		// that cannot see which half failed cannot fix it.
-		Reason string `json:"reason"`
+		Reason string `json:"reason" enum:"token_missing,token_mismatch,unreachable"`
 	}
 }
 

@@ -407,6 +407,15 @@ export type UpdateTeamInputBody = {
     name: string;
 };
 
+export type VerifyDomainOutputBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    domain: Domain;
+    reason: 'token_missing' | 'token_mismatch' | 'unreachable';
+};
+
 export type AddMemberInputBodyWritable = {
     /**
      * The person's email address.
@@ -661,6 +670,11 @@ export type UpdateTeamInputBodyWritable = {
     name: string;
 };
 
+export type VerifyDomainOutputBodyWritable = {
+    domain: DomainWritable;
+    reason: 'token_missing' | 'token_mismatch' | 'unreachable';
+};
+
 export type GetDomainData = {
     body?: never;
     path: {
@@ -690,6 +704,36 @@ export type GetDomainResponses = {
 };
 
 export type GetDomainResponse = GetDomainResponses[keyof GetDomainResponses];
+
+export type VerifyDomainData = {
+    body?: never;
+    path: {
+        /**
+         * The domain this request operates on.
+         */
+        domain_id: string;
+    };
+    query?: never;
+    url: '/v1/domains/{domain_id}/verify';
+};
+
+export type VerifyDomainErrors = {
+    /**
+     * Error
+     */
+    default: ErrorModel;
+};
+
+export type VerifyDomainError = VerifyDomainErrors[keyof VerifyDomainErrors];
+
+export type VerifyDomainResponses = {
+    /**
+     * OK
+     */
+    200: VerifyDomainOutputBody;
+};
+
+export type VerifyDomainResponse = VerifyDomainResponses[keyof VerifyDomainResponses];
 
 export type DeleteFolderData = {
     body?: never;

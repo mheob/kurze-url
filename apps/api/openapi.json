@@ -924,6 +924,27 @@
 				},
 				"required": ["name"],
 				"type": "object"
+			},
+			"VerifyDomainOutputBody": {
+				"additionalProperties": false,
+				"properties": {
+					"$schema": {
+						"description": "A URL to the JSON Schema for this object.",
+						"examples": ["https://example.com/schemas/VerifyDomainOutputBody.json"],
+						"format": "uri",
+						"readOnly": true,
+						"type": "string"
+					},
+					"domain": {
+						"$ref": "#/components/schemas/Domain"
+					},
+					"reason": {
+						"enum": ["token_missing", "token_mismatch", "unreachable"],
+						"type": "string"
+					}
+				},
+				"required": ["domain", "reason"],
+				"type": "object"
 			}
 		},
 		"securitySchemes": {
@@ -984,6 +1005,52 @@
 					}
 				],
 				"summary": "Get a domain",
+				"tags": ["Domains"]
+			}
+		},
+		"/v1/domains/{domain_id}/verify": {
+			"post": {
+				"operationId": "verify-domain",
+				"parameters": [
+					{
+						"description": "The domain this request operates on.",
+						"in": "path",
+						"name": "domain_id",
+						"required": true,
+						"schema": {
+							"description": "The domain this request operates on.",
+							"type": "string"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/VerifyDomainOutputBody"
+								}
+							}
+						},
+						"description": "OK"
+					},
+					"default": {
+						"content": {
+							"application/problem+json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorModel"
+								}
+							}
+						},
+						"description": "Error"
+					}
+				},
+				"security": [
+					{
+						"bearerAuth": []
+					}
+				],
+				"summary": "Check a claimed domain's DNS token and reachability",
 				"tags": ["Domains"]
 			}
 		},
