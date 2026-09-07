@@ -20,6 +20,11 @@ interface DomainListProps {
 	// Set only for whichever domain `verifyingId` names — see the docstring
 	// below for why one slot, not a per-domain map, is enough here.
 	readonly pendingReason?: VerifyReason;
+	// True while the verify call named by `verifyingId` is still in flight.
+	// Disables that row's "Check now" button so a click that lands before the
+	// first response comes back cannot fire a second, overlapping verify
+	// request for the same domain.
+	readonly verifyPending?: boolean;
 	readonly verifyingId: string | null;
 }
 
@@ -116,6 +121,7 @@ export function DomainList({
 	onDelete,
 	onVerify,
 	pendingReason,
+	verifyPending,
 	verifyingId,
 }: DomainListProps): React.JSX.Element {
 	const { t } = useTranslation();
@@ -175,7 +181,11 @@ export function DomainList({
 								{verifyingId === domain.id && pendingReason ? (
 									<output>{reasonLabel(t, pendingReason)}</output>
 								) : null}
-								<Button onClick={() => onVerify(domain.id)} type="button">
+								<Button
+									disabled={verifyingId === domain.id && verifyPending}
+									onClick={() => onVerify(domain.id)}
+									type="button"
+								>
 									{t('domains.verify')}
 								</Button>
 							</>

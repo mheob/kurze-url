@@ -30,6 +30,7 @@ const meta = {
 		onDelete: fn(),
 		onVerify: fn(),
 		pendingReason: undefined,
+		verifyPending: false,
 		verifyingId: null,
 	},
 	component: DomainList,
@@ -57,6 +58,15 @@ export const PendingUnreachable: StoryObj<typeof meta> = {
 	args: {
 		domains: [domain()],
 		pendingReason: 'unreachable',
+		verifyingId: 'domain-1',
+	},
+};
+
+/** A check in flight: the button disables so a second click cannot overlap it. */
+export const VerifyPending: StoryObj<typeof meta> = {
+	args: {
+		domains: [domain()],
+		verifyPending: true,
 		verifyingId: 'domain-1',
 	},
 };

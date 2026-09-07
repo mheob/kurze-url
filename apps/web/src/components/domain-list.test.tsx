@@ -36,6 +36,7 @@ interface RenderOverrides {
 	readonly deletingId?: string | null;
 	readonly onDelete?: (domainId: string) => void;
 	readonly pendingReason?: VerifyReason;
+	readonly verifyPending?: boolean;
 	readonly verifyingId?: string | null;
 }
 
@@ -58,6 +59,7 @@ function renderList(
 				onDelete={overrides.onDelete ?? vi.fn()}
 				onVerify={vi.fn()}
 				pendingReason={overrides.pendingReason}
+				verifyPending={overrides.verifyPending}
 				verifyingId={overrides.verifyingId ?? null}
 			/>
 		</I18nextProvider>,
@@ -166,6 +168,23 @@ describe('DomainList', () => {
 	it('offers a Check now button for every pending domain', () => {
 		renderList([pendingDomain]);
 		expect(screen.getByRole('button', { name: 'Check now' })).toBeInTheDocument();
+	});
+
+	it('disables Check now while a verify for that domain is in flight', () => {
+		// A second click before the first response lands must not fire a
+		// second, overlapping verify request for the same domain.
+		renderList([pendingDomain], { verifyingId: pendingDomain.id, verifyPending: true });
+		expect(screen.getByRole('button', { name: 'Check now' })).toBeDisabled();
+	});
+
+	it('does not disable a different domain while another one is verifying', () => {
+		// `verifyPending` is a single slot, correlated by `verifyingId` — the
+		// same discipline `pendingReason`/`deleteBlockedCount` already follow.
+		const other = domain({ id: 'domain-2', hostname: 'other.verein.test' });
+		renderList([pendingDomain, other], { verifyingId: pendingDomain.id, verifyPending: true });
+		const buttons = screen.getAllByRole('button', { name: 'Check now' });
+		expect(buttons[0]).toBeDisabled();
+		expect(buttons[1]).toBeEnabled();
 	});
 
 	it('gives each domain a distinct, hostname-naming delete button', () => {

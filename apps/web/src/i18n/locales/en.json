@@ -104,6 +104,12 @@
 			"token_missing": "The TXT record is not visible yet. DNS changes can take a few hours.",
 			"token_mismatch": "A TXT record exists but its value does not match. Check for a typo.",
 			"unreachable": "The hostname does not reach us yet. This is expected until the instance maintainer has added it."
+		},
+		"verifyError": {
+			"conflict": "Another team already verified this hostname while you were waiting. It cannot be used by your team.",
+			"notFound": "This domain no longer exists. Reload the page.",
+			"rateLimited": "Too many checks just now. Please wait a while before trying again.",
+			"unknown": "Could not check this domain right now. Please try again."
 		}
 	},
 	"errors": {

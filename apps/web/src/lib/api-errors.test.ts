@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { classifyApiError } from './api-errors';
+import { classifyApiError, statusOf } from './api-errors';
 
 /**
  * Shapes copied from what Huma/the generated client actually produce, not
@@ -172,5 +172,20 @@ describe('classifyApiError', () => {
 
 	it('falls back to unknown for a non-object error', () => {
 		expect(classifyApiError('fetch failed')).toStrictEqual({ kind: 'unknown' });
+	});
+});
+
+describe('statusOf', () => {
+	it('reads the numeric status off a thrown problem body', () => {
+		expect(statusOf(problem(409))).toBe(409);
+	});
+
+	it('returns undefined for a non-object error', () => {
+		expect(statusOf(new Error('network'))).toBeUndefined();
+	});
+
+	it('returns undefined when status is missing or not a number', () => {
+		expect(statusOf({ status: '409' })).toBeUndefined();
+		expect(statusOf({})).toBeUndefined();
 	});
 });

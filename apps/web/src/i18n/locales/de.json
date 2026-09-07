@@ -104,6 +104,12 @@
 			"token_missing": "Der TXT-Eintrag ist noch nicht sichtbar. DNS-Änderungen können einige Stunden dauern.",
 			"token_mismatch": "Ein TXT-Eintrag existiert, aber sein Wert stimmt nicht überein. Prüf auf einen Tippfehler.",
 			"unreachable": "Der Hostname erreicht uns noch nicht. Das ist normal, bis der Betreiber der Instanz ihn hinzugefügt hat."
+		},
+		"verifyError": {
+			"conflict": "Ein anderer Verein hat diesen Hostnamen in der Zwischenzeit bereits verifiziert. Euer Verein kann ihn nicht mehr nutzen.",
+			"notFound": "Diese Domain gibt es nicht mehr. Lade die Seite neu.",
+			"rateLimited": "Gerade wurden zu viele Prüfungen ausgelöst. Warte eine Weile und versuch es dann noch mal.",
+			"unknown": "Die Domain konnte gerade nicht geprüft werden. Versuch es noch mal."
 		}
 	},
 	"errors": {

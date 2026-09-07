@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next';
 
 import { DomainList } from '../../components/domain-list';
 import { Button } from '../../components/ui/button';
-import { classifyApiError, type ApiFailure } from '../../lib/api-errors';
+import { classifyApiError, statusOf, type ApiFailure } from '../../lib/api-errors';
 import {
 	claimDomainFn,
 	deleteDomainFn,
@@ -17,6 +17,29 @@ import {
 import { assertMembership } from '../_authed';
 
 type VerifyReason = VerifyDomainOutputBody['reason'];
+
+/**
+ * Every failure shape `verifyDomain` (apps/api/internal/api/domains.go) can
+ * actually produce, once `unauthenticated` is peeled off for the redirect it
+ * gets instead of a rendered message: `notFound` (a racing admin deleted the
+ * domain first), `rateLimited` (the per-domain/per-user 20/hour limit),
+ * `conflict` (another team won the race to verify this exact hostname), or
+ * `unknown` (a timeout, a network error, or a genuine 500 — Check's own
+ * budget is ~10s, so this is a real, reachable case, not a theoretical one).
+ *
+ * `conflict` cannot come from `classifyApiError` itself: the 409 it is read
+ * from carries no `ErrorDetail` (see `statusOf`'s doc comment in
+ * `lib/api-errors.ts`), the same shape a plain timeout or 500 produces, so
+ * `classifyApiError` alone collapses both into `unknown`. Checking the raw
+ * status first is what tells them apart.
+ */
+type VerifyFailureKind = 'conflict' | 'notFound' | 'rateLimited' | 'unknown';
+
+function classifyVerifyFailure(error: unknown): VerifyFailureKind {
+	if (statusOf(error) === 409) return 'conflict';
+	const { kind } = classifyApiError(error);
+	return kind === 'notFound' || kind === 'rateLimited' ? kind : 'unknown';
+}
 
 /**
  * The one method this loader reaches through on `context.queryClient` — same
@@ -92,6 +115,10 @@ function RouteComponent(): React.JSX.Element {
 	// the wrong row, rather than waiting for the new response to arrive.
 	const [verifyingId, setVerifyingId] = useState<string | null>(null);
 	const [pendingReason, setPendingReason] = useState<VerifyReason | undefined>(undefined);
+	// Same one-slot correlation as `verifyingId`/`pendingReason` above: only
+	// one verify call is ever in flight, and `verifyingId` already names which
+	// domain it was for.
+	const [verifyFailure, setVerifyFailure] = useState<VerifyFailureKind | null>(null);
 	// Same one-slot correlation as `verifyingId`/`pendingReason` above, for the
 	// same reason: only one delete is ever in flight at a time, and
 	// `deletingId` already names which domain it was for.
@@ -120,13 +147,22 @@ function RouteComponent(): React.JSX.Element {
 	const verifyMutation = useMutation({
 		mutationFn: (domainId: string) => verifyDomainFn({ data: { domainId } }),
 		onError: (error: unknown) => {
-			// A verify call failing outright (a 409 from a race just lost, or a
-			// network error) has no reason to show — the domain's own status,
-			// refetched on the next load, is what tells the rest of the story.
-			if (classifyApiError(error).kind === 'unauthenticated')
+			// A mutation callback is not a render and not a loader, so it cannot
+			// throw a redirect — see the same note on the create-link route.
+			if (classifyApiError(error).kind === 'unauthenticated') {
 				void router.navigate({ to: '/login' });
+				return;
+			}
+			// Every other failure — a 429 from either axis of
+			// `allowDomainVerify`, a 409 from a race just lost, a timeout, or a
+			// genuine 500 — gets a message: leaving this row silent would make
+			// "Check now" indistinguishable from a click that was never
+			// registered at all, which is the one thing this screen exists to
+			// avoid telling the truth about.
+			setVerifyFailure(classifyVerifyFailure(error));
 		},
 		onSuccess: (result) => {
+			setVerifyFailure(null);
 			// Reason is empty on success, including the already-verified
 			// short-circuit (`VerifyDomainOutput.Body.Reason`'s own doc comment
 			// on the Go side) — read off the returned domain's own status
@@ -182,6 +218,7 @@ function RouteComponent(): React.JSX.Element {
 	function handleVerify(domainId: string): void {
 		setVerifyingId(domainId);
 		setPendingReason(undefined);
+		setVerifyFailure(null);
 		verifyMutation.mutate(domainId);
 	}
 
@@ -211,6 +248,13 @@ function RouteComponent(): React.JSX.Element {
 			? t(`errors.${deleteFailure.kind}`)
 			: null;
 
+	// Its own catalogue keys, not `errors.*`: `errors.rateLimited` reads "Too
+	// many links created just now", which is link-creation copy that would
+	// misdescribe a verify check, and `errors.unknown`'s generic "try again"
+	// is actively wrong for `conflict` — retrying a lost race can never
+	// change the outcome, unlike a timeout or a 500.
+	const verifyMessage = verifyFailure ? t(`domains.verifyError.${verifyFailure}`) : null;
+
 	return (
 		<>
 			{/* `listDomainsFor` returns the full envelope (`total_count`) but takes
@@ -227,8 +271,10 @@ function RouteComponent(): React.JSX.Element {
 				onDelete={handleDelete}
 				onVerify={handleVerify}
 				pendingReason={pendingReason}
+				verifyPending={verifyMutation.isPending}
 				verifyingId={verifyingId}
 			/>
+			{verifyMessage ? <p role="alert">{verifyMessage}</p> : null}
 			{deleteMessage ? <p role="alert">{deleteMessage}</p> : null}
 			{claimMessage ? <p role="alert">{claimMessage}</p> : null}
 			<form

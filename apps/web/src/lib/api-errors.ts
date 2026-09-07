@@ -41,7 +41,18 @@ function isProblemDetail(value: unknown): value is ProblemDetail {
 	);
 }
 
-function statusOf(error: unknown): number | undefined {
+/**
+ * Exported for the rare call site that needs the raw HTTP status alongside
+ * `ApiFailure`'s kind — `teams.$teamId.domains.tsx`'s verify mutation is the
+ * first: a 409 there ("another team already verified this hostname") carries
+ * no `ErrorDetail` to key on, the same as a 500 or a network failure, so
+ * `classifyApiError` alone cannot tell them apart — both fall into `unknown`.
+ * That collapse is correct for every other caller (nothing else needs to
+ * split them), so this stays a plain status accessor rather than a new
+ * `ApiFailure` kind that would force every other 409-without-detail call site
+ * (members, tags, link slugs) to adopt a message that does not fit them.
+ */
+export function statusOf(error: unknown): number | undefined {
 	if (!isRecord(error)) return undefined;
 	const { status } = error;
 	return typeof status === 'number' ? status : undefined;
