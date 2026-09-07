@@ -26,14 +26,18 @@ func NewRouter(deps Deps) http.Handler {
 	// (GHSA-3fxj-6jh8-hvhx), and no /v1 handler reads r.RemoteAddr anyway —
 	// they don't need a client IP at all.
 	apiSurface.Use(middleware.Recoverer)
-	// Inside Recoverer, never outside: see observability.Middleware's own
+	// Inside Recoverer, never outside: see observability.APIMiddleware's own
 	// comment for what each wrong order costs.
-	apiSurface.Use(observability.Middleware())
+	apiSurface.Use(observability.APIMiddleware())
 	deps.RegisterV1(humachi.New(apiSurface, NewHumaConfig()))
 
 	redirectSurface := chi.NewRouter()
 	redirectSurface.Use(middleware.Recoverer)
-	redirectSurface.Use(observability.Middleware())
+	// Deliberately not APIMiddleware: this is GET /<slug>, and the panic
+	// capture is all of sentryhttp this surface actually keeps once Scrub has
+	// had the request. See RedirectPanicMiddleware for what a successful
+	// redirect stops paying for.
+	redirectSurface.Use(observability.RedirectPanicMiddleware())
 	redirectSurface.Get("/{slug}", deps.HandleRedirect)
 	redirectSurface.Get("/{slug}/verify", deps.HandleVerifyForm)
 	redirectSurface.Post("/{slug}/verify", deps.HandleVerifySubmit)
@@ -45,7 +49,11 @@ func NewRouter(deps Deps) http.Handler {
 	// /health/deep answers on every hostname for the same reason the flat one
 	// does: a monitor does not know which hostname it is hitting. It is
 	// token-guarded and, like /health, stays out of the OpenAPI spec.
-	root.Get("/health/deep", deps.HandleDeepHealth)
+	//
+	// With(Recoverer), not root.Use(Recoverer): middleware on root would run
+	// on every redirect, because root is what dispatches the hostname split
+	// to both surfaces. With() wraps this one route and nothing else.
+	root.With(middleware.Recoverer).Get("/health/deep", deps.HandleDeepHealth)
 	root.HandleFunc("/*", func(w http.ResponseWriter, r *http.Request) {
 		if Hostname(r.Host) == apiHost {
 			apiSurface.ServeHTTP(w, r)

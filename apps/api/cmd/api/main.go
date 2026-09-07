@@ -33,52 +33,87 @@ const (
 
 func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	log, err := run(log)
+
+	log, flushSentry, err := run(log)
 	if err != nil {
 		log.Error("api exited with error", "error", err)
+		// After the fatal log, before the exit. Capturing an event only
+		// enqueues it onto the transport's queue; os.Exit runs no deferred
+		// function, so a flush that happened when run returned would have
+		// drained the queue just before the one event worth having was put
+		// on it — and a Vercel crash loop, the case most in need of a
+		// durable record, would produce nothing at all.
+		flushSentry()
 		os.Exit(1)
 	}
+
+	flushSentry()
 }
 
-// run returns the logger it ended up using alongside any error, so that
-// main's own fatal-exit log call goes through the Sentry-reporting handler
-// whenever one was installed. A *slog.Logger is a pointer, so reassigning
-// the local "log" parameter inside run — as the Sentry-wrap below does —
-// cannot be observed by main's own "log" variable; returning it is the only
-// way main sees the wrapped logger. Every return path below returns log as
-// it stands at that point, including the early ones that fail before the
-// wrap ever happens — those callers still get a usable, if unwrapped,
-// logger back.
-func run(log *slog.Logger) (*slog.Logger, error) {
+// run returns the logger it ended up using and the Sentry flush to run at
+// the very end, alongside any error.
+//
+// The logger, because a *slog.Logger is a pointer: reassigning the local
+// "log" parameter inside run — as the Sentry-wrap below does — cannot be
+// observed by main's own "log" variable, so returning it is the only way
+// main sees the wrapped one.
+//
+// The flush for the same reason, rather than an exported
+// observability.Flush(timeout) reaching for the global hub: keeping it a
+// value the caller holds means the no-op case (no DSN, or an unusable one)
+// is the same shape as the real one, with no package-level state deciding
+// which happened. Both were acceptable; this one keeps observability's
+// surface as small as it already is.
+//
+// Every return path below returns both as they stand at that point,
+// including the early ones that fail before Sentry is configured at all —
+// those callers get a usable, if unwrapped, logger and a flush that does
+// nothing.
+func run(log *slog.Logger) (*slog.Logger, func(), error) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// Until Sentry is configured a few lines down there is nothing to flush,
+	// and every early return before that point hands main this.
+	noFlush := func() {}
+
 	cfg, err := config.Load()
 	if err != nil {
-		return log, err
+		return log, noFlush, err
 	}
 
-	// As early as the DSN is known, which is after config.Load — the
-	// last-gasp log in main() therefore stays unreported. That is accepted:
-	// wrapping it would mean initialising Sentry before the configuration
-	// that carries the DSN.
+	// As early as the DSN is known, which is after config.Load.
 	flushSentry, err := observability.Init(cfg.SentryDSN, cfg.Environment, cfg.Release)
-	if err != nil {
-		return log, err
-	}
-	defer flushSentry()
 
-	if cfg.SentryDSN == "" {
+	switch {
+	case err != nil:
+		// Not fatal, and deliberately unlike every other error in this
+		// function. Sentry is an optional dependency exactly as the JWKS URL
+		// and the service-role key below are, and it is the only one whose
+		// failure would take the redirect surface — the thing this project
+		// exists to serve — down over a typo in an environment variable.
+		log.Warn("sentry initialisation failed — errors are logged but not reported", "error", err)
+		flushSentry = noFlush
+	case cfg.SentryDSN == "":
 		log.Warn("SENTRY_DSN is unset — errors are logged but not reported")
-	} else {
+	default:
 		// Every existing Log.Error call site becomes a Sentry event from
 		// here on, including the two in HandleDeepHealth.
 		log = slog.New(observability.NewSlogHandler(log.Handler()))
 	}
 
+	// internal/pages logs through slog's package-level default rather than an
+	// injected logger — it renders the redirect surface's HTML and has no
+	// Deps to take one from — so without this line a template failure on the
+	// surface this whole project exists for is written to stderr and reported
+	// nowhere. Not redundant with the wrap above: it is what makes the wrap
+	// reach code that never sees this variable, including anything a
+	// dependency logs through the default.
+	slog.SetDefault(log)
+
 	poolCfg, err := pgxpool.ParseConfig(cfg.DatabaseURL)
 	if err != nil {
-		return log, err
+		return log, flushSentry, err
 	}
 
 	// Production connects through Supavisor's transaction pooler, which
@@ -128,13 +163,13 @@ func run(log *slog.Logger) (*slog.Logger, error) {
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
-		return log, err
+		return log, flushSentry, err
 	}
 	defer pool.Close()
 
 	redis, err := cache.New(cfg.RedisURL)
 	if err != nil {
-		return log, err
+		return log, flushSentry, err
 	}
 	defer func() { _ = redis.Close() }()
 
@@ -142,7 +177,7 @@ func run(log *slog.Logger) (*slog.Logger, error) {
 
 	sharedDomain, err := api.ProvisionSharedDomain(ctx, queries, cfg.SharedDomainHostname)
 	if err != nil {
-		return log, err
+		return log, flushSentry, err
 	}
 	log.Info("shared domain ready", "hostname", sharedDomain.Hostname, "domain_id", sharedDomain.ID)
 
@@ -169,7 +204,7 @@ func run(log *slog.Logger) (*slog.Logger, error) {
 	if cfg.JWKSURL != "" {
 		verifier, err := auth.NewVerifier(ctx, cfg.JWKSURL, cfg.JWTIssuer, cfg.JWTAudience)
 		if err != nil {
-			return log, err
+			return log, flushSentry, err
 		}
 		deps.Verifier = verifier
 	} else {
@@ -190,7 +225,7 @@ func run(log *slog.Logger) (*slog.Logger, error) {
 			// instead of refusing to start over one optional feature.
 			log.Warn("supabase auth url is unset — team invitations are disabled")
 		case err != nil:
-			return log, fmt.Errorf("configure the supabase admin client: %w", err)
+			return log, flushSentry, fmt.Errorf("configure the supabase admin client: %w", err)
 		default:
 			deps.Admin = admin
 			log.Info("supabase invitations enabled")
@@ -230,7 +265,7 @@ func run(log *slog.Logger) (*slog.Logger, error) {
 
 	select {
 	case err := <-errCh:
-		return log, err
+		return log, flushSentry, err
 	case <-ctx.Done():
 	}
 
@@ -252,7 +287,7 @@ func run(log *slog.Logger) (*slog.Logger, error) {
 		log.Warn("timed out waiting for the final click-stats flush")
 	}
 
-	return log, shutdownErr
+	return log, flushSentry, shutdownErr
 }
 
 // clickStatsFlush adapts the recorder's rows onto the generated batch upsert.
