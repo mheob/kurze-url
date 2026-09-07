@@ -72,9 +72,9 @@ One project for `apps/api` (platform: Go), one for `apps/web` (platform: TanStac
 
 Settings → Security & Privacy → "Prevent Storing of IP Addresses". This is not optional and not replaceable by an SDK flag: browser events reach Sentry from the visitor's own connection, so Sentry's ingest sees the real address regardless of what the SDK sends.
 
-- [ ] **Step 3: Create a Sentry auth token**
+- [ ] **Step 3: Create a Sentry organization auth token**
 
-Scopes: `project:releases` and `org:read` (what source-map upload needs). This is a build-time secret, never a runtime one.
+Settings → Developer Settings → Organization Tokens → "Create New Token". Its single scope, `org:ci`, is fixed and not selectable: it already covers release creation and source-map upload, which is the whole of what the build needs. A personal token would express the same capability as `project:releases` plus `org:read`, but is bound to one user and reaches every organization that user can see — prefer the organization token. The value is shown once. This is a build-time secret, never a runtime one.
 
 - [ ] **Step 4: Create the Better Stack account and three monitors**
 
