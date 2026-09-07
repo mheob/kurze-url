@@ -1,9 +1,33 @@
+import { sentryTanstackStart } from '@sentry/tanstackstart-react/vite';
 import tailwindcss from '@tailwindcss/vite';
 import { devtools } from '@tanstack/devtools-vite';
 import { nitroV2Plugin } from '@tanstack/nitro-v2-vite-plugin';
 import { tanstackStart } from '@tanstack/react-start/plugin/vite';
 import viteReact from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
+
+/**
+ * Only with a token, so a local build and a fork's build still work — the
+ * plugin is not registered at all without it rather than registered and
+ * failing.
+ *
+ * `filesToDeleteAfterUpload` is not optional tidying. Uploading the maps
+ * makes stack traces readable in Sentry; leaving them in the deployed output
+ * publishes this app's source next to its bundle, which is worse than the
+ * minified traces the upload was meant to fix.
+ */
+const sentryPlugins = process.env.SENTRY_AUTH_TOKEN
+	? [
+			sentryTanstackStart({
+				authToken: process.env.SENTRY_AUTH_TOKEN,
+				org: process.env.SENTRY_ORG,
+				project: process.env.SENTRY_PROJECT,
+				sourcemaps: {
+					filesToDeleteAfterUpload: ['./dist/**/*.map', './.vercel/output/**/*.map'],
+				},
+			}),
+		]
+	: [];
 
 const config = defineConfig({
 	// `tanstackStart` alone emits a plain Vite build: `dist/client` plus a
@@ -23,6 +47,8 @@ const config = defineConfig({
 		tanstackStart(),
 		nitroV2Plugin({ compatibilityDate: '2026-09-04' }),
 		viteReact(),
+		// Last, as Sentry's own setup guide requires.
+		...sentryPlugins,
 	],
 	// Vercel sets VERCEL_ENV and VERCEL_GIT_COMMIT_SHA on the build, without
 	// the VITE_ prefix Vite needs to expose a value to the browser bundle.
