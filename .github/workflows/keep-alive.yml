@@ -1,0 +1,58 @@
+# Supabase's free tier pauses a project after seven days without activity.
+# Production survives on the Better Stack monitor's three-minute polling of
+# /health/deep; the preview project sees no traffic at all between pull
+# requests, and would pause exactly when a pull request next needs it.
+#
+# The production step here is not redundancy for its own sake. Without it,
+# production's keep-alive depends entirely on Better Stack continuing to run:
+# a paused monitor, a mistyped header or a change to their free tier and the
+# project pauses a week later with nothing having said so.
+name: keep alive
+
+on:
+  schedule:
+    # Not on the hour: GitHub queues every scheduled job at :00 and runs the
+    # backlog late.
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/keep-alive.yml
+
+concurrency:
+  group: keep-alive
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Touch the preview database
+        env:
+          PREVIEW_DATABASE_URL: ${{ secrets.E2E_DATABASE_URL }}
+        run: |
+          if [ -z "$PREVIEW_DATABASE_URL" ]; then
+            echo "E2E_DATABASE_URL is not set" >&2
+            exit 1
+          fi
+          psql "$PREVIEW_DATABASE_URL" --no-psqlrc --quiet -c 'select 1'
+
+      # Skipped on pull requests: /health/deep only reaches production when
+      # this branch merges, so running it here would fail for a reason that
+      # has nothing to do with the change under review. It proves itself on
+      # the first scheduled run, or immediately via workflow_dispatch.
+      - name: Touch the production API
+        if: github.event_name != 'pull_request'
+        env:
+          HEALTH_CHECK_TOKEN: ${{ secrets.HEALTH_CHECK_TOKEN }}
+        run: |
+          if [ -z "$HEALTH_CHECK_TOKEN" ]; then
+            echo "HEALTH_CHECK_TOKEN is not set" >&2
+            exit 1
+          fi
+          curl --fail --silent --show-error \
+            --header "X-Health-Token: $HEALTH_CHECK_TOKEN" \
+            https://api.kurze-url.app/health/deep
