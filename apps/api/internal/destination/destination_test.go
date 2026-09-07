@@ -42,15 +42,22 @@ func TestValidateRejectsEverySchemeButHTTPS(t *testing.T) {
 
 func TestValidateRejectsPrivateAndLocalAddresses(t *testing.T) {
 	for name, raw := range map[string]string{
-		"loopback v4":  "https://127.0.0.1/admin",
-		"loopback v6":  "https://[::1]/admin",
-		"private 10":   "https://10.0.0.1/",
-		"private 172":  "https://172.16.4.9/",
-		"private 192":  "https://192.168.1.1/",
-		"link-local":   "https://169.254.169.254/latest/meta-data/",
-		"unique-local": "https://[fd00::1]/",
-		"multicast":    "https://224.0.0.1/",
-		"unspecified":  "https://0.0.0.0/",
+		"loopback v4":             "https://127.0.0.1/admin",
+		"loopback v6":             "https://[::1]/admin",
+		"private 10":              "https://10.0.0.1/",
+		"private 172":             "https://172.16.4.9/",
+		"private 192":             "https://192.168.1.1/",
+		"link-local":              "https://169.254.169.254/latest/meta-data/",
+		"unique-local":            "https://[fd00::1]/",
+		"multicast":               "https://224.0.0.1/",
+		"unspecified":             "https://0.0.0.0/",
+		"cgnat":                   "https://100.64.0.1/",
+		"cgnat upper bound":       "https://100.127.255.254/",
+		"ietf protocol assign.":   "https://192.0.0.8/",
+		"benchmarking":            "https://198.18.0.1/",
+		"reserved class e":        "https://240.0.0.1/",
+		"broadcast (class e)":     "https://255.255.255.254/",
+		"nat64 well-known prefix": "https://[64:ff9b::93.184.216.34]/",
 	} {
 		t.Run(name, func(t *testing.T) {
 			require.ErrorIs(t, destination.Validate(raw, self), destination.ErrPrivateAddress)
@@ -96,4 +103,27 @@ func TestIsPublicIsReachableByOtherPackages(t *testing.T) {
 	require.False(t, destination.IsPublic(net.ParseIP("10.0.0.1")))
 	require.False(t, destination.IsPublic(net.ParseIP("::1")))
 	require.True(t, destination.IsPublic(net.ParseIP("93.184.216.34")))
+}
+
+func TestIsPublicRejectsRoutableLookingButNonPublicRanges(t *testing.T) {
+	// These ranges are real, assigned address space — a DNS answer or a NAT64
+	// gateway can legitimately hand one back — which is exactly what makes
+	// them dangerous to miss, unlike loopback/RFC1918/link-local, which no
+	// resolver returns for a real destination by accident.
+	for name, ip := range map[string]string{
+		"cgnat (RFC 6598)":               "100.64.0.1",
+		"cgnat upper bound":              "100.127.255.254",
+		"ietf protocol assignments":      "192.0.0.8",
+		"benchmarking (RFC 2544)":        "198.18.0.1",
+		"reserved class e (RFC 1112)":    "240.0.0.1",
+		"broadcast, inside class e":      "255.255.255.254",
+		"nat64 well-known prefix v4 end": "64:ff9b::5db8:d822", // ::93.184.216.34
+	} {
+		t.Run(name, func(t *testing.T) {
+			require.False(t, destination.IsPublic(net.ParseIP(ip)), "%s must not be public", ip)
+		})
+	}
+
+	require.True(t, destination.IsPublic(net.ParseIP("64:ff9c::1")),
+		"one bit past the NAT64 prefix must not be swept in by an off-by-one mask")
 }

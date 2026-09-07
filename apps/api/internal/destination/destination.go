@@ -71,6 +71,49 @@ func Validate(raw string, selfHostnames []string) error {
 	return nil
 }
 
+// nonPublicRanges lists CIDR blocks IsPublic must reject that net.IP's own
+// IsPrivate/IsLinkLocalUnicast/etc. predicates do not cover. Each is real,
+// assigned address space a resolver can legitimately hand back — not merely
+// reserved-on-paper — which is exactly what makes leaving it out dangerous:
+// this predicate stopped being link-validation-only the day
+// refuseNonPublicAddress (internal/domainverify) started relying on it to
+// decide what the verification probe may connect to.
+var nonPublicRanges = mustParseCIDRs(
+	// RFC 6598 — carrier-grade NAT (CGNAT). Several large ISPs and cloud
+	// providers route real internal traffic here; it is not unused space
+	// reserved "just in case".
+	"100.64.0.0/10",
+	// RFC 6890 — IETF Protocol Assignments, including the DNS64/NAT64
+	// discovery prefix's own host range. Not routed on the public internet.
+	"192.0.0.0/24",
+	// RFC 2544 — benchmarking. Reserved for device test labs, never routed
+	// on the public internet.
+	"198.18.0.0/15",
+	// RFC 1112 — reserved for future use ("Class E"). No public route has
+	// ever existed for it.
+	"240.0.0.0/4",
+	// RFC 6052 — the well-known NAT64 prefix. An address here embeds an
+	// IPv4 address that a NAT64 gateway translates and connects to on this
+	// instance's behalf, so it must be judged by the same rule as an IPv4
+	// literal above it — otherwise a gateway mapping it to a private v4
+	// address would dial straight past every check this package does.
+	"64:ff9b::/96",
+)
+
+func mustParseCIDRs(cidrs ...string) []*net.IPNet {
+	nets := make([]*net.IPNet, len(cidrs))
+	for i, cidr := range cidrs {
+		_, ipNet, err := net.ParseCIDR(cidr)
+		if err != nil {
+			// Only ever reachable via a typo in the literals above, at
+			// package init — never with attacker-controlled input.
+			panic(fmt.Sprintf("destination: invalid CIDR literal %q: %v", cidr, err))
+		}
+		nets[i] = ipNet
+	}
+	return nets
+}
+
 // IsPublic reports whether an address literal is one a browser could
 // meaningfully be sent to across the internet. Exported because
 // internal/domainverify applies the same predicate to the address a
@@ -92,6 +135,11 @@ func IsPublic(ip net.IP) bool {
 	// and documents the intent.
 	if v6 := ip.To16(); v6 != nil && ip.To4() == nil && v6[0]&0xfe == 0xfc {
 		return false
+	}
+	for _, r := range nonPublicRanges {
+		if r.Contains(ip) {
+			return false
+		}
 	}
 	return true
 }
