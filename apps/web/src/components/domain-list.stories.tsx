@@ -11,11 +11,11 @@ function domain(overrides: Partial<ApiDomain> = {}): ApiDomain {
 		id: 'domain-1',
 		records: {
 			cname: { name: 'links.verein.test', value: 'cname.vercel-dns.com' },
-			txt: { name: '_kurze-url-challenge.links.verein.test', value: 'a1b2c3d4e5f6' },
+			txt: { name: '_kurze-url-challenge.links.verein.test', value: 'example-txt-token' },
 		},
 		team_id: 'team-a',
 		verification_status: 'pending',
-		verification_token: 'a1b2c3d4e5f6',
+		verification_token: 'example-txt-token',
 		verified_at: null,
 		...overrides,
 	};
@@ -109,9 +109,12 @@ export const Mixed: StoryObj<typeof meta> = {
 				id: 'domain-2',
 				records: {
 					cname: { name: 'kurz.other-verein.test', value: 'cname.vercel-dns.com' },
-					txt: { name: '_kurze-url-challenge.kurz.other-verein.test', value: 'f6e5d4c3b2a1' },
+					txt: {
+						name: '_kurze-url-challenge.kurz.other-verein.test',
+						value: 'example-txt-token-two',
+					},
 				},
-				verification_token: 'f6e5d4c3b2a1',
+				verification_token: 'example-txt-token-two',
 			}),
 		],
 	},
