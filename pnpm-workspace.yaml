@@ -3,9 +3,15 @@ packages:
   - packages/*
 
 allowBuilds:
-  # Its postinstall only downloads the sentry-cli binary, needed for the
-  # source-map upload plugin — that lands in a later task (source maps), not
-  # this one. Left disallowed until that task actually needs the binary.
+  # Stays false, and the source-map upload works anyway: @sentry/cli ships its
+  # binary through platform-specific optional dependencies, which are in the
+  # lockfile and are installed like any other package. Its postinstall script
+  # is only a fallback that downloads the binary when no matching optional
+  # dependency exists — a case this repo's supported platforms do not hit.
+  # Allowing it would buy nothing and hand an install-time network fetch a
+  # postinstall script it does not need. If a source-map upload ever fails,
+  # this flag is not the cause; look at SENTRY_AUTH_TOKEN and the org/project
+  # settings in apps/web/vite.config.ts first.
   "@sentry/cli": false
   better-sqlite3: true
   esbuild: true

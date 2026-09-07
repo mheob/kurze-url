@@ -15,6 +15,10 @@ import { defineConfig } from 'vite';
  * makes stack traces readable in Sentry; leaving them in the deployed output
  * publishes this app's source next to its bundle, which is worse than the
  * minified traces the upload was meant to fix.
+ *
+ * All three output directories are listed, not just the two Vercel produces:
+ * `./.output` is what a local or self-hosted `pnpm build` writes (Nitro's
+ * default), and a glob that misses it deletes nothing there.
  */
 const sentryPlugins = process.env.SENTRY_AUTH_TOKEN
 	? [
@@ -23,7 +27,11 @@ const sentryPlugins = process.env.SENTRY_AUTH_TOKEN
 				org: process.env.SENTRY_ORG,
 				project: process.env.SENTRY_PROJECT,
 				sourcemaps: {
-					filesToDeleteAfterUpload: ['./dist/**/*.map', './.vercel/output/**/*.map'],
+					filesToDeleteAfterUpload: [
+						'./dist/**/*.map',
+						'./.output/**/*.map',
+						'./.vercel/output/**/*.map',
+					],
 				},
 			}),
 		]
