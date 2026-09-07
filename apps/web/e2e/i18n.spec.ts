@@ -146,7 +146,18 @@ for (const suffix of AUTHENTICATED_PATHS) {
 			// Created once, before either language visits the page, so both passes
 			// compare the same rendered list.
 			await page.goto(`/teams/${teamId}/links/new`);
-			await page.getByLabel(/destination/i).fill(I18N_CRAWL_DESTINATION_URL);
+
+			// The same guard the domains branch below uses, and for the same
+			// reason: `goto` resolves on `load`, which this server-rendered form
+			// reaches before React attaches, so a value typed in that window never
+			// reaches React's state and the form submits empty. This branch went
+			// without it until 2026-09-07, when it failed in CI on exactly that —
+			// `links.spec.ts`'s own creation passed in the same run because it has
+			// always had the guard.
+			const destination = page.getByLabel(/destination/i);
+			await waitForHydration(destination);
+			await destination.fill(I18N_CRAWL_DESTINATION_URL);
+
 			await page.getByRole('button', { name: /save/i }).click();
 			await expect(page.getByText(I18N_CRAWL_DESTINATION_URL)).toBeVisible();
 
