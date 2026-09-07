@@ -3,6 +3,10 @@ packages:
   - packages/*
 
 allowBuilds:
+  # Its postinstall only downloads the sentry-cli binary, needed for the
+  # source-map upload plugin — that lands in a later task (source maps), not
+  # this one. Left disallowed until that task actually needs the binary.
+  "@sentry/cli": false
   better-sqlite3: true
   esbuild: true
   lefthook: true

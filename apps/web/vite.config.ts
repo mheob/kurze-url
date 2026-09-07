@@ -24,6 +24,17 @@ const config = defineConfig({
 		nitroV2Plugin({ compatibilityDate: '2026-09-04' }),
 		viteReact(),
 	],
+	// Vercel sets VERCEL_ENV and VERCEL_GIT_COMMIT_SHA on the build, without
+	// the VITE_ prefix Vite needs to expose a value to the browser bundle.
+	// Defining them here keeps the release identical to the API's — one bad
+	// deployment stays correlatable across both Sentry projects — without
+	// two more variables to set by hand and keep in step.
+	define: {
+		'import.meta.env.VITE_SENTRY_ENVIRONMENT': JSON.stringify(
+			process.env.VERCEL_ENV ?? 'development',
+		),
+		'import.meta.env.VITE_SENTRY_RELEASE': JSON.stringify(process.env.VERCEL_GIT_COMMIT_SHA ?? ''),
+	},
 	resolve: { tsconfigPaths: true },
 });
 
