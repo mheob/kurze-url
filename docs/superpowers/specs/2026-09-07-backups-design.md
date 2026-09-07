@@ -50,13 +50,17 @@ This is exactly the failure the success criterion is worded to catch: "can log i
 
 That split is exactly right and needs no coaxing: a fresh project brings its own correctly versioned `auth` schema, which must not be overwritten, while the user rows inside it are precisely what has to come back. Three invocations:
 
-| Command                                   | Output       | Contents                 |
-| ----------------------------------------- | ------------ | ------------------------ |
-| `supabase db dump --role-only`            | `roles.sql`  | cluster roles            |
-| `supabase db dump`                        | `schema.sql` | `public`, without `auth` |
-| `supabase db dump --data-only --use-copy` | `data.sql`   | `public` and `auth` data |
+| Command | Output | Contents |
+| --- | --- | --- |
+| `supabase db dump --role-only` | `roles.sql` | cluster roles |
+| `supabase db dump` | `schema.sql` | `public`, without `auth` |
+| `supabase db dump --data-only --use-copy -s auth,public` | `data.sql` | `public` and `auth` data |
 
 Restored in that order. This is the path Supabase's own restore documentation describes, not an invention of ours.
+
+**Corrected 2026-09-07 by the local drill: the data dump needs `-s auth,public`.** Left to its default the CLI dumps every schema, which pulls in the platform-owned `storage` tables. They are empty here — this project stores no files — but a `COPY` into a table owned by `supabase_storage_admin` still needs write permission the restoring role does not have, and because a restore runs in a single transaction, `permission denied for table buckets_vectors` rolled back every user, team and link with it. The drill also ruled out the narrower fix of excluding those tables by name: the local stack already carried `iceberg_namespaces` and `iceberg_tables` that production did not, so such a list would go stale the moment Supabase adds a table, and the discovery would come during a restore. An allowlist of the two schemas we own cannot rot that way.
+
+**`roles.sql` is the one file whose failure is not fatal**, also settled by that drill. It contains no `CREATE ROLE`: every role it names is one Supabase provisions itself, so the file only tunes settings a fresh project already carries. Its `GRANT SET ON PARAMETER "log_min_messages"` needs rights the restoring role lacks, and stopping a restore over a grant the platform has already made would be the wrong trade. Whether a hosted restore hits the same error is for the hosted drill to settle.
 
 **`supabase_migrations` is excluded from the data dump.** A restored project therefore has a complete schema and an empty migration history, and the Supabase GitHub integration would try to apply every migration again on the next merge to `main`. The procedure ends with `supabase migration repair`; without it, the first merge after a restore damages what was just recovered.
 
