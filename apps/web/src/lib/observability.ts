@@ -16,6 +16,30 @@ const ALLOWED_HEADERS = new Set(['user-agent']);
 const IP_OR_USER_LIKE_KEYS = ['forwarded', '-ip', 'remote-', 'via', '-user'];
 
 /**
+ * Breadcrumb `data` keys that carry a URL. `@sentry/browser`'s breadcrumbs
+ * integration builds `fetch`/`xhr` breadcrumb data as
+ * `{ ...fetchData, status_code }` / `{ method, url, status_code }` — both
+ * `url` — and navigation breadcrumb data as `{ from, to }`. None of these
+ * three go through any sanitization step in the SDK.
+ *
+ * Swept unconditionally on every breadcrumb rather than gated by
+ * `category`: a category allowlist would need to track the SDK's breadcrumb
+ * category names across majors (the same reason `console` filtering below
+ * matches on data shape, not on the integration that produced it), and
+ * these three key names are specific enough that stripping a query string
+ * off whatever they hold is safe even on a breadcrumb category that turns
+ * out not to carry a URL after all.
+ */
+const BREADCRUMB_URL_KEYS = ['from', 'to', 'url'] as const;
+
+/** Strips the query string off a URL. Shared by `request.url` and every breadcrumb field that carries a URL. */
+function stripQueryString(url: string): string {
+	// `split` on a non-empty separator always yields at least one element;
+	// the `?? url` only satisfies `noUncheckedIndexedAccess`, it is never hit.
+	return url.split('?')[0] ?? url;
+}
+
+/**
  * `beforeSend`, and the thing that actually enforces this project's rule
  * about what may leave a visitor's browser. `dataCollection` below reduces
  * what is collected; this guarantees what is sent.
@@ -37,6 +61,19 @@ export function scrubEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
 		// rather than by disabling the breadcrumbs integration, so the
 		// guarantee survives an SDK major renaming that integration.
 		event.breadcrumbs = event.breadcrumbs.filter((crumb) => crumb.category !== 'console');
+
+		for (const crumb of event.breadcrumbs) {
+			const { data } = crumb;
+			if (!data) continue;
+
+			for (const key of BREADCRUMB_URL_KEYS) {
+				// `Breadcrumb.data` is typed `{ [key: string]: any }` by the
+				// SDK; the annotation narrows the read to `unknown` so it is
+				// checked below instead of trusted.
+				const value: unknown = data[key];
+				if (typeof value === 'string') data[key] = stripQueryString(value);
+			}
+		}
 	}
 
 	const { request } = event;
@@ -44,7 +81,7 @@ export function scrubEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
 		delete request.cookies;
 		delete request.data;
 		delete request.query_string;
-		if (request.url) request.url = request.url.split('?')[0];
+		if (request.url) request.url = stripQueryString(request.url);
 		if (request.headers) {
 			request.headers = Object.fromEntries(
 				Object.entries(request.headers).filter(([name]) => ALLOWED_HEADERS.has(name.toLowerCase())),
@@ -85,24 +122,58 @@ export function reportUnexpected(error: unknown): void {
 
 /**
  * `dataCollection` is the v10 replacement for the deprecated
- * `sendDefaultPii: false`, in the conservative shape Sentry's own options
- * documentation gives for preserving that behaviour. It is defence in depth
- * next to `scrubEvent`, not a substitute for it.
+ * `sendDefaultPii: false`. It is defence in depth next to `scrubEvent`, not
+ * a substitute for it.
  *
- * No tracing and no replay: `tracesSampleRate` stays unset, and replay would
- * be PII capture by design.
+ * `@sentry/core`'s `resolveDataCollectionOptions` falls back to its own
+ * permissive `DEFAULTS` — not the `sendDefaultPii: false` off-state — for
+ * every field this object does not set, the instant `dataCollection` is
+ * present at all (`options.dataCollection != null ? DEFAULTS : …`). A
+ * partial object here does not narrow collection, it silently widens
+ * whatever it leaves out — `databaseQueryData` defaults to `true`, and
+ * `@sentry/core` ships a Supabase integration this app uses, so a field
+ * left unset today can start attaching query values and returned rows
+ * tomorrow with nobody having touched this file.
+ *
+ * So every field of `DataCollection` (`@sentry/core`'s
+ * `types/datacollection.d.ts`) is set explicitly below, to the value
+ * `sendDefaultPii: false` itself resolves to
+ * (`defaultPiiToCollectionOptions(false)`) unless a comment says otherwise.
+ * The deprecated `queryParams` field is the one omission: `urlQueryParams`
+ * below already resolves first (`dc.urlQueryParams ?? dc.queryParams ?? …`),
+ * so `queryParams` is never consulted.
  */
 export function sentryOptions(dsn: string): Parameters<typeof Sentry.init>[0] {
 	return {
 		beforeSend: scrubEvent,
 		dataCollection: {
 			cookies: { deny: IP_OR_USER_LIKE_KEYS },
+			// The off-state's `false` (Supabase, Postgres, MySQL, ORMs …). No
+			// such integration is in use, but this is the field the DEFAULTS
+			// fallback would otherwise flip to `true` unnoticed.
+			databaseQueryData: false,
+			// The type's own `@default 5` is stale — both the on- and
+			// off-state actually resolve this to 7 (a comment in
+			// `defaultPiiToCollectionOptions` notes the mismatch); matching
+			// the off-state's real value, not its doc comment.
+			frameContextLines: 7,
 			genAI: { inputs: false, outputs: false },
+			// The off-state's `true`: the SDK redacts literal values out of
+			// the GraphQL document at collection time, so this was always
+			// sent regardless of `sendDefaultPii`. No GraphQL integration is
+			// enabled here either way.
+			graphQL: { document: true, variables: true },
 			httpBodies: [],
 			httpHeaders: {
 				request: { deny: IP_OR_USER_LIKE_KEYS },
 				response: { deny: IP_OR_USER_LIKE_KEYS },
 			},
+			// The off-state's `true`: stack-frame local variables are not
+			// gated by `sendDefaultPii` either. Left matching the off-state
+			// rather than narrowed further, since that narrowing belongs to
+			// a decision about this field specifically, not to closing the
+			// DEFAULTS trap this fix targets.
+			stackFrameVariables: true,
 			urlQueryParams: { deny: IP_OR_USER_LIKE_KEYS },
 			userInfo: false,
 		},
