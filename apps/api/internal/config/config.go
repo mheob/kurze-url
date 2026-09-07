@@ -77,6 +77,16 @@ type Config struct {
 	// the uptime monitor alerts on the 404.
 	HealthCheckToken string
 
+	// SentryDSN empty disables error reporting entirely. Errors are still
+	// logged; they just do not outlive Vercel's log retention.
+	SentryDSN string
+
+	// Environment and Release tag every Sentry event. Release is the commit
+	// sha, and apps/web sends the same value, so one bad deployment is
+	// correlatable across both projects.
+	Environment string
+	Release     string
+
 	LinkCacheTTL     time.Duration
 	NotFoundCacheTTL time.Duration
 	UniqueVisitorTTL time.Duration
@@ -167,6 +177,10 @@ func Load() (Config, error) {
 	cfg.DomainDNSTarget = env("DOMAIN_DNS_TARGET", "cname.vercel-dns.com")
 
 	cfg.HealthCheckToken = os.Getenv("HEALTH_CHECK_TOKEN")
+
+	cfg.SentryDSN = os.Getenv("SENTRY_DSN")
+	cfg.Environment = env("VERCEL_ENV", "development")
+	cfg.Release = os.Getenv("VERCEL_GIT_COMMIT_SHA")
 
 	return cfg, nil
 }

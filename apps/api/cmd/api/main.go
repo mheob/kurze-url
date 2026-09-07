@@ -22,6 +22,7 @@ import (
 	"github.com/mheob/kurze-url/apps/api/internal/config"
 	"github.com/mheob/kurze-url/apps/api/internal/db"
 	"github.com/mheob/kurze-url/apps/api/internal/domainverify"
+	"github.com/mheob/kurze-url/apps/api/internal/observability"
 	"github.com/mheob/kurze-url/apps/api/internal/supabase"
 )
 
@@ -32,24 +33,52 @@ const (
 
 func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	if err := run(log); err != nil {
+	log, err := run(log)
+	if err != nil {
 		log.Error("api exited with error", "error", err)
 		os.Exit(1)
 	}
 }
 
-func run(log *slog.Logger) error {
+// run returns the logger it ended up using alongside any error, so that
+// main's own fatal-exit log call goes through the Sentry-reporting handler
+// whenever one was installed. A *slog.Logger is a pointer, so reassigning
+// the local "log" parameter inside run — as the Sentry-wrap below does —
+// cannot be observed by main's own "log" variable; returning it is the only
+// way main sees the wrapped logger. Every return path below returns log as
+// it stands at that point, including the early ones that fail before the
+// wrap ever happens — those callers still get a usable, if unwrapped,
+// logger back.
+func run(log *slog.Logger) (*slog.Logger, error) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	cfg, err := config.Load()
 	if err != nil {
-		return err
+		return log, err
+	}
+
+	// As early as the DSN is known, which is after config.Load — the
+	// last-gasp log in main() therefore stays unreported. That is accepted:
+	// wrapping it would mean initialising Sentry before the configuration
+	// that carries the DSN.
+	flushSentry, err := observability.Init(cfg.SentryDSN, cfg.Environment, cfg.Release)
+	if err != nil {
+		return log, err
+	}
+	defer flushSentry()
+
+	if cfg.SentryDSN == "" {
+		log.Warn("SENTRY_DSN is unset — errors are logged but not reported")
+	} else {
+		// Every existing Log.Error call site becomes a Sentry event from
+		// here on, including the two in HandleDeepHealth.
+		log = slog.New(observability.NewSlogHandler(log.Handler()))
 	}
 
 	poolCfg, err := pgxpool.ParseConfig(cfg.DatabaseURL)
 	if err != nil {
-		return err
+		return log, err
 	}
 
 	// Production connects through Supavisor's transaction pooler, which
@@ -99,13 +128,13 @@ func run(log *slog.Logger) error {
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
-		return err
+		return log, err
 	}
 	defer pool.Close()
 
 	redis, err := cache.New(cfg.RedisURL)
 	if err != nil {
-		return err
+		return log, err
 	}
 	defer func() { _ = redis.Close() }()
 
@@ -113,7 +142,7 @@ func run(log *slog.Logger) error {
 
 	sharedDomain, err := api.ProvisionSharedDomain(ctx, queries, cfg.SharedDomainHostname)
 	if err != nil {
-		return err
+		return log, err
 	}
 	log.Info("shared domain ready", "hostname", sharedDomain.Hostname, "domain_id", sharedDomain.ID)
 
@@ -140,7 +169,7 @@ func run(log *slog.Logger) error {
 	if cfg.JWKSURL != "" {
 		verifier, err := auth.NewVerifier(ctx, cfg.JWKSURL, cfg.JWTIssuer, cfg.JWTAudience)
 		if err != nil {
-			return err
+			return log, err
 		}
 		deps.Verifier = verifier
 	} else {
@@ -161,7 +190,7 @@ func run(log *slog.Logger) error {
 			// instead of refusing to start over one optional feature.
 			log.Warn("supabase auth url is unset — team invitations are disabled")
 		case err != nil:
-			return fmt.Errorf("configure the supabase admin client: %w", err)
+			return log, fmt.Errorf("configure the supabase admin client: %w", err)
 		default:
 			deps.Admin = admin
 			log.Info("supabase invitations enabled")
@@ -201,7 +230,7 @@ func run(log *slog.Logger) error {
 
 	select {
 	case err := <-errCh:
-		return err
+		return log, err
 	case <-ctx.Done():
 	}
 
@@ -223,7 +252,7 @@ func run(log *slog.Logger) error {
 		log.Warn("timed out waiting for the final click-stats flush")
 	}
 
-	return shutdownErr
+	return log, shutdownErr
 }
 
 // clickStatsFlush adapts the recorder's rows onto the generated batch upsert.
