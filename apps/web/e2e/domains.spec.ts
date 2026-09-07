@@ -15,12 +15,18 @@ import { waitForHydration } from './fixtures/hydration';
  * also confirms that refetch landed — the state the DNS records table and
  * the "Check now" control both depend on being rendered at all.
  *
- * `domain.hostname` is globally unique (`domain` has a bare `unique` on the
- * column, not scoped by team — `supabase/migrations/20260902075125_initial_schema.sql`),
- * and this suite runs against a shared preview database, so every caller
- * gets its own hostname built from `Date.now()` rather than a fixed literal:
- * a rerun of this file, or `i18n.spec.ts`'s own claim, must not collide with
- * this one.
+ * `domain.hostname` no longer carries a global unique constraint — this
+ * branch drops it (`supabase/migrations/20260906122341_custom_domains.sql`,
+ * `alter table domain drop constraint domain_hostname_key`), since a
+ * hostname may now be claimed by several teams at once while only one of
+ * them verifies it. A repeated hostname is still a problem here, just a
+ * different one: this suite runs against a shared preview database, and
+ * `claimDomain` asserts on a level-2 heading naming the claimed hostname —
+ * two rows sharing the same hostname would render two matching `<h2>`s and
+ * turn that assertion into a strict-mode violation. Every caller therefore
+ * still gets its own hostname built from `Date.now()` rather than a fixed
+ * literal: a rerun of this file, or `i18n.spec.ts`'s own claim, must not
+ * collide with this one.
  */
 async function claimDomain(page: Page, teamId: string): Promise<string> {
 	await page.goto(`/teams/${teamId}/domains`);

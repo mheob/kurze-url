@@ -164,11 +164,16 @@ for (const suffix of AUTHENTICATED_PATHS) {
 		}
 
 		if (suffix === 'domains') {
-			// `domain.hostname` is globally unique (a bare `unique` on the column,
-			// not scoped by team), and this suite runs against a shared preview
-			// database — a fixed literal like `I18N_CRAWL_DESTINATION_URL` above
-			// would collide with a rerun of this same crawl, or with
-			// `domains.spec.ts`'s own claims, against that same database.
+			// `domain.hostname` carries no unique constraint any more — a hostname
+			// may be claimed by several teams at once (see the comment on
+			// `claimDomain` in `domains.spec.ts`) — but a repeated one would still
+			// break this crawl: below, a level-2 heading naming `hostname` is
+			// asserted to resolve to exactly one element, and two domain rows
+			// sharing the same hostname would turn that into a strict-mode
+			// violation. This suite also runs against a shared preview database, so
+			// a fixed literal like `I18N_CRAWL_DESTINATION_URL` above would collide
+			// with a rerun of this same crawl, or with `domains.spec.ts`'s own
+			// claims, against that same database.
 			const hostname = `i18n-${Date.now()}.e2e.test`;
 
 			await page.goto(`/teams/${teamId}/domains`);
