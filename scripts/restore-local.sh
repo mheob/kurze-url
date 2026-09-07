@@ -49,13 +49,6 @@ case "$LOCAL_DB" in
 		;;
 esac
 
-cat >&2 <<'EOF'
-!! This will DROP the public schema and clear the auth tables in the local
-!! Supabase database at 127.0.0.1:54322, then apply the dump on top.
-!! It only ever touches that local database, never anything hosted.
-!! Ctrl-C now if this is the wrong terminal.
-EOF
-
 for f in roles.sql schema.sql data.sql; do
 	if [ ! -s "$DUMP_DIR/$f" ]; then
 		echo "missing or empty: $DUMP_DIR/$f" >&2
@@ -63,10 +56,30 @@ for f in roles.sql schema.sql data.sql; do
 	fi
 done
 
+# Check for the tools before checking whether the database answers. Homebrew's
+# libpq is keg-only, so on macOS psql is installed and still not on PATH — and
+# pg_isready missing then makes the liveness check below fail in a way that
+# reads as "the database is down", sending you to restart a stack that is
+# already running.
+for tool in psql pg_isready; do
+	if ! command -v "$tool" >/dev/null 2>&1; then
+		echo "$tool not found on PATH" >&2
+		echo "on macOS: brew install libpq, then add /opt/homebrew/opt/libpq/bin to PATH" >&2
+		exit 1
+	fi
+done
+
 if ! pg_isready -d "$LOCAL_DB" >/dev/null 2>&1; then
-	echo "local Supabase is not running — start it with 'supabase start'" >&2
+	echo "local Supabase is not answering on 127.0.0.1:54322 — run 'supabase start'" >&2
 	exit 1
 fi
+
+cat >&2 <<'EOF'
+!! This will DROP the public schema and clear the auth tables in the local
+!! Supabase database at 127.0.0.1:54322, then apply the dump on top.
+!! It only ever touches that local database, never anything hosted.
+!! Ctrl-C now if this is the wrong terminal.
+EOF
 
 echo "resetting local database to empty"
 psql "$LOCAL_DB" --no-psqlrc --single-transaction --variable ON_ERROR_STOP=1 <<'SQL'
@@ -76,10 +89,28 @@ grant usage on schema public to postgres, anon, authenticated, service_role;
 truncate auth.users cascade;
 SQL
 
-# ON_ERROR_STOP is the point of this script. Without it psql reports success
-# after skipping every statement that failed, which is how a restore gets
-# declared working when it is not.
-for f in roles.sql schema.sql data.sql; do
+# roles.sql is applied first and is the one file allowed to fail.
+#
+# It contains no CREATE ROLE — every role it names is one Supabase provisions
+# itself — so it only tunes settings a fresh project already carries. One of
+# its statements, a GRANT SET ON PARAMETER to a platform role, needs rights
+# the role doing a restore does not have, and the 2026-09-07 drill hit exactly
+# that. Aborting the whole restore over a grant the platform has already made
+# would be the wrong trade. The error is printed rather than swallowed, and
+# whether a hosted restore hits it too is what the hosted drill settles.
+echo "applying roles.sql"
+if ! psql "$LOCAL_DB" --single-transaction --variable ON_ERROR_STOP=1 -f "$DUMP_DIR/roles.sql"; then
+	echo >&2
+	echo "roles.sql did not apply; continuing anyway — see the comment above this" >&2
+	echo "line in scripts/restore-local.sh for why that is not fatal" >&2
+	echo >&2
+fi
+
+# schema.sql and data.sql are not allowed to fail. ON_ERROR_STOP is the point
+# of this script: without it psql reports success after skipping every
+# statement that failed, which is how a restore gets declared working when it
+# is not.
+for f in schema.sql data.sql; do
 	echo "applying $f"
 	psql "$LOCAL_DB" --single-transaction --variable ON_ERROR_STOP=1 -f "$DUMP_DIR/$f"
 done
