@@ -107,15 +107,65 @@ func TestInfoLogsProduceNoEvent(t *testing.T) {
 }
 
 // The wrapped handler must still be a working logger: swallowing records
-// would trade one blind spot for another.
+// would trade one blind spot for another. The repeated message is the point
+// as much as the two distinct ones — the throttle gates Sentry, never the
+// log, so a suppressed occurrence still has to be written.
 func TestTheInnerHandlerStillReceivesEveryRecord(t *testing.T) {
 	var written []string
 	logger := slog.New(observability.NewSlogHandler(&recordingHandler{lines: &written}))
 
 	logger.Info("kept")
 	logger.Error("also kept")
+	logger.Error("also kept")
 
-	require.Equal(t, []string{"kept", "also kept"}, written)
+	require.Equal(t, []string{"kept", "also kept", "also kept"}, written)
+}
+
+// The budget finding, from the outside: one dependency outage logs the same
+// failure on every request, and at the traffic ceiling this project documents
+// that empties a 5,000-event month in under two hours — after which Sentry
+// answers 429, the transport backs off, and the *next* incident is invisible.
+func TestTheSameMessageIsReportedOncePerWindow(t *testing.T) {
+	logger, ctx, transport := loggerWithFakeSentry(t)
+
+	err := errors.New("connection refused")
+	logger.ErrorContext(ctx, "redirect cache lookup failed", "error", err)
+	logger.ErrorContext(ctx, "redirect cache lookup failed", "error", err)
+	logger.ErrorContext(ctx, "redirect cache lookup failed", "error", err)
+
+	require.Len(t, transport.events, 1)
+}
+
+// Throttled per message, not globally: a second, unrelated failure during the
+// same minute is exactly the thing an incident needs to show, so it must not
+// be swallowed by the first one's window.
+func TestDifferentMessagesAreReportedSeparately(t *testing.T) {
+	logger, ctx, transport := loggerWithFakeSentry(t)
+
+	logger.ErrorContext(ctx, "redirect cache lookup failed")
+	logger.ErrorContext(ctx, "redirect database lookup failed")
+
+	require.Len(t, transport.events, 2)
+}
+
+// The attributes this codebase logs are the difference between an actionable
+// event and a mystery: health.go sends one message for both dependencies, and
+// "dependency" is the only thing that says which one failed. Nothing about
+// Sentry's grouping depended on dropping them — it groups on the exception or
+// the message and on fingerprint, never on a context.
+func TestRecordAttributesReachTheEvent(t *testing.T) {
+	logger, ctx, transport := loggerWithFakeSentry(t)
+
+	logger.ErrorContext(ctx, "deep health check failed",
+		"dependency", "redis", "error", errors.New("connection refused"))
+
+	require.Len(t, transport.events, 1)
+	fields := transport.events[0].Contexts["log"]
+	require.Equal(t, "redis", fields["dependency"])
+	// "error" is the exception already; repeating it as data would say the
+	// same thing twice.
+	require.NotContains(t, fields, "error")
+	require.Contains(t, eventException(transport.events[0]), "connection refused")
 }
 
 type recordingHandler struct{ lines *[]string }
