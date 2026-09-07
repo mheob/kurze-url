@@ -7,7 +7,7 @@ It lives here, in the public repository, on purpose: a recovery procedure stored
 ## What you need
 
 - The `age` **private** key. Without it every backup is unreadable, and no backup contains it. You stored two copies in separate places.
-- `age`, `tar`, the `supabase` CLI, `psql`, and `gh`.
+- `age`, `tar`, the `supabase` CLI, `psql`, and `gh`. On macOS `psql` comes from Homebrew's `libpq`, which is keg-only — `brew install libpq` leaves it installed and not on `PATH`, so add `/opt/homebrew/opt/libpq/bin` before you start.
 - Access to the Supabase account and both Vercel projects.
 
 ## What a restore does not bring back
@@ -51,7 +51,15 @@ psql "$NEW_DATABASE_URL" --single-transaction --variable ON_ERROR_STOP=1 -f rest
 
 Order is not cosmetic: roles are referenced by the schema, and the schema is referenced by the data. `ON_ERROR_STOP=1` matters as much — without it `psql` reports success after skipping every statement that failed.
 
-The schema file deliberately does not contain the `auth` schema; the new project brought its own. The data file deliberately does contain `auth` data, which is how the users come back.
+The schema file deliberately does not contain the `auth` schema; the new project brought its own. The data file deliberately does contain `auth` data, which is how the users come back, and deliberately contains nothing else: it is dumped with `-s auth,public`, so the platform's own schemas are not in it.
+
+**`roles.sql` is the one file allowed to fail.** It contains no `CREATE ROLE` — every role it names is one Supabase provisions itself — so all it does is tune settings a fresh project already carries. One of its statements is a `GRANT SET ON PARAMETER` to a platform role, and the role you are restoring as may not be allowed to make it:
+
+```
+ERROR:  permission denied for parameter log_min_messages
+```
+
+Read that, and carry on to `schema.sql`. The grant already exists on the new project; it is the platform's to make. A failure in `schema.sql` or `data.sql` is a different matter and must stop you.
 
 ### 5. Repair the migration history
 
