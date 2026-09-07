@@ -130,7 +130,7 @@ func run(log *slog.Logger) error {
 		// would rebuild its transport every time and defeat the connection
 		// settings (dialer Control hook, disabled keep-alives, timeouts)
 		// domainverify.NewVerifier configures.
-		DomainVerifier: domainverify.NewVerifier(),
+		DomainVerifier: domainverify.NewVerifier(log),
 		Log:            log,
 	}
 

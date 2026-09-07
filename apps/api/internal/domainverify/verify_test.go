@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
@@ -14,6 +15,28 @@ import (
 
 	"github.com/mheob/kurze-url/apps/api/internal/domainverify"
 )
+
+// discardLogger is passed to domainverify.NewVerifier so its logging is
+// exercised the same way production wires it, without spamming test output.
+func discardLogger() *slog.Logger {
+	return slog.New(slog.DiscardHandler)
+}
+
+// capturingHandler records every slog.Record handed to it, so a test can
+// assert on what Check actually logged rather than only on its return value.
+type capturingHandler struct {
+	records []slog.Record
+}
+
+func (h *capturingHandler) Enabled(context.Context, slog.Level) bool { return true }
+
+func (h *capturingHandler) Handle(_ context.Context, r slog.Record) error {
+	h.records = append(h.records, r)
+	return nil
+}
+
+func (h *capturingHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h *capturingHandler) WithGroup(string) slog.Handler      { return h }
 
 type fakeResolver struct {
 	values []string
@@ -69,6 +92,43 @@ func TestCheck(t *testing.T) {
 		reason, err := v.Check(t.Context(), "links.verein.de", "tok-a")
 		require.NoError(t, err)
 		require.Equal(t, domainverify.ReasonTokenMissing, reason)
+	})
+
+	t.Run("logs a genuine resolver failure instead of failing silently", func(t *testing.T) {
+		// Finding 8: swallowing this error with no log line means a resolver
+		// outage is reported to a Verein as "your TXT record is not visible
+		// yet" — a wrong instruction, since nothing is wrong with their DNS —
+		// with no operator-visible signal anywhere that the resolver itself is
+		// the thing actually broken.
+		handler := &capturingHandler{}
+		resolverErr := errors.New("resolver: server misbehaving")
+		v := &domainverify.Verifier{
+			Resolver: fakeResolver{err: resolverErr},
+			Client:   okProbe(),
+			Log:      slog.New(handler),
+		}
+		reason, err := v.Check(t.Context(), "links.verein.de", "tok-a")
+		require.NoError(t, err)
+		require.Equal(t, domainverify.ReasonTokenMissing, reason,
+			"the reason a Verein sees must not change — only whether the failure is logged")
+
+		require.Len(t, handler.records, 1, "the swallowed resolver error must be logged exactly once")
+		require.Contains(t, handler.records[0].Message, "TXT lookup failed")
+	})
+
+	t.Run("does not log the ordinary not-yet-published case", func(t *testing.T) {
+		// IsNotFound is the expected, common state for a domain that was just
+		// claimed — logging it on every single check would bury the genuine
+		// failure the test above exists to surface.
+		handler := &capturingHandler{}
+		v := &domainverify.Verifier{
+			Resolver: fakeResolver{err: &net.DNSError{IsNotFound: true}},
+			Client:   okProbe(),
+			Log:      slog.New(handler),
+		}
+		_, err := v.Check(t.Context(), "links.verein.de", "tok-a")
+		require.NoError(t, err)
+		require.Empty(t, handler.records)
 	})
 
 	t.Run("reports a wrong record", func(t *testing.T) {
@@ -211,7 +271,7 @@ func TestCheck(t *testing.T) {
 // exported API.
 
 func TestCheckRedirectRefusesToFollow(t *testing.T) {
-	v := domainverify.NewVerifier()
+	v := domainverify.NewVerifier(discardLogger())
 	require.NotNil(t, v.Client.CheckRedirect)
 
 	req, err := http.NewRequest(http.MethodGet, "https://links.verein.de/health", nil)
@@ -221,7 +281,7 @@ func TestCheckRedirectRefusesToFollow(t *testing.T) {
 }
 
 func TestNewVerifierWiresUpBothMechanisms(t *testing.T) {
-	v := domainverify.NewVerifier()
+	v := domainverify.NewVerifier(discardLogger())
 	require.NotNil(t, v.Client.CheckRedirect, "wiring: redirects must be refused")
 
 	transport, ok := v.Client.Transport.(*http.Transport)

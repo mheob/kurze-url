@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
@@ -57,6 +58,22 @@ type Resolver interface {
 type Verifier struct {
 	Resolver Resolver
 	Client   *http.Client
+	// Log records what Check swallows on the caller's behalf — a resolver
+	// error is not proof of absence and must not become a 500 (see Check's
+	// own comment), but silently treating a DNS outage as "TXT record not
+	// found yet" leaves no operator-visible signal that anything is actually
+	// wrong. May be left nil — struct literals built directly in this
+	// package's own tests do not all set it — in which case logger() below
+	// falls back to a no-op handler.
+	Log *slog.Logger
+}
+
+// logger returns v.Log, or a no-op logger if none was set.
+func (v *Verifier) logger() *slog.Logger {
+	if v.Log != nil {
+		return v.Log
+	}
+	return slog.New(slog.DiscardHandler)
 }
 
 // ChallengeName is the record the claiming team must create.
@@ -88,8 +105,8 @@ func refuseNonPublicAddress(_, address string) error {
 
 // NewVerifier builds the production Verifier: the system resolver, and an
 // HTTP client that refuses redirects and validates the address it is about
-// to connect to.
-func NewVerifier() *Verifier {
+// to connect to. log records what Check swallows — see Verifier.Log.
+func NewVerifier(log *slog.Logger) *Verifier {
 	dialer := &net.Dialer{Timeout: probeTimeout}
 	// Rebinding — the first lookup answering with a public address and a
 	// second, later lookup answering with a private one — is structurally
@@ -101,6 +118,17 @@ func NewVerifier() *Verifier {
 	// changes — a second, independent resolution introduced somewhere
 	// between the check and the dial — this comment stops being true before
 	// the hole reopens.
+	//
+	// That guarantee depends on two things below that are easy to lose
+	// without noticing, since neither would cause a compile error or an
+	// obviously broken probe: Transport.Proxy is left unset (nil), so nothing
+	// resolves this hostname a second time to find a proxy to route through —
+	// setting it, e.g. by copying http.DefaultTransport's own
+	// Proxy: ProxyFromEnvironment, would reintroduce exactly the second
+	// resolution this comment says cannot happen. And Transport.DialTLSContext
+	// is left unset, so a TLS connection also goes through DialContext (and
+	// therefore through Control) rather than around it on a separate path this
+	// dialer's Control never sees.
 	dialer.Control = func(network, address string, _ syscall.RawConn) error {
 		return refuseNonPublicAddress(network, address)
 	}
@@ -121,11 +149,14 @@ func NewVerifier() *Verifier {
 				// a slow TLS peer from eating the whole thing before a single
 				// byte of response exists.
 				TLSHandshakeTimeout: probeTimeout,
-				// Unset defaults to 10 MiB (net/http's DefaultMaxHeaderBytes).
-				// The body is capped at maxProbeBody; headers were not,
-				// which let a hostile server push far more into this process
-				// per probe than the "a few kilobytes read" the design calls
-				// for.
+				// Unset defaults to 10 MiB — an unexported constant net/http's
+				// Transport falls back to internally, *not*
+				// net/http.DefaultMaxHeaderBytes (that one is 1 MiB, and bounds a
+				// server's incoming *request* headers, an unrelated setting on
+				// the other side of a connection). The body is capped at
+				// maxProbeBody; headers were not, which let a hostile server
+				// push far more into this process per probe than the "a few
+				// kilobytes read" the design calls for.
 				MaxResponseHeaderBytes: 8 << 10,
 			},
 			// A 302 to 169.254.169.254 would walk straight past the address
@@ -135,12 +166,21 @@ func NewVerifier() *Verifier {
 				return errors.New("domainverify: redirects are not followed")
 			},
 		},
+		Log: log,
 	}
 }
 
 // Check answers whether hostname may serve this team's links. It returns the
-// first unsatisfied condition; an error means the check could not be
-// performed at all, which is different from a check that ran and said no.
+// first unsatisfied condition.
+//
+// The returned error is reserved for a check that cannot be performed at
+// all, as distinct from one that ran and said no — but every path through
+// this method today returns (Reason, nil), the resolver-failure branch below
+// included (see its own comment for why that is deliberately
+// ReasonTokenMissing, not an error). That makes a caller's "if err != nil,
+// answer 500" branch dead code right now, not a case nobody has exercised
+// yet — do not add handling for a non-nil error here without also updating
+// this comment, or that handling will stay untested by construction.
 //
 // hostname must already be normalized: Check interpolates it directly into
 // the probe URL, and NormalizeHostname in this package is the precondition
@@ -164,7 +204,14 @@ func (v *Verifier) Check(ctx context.Context, hostname, token string) (Reason, e
 	case err != nil:
 		// A resolver failure is not proof of absence, but it is also not
 		// something the caller can act on differently, and it must not become a
-		// 500 for a Verein whose DNS is briefly slow.
+		// 500 for a Verein whose DNS is briefly slow. That still means a real
+		// resolver outage is reported to the Verein as "your TXT record is not
+		// visible yet" — a wrong instruction, since there is nothing wrong with
+		// their DNS — so this is logged here: the one place left where an
+		// operator, not the Verein, can find out the resolver itself is the
+		// thing that is actually broken.
+		v.logger().Error("domainverify: TXT lookup failed, reporting token_missing",
+			"hostname", hostname, "error", err)
 		return ReasonTokenMissing, nil //nolint:nilerr // deliberate: see comment above
 	case len(values) == 0:
 		return ReasonTokenMissing, nil
