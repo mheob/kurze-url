@@ -31,6 +31,27 @@ func TestClaimDomainReturnsTheRecordsToCreate(t *testing.T) {
 		"the CNAME value is what a Verein pastes into their DNS zone; it must be the configured target")
 }
 
+// TestClaimDomainIsRateLimited pins allowDomainClaim the same way
+// TestAddMemberIsRateLimited (members_test.go) pins its own limiter: delete
+// the allowDomainClaim call in createDomain and this is the only thing that
+// notices, since every other claim test only ever claims once per fixture.
+func TestClaimDomainIsRateLimited(t *testing.T) {
+	f := newTenancyFixture(t)
+	f.deps.Config.DomainClaimRateLimitPerHour = 1
+	f.rebuildRouter()
+
+	first := f.do(t, f.members[authz.RoleAdmin], http.MethodPost,
+		"/v1/teams/"+f.teamID.String()+"/domains",
+		map[string]string{"hostname": "first-claim.verein.test"})
+	require.Equal(t, http.StatusCreated, first.Code, "body: %s", first.Body.String())
+
+	second := f.do(t, f.members[authz.RoleAdmin], http.MethodPost,
+		"/v1/teams/"+f.teamID.String()+"/domains",
+		map[string]string{"hostname": "second-claim.verein.test"})
+
+	require.Equal(t, http.StatusTooManyRequests, second.Code, "body: %s", second.Body.String())
+}
+
 func TestClaimDomainIsRefusedBelowAdmin(t *testing.T) {
 	// A domain is the namespace a team's links live in, not content.
 	f := newTenancyFixture(t)
@@ -273,6 +294,58 @@ func TestVerifyIsRefusedBelowAdmin(t *testing.T) {
 		"/v1/domains/"+claim.ID.String()+"/verify", nil)
 
 	require.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// TestVerifyDomainIsRateLimitedPerDomain pins the domain axis of
+// allowDomainVerify in isolation from the user axis: two different admins of
+// the same team (f.members[authz.RoleAdmin] and f.members[authz.RoleOwner],
+// both clearing DomainAdminScope's threshold) call verify on the very same
+// domain. The second caller's own per-user count is still fresh — this can
+// only fail if the shared domain-keyed limit is what is doing the blocking.
+func TestVerifyDomainIsRateLimitedPerDomain(t *testing.T) {
+	f := newTenancyFixture(t)
+	f.deps.Config.DomainVerifyRateLimitPerHour = 1
+	f.rebuildRouter()
+	f.domainVerifier.reason = domainverify.ReasonNone
+
+	hostname := "rate-limit-domain-" + uuid.NewString()[:8] + ".verein.test"
+	claim := claimDomain(t, f, hostname)
+
+	first := f.do(t, f.members[authz.RoleAdmin], http.MethodPost,
+		"/v1/domains/"+claim.ID.String()+"/verify", nil)
+	require.Equal(t, http.StatusOK, first.Code, "body: %s", first.Body.String())
+
+	second := f.do(t, f.members[authz.RoleOwner], http.MethodPost,
+		"/v1/domains/"+claim.ID.String()+"/verify", nil)
+
+	require.Equal(t, http.StatusTooManyRequests, second.Code, "body: %s", second.Body.String())
+}
+
+// TestVerifyDomainIsRateLimitedPerUser pins the user axis in isolation from
+// the domain axis: the same admin calls verify on two different domains.
+// Each domain is only ever checked once — the domain-keyed limit alone would
+// let both through — so this can only fail if the shared user-keyed limit is
+// what is doing the blocking. This is the sole bound on how many outbound
+// DNS/TLS probes one authenticated admin can trigger, so an unexercised user
+// axis is not a theoretical gap.
+func TestVerifyDomainIsRateLimitedPerUser(t *testing.T) {
+	f := newTenancyFixture(t)
+	f.deps.Config.DomainVerifyRateLimitPerHour = 1
+	f.rebuildRouter()
+	f.domainVerifier.reason = domainverify.ReasonTokenMissing
+
+	suffix := uuid.NewString()[:8]
+	first := claimDomain(t, f, "rate-limit-user-a-"+suffix+".verein.test")
+	second := claimDomain(t, f, "rate-limit-user-b-"+suffix+".verein.test")
+
+	firstResp := f.do(t, f.members[authz.RoleAdmin], http.MethodPost,
+		"/v1/domains/"+first.ID.String()+"/verify", nil)
+	require.Equal(t, http.StatusOK, firstResp.Code, "body: %s", firstResp.Body.String())
+
+	secondResp := f.do(t, f.members[authz.RoleAdmin], http.MethodPost,
+		"/v1/domains/"+second.ID.String()+"/verify", nil)
+
+	require.Equal(t, http.StatusTooManyRequests, secondResp.Code, "body: %s", secondResp.Body.String())
 }
 
 func TestDeleteDomainIsRefusedWhileLinksExist(t *testing.T) {
