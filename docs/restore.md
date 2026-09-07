@@ -12,7 +12,9 @@ It lives here, in the public repository, on purpose: a recovery procedure stored
 
 ## What a restore does not bring back
 
-Sessions. Password hashes travel with the dump, so everyone can log in again — but everyone is logged out, because a fresh project signs tokens with new keys.
+Sessions. Everyone is logged out, because a fresh project signs tokens with new keys.
+
+Getting back in is not a matter of remembering a password: **this app has no password login.** `apps/web/src/server/auth.ts` signs people in with `signInWithOtp` and nothing else, so the only way into a restored instance is a magic link — which makes working email a hard prerequisite of the restore, not a loose end. Step 6 is where that gets set up, and step 8 is where you find out whether it worked.
 
 ## Procedure
 
@@ -53,7 +55,7 @@ Order is not cosmetic: roles are referenced by the schema, and the schema is ref
 
 The schema file deliberately does not contain the `auth` schema; the new project brought its own. The data file deliberately does contain `auth` data, which is how the users come back, and deliberately contains nothing else: it is dumped with `-s auth,public`, so the platform's own schemas are not in it.
 
-**`roles.sql` is the one file allowed to fail.** It contains no `CREATE ROLE` — every role it names is one Supabase provisions itself — so all it does is tune settings a fresh project already carries. One of its statements is a `GRANT SET ON PARAMETER` to a platform role, and the role you are restoring as may not be allowed to make it:
+**`roles.sql` is the one file allowed to fail, and it will.** It contains no `CREATE ROLE` — every role it names is one Supabase provisions itself — so all it does is tune settings a fresh project already carries. One of its statements is a `GRANT SET ON PARAMETER` to a platform role, and the role you restore as is not allowed to make it. Both the local and the hosted drill on 2026-09-07 stopped on exactly this line:
 
 ```
 ERROR:  permission denied for parameter log_min_messages
@@ -64,26 +66,29 @@ Read that, and carry on to `schema.sql`. The grant already exists on the new pro
 ### 5. Repair the migration history
 
 ```bash
-supabase link --project-ref <new-ref>
-supabase migration list
+supabase migration list --db-url "$NEW_DATABASE_URL"
 ```
 
-The dump does not carry `supabase_migrations`, so the restored project has a complete schema and an empty history. Left alone, the Supabase GitHub integration would try to apply every migration again on the next merge to `main` and damage what you just recovered.
+The dump does not carry `supabase_migrations`, so the restored project has a complete schema and an empty history — every row will show a `local` version and an empty `remote` one. Left alone, the Supabase GitHub integration would try to apply every migration again on the next merge to `main` and damage what you just recovered.
 
-Mark every migration already present as applied:
+Mark them all as applied, in one call:
 
 ```bash
-supabase migration repair --status applied <version>
+supabase migration repair --db-url "$NEW_DATABASE_URL" --status applied <version> <version> ...
 ```
 
-Repeat for each version `supabase migration list` shows as local-only, then run `supabase migration list` again and confirm both columns match.
+Then run `supabase migration list` again and confirm both columns match.
+
+Use `--db-url` rather than `supabase link --project-ref`, which both of these commands also accept. `link` repoints your local checkout at the new project and stays that way after you are done — during a drill against a throwaway project that leaves your working copy aimed somewhere you do not want it, and nothing reminds you.
 
 ### 6. Reconfigure the new Supabase project
 
-Two things live in project settings rather than in Postgres, and both fail quietly:
+Two things live in project settings rather than in Postgres, neither is carried by the dump, and **without both of them nobody can log in** — including you, in step 8. Sign-in is a magic link and nothing else, so this step is a prerequisite, not tidying up.
 
-- **Resend as custom SMTP.** Without it Supabase's built-in sender caps at two mails an hour, and team invitations silently stop arriving.
-- **Auth redirect URLs and the site URL**, pointing at `https://www.kurze-url.app`.
+- **Resend as custom SMTP** (Authentication → Emails → SMTP). Without it Supabase's built-in sender caps at two mails an hour: enough to prove a restore worked, not enough to run an instance. Team invitations depend on the same setting.
+- **Auth redirect URLs and the site URL** (Authentication → URL Configuration), pointing at `https://www.kurze-url.app`. The magic link is sent with `emailRedirectTo` set to `<origin>/auth/callback`, and Supabase refuses to redirect anywhere not on that allowlist.
+
+Both fail silently by design. The login form reports that a link was sent whether or not one was, because telling the two apart would turn it into an account-enumeration oracle (`apps/web/src/server/auth.ts`). So a missing mail is not a bug you can see from the outside — check the inbox, and check Supabase's auth logs if nothing arrives.
 
 ### 7. Repoint both Vercel projects
 
@@ -105,7 +110,7 @@ Redeploy both projects afterwards; environment variables are read at runtime, bu
 Not "the data is there" — that is the easy half:
 
 1. `curl -sI https://go.kurze-url.app/<a known slug>` returns a 301 or 302 to the right destination.
-2. Log in at `https://www.kurze-url.app` **as an account that existed before the backup**, with its existing password or magic link.
+2. Log in at `https://www.kurze-url.app` **as an account that existed before the backup**, by requesting a magic link. `signInWithOtp` is called with `shouldCreateUser: false`, so a link only arrives if that user actually came back with the dump — receiving one is itself part of the proof.
 3. That account sees its teams and its links.
 
 Step 2 is the whole point. A restore that stops at step 1 has proven only that Postgres accepted the file.
