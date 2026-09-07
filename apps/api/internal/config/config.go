@@ -63,10 +63,14 @@ type Config struct {
 	DomainClaimRateLimitPerHour  int
 	DomainVerifyRateLimitPerHour int
 
-	// DomainDNSTarget is what a Verein is told to point their CNAME at. It is
-	// configuration rather than a constant because Vercel assigns per-project
-	// DNS targets alongside the generic cname.vercel-dns.com, and which one to
-	// publish is unconfirmed until the first real domain is set up.
+	// DomainDNSTarget is what a Verein is told to point their CNAME at. The
+	// default is the generic record Vercel now calls legacy; production
+	// overrides it with the kurze-url-api project's own per-project target,
+	// which Vercel recommends instead. That target identifies one specific
+	// Vercel project, so it is set as an environment variable rather than
+	// committed here — and because the generic record still works, forgetting
+	// the variable degrades rather than breaks. See apps/api/.env.example for
+	// how to read the per-project value off the dashboard.
 	DomainDNSTarget string
 
 	// HealthCheckToken guards GET /health/deep. Empty disables the endpoint
