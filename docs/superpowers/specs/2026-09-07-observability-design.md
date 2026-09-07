@@ -48,7 +48,7 @@ It runs two checks under one three-second context budget for the whole endpoint,
 The response names each dependency:
 
 ```json
-{"status":"ok","checks":{"postgres":"ok","redis":"failed"}}
+{ "status": "ok", "checks": { "postgres": "ok", "redis": "failed" } }
 ```
 
 **Postgres failing is 503. Redis failing is 200.** This is the load-bearing decision in this section, and it is about which channel carries which severity. With Postgres down the service cannot serve a cache miss or create a link — an outage, and Better Stack should say so. With Redis down every redirect still works, falling back to Postgres — degradation. Returning 503 there would page the maintainer while the service is serving traffic correctly, which is how an alert channel gets ignored. So Redis failure returns 200 with the field set to `failed` and raises a Sentry event instead: Better Stack carries outages, Sentry carries degradation.
@@ -147,13 +147,13 @@ Uploading is only half of it. The maps must then be removed from the deployed ou
 
 ## Configuration
 
-| Variable | Where | Notes |
-| --- | --- | --- |
-| `HEALTH_CHECK_TOKEN` | API runtime, GitHub secret | Unset disables `/health/deep` |
-| `SENTRY_DSN` | API runtime | Empty disables Sentry |
-| `VITE_SENTRY_DSN` | Web runtime and build | Public by design |
-| `SENTRY_AUTH_TOKEN` | Web build only | Absent skips the source-map upload |
-| `SENTRY_ORG`, `SENTRY_PROJECT` | Web build only | For the upload |
+| Variable                       | Where                      | Notes                              |
+| ------------------------------ | -------------------------- | ---------------------------------- |
+| `HEALTH_CHECK_TOKEN`           | API runtime, GitHub secret | Unset disables `/health/deep`      |
+| `SENTRY_DSN`                   | API runtime                | Empty disables Sentry              |
+| `VITE_SENTRY_DSN`              | Web runtime and build      | Public by design                   |
+| `SENTRY_AUTH_TOKEN`            | Web build only             | Absent skips the source-map upload |
+| `SENTRY_ORG`, `SENTRY_PROJECT` | Web build only             | For the upload                     |
 
 `E2E_DATABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` already exist as repository secrets and are reused, not duplicated.
 

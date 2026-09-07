@@ -78,22 +78,22 @@ Settings → Developer Settings → Organization Tokens → "Create New Token". 
 
 - [ ] **Step 4: Create the Better Stack account and three monitors**
 
-| URL | Interval | Header |
-| --- | --- | --- |
-| `https://api.kurze-url.app/health/deep` | 3 min | `X-Health-Token: <token>` |
-| `https://go.kurze-url.app/health` | 3 min | none |
-| `https://kurze-url.app/` | 3 min | none |
+| URL                                     | Interval | Header                    |
+| --------------------------------------- | -------- | ------------------------- |
+| `https://api.kurze-url.app/health/deep` | 3 min    | `X-Health-Token: <token>` |
+| `https://go.kurze-url.app/health`       | 3 min    | none                      |
+| `https://kurze-url.app/`                | 3 min    | none                      |
 
 Alert channel: email. Invent the `HEALTH_CHECK_TOKEN` value now — 32 random characters — because tasks 1 and 2 both need it.
 
 - [ ] **Step 5: Set the environment variables**
 
-| Variable | Project | Environment |
-| --- | --- | --- |
-| `HEALTH_CHECK_TOKEN` | `kurze-url-api` | Production, Preview |
-| `SENTRY_DSN` | `kurze-url-api` | Production, Preview |
-| `VITE_SENTRY_DSN` | `kurze-url-web` | Production, Preview |
-| `SENTRY_AUTH_TOKEN` | `kurze-url-web` | Production, Preview |
+| Variable                       | Project         | Environment         |
+| ------------------------------ | --------------- | ------------------- |
+| `HEALTH_CHECK_TOKEN`           | `kurze-url-api` | Production, Preview |
+| `SENTRY_DSN`                   | `kurze-url-api` | Production, Preview |
+| `VITE_SENTRY_DSN`              | `kurze-url-web` | Production, Preview |
+| `SENTRY_AUTH_TOKEN`            | `kurze-url-web` | Production, Preview |
 | `SENTRY_ORG`, `SENTRY_PROJECT` | `kurze-url-web` | Production, Preview |
 
 And two GitHub repository secrets: `HEALTH_CHECK_TOKEN` (new) and `E2E_DATABASE_URL` (already present — do not touch it).
@@ -107,6 +107,7 @@ Nothing is committed in this task, so there is no commit step.
 ### Task 1: `GET /health/deep`
 
 **Files:**
+
 - Create: `apps/api/internal/api/health.go`
 - Create: `apps/api/internal/api/health_test.go`
 - Modify: `apps/api/internal/config/config.go` (the `Config` struct, and `Load`)
@@ -115,6 +116,7 @@ Nothing is committed in this task, so there is no commit step.
 - Modify: `apps/api/.env.example`
 
 **Interfaces:**
+
 - Consumes: `Deps.Pool` (`*pgxpool.Pool`), `Deps.Cache` (`*cache.Client`, whose `Raw()` returns `*redis.Client`), `Deps.Log`, `Deps.Config`.
 - Produces: `Deps.HandleDeepHealth(w http.ResponseWriter, r *http.Request)`; `config.Config.HealthCheckToken string`; `Deps.PingPostgres`, `Deps.PingRedis` — both `func(ctx context.Context) error`, nil meaning "use the real dependency".
 
@@ -240,8 +242,7 @@ func TestFlatHealthNeedsNoToken(t *testing.T) {
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `cd apps/api && go test ./internal/api/ -run TestDeepHealth -v`
-Expected: compile failure — `f.deps.PingPostgres` undefined, `Config.HealthCheckToken` undefined.
+Run: `cd apps/api && go test ./internal/api/ -run TestDeepHealth -v` Expected: compile failure — `f.deps.PingPostgres` undefined, `Config.HealthCheckToken` undefined.
 
 - [ ] **Step 3: Add the configuration field**
 
@@ -393,8 +394,7 @@ In `apps/api/internal/api/router.go`, directly below the existing `root.Get("/he
 
 - [ ] **Step 7: Run the tests to verify they pass**
 
-Run: `cd apps/api && go test ./internal/api/ -run 'TestDeepHealth|TestFlatHealth' -v`
-Expected: all seven PASS. If Postgres or Redis is unavailable locally, `newFixture` skips — start them with `supabase start` rather than accepting a skip as a pass.
+Run: `cd apps/api && go test ./internal/api/ -run 'TestDeepHealth|TestFlatHealth' -v` Expected: all seven PASS. If Postgres or Redis is unavailable locally, `newFixture` skips — start them with `supabase start` rather than accepting a skip as a pass.
 
 - [ ] **Step 8: Falsify the severity rule**
 
@@ -425,9 +425,11 @@ but commit -b feat/observability -m "feat(api): add a deep health endpoint"
 ### Task 2: The keep-alive workflow
 
 **Files:**
+
 - Create: `.github/workflows/keep-alive.yml`
 
 **Interfaces:**
+
 - Consumes: `GET /health/deep` from Task 1; repository secrets `E2E_DATABASE_URL` (existing) and `HEALTH_CHECK_TOKEN` (created in Task 0).
 - Produces: nothing other tasks depend on.
 
@@ -500,8 +502,7 @@ jobs:
 
 - [ ] **Step 2: Check the workflow parses**
 
-Run: `python3 -c "import yaml,sys; yaml.safe_load(open('.github/workflows/keep-alive.yml'))" && echo parsed`
-Expected: `parsed`. GitHub's own validation happens when the branch is pushed; the `pull_request` trigger means the first push runs the preview-database step for real, which is the actual verification.
+Run: `python3 -c "import yaml,sys; yaml.safe_load(open('.github/workflows/keep-alive.yml'))" && echo parsed` Expected: `parsed`. GitHub's own validation happens when the branch is pushed; the `pull_request` trigger means the first push runs the preview-database step for real, which is the actual verification.
 
 - [ ] **Step 3: Commit**
 
@@ -519,11 +520,13 @@ After pushing, check that the `keep alive` workflow ran on the pull request and 
 ### Task 3: The request-context allowlist
 
 **Files:**
+
 - Create: `apps/api/internal/observability/scrub.go`
 - Create: `apps/api/internal/observability/scrub_test.go`
 - Modify: `apps/api/go.mod` (adds `github.com/getsentry/sentry-go`)
 
 **Interfaces:**
+
 - Consumes: nothing from earlier tasks.
 - Produces: `observability.Scrub(event *sentry.Event, hint *sentry.EventHint) *sentry.Event` — the value assigned to `sentry.ClientOptions.BeforeSend` in Task 5.
 
@@ -627,8 +630,7 @@ func TestScrubToleratesAnEventWithoutARequest(t *testing.T) {
 
 - [ ] **Step 3: Run the test to verify it fails**
 
-Run: `cd apps/api && go test ./internal/observability/ -v`
-Expected: build failure — no such package. If a field name in `sentry.Request` differs in the version `go get` resolved, fix the **implementation** to match the SDK; never weaken the test to match a guess.
+Run: `cd apps/api && go test ./internal/observability/ -v` Expected: build failure — no such package. If a field name in `sentry.Request` differs in the version `go get` resolved, fix the **implementation** to match the SDK; never weaken the test to match a guess.
 
 - [ ] **Step 4: Write the scrubber**
 
@@ -709,8 +711,7 @@ func withoutQuery(rawURL string) string {
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `cd apps/api && go test ./internal/observability/ -v`
-Expected: all six PASS.
+Run: `cd apps/api && go test ./internal/observability/ -v` Expected: all six PASS.
 
 - [ ] **Step 6: Falsify both protections**
 
@@ -733,10 +734,12 @@ but commit -b feat/observability -m "feat(api): scrub request context for sentry
 ### Task 4: Error logs become Sentry events
 
 **Files:**
+
 - Create: `apps/api/internal/observability/sloghandler.go`
 - Create: `apps/api/internal/observability/sloghandler_test.go`
 
 **Interfaces:**
+
 - Consumes: the `observability` package from Task 3.
 - Produces: `observability.NewSlogHandler(inner slog.Handler) slog.Handler`.
 
@@ -857,8 +860,7 @@ func eventException(event *sentry.Event) string {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `cd apps/api && go test ./internal/observability/ -run 'Logs|InnerHandler' -v`
-Expected: `undefined: observability.NewSlogHandler`.
+Run: `cd apps/api && go test ./internal/observability/ -run 'Logs|InnerHandler' -v` Expected: `undefined: observability.NewSlogHandler`.
 
 - [ ] **Step 3: Write the handler**
 
@@ -958,8 +960,7 @@ func errorAttr(record slog.Record) error {
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `cd apps/api && go test ./internal/observability/ -v`
-Expected: all PASS.
+Run: `cd apps/api && go test ./internal/observability/ -v` Expected: all PASS.
 
 - [ ] **Step 5: Falsify the level threshold**
 
@@ -977,6 +978,7 @@ but commit -b feat/observability -m "feat(api): report error logs to sentry"
 ### Task 5: Wire Sentry into the API
 
 **Files:**
+
 - Create: `apps/api/internal/observability/observability.go`
 - Create: `apps/api/internal/observability/middleware_test.go`
 - Modify: `apps/api/internal/config/config.go`
@@ -985,6 +987,7 @@ but commit -b feat/observability -m "feat(api): report error logs to sentry"
 - Modify: `apps/api/.env.example`
 
 **Interfaces:**
+
 - Consumes: `observability.Scrub` (Task 3), `observability.NewSlogHandler` (Task 4), and — in the test — the `fakeTransport` type defined in Task 4's `sloghandler_test.go`. Both test files are in package `observability_test`, so it is shared, not redeclared; declaring it twice is a compile error.
 - Produces: `observability.Init(dsn, environment, release string) (flush func(), err error)`; `observability.Middleware() func(http.Handler) http.Handler`; `config.Config.SentryDSN`, `.Environment`, `.Release`.
 
@@ -1032,8 +1035,7 @@ func TestMiddlewareCapturesAPanicAndRepanics(t *testing.T) {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `cd apps/api && go test ./internal/observability/ -run TestMiddleware -v`
-Expected: `undefined: observability.Middleware`.
+Run: `cd apps/api && go test ./internal/observability/ -run TestMiddleware -v` Expected: `undefined: observability.Middleware`.
 
 - [ ] **Step 3: Write the init and the middleware**
 
@@ -1100,8 +1102,7 @@ func Middleware() func(http.Handler) http.Handler {
 
 - [ ] **Step 4: Run it to verify it passes**
 
-Run: `cd apps/api && go test ./internal/observability/ -v`
-Expected: all PASS.
+Run: `cd apps/api && go test ./internal/observability/ -v` Expected: all PASS.
 
 - [ ] **Step 5: Falsify the repanic**
 
@@ -1199,6 +1200,7 @@ but commit -b feat/observability -m "feat(api): initialise sentry reporting"
 ### Task 6: The web-side scrubber and options
 
 **Files:**
+
 - Create: `apps/web/src/lib/observability.ts`
 - Create: `apps/web/src/lib/observability.test.ts`
 - Create: `apps/web/.env.example`
@@ -1206,6 +1208,7 @@ but commit -b feat/observability -m "feat(api): initialise sentry reporting"
 - Modify: `apps/web/vite.config.ts` (the `define` block only — Task 8 touches the same file's `plugins`)
 
 **Interfaces:**
+
 - Consumes: `classifyApiError` from `apps/web/src/lib/api-errors.ts`.
 - Produces: `sentryOptions(dsn: string): Parameters<typeof Sentry.init>[0]`; `scrubEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent`; `isReportable(error: unknown): boolean`; `reportUnexpected(error: unknown): void`.
 
@@ -1312,8 +1315,7 @@ describe('isReportable', () => {
 
 - [ ] **Step 3: Run the tests to verify they fail**
 
-Run: `pnpm --filter @kurze-url/web test src/lib/observability.test.ts`
-Expected: FAIL — cannot resolve `./observability`.
+Run: `pnpm --filter @kurze-url/web test src/lib/observability.test.ts` Expected: FAIL — cannot resolve `./observability`.
 
 - [ ] **Step 4: Write the module**
 
@@ -1368,9 +1370,7 @@ export function scrubEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
 		if (request.url) request.url = request.url.split('?')[0];
 		if (request.headers) {
 			request.headers = Object.fromEntries(
-				Object.entries(request.headers).filter(([name]) =>
-					ALLOWED_HEADERS.has(name.toLowerCase()),
-				),
+				Object.entries(request.headers).filter(([name]) => ALLOWED_HEADERS.has(name.toLowerCase())),
 			);
 		}
 	}
@@ -1439,8 +1439,7 @@ export function sentryOptions(dsn: string): Parameters<typeof Sentry.init>[0] {
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `pnpm --filter @kurze-url/web test src/lib/observability.test.ts`
-Expected: all PASS.
+Run: `pnpm --filter @kurze-url/web test src/lib/observability.test.ts` Expected: all PASS.
 
 - [ ] **Step 6: Define the environment and release at build time**
 
@@ -1464,11 +1463,7 @@ Add to the config object in `apps/web/vite.config.ts`, beside `resolve`:
 
 - [ ] **Step 7: Document the web variables**
 
-`apps/web` has no `.env.example` — every value it reads so far goes through a
-server function and `process.env`. `VITE_SENTRY_DSN` is the first value this
-app needs in the *browser*, which is why it carries the prefix: the SDK has to
-initialise before the errors it is meant to catch, so fetching the DSN from
-the server is not an option. A public DSN is public by design.
+`apps/web` has no `.env.example` — every value it reads so far goes through a server function and `process.env`. `VITE_SENTRY_DSN` is the first value this app needs in the _browser_, which is why it carries the prefix: the SDK has to initialise before the errors it is meant to catch, so fetching the DSN from the server is not an option. A public DSN is public by design.
 
 Create `apps/web/.env.example`:
 
@@ -1504,12 +1499,14 @@ but commit -b feat/observability -m "feat(web): scrub and classify sentry events
 ### Task 7: Initialise Sentry in the web app
 
 **Files:**
+
 - Modify: `apps/web/src/lib/observability.ts` (adds `initSentry`)
 - Modify: `apps/web/src/router.tsx`
 - Modify: `apps/web/src/routes/__root.tsx`
 - Create: `apps/web/src/routes/__root.test.tsx`
 
 **Interfaces:**
+
 - Consumes: `sentryOptions`, `reportUnexpected` (Task 6).
 - Produces: `initSentry(isServer: boolean): void`; `RootErrorPage` rendered as the root route's `errorComponent`.
 
@@ -1554,8 +1551,7 @@ describe('RootErrorPage', () => {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `pnpm --filter @kurze-url/web test src/routes/__root.test.tsx`
-Expected: FAIL — `RootErrorPage` is not exported.
+Run: `pnpm --filter @kurze-url/web test src/routes/__root.test.tsx` Expected: FAIL — `RootErrorPage` is not exported.
 
 - [ ] **Step 3: Add `initSentry`**
 
@@ -1594,11 +1590,11 @@ export function initSentry(isServer: boolean): void {
 In `apps/web/src/router.tsx`, add the import and one line after `setupRouterSsrQueryIntegration`:
 
 ```ts
-	setupRouterSsrQueryIntegration({ queryClient, router });
+setupRouterSsrQueryIntegration({ queryClient, router });
 
-	// After the router exists, because the server/client distinction comes
-	// from it. Both bundles reach this line; only the one with a DSN acts.
-	initSentry(router.isServer);
+// After the router exists, because the server/client distinction comes
+// from it. Both bundles reach this line; only the one with a DSN acts.
+initSentry(router.isServer);
 ```
 
 - [ ] **Step 5: Add the error component**
@@ -1633,9 +1629,9 @@ export function RootErrorPage({ error }: { readonly error: Error }) {
 Give the heading the alert role the test asserts by wrapping it:
 
 ```tsx
-			<h1 className="text-3xl font-bold" role="alert">
-				{t('errors.unknown')}
-			</h1>
+<h1 className="text-3xl font-bold" role="alert">
+	{t('errors.unknown')}
+</h1>
 ```
 
 And register it on the root route, beside `notFoundComponent`:
@@ -1646,8 +1642,7 @@ And register it on the root route, beside `notFoundComponent`:
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `pnpm --filter @kurze-url/web test src/routes/__root.test.tsx`
-Expected: both PASS.
+Run: `pnpm --filter @kurze-url/web test src/routes/__root.test.tsx` Expected: both PASS.
 
 - [ ] **Step 7: Run the whole web suite, then commit**
 
@@ -1663,9 +1658,11 @@ but commit -b feat/observability -m "feat(web): report unhandled errors"
 ### Task 8: Source maps
 
 **Files:**
+
 - Modify: `apps/web/vite.config.ts` (the `plugins` array — Task 6 already added this file's `define` block)
 
 **Interfaces:**
+
 - Consumes: the `@sentry/tanstackstart-react` dependency from Task 6.
 - Produces: nothing other tasks depend on.
 
@@ -1718,13 +1715,11 @@ Then, in the config, append it after `viteReact()` — `sentryTanstackStart` mus
 
 - [ ] **Step 2: Verify a build without the token still works**
 
-Run: `cd apps/web && SENTRY_AUTH_TOKEN= pnpm build`
-Expected: the build succeeds and mentions no Sentry upload. This is the case that matters locally and for forks.
+Run: `cd apps/web && SENTRY_AUTH_TOKEN= pnpm build` Expected: the build succeeds and mentions no Sentry upload. This is the case that matters locally and for forks.
 
 - [ ] **Step 3: Confirm the plugin is registered last**
 
-Run: `grep -n -A 12 'plugins: \[' apps/web/vite.config.ts`
-Expected: `...sentryPlugins` is the final entry. Sentry's setup guide requires it, and a plugin ordered before `nitroV2Plugin` sees the pre-Nitro output rather than what is actually deployed.
+Run: `grep -n -A 12 'plugins: \[' apps/web/vite.config.ts` Expected: `...sentryPlugins` is the final entry. Sentry's setup guide requires it, and a plugin ordered before `nitroV2Plugin` sees the pre-Nitro output rather than what is actually deployed.
 
 A local no-token build deletes nothing, because it uploads nothing — so the absence of `.map` files cannot be checked here. Step 5 checks it where it is real.
 
@@ -1746,10 +1741,12 @@ After pushing, in the Vercel build log for the web preview: confirm a Sentry upl
 ### Task 9: Documentation
 
 **Files:**
+
 - Modify: `CLAUDE.md:56`, `CLAUDE.md:102`, and the "Non-obvious constraints" and "Open items" sections
 - Modify: `docs/planning/02-external-services-and-hosting.md:20-21`, `:104`, `:108-117`
 
 **Interfaces:**
+
 - Consumes: everything built in tasks 1 through 8.
 - Produces: nothing code depends on.
 
