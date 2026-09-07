@@ -55,6 +55,26 @@ insert into domain (team_id, hostname, verification_token)
 values (sqlc.arg(team_id)::uuid, sqlc.arg(hostname), sqlc.arg(verification_token))
 returning *;
 
+-- GetActiveDomainClaimForTeam answers "does this team already hold a
+-- non-failed claim on this hostname?". createDomain calls this before
+-- CreateDomainClaim so a second claim on a hostname the team already holds
+-- pending (or already verified) is refused with a 409 up front, rather than
+-- silently inserting a second row that FailCompetingClaims would later flip
+-- to 'failed' with the wrong story — that update does not check whose claim
+-- it is settling, only which hostname, so it would mark the *same* team's
+-- own older row as lost to a hostname it in fact still holds. There is no
+-- unique index behind this: a migration applying to a database with no
+-- backups is a bigger risk than the wrong-message bug it would close, so the
+-- check lives here instead — see createDomain's own comment for the
+-- check-then-insert race that leaves open.
+
+-- name: GetActiveDomainClaimForTeam :one
+select id
+from domain
+where team_id = sqlc.arg(team_id)::uuid
+  and hostname = sqlc.arg(hostname)
+  and verification_status <> 'failed';
+
 -- ListDomainsForTeam casts team_id for the same reason CreateDomainClaim does
 -- just above: the column is nullable, this query is never called with a null
 -- team.

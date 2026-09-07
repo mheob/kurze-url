@@ -135,6 +135,39 @@ func (q *Queries) FailCompetingClaims(ctx context.Context, arg FailCompetingClai
 	return err
 }
 
+const getActiveDomainClaimForTeam = `-- name: GetActiveDomainClaimForTeam :one
+
+select id
+from domain
+where team_id = $1::uuid
+  and hostname = $2
+  and verification_status <> 'failed'
+`
+
+type GetActiveDomainClaimForTeamParams struct {
+	TeamID   uuid.UUID
+	Hostname string
+}
+
+// GetActiveDomainClaimForTeam answers "does this team already hold a
+// non-failed claim on this hostname?". createDomain calls this before
+// CreateDomainClaim so a second claim on a hostname the team already holds
+// pending (or already verified) is refused with a 409 up front, rather than
+// silently inserting a second row that FailCompetingClaims would later flip
+// to 'failed' with the wrong story — that update does not check whose claim
+// it is settling, only which hostname, so it would mark the *same* team's
+// own older row as lost to a hostname it in fact still holds. There is no
+// unique index behind this: a migration applying to a database with no
+// backups is a bigger risk than the wrong-message bug it would close, so the
+// check lives here instead — see createDomain's own comment for the
+// check-then-insert race that leaves open.
+func (q *Queries) GetActiveDomainClaimForTeam(ctx context.Context, arg GetActiveDomainClaimForTeamParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, getActiveDomainClaimForTeam, arg.TeamID, arg.Hostname)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const getDomainForTeam = `-- name: GetDomainForTeam :one
 select id, team_id, hostname, verification_status, vercel_domain_ref, created_at, verified_at, verification_token
 from domain

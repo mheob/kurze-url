@@ -101,6 +101,51 @@ func TestClaimDomainRejectsInvalidHostnames(t *testing.T) {
 	}
 }
 
+// TestClaimDomainRefusesASecondClaimByTheSameTeam pins Finding 7's fix:
+// without it, a second claim by the same team on a hostname it already holds
+// would insert a second row, and verifying the first would then have
+// FailCompetingClaims flip that second row to 'failed' — read by the UI as
+// "another team verified this hostname first", which would be false, since
+// both rows belong to the very team asking.
+func TestClaimDomainRefusesASecondClaimByTheSameTeam(t *testing.T) {
+	f := newTenancyFixture(t)
+	hostname := "already-claimed-" + uuid.NewString()[:8] + ".verein.test"
+	claimDomain(t, f, hostname)
+
+	second := f.do(t, f.members[authz.RoleAdmin], http.MethodPost,
+		"/v1/teams/"+f.teamID.String()+"/domains",
+		map[string]string{"hostname": hostname})
+
+	require.Equal(t, http.StatusConflict, second.Code, "body: %s", second.Body.String())
+
+	var count int
+	require.NoError(t, f.pool.QueryRow(t.Context(),
+		`select count(*) from domain where team_id = $1 and hostname = $2`,
+		f.teamID, hostname).Scan(&count))
+	require.Equal(t, 1, count, "the refused claim must not leave a second row behind")
+}
+
+// TestClaimDomainAllowsARenewedClaimAfterFailure covers the one status a
+// repeat claim must still be allowed through: GetActiveDomainClaimForTeam
+// excludes 'failed' rows on purpose, so a team whose claim lost a
+// verification race — or was manually failed some other way — can still
+// claim the hostname again rather than being locked out by its own dead row.
+func TestClaimDomainAllowsARenewedClaimAfterFailure(t *testing.T) {
+	f := newTenancyFixture(t)
+	hostname := "renewed-claim-" + uuid.NewString()[:8] + ".verein.test"
+	first := claimDomain(t, f, hostname)
+
+	_, err := f.pool.Exec(t.Context(),
+		`update domain set verification_status = 'failed' where id = $1`, first.ID)
+	require.NoError(t, err)
+
+	second := f.do(t, f.members[authz.RoleAdmin], http.MethodPost,
+		"/v1/teams/"+f.teamID.String()+"/domains",
+		map[string]string{"hostname": hostname})
+
+	require.Equal(t, http.StatusCreated, second.Code, "body: %s", second.Body.String())
+}
+
 func TestTwoTeamsMayClaimTheSameHostname(t *testing.T) {
 	// The whole point of the partial index: a claim is not a reservation.
 	f := newTenancyFixture(t)

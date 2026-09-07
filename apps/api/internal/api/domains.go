@@ -185,6 +185,16 @@ func (d Deps) registerDomains(api huma.API) {
 	}, d.deleteDomain)
 }
 
+// errTeamAlreadyClaimsHostname travels out of the transaction so the refusal
+// becomes a 409 rather than silently inserting a second row. Without this,
+// a team that already holds a hostname pending (or verified) could file a
+// second claim on it; verifying the first would then have
+// FailCompetingClaims flip that *second* row of the same team's own to
+// 'failed' — rendered in the UI as "another team verified this hostname
+// first", which is false, since the team asking is the very one that
+// verified it.
+var errTeamAlreadyClaimsHostname = errors.New("api: team already claims this hostname")
+
 func (d Deps) createDomain(ctx context.Context, in *CreateDomainInput) (*DomainOutput, error) {
 	member := in.Member()
 
@@ -209,6 +219,24 @@ func (d Deps) createDomain(ctx context.Context, in *CreateDomainInput) (*DomainO
 
 	var created db.Domain
 	err = db.InTx(ctx, d.Pool, func(q *db.Queries) error {
+		// Check-then-insert, not a unique index: a migration applying to a
+		// database with no backups is a bigger risk than the wrong-message bug
+		// this closes. A race remains — two concurrent claims for the same team
+		// on the same hostname could both pass this check before either
+		// commits — but domain claims are already capped at
+		// DomainClaimRateLimitPerHour (5/hour) per user, and losing this race
+		// costs exactly the wrong "another team verified this hostname first"
+		// message it costs today, never a second team's claim or any data loss.
+		_, err := q.GetActiveDomainClaimForTeam(ctx, db.GetActiveDomainClaimForTeamParams{
+			TeamID: member.TeamID, Hostname: hostname,
+		})
+		if err == nil {
+			return errTeamAlreadyClaimsHostname
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+
 		row, err := q.CreateDomainClaim(ctx, db.CreateDomainClaimParams{
 			TeamID:            member.TeamID,
 			Hostname:          hostname,
@@ -232,7 +260,11 @@ func (d Deps) createDomain(ctx context.Context, in *CreateDomainInput) (*DomainO
 			Metadata:    map[string]any{"hostname": row.Hostname},
 		})
 	})
-	if err != nil {
+
+	switch {
+	case errors.Is(err, errTeamAlreadyClaimsHostname):
+		return nil, huma.Error409Conflict("your team already has a claim on this hostname")
+	case err != nil:
 		d.Log.Error("create domain claim", "error", err, "team_id", member.TeamID)
 		return nil, huma.Error500InternalServerError("could not claim the domain")
 	}
