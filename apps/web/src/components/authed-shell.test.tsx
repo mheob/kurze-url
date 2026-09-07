@@ -55,6 +55,11 @@ function renderShell(props: {
 		getParentRoute: () => rootRoute,
 		path: '/teams/$teamId/links',
 	});
+	const domainsRoute = createRoute({
+		component: () => null,
+		getParentRoute: () => rootRoute,
+		path: '/teams/$teamId/domains',
+	});
 	const newTeamRoute = createRoute({
 		component: () => null,
 		getParentRoute: () => rootRoute,
@@ -62,7 +67,7 @@ function renderShell(props: {
 	});
 	const router = createRouter({
 		history: createMemoryHistory({ initialEntries: ['/'] }),
-		routeTree: rootRoute.addChildren([linksRoute, newTeamRoute]),
+		routeTree: rootRoute.addChildren([linksRoute, domainsRoute, newTeamRoute]),
 	});
 
 	return render(
@@ -111,6 +116,23 @@ describe('AuthedShell', () => {
 		renderShell({ isMaintainer: false });
 		expect(await screen.findByRole('button', { name: 'Sign out' })).toBeInTheDocument();
 		expect(screen.queryByRole('link', { name: 'Create team' })).not.toBeInTheDocument();
+	});
+
+	it('links to both team pages', async () => {
+		// Before this the shell had a team switcher and a sign-out control, so a
+		// second team page was unreachable by clicking.
+		renderShell({});
+		expect(await screen.findByRole('link', { name: 'Links' })).toBeInTheDocument();
+		expect(screen.getByRole('link', { name: 'Domains' })).toBeInTheDocument();
+	});
+
+	it('omits the team-page navigation when there is no resolved current team', async () => {
+		// Same condition as the team switcher: nothing to navigate between for
+		// a visitor with zero memberships or a stale bookmark.
+		renderShell({ currentTeamId: undefined, memberships: [] });
+		expect(await screen.findByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+		expect(screen.queryByRole('link', { name: 'Links' })).not.toBeInTheDocument();
+		expect(screen.queryByRole('link', { name: 'Domains' })).not.toBeInTheDocument();
 	});
 
 	it('omits the team switcher when there is no resolved current team', async () => {

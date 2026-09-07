@@ -32,6 +32,11 @@
 		"linkSent": "Falls es zu dieser Adresse ein Konto gibt, ist ein Link unterwegs.",
 		"signOut": "Abmelden"
 	},
+	"nav": {
+		"label": "Bereiche",
+		"links": "Kurzlinks",
+		"domains": "Eigene Domains"
+	},
 	"teams": {
 		"create": "Verein anlegen",
 		"name": "Vereinsname",
@@ -61,12 +66,51 @@
 		"redirect301Warning": "Browser speichern eine 301 zwischen. Klicks werden dann nicht mehr gezählt, und eine spätere Änderung des Ziels erreicht niemanden, der die Seite bereits besucht hat.",
 		"expiresAt": "Läuft ab am",
 		"analyticsEnabled": "Klicks für diesen Link zählen",
+		"domain": "Zieldomain",
+		"domainShared": "Gemeinsame Domain (Standard)",
 		"save": "Speichern",
 		"edit": "Bearbeiten",
 		"delete": "Löschen",
 		"deleteQuestion": "Diesen Link löschen? Wer die Kurz-URL bereits hat, erhält dann einen 404.",
 		"deleteConfirm": "Ja, löschen",
 		"cancel": "Abbrechen"
+	},
+	"domains": {
+		"heading": "Deine Domains",
+		"empty": "Noch keine Domains. Deine Links nutzen die gemeinsame Domain.",
+		"hostname": "Domainname",
+		"hostnameHint": "Eine Subdomain, die dir gehört, zum Beispiel links.verein.de",
+		"hostnameRequired": "Ein Domainname ist erforderlich.",
+		"claim": "Domain hinzufügen",
+		"status": "Domainstatus",
+		"pending": "Wartet auf DNS",
+		"verified": "Funktioniert",
+		"failed": "Ein anderer Verein hat diesen Hostnamen zuerst verifiziert",
+		"recordsHeading": "Erstelle diese zwei DNS-Einträge",
+		"recordType": "Typ",
+		"recordTypeTxt": "TXT",
+		"recordTypeCname": "CNAME",
+		"recordName": "Eintragsname",
+		"recordValue": "Wert",
+		"copyTxtValue": "Wert des TXT-Eintrags kopieren",
+		"copyCnameValue": "Wert des CNAME-Eintrags kopieren",
+		"verify": "Jetzt prüfen",
+		"delete": "{{hostname}} löschen",
+		"deleteQuestion": "{{hostname}} löschen? Wird der Hostname später erneut hinzugefügt, beginnt die Verifizierung von vorn.",
+		"deleteBlockedByLinks_one": "Diese Domain hat noch 1 Link. Lösche ihn zuerst.",
+		"deleteBlockedByLinks_other": "Diese Domain hat noch {{count}} Links. Lösche sie zuerst.",
+		"truncated": "Es werden die ersten {{count}} von {{total}} Domains angezeigt.",
+		"reason": {
+			"token_missing": "Der TXT-Eintrag ist noch nicht sichtbar. DNS-Änderungen können einige Stunden dauern.",
+			"token_mismatch": "Ein TXT-Eintrag existiert, aber sein Wert stimmt nicht überein. Prüf auf einen Tippfehler.",
+			"unreachable": "Der Hostname erreicht uns noch nicht. Das ist normal, bis der Betreiber der Instanz ihn hinzugefügt hat."
+		},
+		"verifyError": {
+			"conflict": "Ein anderer Verein hat diesen Hostnamen in der Zwischenzeit bereits verifiziert. Euer Verein kann ihn nicht mehr nutzen.",
+			"notFound": "Diese Domain gibt es nicht mehr. Lade die Seite neu.",
+			"rateLimited": "Gerade wurden zu viele Prüfungen ausgelöst. Warte eine Weile und versuch es dann noch mal.",
+			"unknown": "Die Domain konnte gerade nicht geprüft werden. Versuch es noch mal."
+		}
 	},
 	"errors": {
 		"rateLimited": "Gerade wurden zu viele Links erstellt. Warte eine Minute und versuch es dann noch mal.",

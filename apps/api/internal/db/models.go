@@ -31,9 +31,11 @@ type Domain struct {
 	TeamID             *uuid.UUID
 	Hostname           string
 	VerificationStatus string
-	VercelDomainRef    *string
-	CreatedAt          time.Time
-	VerifiedAt         *time.Time
+	// Unused under maintainer-in-the-loop provisioning; see the 2026-09-06 custom-domains design.
+	VercelDomainRef   *string
+	CreatedAt         time.Time
+	VerifiedAt        *time.Time
+	VerificationToken *string
 }
 
 type Folder struct {

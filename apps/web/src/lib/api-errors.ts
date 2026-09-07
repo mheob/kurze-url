@@ -9,21 +9,23 @@
  * (RFC 9457), and with `throwOnError: true` — the convention already
  * established in `src/server/health.ts` and `src/routes/_authed.tsx` — the
  * generated client throws that parsed JSON body directly. There is no
- * `.response`/`.error` wrapper around it; `status` and `errors` sit at the
- * top level. See api-errors.test.ts for the divergence from an earlier,
- * unverified assumption about this shape.
+ * `.response`/`.error` wrapper around it; `status`, `errors`, and `detail`
+ * all sit at the top level. See api-errors.test.ts for the divergence from
+ * an earlier, unverified assumption about this shape.
  */
 export type ApiFailure =
 	| { kind: 'unauthenticated' }
 	| { kind: 'notFound' }
 	| { kind: 'rateLimited' }
 	| { kind: 'fields'; fields: Record<string, string> }
+	| { kind: 'domainHasLinks'; count: number }
 	| { kind: 'unknown' };
 
-/** The one `ErrorDetail` field this module reads; see `apps/api/openapi.json`. */
+/** The `ErrorDetail` fields this module reads; see `apps/api/openapi.json`. */
 interface ProblemDetail {
 	readonly location?: string;
 	readonly message?: string;
+	readonly value?: unknown;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -39,7 +41,18 @@ function isProblemDetail(value: unknown): value is ProblemDetail {
 	);
 }
 
-function statusOf(error: unknown): number | undefined {
+/**
+ * Exported for the rare call site that needs the raw HTTP status alongside
+ * `ApiFailure`'s kind — `teams.$teamId.domains.tsx`'s verify mutation is the
+ * first: a 409 there ("another team already verified this hostname") carries
+ * no `ErrorDetail` to key on, the same as a 500 or a network failure, so
+ * `classifyApiError` alone cannot tell them apart — both fall into `unknown`.
+ * That collapse is correct for every other caller (nothing else needs to
+ * split them), so this stays a plain status accessor rather than a new
+ * `ApiFailure` kind that would force every other 409-without-detail call site
+ * (members, tags, link slugs) to adopt a message that does not fit them.
+ */
+export function statusOf(error: unknown): number | undefined {
 	if (!isRecord(error)) return undefined;
 	const { status } = error;
 	return typeof status === 'number' ? status : undefined;
@@ -78,6 +91,30 @@ function fieldsOf(error: unknown): Record<string, string> {
 	return fields;
 }
 
+/**
+ * `deleteDomain` in apps/api/internal/api/domains.go is the only place a 409
+ * carries a link count, and it sends it as a typed `ErrorDetail` alongside
+ * the free-text `detail`: `Location: "path.domain_id", Value: linkCount` —
+ * see the comment on that call for why that `Location` string was chosen.
+ * Reading the typed value here, rather than parsing it out of `detail`'s
+ * prose, means a reworded message can never silently break this: if the
+ * typed detail ever stops arriving, this returns `undefined`, exactly like a
+ * 409 that never carried one — there is deliberately no regex fallback onto
+ * `detail`, since that would let this exact drift happen quietly again.
+ *
+ * The *verify* endpoint's own unrelated conflict ("another team has already
+ * verified this hostname") carries no `ErrorDetail` at all, so it falls
+ * through to `undefined` here too, never an invented count.
+ */
+function blockingLinkCountOf(error: unknown): number | undefined {
+	for (const detail of problemDetailsOf(error)) {
+		if (detail.location === 'path.domain_id' && typeof detail.value === 'number') {
+			return detail.value;
+		}
+	}
+	return undefined;
+}
+
 export function classifyApiError(error: unknown): ApiFailure {
 	const status = statusOf(error);
 
@@ -87,6 +124,11 @@ export function classifyApiError(error: unknown): ApiFailure {
 	// internal/authz withholds.
 	if (status === 403 || status === 404) return { kind: 'notFound' };
 	if (status === 429) return { kind: 'rateLimited' };
+
+	if (status === 409) {
+		const count = blockingLinkCountOf(error);
+		if (count !== undefined) return { count, kind: 'domainHasLinks' };
+	}
 
 	if (status === 400 || status === 422) {
 		const fields = fieldsOf(error);

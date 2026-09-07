@@ -1,0 +1,15 @@
+# Fingerprints gitleaks flags as `generic-api-key` that are not keys.
+#
+# Both are hex-looking placeholders standing in for a domain verification
+# token in a Storybook fixture. That token is not a secret in the first place:
+# its whole purpose is to be published as a public DNS TXT record, and it is
+# returned in plain text by GET /v1/domains/{id}. The values were changed to
+# read as placeholders (`example-txt-token`) so nothing new trips the rule,
+# but the commit that introduced them stays in this branch's history and the
+# scan covers the whole branch.
+#
+# Add a line here only for a match you have opened the file and confirmed is
+# not a credential. The rule this suppresses is the one that would catch a
+# Supabase service-role key or an Upstash token.
+d85e6f8822ffa32271288eb35a14e69bc9671a04:apps/web/src/components/domain-list.stories.tsx:generic-api-key:18
+d85e6f8822ffa32271288eb35a14e69bc9671a04:apps/web/src/components/domain-list.stories.tsx:generic-api-key:102

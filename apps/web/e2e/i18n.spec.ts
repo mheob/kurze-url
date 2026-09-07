@@ -1,6 +1,7 @@
-import { expect } from '@playwright/test';
+import { expect, type Locator } from '@playwright/test';
 
 import { test } from './fixtures/auth';
+import { waitForHydration } from './fixtures/hydration';
 
 /**
  * The half of the no-hardcoded-string rule that react/jsx-no-literals cannot
@@ -12,8 +13,13 @@ import { test } from './fixtures/auth';
  * when the language does.
  */
 
-/** Strings legitimately identical in both languages. Adding one is deliberate and reviewable. */
-const IDENTICAL_BY_DESIGN = new Set(['kurze.url']);
+/**
+ * Strings legitimately identical in both languages. Adding one is deliberate
+ * and reviewable. `TXT`/`CNAME` (`domain-list.tsx`'s record-type cells) join
+ * `kurze.url` for the same reason: a DNS record type is a protocol literal,
+ * not copy — nobody translates it, so it never changes with the language.
+ */
+const IDENTICAL_BY_DESIGN = new Set(['kurze.url', 'TXT', 'CNAME']);
 
 /**
  * `/` is a real route with real content; the 404 page is a separate render
@@ -93,7 +99,7 @@ for (const path of PATHS) {
  * above never pays for provisioning a team it never asks for: a fixture only
  * runs for a test that destructures it.
  */
-const AUTHENTICATED_PATHS = ['links', 'links/new'] as const;
+const AUTHENTICATED_PATHS = ['links', 'links/new', 'domains'] as const;
 
 /**
  * What the `links` case below fills into the create form — known upfront,
@@ -101,6 +107,20 @@ const AUTHENTICATED_PATHS = ['links', 'links/new'] as const;
  * the page instead (see the comment at that read).
  */
 const I18N_CRAWL_DESTINATION_URL = 'https://example.org/i18n-crawl';
+
+/**
+ * A DNS record's Value cell (`domain-list.tsx`) renders the raw value
+ * immediately followed by a `CopyButton`, with no element between them, so
+ * the cell's own `innerText` glues the value to that button's visible label
+ * ("Copy"/"Kopieren") — which already differs by language on its own and
+ * would mask the value underneath it. Reading only the cell's first child —
+ * a plain text node, since the JSX puts the value before `CopyButton` — gets
+ * the bare value instead, so it can be excluded below the same way the
+ * hostname next to it is, regardless of whether that gluing keeps holding.
+ */
+async function directText(cell: Locator): Promise<string> {
+	return cell.evaluate((node) => node.childNodes[0]?.textContent?.trim() ?? '');
+}
 
 for (const suffix of AUTHENTICATED_PATHS) {
 	test(`no user-facing string is identical across languages (authenticated /${suffix})`, async ({
@@ -115,6 +135,8 @@ for (const suffix of AUTHENTICATED_PATHS) {
 		// short URL are known — see the long comment above `identicalByDesign`
 		// for why these join `teamName` in the same exclusion Set.
 		const linkStrings: string[] = [];
+		// Same idea, populated only for `domains` below.
+		const domainStrings: string[] = [];
 
 		if (suffix === 'links') {
 			// A freshly provisioned team starts with zero links, and `LinkList`'s
@@ -124,7 +146,18 @@ for (const suffix of AUTHENTICATED_PATHS) {
 			// Created once, before either language visits the page, so both passes
 			// compare the same rendered list.
 			await page.goto(`/teams/${teamId}/links/new`);
-			await page.getByLabel(/destination/i).fill(I18N_CRAWL_DESTINATION_URL);
+
+			// The same guard the domains branch below uses, and for the same
+			// reason: `goto` resolves on `load`, which this server-rendered form
+			// reaches before React attaches, so a value typed in that window never
+			// reaches React's state and the form submits empty. This branch went
+			// without it until 2026-09-07, when it failed in CI on exactly that —
+			// `links.spec.ts`'s own creation passed in the same run because it has
+			// always had the guard.
+			const destination = page.getByLabel(/destination/i);
+			await waitForHydration(destination);
+			await destination.fill(I18N_CRAWL_DESTINATION_URL);
+
 			await page.getByRole('button', { name: /save/i }).click();
 			await expect(page.getByText(I18N_CRAWL_DESTINATION_URL)).toBeVisible();
 
@@ -141,6 +174,42 @@ for (const suffix of AUTHENTICATED_PATHS) {
 			linkStrings.push(I18N_CRAWL_DESTINATION_URL, shortUrl);
 		}
 
+		if (suffix === 'domains') {
+			// `domain.hostname` carries no unique constraint any more — a hostname
+			// may be claimed by several teams at once (see the comment on
+			// `claimDomain` in `domains.spec.ts`) — but a repeated one would still
+			// break this crawl: below, a level-2 heading naming `hostname` is
+			// asserted to resolve to exactly one element, and two domain rows
+			// sharing the same hostname would turn that into a strict-mode
+			// violation. This suite also runs against a shared preview database, so
+			// a fixed literal like `I18N_CRAWL_DESTINATION_URL` above would collide
+			// with a rerun of this same crawl, or with `domains.spec.ts`'s own
+			// claims, against that same database.
+			const hostname = `i18n-${Date.now()}.e2e.test`;
+
+			await page.goto(`/teams/${teamId}/domains`);
+
+			// Not decorative: this form is server-rendered too, and `goto` resolves
+			// before React hydrates it — see `waitForHydration`.
+			const hostnameField = page.getByLabel(/hostname/i);
+			await waitForHydration(hostnameField);
+			await hostnameField.fill(hostname);
+			await page.getByRole('button', { name: /add domain/i }).click();
+
+			// A level-2 heading, not a plain `getByText`: the hostname also
+			// appears inside the TXT challenge name and the delete button below,
+			// so a bare substring match would resolve to more than one element.
+			await expect(page.getByRole('heading', { level: 2, name: hostname })).toBeVisible();
+
+			// The TXT row renders before the CNAME row (`domain-list.tsx`'s own
+			// JSX order); the Value column is the third cell in either row.
+			const rows = page.locator('table tbody tr');
+			const txtValue = await directText(rows.nth(0).locator('td').nth(2));
+			const cnameValue = await directText(rows.nth(1).locator('td').nth(2));
+
+			domainStrings.push(hostname, `_kurze-url-challenge.${hostname}`, txtValue, cnameValue);
+		}
+
 		// Every authenticated page renders `AuthedShell` -> `TeamSwitcher`, which
 		// prints `membership.name` — this run's `teamName` fixture value — as
 		// plain link text. That is user data, not UI copy: a real Verein's own
@@ -152,14 +221,24 @@ for (const suffix of AUTHENTICATED_PATHS) {
 		// short URL (`linkStrings`, above, populated only when `links` created
 		// one): a real Verein's own link would render its own destination and
 		// short URL in that exact spot, identically in both languages, for the
-		// same reason — nobody translates a URL either. Allowing the *literal*
-		// strings this run's own fixture and link creation produced — reusing
-		// the module's own exclusion Set rather than a second mechanism — has no
-		// blind spot: a pattern-based exclusion (a UUID shape, an `e2e ` prefix,
-		// "anything that looks like a URL") would just as happily swallow a real
-		// hardcoded string that happened to sit next to this one, which is
-		// exactly the false negative this spec exists to prevent.
-		const identicalByDesign = new Set([...IDENTICAL_BY_DESIGN, teamName, ...linkStrings]);
+		// same reason — nobody translates a URL either. `domainStrings` (above,
+		// populated only when `domains` claimed one) is the same story again: a
+		// hostname, its TXT challenge name, and the raw values of the two DNS
+		// records a Verein is told to create are all data a claiming team
+		// supplied or that this instance generated, never copy. Allowing the
+		// *literal* strings this run's own fixture, link creation, and domain
+		// claim produced — reusing the module's own exclusion Set rather than a
+		// second mechanism — has no blind spot: a pattern-based exclusion (a
+		// UUID shape, an `e2e ` prefix, "anything that looks like a URL or
+		// hostname") would just as happily swallow a real hardcoded string that
+		// happened to sit next to one of these, which is exactly the false
+		// negative this spec exists to prevent.
+		const identicalByDesign = new Set([
+			...IDENTICAL_BY_DESIGN,
+			teamName,
+			...linkStrings,
+			...domainStrings,
+		]);
 
 		const path = `/teams/${teamId}/${suffix}`;
 		const english = new Set(await visibleText(page, baseURL, 'en', path, identicalByDesign));

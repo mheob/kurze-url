@@ -28,6 +28,7 @@ import (
 	"github.com/mheob/kurze-url/apps/api/internal/cache"
 	"github.com/mheob/kurze-url/apps/api/internal/config"
 	"github.com/mheob/kurze-url/apps/api/internal/db"
+	"github.com/mheob/kurze-url/apps/api/internal/domainverify"
 )
 
 var (
@@ -100,17 +101,37 @@ type testUser struct {
 	email string
 }
 
+// stubDomainVerifier lets a test dictate the outcome of a domain
+// verification check without a real DNS lookup or TLS handshake to a third
+// party. It is assigned into Deps.DomainVerifier as a pointer, so a test can
+// mutate f.domainVerifier.reason after the fixture is built and have the
+// already-registered handler see the change — unlike a Config field, this
+// needs no f.rebuildRouter() call. calls counts every invocation of Check, so
+// a test can pin the already-verified short-circuit: it must stay at 1 even
+// after a later probe would have failed.
+type stubDomainVerifier struct {
+	reason domainverify.Reason
+	err    error
+	calls  int
+}
+
+func (s *stubDomainVerifier) Check(context.Context, string, string) (domainverify.Reason, error) {
+	s.calls++
+	return s.reason, s.err
+}
+
 // tenancyFixture is one team with one member per role, a stranger who belongs
 // to no team, a real JWKS-backed verifier and a wired /v1 router.
 type tenancyFixture struct {
-	deps     api.Deps
-	pool     *pgxpool.Pool
-	key      *ecdsa.PrivateKey
-	router   http.Handler
-	teamID   uuid.UUID
-	members  map[authz.Role]testUser
-	stranger testUser
-	invites  *fakeInviter
+	deps           api.Deps
+	pool           *pgxpool.Pool
+	key            *ecdsa.PrivateKey
+	router         http.Handler
+	teamID         uuid.UUID
+	members        map[authz.Role]testUser
+	stranger       testUser
+	invites        *fakeInviter
+	domainVerifier *stubDomainVerifier
 
 	sharedDomainID uuid.UUID
 	teamDomainID   uuid.UUID
@@ -118,6 +139,22 @@ type tenancyFixture struct {
 	linkID         uuid.UUID
 	folderID       uuid.UUID
 	tagID          uuid.UUID
+
+	// emptyDomainID is a second team-owned, verified domain with no link on
+	// it — unlike teamDomainID, which always carries the "fixture" link.
+	// TestRolePermissionMatrix's delete-domain case needs a domain it can
+	// actually delete; deleting teamDomainID would 409 for every role at or
+	// above admin, since it has a link.
+	emptyDomainID uuid.UUID
+
+	// otherTeamID and otherAdmin are a second, independent team with a single
+	// admin member. Domain claims are deliberately not unique per hostname —
+	// several teams may hold one on the same hostname at once — so proving
+	// that needs two real teams in one fixture, not the two-full-fixtures
+	// pattern organization_isolation_test.go uses for "does team A leak into
+	// team B's list" cases.
+	otherTeamID uuid.UUID
+	otherAdmin  testUser
 }
 
 // seedAuthUser inserts a Supabase auth user. The column list mirrors
@@ -219,6 +256,12 @@ func newTenancyFixture(t *testing.T) *tenancyFixture {
 		 values ($1, $2, 'fixture', 'https://example.org/fixture', $3) returning id`,
 		teamDomainID, teamID, members[authz.RoleOwner].id).Scan(&linkID))
 
+	var emptyDomainID uuid.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`insert into domain (team_id, hostname, verification_status, verified_at)
+		 values ($1, $2, 'verified', now()) returning id`,
+		teamID, "empty-"+suffix+".test").Scan(&emptyDomainID))
+
 	var folderID uuid.UUID
 	require.NoError(t, pool.QueryRow(ctx,
 		`insert into folder (team_id, name) values ($1, 'fixture') returning id`,
@@ -234,6 +277,22 @@ func newTenancyFixture(t *testing.T) *tenancyFixture {
 		`insert into tag (team_id, name) values ($1, 'fixture') returning id`,
 		teamID).Scan(&tagID))
 
+	var otherTeamID uuid.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`insert into team (name) values ($1) returning id`, "Anderer Verein "+suffix).Scan(&otherTeamID))
+	otherAdmin := seedAuthUser(ctx, t, pool, "other-admin-"+suffix+"@verein.test")
+	// Registered after seedAuthUser(otherAdmin) so LIFO deletes the team
+	// first, same ordering as the members/teamID block above: the team_id
+	// cascade removes team_member regardless of whether auth.users still
+	// exists, so this does not depend on team_member.user_id also cascading.
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `delete from team where id = $1`, otherTeamID)
+	})
+	_, err := pool.Exec(ctx,
+		`insert into team_member (team_id, user_id, role) values ($1, $2, 'admin')`,
+		otherTeamID, otherAdmin.id)
+	require.NoError(t, err)
+
 	key, jwksURL := startAuthenticatedJWKSServer(t)
 	verifier, err := auth.NewVerifier(ctx, jwksURL, meTestIssuer, meTestAudience)
 	require.NoError(t, err)
@@ -248,6 +307,7 @@ func newTenancyFixture(t *testing.T) *tenancyFixture {
 	cfg.LinkCreateRateLimitPerMin = 100
 
 	invites := &fakeInviter{userID: uuid.New(), t: t, pool: pool}
+	domainVerifierStub := &stubDomainVerifier{reason: domainverify.ReasonNone}
 
 	// The redirect helper below exercises the real HandleRedirect, which
 	// records a click on every successful redirect — so this fixture needs a
@@ -265,22 +325,27 @@ func newTenancyFixture(t *testing.T) *tenancyFixture {
 		members:        members,
 		stranger:       stranger,
 		invites:        invites,
+		domainVerifier: domainVerifierStub,
 		sharedDomainID: sharedDomainID,
 		teamDomainID:   teamDomainID,
 		teamHostname:   teamHostname,
+		emptyDomainID:  emptyDomainID,
 		linkID:         linkID,
 		folderID:       folderID,
 		tagID:          tagID,
+		otherTeamID:    otherTeamID,
+		otherAdmin:     otherAdmin,
 		deps: api.Deps{
-			Config:       cfg,
-			SharedDomain: api.SharedDomain{ID: sharedDomainID, Hostname: sharedHostname},
-			Queries:      db.New(pool),
-			Pool:         pool,
-			Cache:        redis,
-			Verifier:     verifier,
-			Admin:        invites,
-			Recorder:     recorder,
-			Log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+			Config:         cfg,
+			SharedDomain:   api.SharedDomain{ID: sharedDomainID, Hostname: sharedHostname},
+			Queries:        db.New(pool),
+			Pool:           pool,
+			Cache:          redis,
+			Verifier:       verifier,
+			DomainVerifier: domainVerifierStub,
+			Admin:          invites,
+			Recorder:       recorder,
+			Log:            slog.New(slog.NewTextHandler(io.Discard, nil)),
 		},
 	}
 

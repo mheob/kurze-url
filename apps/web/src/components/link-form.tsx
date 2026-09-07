@@ -6,6 +6,7 @@ import { Button } from './ui/button';
 export interface LinkFormValues {
 	analytics_enabled: boolean;
 	destination_url: string;
+	domain_id: string;
 	expires_at: string;
 	redirect_type: number;
 	slug: string;
@@ -14,6 +15,7 @@ export interface LinkFormValues {
 const defaultValues: LinkFormValues = {
 	analytics_enabled: true,
 	destination_url: '',
+	domain_id: '',
 	expires_at: '',
 	redirect_type: 302,
 	slug: '',
@@ -29,12 +31,18 @@ const defaultValues: LinkFormValues = {
 const KNOWN_FIELD_NAMES: ReadonlySet<string> = new Set([
 	'analytics_enabled',
 	'destination_url',
+	'domain_id',
 	'expires_at',
 	'redirect_type',
 	'slug',
 ]);
 
 interface LinkFormProps {
+	// A team's *verified* domains, or undefined/empty when there are none to
+	// offer — either way the picker below renders nothing at all, per its own
+	// docstring: a `<select>` with a single, forced option is furniture, not a
+	// choice.
+	readonly domains?: readonly { id: string; hostname: string }[];
 	readonly fieldErrors?: Readonly<Record<string, string>>;
 	readonly initial?: Partial<LinkFormValues>;
 	readonly onSubmit: (values: LinkFormValues) => void;
@@ -55,7 +63,12 @@ interface LinkFormProps {
  * client-side check here is "destination is required", surfaced through
  * `form.Field`'s own `onChange` validator rather than a parallel schema.
  */
-export function LinkForm({ fieldErrors, initial, onSubmit }: LinkFormProps): React.JSX.Element {
+export function LinkForm({
+	domains,
+	fieldErrors,
+	initial,
+	onSubmit,
+}: LinkFormProps): React.JSX.Element {
 	const { t } = useTranslation();
 
 	const form = useForm({
@@ -239,9 +252,47 @@ export function LinkForm({ fieldErrors, initial, onSubmit }: LinkFormProps): Rea
 				}}
 			</form.Field>
 
-			{/* No domain picker: one domain exists on this instance, so a select
-			    with one option would be furniture. It appears when custom domains
-			    do — see `links.new.tsx` in a later plan. */}
+			{/* Furniture check: a select offering only the shared domain is no
+			    choice at all, so this renders nothing unless the team has at
+			    least one verified domain to pick instead. The empty-valued
+			    option is the shared instance hostname — `toRequestBody` in the
+			    create route maps `''` back to `undefined`, exactly as it already
+			    does for `slug`/`expires_at`, so leaving this untouched keeps
+			    today's behaviour. */}
+			{domains && domains.length > 0 ? (
+				<form.Field name="domain_id">
+					{(field) => {
+						const errorId = 'domain_id-error';
+						const errorMessage = fieldErrors?.domain_id;
+
+						return (
+							<div>
+								<label htmlFor="domain_id">{t('links.domain')}</label>
+								<select
+									aria-describedby={errorMessage ? errorId : undefined}
+									aria-invalid={errorMessage ? true : undefined}
+									id="domain_id"
+									name={field.name}
+									onChange={(event) => field.handleChange(event.target.value)}
+									value={field.state.value}
+								>
+									<option value="">{t('links.domainShared')}</option>
+									{domains.map((domain) => (
+										<option key={domain.id} value={domain.id}>
+											{domain.hostname}
+										</option>
+									))}
+								</select>
+								{errorMessage ? (
+									<p id={errorId} role="alert">
+										{errorMessage}
+									</p>
+								) : null}
+							</div>
+						);
+					}}
+				</form.Field>
+			) : null}
 
 			<Button type="submit">{t('links.save')}</Button>
 		</form>

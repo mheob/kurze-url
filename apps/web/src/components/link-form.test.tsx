@@ -15,6 +15,7 @@ import { LinkForm, type LinkFormValues } from './link-form';
  * specifically.
  */
 function renderForm(props: {
+	readonly domains?: readonly { id: string; hostname: string }[];
 	readonly fieldErrors?: Readonly<Record<string, string>>;
 	readonly initial?: Partial<LinkFormValues>;
 	readonly onSubmit: (values: LinkFormValues) => void;
@@ -94,9 +95,29 @@ describe('LinkForm', () => {
 		);
 	});
 
-	it('offers no domain picker', () => {
-		// One domain exists on this instance, so a select with one option is
-		// furniture. It appears when custom domains do.
+	it('offers a domain picker when the team has a verified domain', async () => {
+		// The API has accepted an explicit domain_id since plan 3; the form
+		// never asked, so every link landed on the shared hostname. A verified
+		// domain with no way to put a link on it is not a feature.
+		const onSubmit = vi.fn();
+		renderForm({ domains: [{ hostname: 'links.verein.test', id: 'd1' }], onSubmit });
+
+		await userEvent.selectOptions(screen.getByLabelText(/domain/i), 'd1');
+		await userEvent.type(screen.getByLabelText(/destination/i), 'https://example.org/');
+		await userEvent.click(screen.getByRole('button', { name: /save/i }));
+
+		expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ domain_id: 'd1' }));
+	});
+
+	it('omits the picker when there is nothing to pick', () => {
+		// A select with one option is furniture.
+		renderForm({ domains: [], onSubmit: vi.fn() });
+		expect(screen.queryByLabelText(/domain/i)).not.toBeInTheDocument();
+	});
+
+	it('omits the picker when no domains prop is passed at all', () => {
+		// The edit route (Task 11) and any other caller that doesn't yet know
+		// about domains must keep getting today's furniture-free form.
 		renderForm({ onSubmit: vi.fn() });
 		expect(screen.queryByLabelText(/domain/i)).not.toBeInTheDocument();
 	});

@@ -53,6 +53,25 @@
 				"required": ["id", "action", "entity_type", "metadata", "created_at"],
 				"type": "object"
 			},
+			"CreateDomainInputBody": {
+				"additionalProperties": false,
+				"properties": {
+					"$schema": {
+						"description": "A URL to the JSON Schema for this object.",
+						"examples": ["https://example.com/schemas/CreateDomainInputBody.json"],
+						"format": "uri",
+						"readOnly": true,
+						"type": "string"
+					},
+					"hostname": {
+						"description": "A subdomain you control, e.g. links.verein.de. Not an apex.",
+						"maxLength": 253,
+						"type": "string"
+					}
+				},
+				"required": ["hostname"],
+				"type": "object"
+			},
 			"CreateFolderInputBody": {
 				"additionalProperties": false,
 				"properties": {
@@ -165,6 +184,76 @@
 					}
 				},
 				"required": ["name"],
+				"type": "object"
+			},
+			"DNSRecord": {
+				"additionalProperties": false,
+				"properties": {
+					"name": {
+						"type": "string"
+					},
+					"value": {
+						"type": "string"
+					}
+				},
+				"required": ["name", "value"],
+				"type": "object"
+			},
+			"DNSRecords": {
+				"additionalProperties": false,
+				"properties": {
+					"cname": {
+						"$ref": "#/components/schemas/DNSRecord"
+					},
+					"txt": {
+						"$ref": "#/components/schemas/DNSRecord"
+					}
+				},
+				"required": ["txt", "cname"],
+				"type": "object"
+			},
+			"Domain": {
+				"additionalProperties": false,
+				"properties": {
+					"$schema": {
+						"description": "A URL to the JSON Schema for this object.",
+						"examples": ["https://example.com/schemas/Domain.json"],
+						"format": "uri",
+						"readOnly": true,
+						"type": "string"
+					},
+					"hostname": {
+						"type": "string"
+					},
+					"id": {
+						"type": "string"
+					},
+					"records": {
+						"$ref": "#/components/schemas/DNSRecords"
+					},
+					"team_id": {
+						"type": "string"
+					},
+					"verification_status": {
+						"type": "string"
+					},
+					"verification_token": {
+						"type": "string"
+					},
+					"verified_at": {
+						"format": "date-time",
+						"type": ["string", "null"]
+					}
+				},
+				"required": [
+					"id",
+					"team_id",
+					"hostname",
+					"verification_status",
+					"verification_token",
+					"verified_at",
+					"records"
+				],
 				"type": "object"
 			},
 			"ErrorDetail": {
@@ -436,6 +525,38 @@
 					"items": {
 						"items": {
 							"$ref": "#/components/schemas/AuditEntry"
+						},
+						"type": ["array", "null"]
+					},
+					"page": {
+						"format": "int64",
+						"type": "integer"
+					},
+					"per_page": {
+						"format": "int64",
+						"type": "integer"
+					},
+					"total_count": {
+						"format": "int64",
+						"type": "integer"
+					}
+				},
+				"required": ["items", "page", "per_page", "total_count"],
+				"type": "object"
+			},
+			"PageDomain": {
+				"additionalProperties": false,
+				"properties": {
+					"$schema": {
+						"description": "A URL to the JSON Schema for this object.",
+						"examples": ["https://example.com/schemas/PageDomain.json"],
+						"format": "uri",
+						"readOnly": true,
+						"type": "string"
+					},
+					"items": {
+						"items": {
+							"$ref": "#/components/schemas/Domain"
 						},
 						"type": ["array", "null"]
 					},
@@ -803,6 +924,27 @@
 				},
 				"required": ["name"],
 				"type": "object"
+			},
+			"VerifyDomainOutputBody": {
+				"additionalProperties": false,
+				"properties": {
+					"$schema": {
+						"description": "A URL to the JSON Schema for this object.",
+						"examples": ["https://example.com/schemas/VerifyDomainOutputBody.json"],
+						"format": "uri",
+						"readOnly": true,
+						"type": "string"
+					},
+					"domain": {
+						"$ref": "#/components/schemas/Domain"
+					},
+					"reason": {
+						"enum": ["", "token_missing", "token_mismatch", "unreachable"],
+						"type": "string"
+					}
+				},
+				"required": ["domain", "reason"],
+				"type": "object"
 			}
 		},
 		"securitySchemes": {
@@ -820,6 +962,135 @@
 	},
 	"openapi": "3.1.0",
 	"paths": {
+		"/v1/domains/{domain_id}": {
+			"delete": {
+				"operationId": "delete-domain",
+				"parameters": [
+					{
+						"description": "The domain this request operates on.",
+						"in": "path",
+						"name": "domain_id",
+						"required": true,
+						"schema": {
+							"description": "The domain this request operates on.",
+							"type": "string"
+						}
+					}
+				],
+				"responses": {
+					"204": {
+						"description": "No Content"
+					},
+					"default": {
+						"content": {
+							"application/problem+json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorModel"
+								}
+							}
+						},
+						"description": "Error"
+					}
+				},
+				"security": [
+					{
+						"bearerAuth": []
+					}
+				],
+				"summary": "Delete a domain, refused while links still use it",
+				"tags": ["Domains"]
+			},
+			"get": {
+				"operationId": "get-domain",
+				"parameters": [
+					{
+						"description": "The domain this request operates on.",
+						"in": "path",
+						"name": "domain_id",
+						"required": true,
+						"schema": {
+							"description": "The domain this request operates on.",
+							"type": "string"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/Domain"
+								}
+							}
+						},
+						"description": "OK"
+					},
+					"default": {
+						"content": {
+							"application/problem+json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorModel"
+								}
+							}
+						},
+						"description": "Error"
+					}
+				},
+				"security": [
+					{
+						"bearerAuth": []
+					}
+				],
+				"summary": "Get a domain",
+				"tags": ["Domains"]
+			}
+		},
+		"/v1/domains/{domain_id}/verify": {
+			"post": {
+				"operationId": "verify-domain",
+				"parameters": [
+					{
+						"description": "The domain this request operates on.",
+						"in": "path",
+						"name": "domain_id",
+						"required": true,
+						"schema": {
+							"description": "The domain this request operates on.",
+							"type": "string"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/VerifyDomainOutputBody"
+								}
+							}
+						},
+						"description": "OK"
+					},
+					"default": {
+						"content": {
+							"application/problem+json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorModel"
+								}
+							}
+						},
+						"description": "Error"
+					}
+				},
+				"security": [
+					{
+						"bearerAuth": []
+					}
+				],
+				"summary": "Check a claimed domain's DNS token and reachability",
+				"tags": ["Domains"]
+			}
+		},
 		"/v1/folders/{folder_id}": {
 			"delete": {
 				"operationId": "delete-folder",
@@ -1547,6 +1818,134 @@
 				],
 				"summary": "Read a team's audit log",
 				"tags": ["Audit"]
+			}
+		},
+		"/v1/teams/{team_id}/domains": {
+			"get": {
+				"operationId": "list-domains",
+				"parameters": [
+					{
+						"description": "The team this request operates on.",
+						"in": "path",
+						"name": "team_id",
+						"required": true,
+						"schema": {
+							"description": "The team this request operates on.",
+							"type": "string"
+						}
+					},
+					{
+						"description": "1-based page number.",
+						"explode": false,
+						"in": "query",
+						"name": "page",
+						"schema": {
+							"default": 1,
+							"description": "1-based page number.",
+							"format": "int64",
+							"maximum": 1000000,
+							"minimum": 1,
+							"type": "integer"
+						}
+					},
+					{
+						"description": "Items per page, capped at 100.",
+						"explode": false,
+						"in": "query",
+						"name": "per_page",
+						"schema": {
+							"default": 25,
+							"description": "Items per page, capped at 100.",
+							"format": "int64",
+							"maximum": 100,
+							"minimum": 1,
+							"type": "integer"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/PageDomain"
+								}
+							}
+						},
+						"description": "OK"
+					},
+					"default": {
+						"content": {
+							"application/problem+json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorModel"
+								}
+							}
+						},
+						"description": "Error"
+					}
+				},
+				"security": [
+					{
+						"bearerAuth": []
+					}
+				],
+				"summary": "List a team's domains",
+				"tags": ["Domains"]
+			},
+			"post": {
+				"operationId": "create-domain",
+				"parameters": [
+					{
+						"description": "The team this request operates on.",
+						"in": "path",
+						"name": "team_id",
+						"required": true,
+						"schema": {
+							"description": "The team this request operates on.",
+							"type": "string"
+						}
+					}
+				],
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/CreateDomainInputBody"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"201": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/Domain"
+								}
+							}
+						},
+						"description": "Created"
+					},
+					"default": {
+						"content": {
+							"application/problem+json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorModel"
+								}
+							}
+						},
+						"description": "Error"
+					}
+				},
+				"security": [
+					{
+						"bearerAuth": []
+					}
+				],
+				"summary": "Claim a hostname for a team",
+				"tags": ["Domains"]
 			}
 		},
 		"/v1/teams/{team_id}/folders": {

@@ -29,6 +29,16 @@ export function LinkList({ data, page, teamId }: LinkListViewProps): React.JSX.E
 	const hasPreviousPage = data.page > 1;
 	const hasNextPage = data.page * data.per_page < data.total_count;
 
+	// Every link used to share one domain, so the first item's hostname could
+	// stand in for all of them — the domain picker ended that: a team can mix
+	// links on the shared instance hostname with links on a custom domain it
+	// verified. `ShortUrlNotice` only ever renders for a hostname ending in
+	// `.invalid` (Preview's placeholder `SHARED_DOMAIN_HOSTNAME`), so finding
+	// any one link still on it is enough to justify showing the warning —
+	// there is no need to name every link it applies to, only to not miss it
+	// because a later, unrelated link happened to render first.
+	const invalidHostname = items.find((item) => item.hostname.endsWith('.invalid'))?.hostname ?? '';
+
 	if (items.length === 0) {
 		return (
 			<p>
@@ -48,9 +58,7 @@ export function LinkList({ data, page, teamId }: LinkListViewProps): React.JSX.E
 			<Link params={{ teamId }} to="/teams/$teamId/links/new">
 				{t('links.create')}
 			</Link>
-			{/* Every link on this team was created against the same domain, so the
-			    first item's hostname stands in for all of them. */}
-			<ShortUrlNotice hostname={items[0]?.hostname ?? ''} />
+			<ShortUrlNotice hostname={invalidHostname} />
 			<ul>
 				{items.map((link) => (
 					<li key={link.id}>

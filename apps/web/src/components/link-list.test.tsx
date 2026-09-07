@@ -165,6 +165,28 @@ describe('LinkList', () => {
 		expect(screen.queryByRole('note')).not.toBeInTheDocument();
 	});
 
+	it('still shows the notice when a verified custom domain sorts first', async () => {
+		// The domain picker made this reachable: a team may now mix links on a
+		// custom domain it verified with links still on the shared instance
+		// hostname. Reading only `items[0]` would miss the invalid one entirely
+		// whenever it is not the first row — this pins the fix against that
+		// exact ordering.
+		renderWith(
+			pageOf({
+				items: [
+					link({ hostname: 'kurze.url', id: 'link-1', short_url: 'https://kurze.url/abc123' }),
+					link({
+						hostname: 'short.invalid',
+						id: 'link-2',
+						short_url: 'https://short.invalid/def456',
+					}),
+				],
+				total_count: 2,
+			}),
+		);
+		expect(await screen.findByRole('note')).toBeInTheDocument();
+	});
+
 	it('disables the previous-page control on the first page', async () => {
 		renderWith(pageOf({ items: [link()], page: 1, per_page: 1, total_count: 2 }), 1);
 		expect(await screen.findByRole('link', { name: 'Next page' })).toBeInTheDocument();

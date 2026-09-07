@@ -21,6 +21,7 @@ import (
 	"github.com/mheob/kurze-url/apps/api/internal/cache"
 	"github.com/mheob/kurze-url/apps/api/internal/config"
 	"github.com/mheob/kurze-url/apps/api/internal/db"
+	"github.com/mheob/kurze-url/apps/api/internal/domainverify"
 	"github.com/mheob/kurze-url/apps/api/internal/supabase"
 )
 
@@ -125,7 +126,12 @@ func run(log *slog.Logger) error {
 		Pool:         pool,
 		Cache:        redis,
 		Recorder:     recorder,
-		Log:          log,
+		// Built once here, not per request: a Verifier built per request
+		// would rebuild its transport every time and defeat the connection
+		// settings (dialer Control hook, disabled keep-alives, timeouts)
+		// domainverify.NewVerifier configures.
+		DomainVerifier: domainverify.NewVerifier(log),
+		Log:            log,
 	}
 
 	// Authentication is optional at startup so the redirect surface stays

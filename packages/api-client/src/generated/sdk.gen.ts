@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AddTeamMemberData, AddTeamMemberErrors, AddTeamMemberResponses, CreateFolderData, CreateFolderErrors, CreateFolderResponses, CreateLinkData, CreateLinkErrors, CreateLinkResponses, CreateTagData, CreateTagErrors, CreateTagResponses, CreateTeamData, CreateTeamErrors, CreateTeamResponses, DeleteFolderData, DeleteFolderErrors, DeleteFolderResponses, DeleteLinkData, DeleteLinkErrors, DeleteLinkResponses, DeleteTagData, DeleteTagErrors, DeleteTagResponses, GetHealthData, GetHealthErrors, GetHealthResponses, GetLinkData, GetLinkErrors, GetLinkResponses, GetMeData, GetMeErrors, GetMeResponses, GetTeamData, GetTeamErrors, GetTeamResponses, ListAuditLogData, ListAuditLogErrors, ListAuditLogResponses, ListFoldersData, ListFoldersErrors, ListFoldersResponses, ListLinksData, ListLinksErrors, ListLinksResponses, ListTagsData, ListTagsErrors, ListTagsResponses, ListTeamMembersData, ListTeamMembersErrors, ListTeamMembersResponses, ListTeamsData, ListTeamsErrors, ListTeamsResponses, RemoveTeamMemberData, RemoveTeamMemberErrors, RemoveTeamMemberResponses, UpdateFolderData, UpdateFolderErrors, UpdateFolderResponses, UpdateLinkData, UpdateLinkErrors, UpdateLinkResponses, UpdateTagData, UpdateTagErrors, UpdateTagResponses, UpdateTeamData, UpdateTeamErrors, UpdateTeamMemberData, UpdateTeamMemberErrors, UpdateTeamMemberResponses, UpdateTeamResponses } from './types.gen';
+import type { AddTeamMemberData, AddTeamMemberErrors, AddTeamMemberResponses, CreateDomainData, CreateDomainErrors, CreateDomainResponses, CreateFolderData, CreateFolderErrors, CreateFolderResponses, CreateLinkData, CreateLinkErrors, CreateLinkResponses, CreateTagData, CreateTagErrors, CreateTagResponses, CreateTeamData, CreateTeamErrors, CreateTeamResponses, DeleteDomainData, DeleteDomainErrors, DeleteDomainResponses, DeleteFolderData, DeleteFolderErrors, DeleteFolderResponses, DeleteLinkData, DeleteLinkErrors, DeleteLinkResponses, DeleteTagData, DeleteTagErrors, DeleteTagResponses, GetDomainData, GetDomainErrors, GetDomainResponses, GetHealthData, GetHealthErrors, GetHealthResponses, GetLinkData, GetLinkErrors, GetLinkResponses, GetMeData, GetMeErrors, GetMeResponses, GetTeamData, GetTeamErrors, GetTeamResponses, ListAuditLogData, ListAuditLogErrors, ListAuditLogResponses, ListDomainsData, ListDomainsErrors, ListDomainsResponses, ListFoldersData, ListFoldersErrors, ListFoldersResponses, ListLinksData, ListLinksErrors, ListLinksResponses, ListTagsData, ListTagsErrors, ListTagsResponses, ListTeamMembersData, ListTeamMembersErrors, ListTeamMembersResponses, ListTeamsData, ListTeamsErrors, ListTeamsResponses, RemoveTeamMemberData, RemoveTeamMemberErrors, RemoveTeamMemberResponses, UpdateFolderData, UpdateFolderErrors, UpdateFolderResponses, UpdateLinkData, UpdateLinkErrors, UpdateLinkResponses, UpdateTagData, UpdateTagErrors, UpdateTagResponses, UpdateTeamData, UpdateTeamErrors, UpdateTeamMemberData, UpdateTeamMemberErrors, UpdateTeamMemberResponses, UpdateTeamResponses, VerifyDomainData, VerifyDomainErrors, VerifyDomainResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -17,6 +17,33 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
      */
     meta?: keyof ClientMeta extends never ? Record<string, unknown> : ClientMeta;
 };
+
+/**
+ * Delete a domain, refused while links still use it
+ */
+export const deleteDomain = <ThrowOnError extends boolean = false>(options: Options<DeleteDomainData, ThrowOnError>): RequestResult<DeleteDomainResponses, DeleteDomainErrors, ThrowOnError> => (options.client ?? client).delete<DeleteDomainResponses, DeleteDomainErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v1/domains/{domain_id}',
+    ...options
+});
+
+/**
+ * Get a domain
+ */
+export const getDomain = <ThrowOnError extends boolean = false>(options: Options<GetDomainData, ThrowOnError>): RequestResult<GetDomainResponses, GetDomainErrors, ThrowOnError> => (options.client ?? client).get<GetDomainResponses, GetDomainErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v1/domains/{domain_id}',
+    ...options
+});
+
+/**
+ * Check a claimed domain's DNS token and reachability
+ */
+export const verifyDomain = <ThrowOnError extends boolean = false>(options: Options<VerifyDomainData, ThrowOnError>): RequestResult<VerifyDomainResponses, VerifyDomainErrors, ThrowOnError> => (options.client ?? client).post<VerifyDomainResponses, VerifyDomainErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v1/domains/{domain_id}/verify',
+    ...options
+});
 
 /**
  * Delete a folder
@@ -162,6 +189,28 @@ export const listAuditLog = <ThrowOnError extends boolean = false>(options: Opti
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v1/teams/{team_id}/audit-log',
     ...options
+});
+
+/**
+ * List a team's domains
+ */
+export const listDomains = <ThrowOnError extends boolean = false>(options: Options<ListDomainsData, ThrowOnError>): RequestResult<ListDomainsResponses, ListDomainsErrors, ThrowOnError> => (options.client ?? client).get<ListDomainsResponses, ListDomainsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v1/teams/{team_id}/domains',
+    ...options
+});
+
+/**
+ * Claim a hostname for a team
+ */
+export const createDomain = <ThrowOnError extends boolean = false>(options: Options<CreateDomainData, ThrowOnError>): RequestResult<CreateDomainResponses, CreateDomainErrors, ThrowOnError> => (options.client ?? client).post<CreateDomainResponses, CreateDomainErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v1/teams/{team_id}/domains',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
 });
 
 /**

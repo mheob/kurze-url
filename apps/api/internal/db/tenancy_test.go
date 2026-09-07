@@ -566,3 +566,101 @@ func TestLockTeamOwnersSerializesConcurrentDemotions(t *testing.T) {
 		"LockTeamOwners must serialize concurrent demotions so exactly one owner always remains")
 	require.Equal(t, 1, adminCount, "exactly one of the two demotions must have succeeded")
 }
+
+// TestDomainQueriesFilterByTeam exercises the domain claim queries the same
+// way TestUpdateFolderRefusesAnotherTeamsID and its siblings exercise folder
+// and tag CRUD: directly, with a domain seeded under otherTeamID standing in
+// for another team's row, bypassing internal/api's DomainEditorScope entirely
+// so a missing team_id filter is actually observable here rather than
+// intercepted before the query ever runs.
+func TestDomainQueriesFilterByTeam(t *testing.T) {
+	ctx := context.Background()
+	tx, err := testPool(t).Begin(ctx)
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	teamID, userID := seedTeamWithOwner(ctx, t, tx)
+
+	var otherTeamID uuid.UUID
+	require.NoError(t, tx.QueryRow(ctx,
+		`insert into team (name) values ('other') returning id`).Scan(&otherTeamID))
+
+	q := db.New(tx)
+
+	mine, err := q.CreateDomainClaim(ctx, db.CreateDomainClaimParams{
+		TeamID: teamID, Hostname: "mine.test", VerificationToken: ptr("tok-a"),
+	})
+	require.NoError(t, err)
+
+	theirs, err := q.CreateDomainClaim(ctx, db.CreateDomainClaimParams{
+		TeamID: otherTeamID, Hostname: "theirs.test", VerificationToken: ptr("tok-b"),
+	})
+	require.NoError(t, err)
+
+	// CountLinksForDomain has nothing to distinguish "filtered" from
+	// "unfiltered" unless at least one link actually exists, so one is seeded
+	// here, owned by teamID, on the "mine" domain.
+	_, err = tx.Exec(ctx,
+		`insert into link (domain_id, team_id, slug, destination_url, created_by)
+		 values ($1, $2, 'seeded', 'https://example.com', $3)`,
+		mine.ID, teamID, userID)
+	require.NoError(t, err)
+
+	t.Run("GetDomainForTeam hides another team's domain", func(t *testing.T) {
+		_, err := q.GetDomainForTeam(ctx, db.GetDomainForTeamParams{
+			ID: theirs.ID, TeamID: teamID,
+		})
+		require.ErrorIs(t, err, pgx.ErrNoRows,
+			"without the team_id filter this returns another team's domain")
+	})
+
+	t.Run("ListDomainsForTeam returns only this team's domains", func(t *testing.T) {
+		rows, err := q.ListDomainsForTeam(ctx, db.ListDomainsForTeamParams{
+			TeamID: teamID, Limit: 100, Offset: 0,
+		})
+		require.NoError(t, err)
+		for _, row := range rows {
+			require.Equal(t, teamID, *row.TeamID)
+		}
+	})
+
+	t.Run("LockDomainForTeam refuses another team's domain", func(t *testing.T) {
+		_, err := q.LockDomainForTeam(ctx, db.LockDomainForTeamParams{
+			ID: theirs.ID, TeamID: teamID,
+		})
+		require.ErrorIs(t, err, pgx.ErrNoRows,
+			"without the team_id filter this locks and returns another team's domain")
+	})
+
+	t.Run("DeleteDomain refuses another team's domain", func(t *testing.T) {
+		affected, err := q.DeleteDomain(ctx, db.DeleteDomainParams{
+			ID: theirs.ID, TeamID: teamID,
+		})
+		require.NoError(t, err)
+		require.Zero(t, affected, "a delete that ignores team_id would report 1")
+	})
+
+	t.Run("MarkDomainVerified refuses another team's domain", func(t *testing.T) {
+		_, err := q.MarkDomainVerified(ctx, db.MarkDomainVerifiedParams{
+			ID: theirs.ID, TeamID: teamID,
+		})
+		require.ErrorIs(t, err, pgx.ErrNoRows)
+	})
+
+	t.Run("CountLinksForDomain counts only this team's links", func(t *testing.T) {
+		count, err := q.CountLinksForDomain(ctx, db.CountLinksForDomainParams{
+			DomainID: mine.ID, TeamID: otherTeamID,
+		})
+		require.NoError(t, err)
+		require.Zero(t, count)
+	})
+
+	t.Run("CountDomainsForTeam counts only this team's domains", func(t *testing.T) {
+		count, err := q.CountDomainsForTeam(ctx, teamID)
+		require.NoError(t, err)
+		require.EqualValues(t, 1, count,
+			"the count must include only this team's own domain (mine), not otherTeamID's (theirs)")
+	})
+}
+
+func ptr[T any](v T) *T { return &v }

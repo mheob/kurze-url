@@ -41,7 +41,16 @@ describe('translation catalogues', () => {
 		// A German catalogue copied from English passes key parity while failing
 		// the actual requirement. Proper nouns are the legitimate exception and
 		// are listed explicitly, so adding one is a deliberate act.
-		const identicalByDesign = new Set(['brand']);
+		// `domains.recordTypeTxt`/`recordTypeCname` are the other kind of
+		// exception: DNS protocol constants, not prose — "TXT" and "CNAME" are
+		// not translated any more than "301"/"302" are (see
+		// `links.redirect301`/`redirect302`, which sidestep this same check by
+		// embedding the digits in a longer, language-specific string instead).
+		const identicalByDesign = new Set([
+			'brand',
+			'domains.recordTypeTxt',
+			'domains.recordTypeCname',
+		]);
 		const english = new Map(flatten(en));
 		for (const [key, german] of flatten(de)) {
 			if (identicalByDesign.has(key)) continue;

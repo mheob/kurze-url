@@ -35,7 +35,14 @@ type Deps struct {
 	Cache        *cache.Client
 	Recorder     *analytics.Recorder
 	Verifier     *auth.Verifier
-	Log          *slog.Logger
+	// DomainVerifier decides whether a claimed hostname's DNS token matches
+	// and whether the hostname reaches this API. Named DomainVerifier, not
+	// Verifier: Verifier above is the JWT verifier, and two fields both
+	// called Verifier in one struct would be a reading hazard exactly where
+	// picking the wrong one is a security bug. domainverify.NewVerifier's
+	// *Verifier is the production implementation, wired in cmd/api/main.go.
+	DomainVerifier domainVerifier
+	Log            *slog.Logger
 
 	// Pool backs db.InTx. Queries above is pool-backed too, but a transaction
 	// needs the pool itself.

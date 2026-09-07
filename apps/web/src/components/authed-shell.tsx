@@ -31,6 +31,13 @@ interface AuthedShellProps {
  * `/`'s `noTeam` outcome never enters `_authed` at all, but a stale bookmark
  * to a team the visitor has since left 404s deeper in the tree, past this
  * shell) and `TeamSwitcher` has nothing to switch between in that case.
+ *
+ * The Links/Domains `<nav>` (Task 14) shares `TeamSwitcher`'s exact guard —
+ * `currentTeamId && memberships.length > 0` — for the same reason: with no
+ * resolved team, or a `memberships` list that doesn't actually contain it,
+ * there is nowhere for either link to point. Before this, the shell had a
+ * team switcher and a sign-out control, and a second team page (the domains
+ * screen from Task 13) could not be reached by clicking at all.
  */
 export function AuthedShell({
 	currentTeamId,
@@ -45,6 +52,22 @@ export function AuthedShell({
 		<header className="border-border flex items-center justify-between border-b px-6 py-4">
 			{currentTeamId && memberships.length > 0 ? (
 				<TeamSwitcher currentTeamId={currentTeamId} memberships={memberships} />
+			) : null}
+			{currentTeamId && memberships.length > 0 ? (
+				<nav aria-label={t('nav.label')}>
+					<ul>
+						<li>
+							<Link params={{ teamId: currentTeamId }} to="/teams/$teamId/links">
+								{t('nav.links')}
+							</Link>
+						</li>
+						<li>
+							<Link params={{ teamId: currentTeamId }} to="/teams/$teamId/domains">
+								{t('nav.domains')}
+							</Link>
+						</li>
+					</ul>
+				</nav>
 			) : null}
 			<div className="flex items-center gap-2">
 				{isMaintainer ? <Link to="/teams/new">{t('teams.create')}</Link> : null}

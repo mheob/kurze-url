@@ -4,7 +4,11 @@ import { expect, fn, userEvent, within } from 'storybook/test';
 import { ConfirmDelete } from './confirm-delete';
 
 const meta = {
-	args: { label: 'Delete', onConfirm: fn() },
+	args: {
+		label: 'Delete',
+		onConfirm: fn(),
+		question: 'Delete this link? Anyone who already has the short URL will get a 404.',
+	},
 	component: ConfirmDelete,
 	title: 'Links/ConfirmDelete',
 } satisfies Meta<typeof ConfirmDelete>;
