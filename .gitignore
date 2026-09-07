@@ -46,6 +46,10 @@ storybook-static/
 *.tsbuildinfo
 .eslintcache
 
+# lefthook — personal environment shim, see .lefthookrc
+.lefthookrc
+lefthook-local.yml
+
 # Editors
 .idea/
 *.swp
