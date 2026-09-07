@@ -100,6 +100,32 @@ func TestDeepHealthAnswers200WhenOnlyRedisIsUnreachable(t *testing.T) {
 	require.Equal(t, map[string]string{"postgres": "ok", "redis": "failed"}, decodeChecks(t, rec))
 }
 
+// The two pings share one budget, and sharing it serially meant the first
+// one to hang spent all of it: Postgres holding the full three seconds left
+// the Redis ping to return "context deadline exceeded" the moment it started,
+// so the body blamed a Redis that was answering fine — and the error log said
+// so on all 480 of the day's polls.
+//
+// The Postgres ping here blocks until its context is done, exactly as a hung
+// connection does, and the Redis ping reports the context the way a real
+// client does — a call handed an already-expired context fails immediately
+// rather than ignoring it. That second half is what gives this test its
+// falsification value: run the two serially again and Redis reports failed.
+func TestASlowPostgresDoesNotMakeRedisReportFailed(t *testing.T) {
+	f := newFixture(t)
+	f.deps.Config.HealthCheckToken = testHealthToken
+	f.deps.PingPostgres = func(ctx context.Context) error {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	f.deps.PingRedis = func(ctx context.Context) error { return ctx.Err() }
+
+	rec := deepHealth(t, api.NewRouter(f.deps), testHealthToken)
+
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
+	require.Equal(t, map[string]string{"postgres": "failed", "redis": "ok"}, decodeChecks(t, rec))
+}
+
 // The flat /health must stay flat: domainverify's reachability probe fetches
 // it on a claimed hostname and requires "status":"ok" in the body.
 func TestFlatHealthNeedsNoToken(t *testing.T) {

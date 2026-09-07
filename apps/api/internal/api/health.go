@@ -2,8 +2,10 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -11,6 +13,13 @@ import (
 // The uptime monitor calling this has its own timeout, and two serial
 // three-second waits would outlast it — at which point the monitor reports an
 // outage caused by the outage check.
+//
+// "The whole check" is why the two pings run concurrently below. Run
+// serially under one shared deadline, a Postgres that hangs for the entire
+// budget leaves nothing of it for Redis: the Redis ping then returns
+// "context deadline exceeded" the instant it starts, the body says Redis
+// failed while Redis is healthy, and an error log — one Sentry event on each
+// of the 480 daily polls — says so too.
 const healthCheckBudget = 3 * time.Second
 
 type deepHealthBody struct {
@@ -31,8 +40,16 @@ func (d Deps) HandleDeepHealth(w http.ResponseWriter, r *http.Request) {
 	// same way. 404 rather than 401, matching what assertMembership and the
 	// entity scopes do everywhere else here: a caller who may not use a
 	// route does not learn it exists.
+	//
+	// ConstantTimeCompare rather than !=: not because a timing attack on this
+	// token is practical over the network, but because one line removes the
+	// question for good. It returns 0 for differing lengths, so a wrong-length
+	// token is refused without a second check.
 	if d.Config.HealthCheckToken == "" ||
-		r.Header.Get("X-Health-Token") != d.Config.HealthCheckToken {
+		subtle.ConstantTimeCompare(
+			[]byte(r.Header.Get("X-Health-Token")),
+			[]byte(d.Config.HealthCheckToken),
+		) != 1 {
 		http.NotFound(w, r)
 		return
 	}
@@ -40,8 +57,24 @@ func (d Deps) HandleDeepHealth(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), healthCheckBudget)
 	defer cancel()
 
-	postgresErr := d.pingPostgres(ctx)
-	redisErr := d.pingRedis(ctx)
+	// Concurrent, sharing the one budget: see healthCheckBudget. It also
+	// halves the worst case, since the endpoint now takes as long as its
+	// slower dependency rather than as long as both.
+	var postgresErr, redisErr error
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		postgresErr = d.pingPostgres(ctx)
+	}()
+	go func() {
+		defer wg.Done()
+		redisErr = d.pingRedis(ctx)
+	}()
+
+	wg.Wait()
 
 	body := deepHealthBody{
 		Status: "ok",
