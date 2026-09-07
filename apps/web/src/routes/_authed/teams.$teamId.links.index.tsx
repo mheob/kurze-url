@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next';
 
 import { LinkList } from '../../components/link-list';
 import { classifyApiError, type ApiFailure } from '../../lib/api-errors';
+import { reportUnexpected } from '../../lib/observability';
 import { linksQueryOptions } from '../../server/links';
 import { assertMembership } from '../_authed';
 
@@ -123,10 +124,21 @@ export const Route = createFileRoute('/_authed/teams/$teamId/links/')({
  * loudly for a genuinely down API. There is still no `errors.unauthenticated`
  * catalogue key: both paths that can classify a failure this way redirect
  * before any text would render, so the key would stay dead.
+ *
+ * Reporting happens here and not only in `RootErrorPage` (Fix round 3):
+ * TanStack Router renders the *nearest* `errorComponent`, and this route has
+ * its own — so a 500 from listing links, the likeliest real failure in the
+ * authenticated app, never reaches the root boundary and was never reported.
+ * `reportUnexpected` refuses everything `classifyApiError` names, so the
+ * kinds rendered as ordinary UI above still cost no event. Called during
+ * render rather than from an effect, for the same reason `RootErrorPage`
+ * does: this component also renders on the server, where effects never run.
  */
 export function LinksError({ error }: { readonly error: unknown }): React.JSX.Element {
 	const { t } = useTranslation();
 	const failure: ApiFailure = classifyApiError(error);
+
+	reportUnexpected(error);
 
 	if (failure.kind === 'unauthenticated') return <Navigate to="/login" />;
 

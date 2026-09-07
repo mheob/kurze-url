@@ -32,7 +32,7 @@ Findings from research that actually changed a decision, rather than just confir
 - **Tremor is built on Radix**, so shadcn/ui runs on Radix here even though Base UI became shadcn's default in July 2026.
 - **Supabase's built-in mail sender caps at 2 emails/hour**, which is why Resend (custom SMTP) entered the stack at all.
 - **Supabase Branching is billed per hour** and isn't covered by the Spend Cap, so per-PR preview databases are out; migrations run on merge to `main`.
-- **Vercel's Hobby plan keeps runtime logs for one hour**, which is what turns Sentry from optional into necessary.
+- **Vercel's Pro plan keeps runtime logs for one day** (Hobby: one hour; 30-day retention needs the paid Observability Plus add-on). This project is on Pro, so the "one hour" figure this line used to carry was wrong — the conclusion it supported is not: a day is short for an infrequently-checked side project, which is what turns Sentry from optional into necessary.
 - **UptimeRobot's free tier became personal/non-commercial-only in Dec 2024**, so uptime monitoring goes to Better Stack instead.
 - **Password protection was moved back into MVP scope** after being briefly mis-tiered as advanced — it's Core in the original feature list, and retrofitting security later is worse than designing it now.
 - **RLS is deliberately off**: a service-role connection bypasses it anyway, so authorization lives in the Go backend where it can actually be enforced.

@@ -134,7 +134,13 @@ func (d Deps) resolveFromDatabase(
 	}
 
 	if err := d.Cache.PutLink(ctx, cacheKey, resolved, d.Config.LinkCacheTTL); err != nil {
-		d.Log.Error("link cache write failed", "error", err)
+		// Warn, not Error, so this does not become a Sentry event. Reaching
+		// this line at all means the lookup above already missed, and the
+		// only thing that makes a write fail while the read succeeded is
+		// Redis being unreachable — which "redirect cache lookup failed"
+		// has already reported. During an outage this fires on every single
+		// redirect, and it says nothing the lookup failure did not.
+		d.Log.Warn("link cache write failed", "error", err)
 	}
 
 	// The lookup script had no link id to deduplicate against on a miss, so
@@ -145,7 +151,12 @@ func (d Deps) resolveFromDatabase(
 	if !resolved.HasPassword {
 		unique, err = d.Cache.MarkUniqueVisit(ctx, resolved.ID.String(), day, visitor, d.Config.UniqueVisitorTTL)
 		if err != nil {
-			d.Log.Error("unique-visitor dedup failed", "error", err)
+			// Warn for the same reason as the cache write above: during a
+			// Redis outage this is the fourth error-level log of one
+			// redirect, and the first of them already named the cause. The
+			// cost of getting it wrong is an undercounted unique visitor,
+			// not a broken redirect.
+			d.Log.Warn("unique-visitor dedup failed", "error", err)
 		}
 	}
 

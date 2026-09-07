@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { DomainList } from '../../components/domain-list';
 import { Button } from '../../components/ui/button';
 import { classifyApiError, statusOf, type ApiFailure } from '../../lib/api-errors';
+import { reportUnexpected } from '../../lib/observability';
 import {
 	claimDomainFn,
 	deleteDomainFn,
@@ -84,10 +85,18 @@ export const Route = createFileRoute('/_authed/teams/$teamId/domains')({
  * this fails loudly instead. `kind: 'unauthenticated'` can still reach here
  * on a background refetch (React Query's default `refetchOnWindowFocus`),
  * a path `loadDomains`'s own try/catch never sees — hence the `<Navigate>`.
+ *
+ * And it reports, for the same reason `LinksError` does: a route-level
+ * `errorComponent` is the nearest one TanStack Router will render, so
+ * without this call a 500 from listing domains never reaches
+ * `RootErrorPage` and no event is ever sent. `reportUnexpected` refuses
+ * every kind rendered as ordinary UI below.
  */
 export function DomainsError({ error }: { readonly error: unknown }): React.JSX.Element {
 	const { t } = useTranslation();
 	const failure: ApiFailure = classifyApiError(error);
+
+	reportUnexpected(error);
 
 	if (failure.kind === 'unauthenticated') return <Navigate to="/login" />;
 

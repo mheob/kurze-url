@@ -2,6 +2,7 @@ import { QueryClient } from '@tanstack/react-query';
 import { createRouter as createTanStackRouter } from '@tanstack/react-router';
 import { setupRouterSsrQueryIntegration } from '@tanstack/react-router-ssr-query';
 
+import { initSentry } from './lib/observability';
 import { routeTree } from './routeTree.gen';
 
 /**
@@ -44,6 +45,26 @@ export function getRouter() {
 	});
 
 	setupRouterSsrQueryIntegration({ queryClient, router });
+
+	// After the router exists, because the server/client distinction comes
+	// from it. Both bundles reach this line — the SSR one included — and only
+	// the one with a DSN acts.
+	//
+	// What the server bundle gets from this is narrower than it looks, and
+	// narrower than the obvious wording would claim. Errors captured by hand
+	// (`reportUnexpected`) are reported, and so are uncaught exceptions and
+	// unhandled rejections: `@sentry/node`'s default integrations register
+	// those as plain `process.on` handlers, which need no loader hook.
+	//
+	// What is missing is automatic instrumentation — the HTTP, database and
+	// framework calls Sentry patches at import time. That is what Sentry's
+	// `--import ./instrument.server.mjs` actually buys: OpenTelemetry has to
+	// load before the modules it patches, and `getRouter` runs long after.
+	// This deployment cannot arrange it anyway (the server bundle is built by
+	// Nitro and run by Vercel, and neither exposes the node command line), and
+	// with tracing off there is nothing to instrument for — but that is the
+	// constraint to solve first if auto-instrumentation is ever wanted.
+	initSentry(router.isServer);
 
 	return router;
 }

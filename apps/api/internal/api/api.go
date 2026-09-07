@@ -55,6 +55,13 @@ type Deps struct {
 	// Now is injectable so tests can pin expiry behaviour. Defaults to
 	// time.Now when nil.
 	Now func() time.Time
+
+	// PingPostgres and PingRedis back GET /health/deep. Function fields
+	// rather than an interface, and nil meaning "use the real dependency",
+	// following the same convention as Now above: a test needs to fail one
+	// dependency, which is far less work than faking a whole *pgxpool.Pool.
+	PingPostgres func(ctx context.Context) error
+	PingRedis    func(ctx context.Context) error
 }
 
 func (d Deps) now() time.Time {
