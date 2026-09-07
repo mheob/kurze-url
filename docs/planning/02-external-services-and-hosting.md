@@ -105,6 +105,14 @@ Finding that makes this more than a nice-to-have: **Vercel retains runtime logs 
 
 **Sentry**'s free "Developer" tier: 5,000 events/month, 1 user. The 1-user ceiling matches a solo/small-maintainer project fine for now; the 5,000/month event cap is generous relative to this project's expected traffic (a handful of low-volume Vereine, not a high-throughput consumer app) — worth re-checking once there are meaningfully more participating Vereine. Both `apps/api` (Go SDK) and `apps/web` (React/TanStack SDK) report into the same Sentry organization; separate DSNs per app but sharing the one free event quota. This closes the gap Vercel's own 1-day log window leaves open, independent of whether anyone happened to be looking at the time.
 
+### Dashboard settings a maintainer still has to confirm
+
+Three things the code cannot do for itself, all of them one-time and none of them verified by CI. They live here rather than in a task checklist because they outlive the task that produced them.
+
+1. **Enable Spike Protection on both Sentry projects.** It is free, it is off by default, and it is the only server-side backstop against one incident burning the whole month's 5,000 events. The API's own per-message throttle (`internal/observability/sloghandler.go`) covers the shape this project actually hit — the same failure logged on every request during a dependency outage — but it cannot help with a burst spread across many distinct messages, and there is no equivalent throttle in the browser SDK at all.
+2. **Confirm "Automatically expose System Environment Variables" is on for the API's Vercel project.** `VERCEL_ENV` and `VERCEL_GIT_COMMIT_SHA` are read at runtime to set Sentry's `environment` and `release`. With that setting off both are simply absent, nothing fails, and every production event arrives tagged `environment: development` with no release attached — which quietly removes the cross-project correlation (same release, same environment, API and web side by side) the whole design rests on.
+3. **After the first production deploy, request a `.map` URL next to a built asset on the live site and confirm it 404s.** Source maps are uploaded to Sentry and then deleted from the output (`apps/web/vite.config.ts`'s `filesToDeleteAfterUpload`), but nothing in CI verifies the deletion — and the failure mode is publishing this app's source next to its bundle, which is worse than the minified stack traces the upload was meant to fix.
+
 ## Observability: uptime monitoring (Better Stack, not UptimeRobot)
 
 Decided 2026-09-01: a simple external check that the redirect path (`GET /<slug>` on the shared default domain) actually responds — catches the case where the whole service is down, which error tracking alone wouldn't necessarily surface loudly.
