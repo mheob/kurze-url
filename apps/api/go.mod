@@ -5,6 +5,7 @@ go 1.27.0
 require (
 	github.com/MicahParks/keyfunc/v3 v3.8.1
 	github.com/danielgtaylor/huma/v2 v2.39.1
+	github.com/getsentry/sentry-go v0.49.0
 	github.com/go-chi/chi/v5 v5.3.2
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
