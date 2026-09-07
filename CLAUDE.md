@@ -53,7 +53,7 @@ supabase/         # Supabase CLI-owned migrations (top-level, not under apps/api
 .github/workflows/
 ```
 
-Inside `apps/api`: `cmd/api/main.go` and `cmd/openapi/main.go` (writes `openapi.json`, which `packages/api-client` is generated from), plus `internal/{analytics,api,audit,auth,authz,cache,config,db,destination,link,pages,slug,supabase}`. Redis lives behind `cache`, not an `internal/redis`. `scanning` and `qr` arrive with the features that need them and do not exist yet.
+Inside `apps/api`: `cmd/api/main.go` and `cmd/openapi/main.go` (writes `openapi.json`, which `packages/api-client` is generated from), plus `internal/{analytics,api,audit,auth,authz,cache,config,db,destination,domainverify,link,pages,slug,supabase}`. Redis lives behind `cache`, not an `internal/redis`. `scanning` and `qr` arrive with the features that need them and do not exist yet.
 
 `apps/api` and `apps/cli` are **separate Go modules**, no `go.work` — the CLI talks HTTP, it does not import backend packages.
 
@@ -63,6 +63,7 @@ Inside `apps/api`: `cmd/api/main.go` and `cmd/openapi/main.go` (writes `openapi.
 
 - **API versioning**: `/v1` path prefix. The public redirect surface is deliberately _unversioned_ and _not_ in the OpenAPI spec.
 - **Errors**: Huma's default RFC 9457 `application/problem+json`. Do not build a custom error model.
+- **A 409 that needs to carry a number** travels as `huma.ErrorDetail.Value`, keyed by the operation's own path-parameter `Location` (e.g. `"path.domain_id"`) — never embedded in the free-text `detail` message, which stays free to reword. `deleteDomain` (`apps/api/internal/api/domains.go`) is the first and, so far, only place this exists (the blocking link count on a 409 refusal); `apps/web/src/lib/api-errors.ts` reads it back by that same typed key. This is a deliberate pattern to reuse, not an accident to "clean up" into plain prose or refactor away.
 - **Pagination**: offset/limit (`page`, `per_page`, capped at 100) with a typed `Page[T]` response envelope — never pagination headers.
 - **Filtering**: flat, explicitly typed query params per endpoint. Not a generic `filter=field:op:value` scheme.
 - **Auth in handlers**: declare `Security: {"bearerAuth": {}}` on operations that need it; a global middleware enforces it only where declared.
@@ -112,7 +113,7 @@ Tables: `team`, `team_member`, `domain`, `folder`, `tag`, `link`, `link_tag`, `l
 - **A hostname claim is not a reservation.** `domain.hostname` used to carry a global unique constraint; `supabase/migrations/20260906122341_custom_domains.sql` dropped it, because a global constraint made the first team to `INSERT` a row lock that hostname against everyone else — including its actual owner, who might lose the race to claim their own domain. Uniqueness now lives on a partial index, `domain_hostname_verified_key`, scoped to `where verification_status = 'verified'`: several teams may each hold a claim on the same hostname at once, the first to prove ownership (DNS TXT token) and reachability wins `verified`, and every other claim on that hostname is marked `failed`. `GetLinkableDomain` already refuses to attach a link to anything but a `verified` domain, so the exclusivity that actually matters — whose links go live — was never the unique index's job to enforce alone. Belongs on the outcome, not the attempt.
 - **`DOMAIN_DNS_TARGET`'s default is provisional, not confirmed.** Vercel assigns a per-project CNAME target alongside the generic `cname.vercel-dns.com`, and which one a Verein should actually be told to publish is unconfirmed until the first real custom domain goes through the maintainer-in-the-loop flow end to end — the code comment next to the variable in `apps/api/.env.example` says so directly. Don't treat the current default as settled guidance for a real Verein. `RATE_LIMIT_DOMAIN_CLAIM_PER_HOUR` (per user) and `RATE_LIMIT_DOMAIN_VERIFY_PER_HOUR` (per domain and per user) are the other two new domain-related variables; see `apps/api/.env.example` for their values and reasoning.
 - **Slugs are case-insensitive**: stored lowercase, folded on the redirect path. Generated slugs are 8 characters from `23456789abcdefghijkmnpqrstuvwxyz`.
-- **Entity-scoped routes** (`/v1/links/{link_id}` and, later, domains, folders and tags) authorize through per-entity scope structs in `internal/authz` that resolve the entity, then reuse the membership check. A non-member gets 404, never 403.
+- **Entity-scoped routes** (`/v1/links/{link_id}`, `/v1/domains/{domain_id}`, and folder/tag routes) authorize through per-entity scope structs in `internal/authz` that resolve the entity, then reuse the membership check. A non-member gets 404, never 403.
 - **Creating a link must invalidate the redirect cache**, not only updating one — a probe may have cached the not-found sentinel under the new slug's key.
 
 ---
@@ -136,7 +137,6 @@ Not decided yet — do not silently invent an answer, flag it instead:
 
 - **Backups**: Supabase free tier provides none. A scheduled `supabase db dump` to off-site storage is the obvious mitigation, not yet designed.
 - **Signup gate**: open self-service vs. maintainer approval for new teams on the shared instance. Affects abuse exposure and shared free-tier budget.
-- **Concrete rate-limit numbers** (link creation, redirect, password check) — mechanism decided, values not.
 - **`audit_log.action` value taxonomy** — falls out of the endpoint list, needs writing down.
 - **Alert notification channel** (email vs. webhook) for free-tier thresholds, Sentry and Better Stack.
 - **Legal texts** (Impressum, Datenschutzerklärung, AVV) need a lawyer before the instance opens to real Vereine; two specific questions are flagged in doc 08.
