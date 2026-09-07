@@ -1,7 +1,14 @@
 import type { ErrorEvent } from '@sentry/tanstackstart-react';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { isReportable, scrubEvent, sentryOptions } from './observability';
+
+const sentryMocks = vi.hoisted(() => ({ init: vi.fn() }));
+
+vi.mock('@sentry/tanstackstart-react', async (importOriginal) => ({
+	...(await importOriginal<typeof import('@sentry/tanstackstart-react')>()),
+	init: sentryMocks.init,
+}));
 
 /** Every category of request data this project must not send. */
 function eventWithEverything(): ErrorEvent {
@@ -193,5 +200,46 @@ describe('sentryOptions', () => {
 		expect(new Set(Object.keys(dataCollection?.genAI ?? {}))).toEqual(
 			new Set(['inputs', 'outputs']),
 		);
+	});
+});
+
+/**
+ * `initSentry` keeps its own module-level `initialized` flag, so each case
+ * here imports a fresh instance of the module via `resetModules` — otherwise
+ * the first test to run would set the flag and every later one would find
+ * it already tripped, regardless of what it does itself.
+ */
+describe('initSentry', () => {
+	afterEach(() => {
+		vi.unstubAllEnvs();
+		sentryMocks.init.mockClear();
+	});
+
+	it('does not initialise Sentry when no DSN is configured', async () => {
+		vi.resetModules();
+		vi.stubEnv('VITE_SENTRY_DSN', '');
+		const { initSentry } = await import('./observability');
+
+		initSentry(false);
+
+		expect(sentryMocks.init).not.toHaveBeenCalled();
+	});
+
+	/**
+	 * `getRouter` (Task 7's `router.tsx`) runs once per request on the
+	 * server, so a real deployment calls this many times over a process's
+	 * lifetime. Without the module-level guard, each call would hand
+	 * Sentry's process-global client a fresh configuration.
+	 */
+	it('initialises Sentry only once across repeated calls', async () => {
+		vi.resetModules();
+		vi.stubEnv('VITE_SENTRY_DSN', 'https://public@o0.ingest.sentry.io/0');
+		const { initSentry } = await import('./observability');
+
+		initSentry(false);
+		initSentry(false);
+		initSentry(true);
+
+		expect(sentryMocks.init).toHaveBeenCalledTimes(1);
 	});
 });
