@@ -154,9 +154,13 @@ func newFixture(t *testing.T, opts ...func(*linkOptions)) *fixture {
 		linkID:   linkID,
 		rows:     &recorded,
 		deps: api.Deps{
-			Config:   cfg,
-			Queries:  db.New(pool),
-			Cache:    client,
+			Config:  cfg,
+			Queries: db.New(pool),
+			Cache:   client,
+			// Pool backs GET /health/deep's default `select 1` ping (health.go)
+			// and db.InTx elsewhere. Without it, any handler that falls through
+			// to the real dependency instead of a test override nil-derefs.
+			Pool:     pool,
 			Recorder: recorder,
 			Log:      slog.New(slog.NewTextHandler(io.Discard, nil)),
 			Now:      func() time.Time { return time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC) },

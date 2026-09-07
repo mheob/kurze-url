@@ -36,6 +36,10 @@ func NewRouter(deps Deps) http.Handler {
 	// /health answers on every hostname: the uptime monitor and the platform's
 	// own checks do not know which one they are hitting.
 	root.Get("/health", plainHealth)
+	// /health/deep answers on every hostname for the same reason the flat one
+	// does: a monitor does not know which hostname it is hitting. It is
+	// token-guarded and, like /health, stays out of the OpenAPI spec.
+	root.Get("/health/deep", deps.HandleDeepHealth)
 	root.HandleFunc("/*", func(w http.ResponseWriter, r *http.Request) {
 		if Hostname(r.Host) == apiHost {
 			apiSurface.ServeHTTP(w, r)

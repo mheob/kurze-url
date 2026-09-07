@@ -69,6 +69,14 @@ type Config struct {
 	// publish is unconfirmed until the first real domain is set up.
 	DomainDNSTarget string
 
+	// HealthCheckToken guards GET /health/deep. Empty disables the endpoint
+	// outright — it then answers 404 for every caller. Fail closed: a
+	// forgotten variable must not publish dependency status and a free
+	// database round trip to whoever guesses the path. The cost is that a
+	// forgotten variable also breaks the keep-alive, which is not silent —
+	// the uptime monitor alerts on the 404.
+	HealthCheckToken string
+
 	LinkCacheTTL     time.Duration
 	NotFoundCacheTTL time.Duration
 	UniqueVisitorTTL time.Duration
@@ -157,6 +165,8 @@ func Load() (Config, error) {
 	}
 
 	cfg.DomainDNSTarget = env("DOMAIN_DNS_TARGET", "cname.vercel-dns.com")
+
+	cfg.HealthCheckToken = os.Getenv("HEALTH_CHECK_TOKEN")
 
 	return cfg, nil
 }
