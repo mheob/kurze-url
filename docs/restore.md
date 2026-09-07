@@ -18,6 +18,8 @@ Getting back in is not a matter of remembering a password: **this app has no pas
 
 ## Procedure
 
+> **How long this takes.** The 2026-09-07 drill measured **25 minutes** for steps 2 to 8 against a Supabase project that already existed. Creating the project is on top of that, and so is step 7 — the drill ran the apps locally instead of repointing Vercel and redeploying twice. Budget **45 to 60 minutes**, and note that the number came from doing it, not from estimating it.
+
 ### 1. Fetch the newest backup
 
 ```bash

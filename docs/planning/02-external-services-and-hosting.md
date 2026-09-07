@@ -30,6 +30,7 @@ Status: draft, reflecting decisions made through 2026-09-01. Intended to be refi
 - 5 GB egress + 5 GB cached egress.
 - Unlimited API requests.
 - Mitigation for the pause behavior: a scheduled keep-alive ping. Accepted as sufficient for now rather than upgrading to a paid plan immediately.
+- **No backups at all.** Not short retention: none. Answered on 2026-09-07 (`docs/superpowers/specs/2026-09-07-backups-design.md`): a nightly encrypted dump to a private GitHub repository, fourteen daily and twelve weekly, with the restore procedure in `docs/restore.md`. Supabase Pro's managed backups were the alternative and remain the fallback if the session pooler ever stops serving a full dump — they cost 25 $/month and, being in the same account as the thing they protect, cover data loss but not account loss.
 - Supabase also ships an **OAuth 2.1 Server** feature ("Sign in with Your App"), supporting Authorization Code + PKCE and refresh-token grants — this is what the CLI's OAuth login is built on. It does not support the Device Authorization Grant (RFC 8628).
 
 **Upstash Redis (free tier)**
