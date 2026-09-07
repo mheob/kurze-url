@@ -2,6 +2,7 @@ import { QueryClient } from '@tanstack/react-query';
 import { createRouter as createTanStackRouter } from '@tanstack/react-router';
 import { setupRouterSsrQueryIntegration } from '@tanstack/react-router-ssr-query';
 
+import { initSentry } from './lib/observability';
 import { routeTree } from './routeTree.gen';
 
 /**
@@ -44,6 +45,10 @@ export function getRouter() {
 	});
 
 	setupRouterSsrQueryIntegration({ queryClient, router });
+
+	// After the router exists, because the server/client distinction comes
+	// from it. Both bundles reach this line; only the one with a DSN acts.
+	initSentry(router.isServer);
 
 	return router;
 }

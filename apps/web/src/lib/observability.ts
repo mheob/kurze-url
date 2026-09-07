@@ -125,6 +125,9 @@ export function reportUnexpected(error: unknown): void {
  * `sendDefaultPii: false`. It is defence in depth next to `scrubEvent`, not
  * a substitute for it.
  *
+ * No tracing and no replay: `tracesSampleRate` stays unset, and replay would
+ * be PII capture by design.
+ *
  * `@sentry/core`'s `resolveDataCollectionOptions` falls back to its own
  * permissive `DEFAULTS` — not the `sendDefaultPii: false` off-state — for
  * every field this object does not set, the instant `dataCollection` is
@@ -185,4 +188,30 @@ export function sentryOptions(dsn: string): Parameters<typeof Sentry.init>[0] {
 		environment: import.meta.env.VITE_SENTRY_ENVIRONMENT || 'development',
 		release: import.meta.env.VITE_SENTRY_RELEASE || undefined,
 	};
+}
+
+/**
+ * `Sentry.init` is process-global, and `getRouter` runs once per request on
+ * the server — so this guards against re-initialising the client on every
+ * page view.
+ */
+let initialized = false;
+
+/**
+ * Called from `getRouter`, which is the one place that exists in both
+ * bundles. Sentry's own documentation prefers an `instrument.server.mjs`
+ * loaded with node's `--import`, which this deployment cannot arrange: the
+ * server bundle is built by Nitro and run by Vercel, and neither exposes the
+ * node command line. With tracing off, plain `Sentry.init` is enough for
+ * error capture, which is all this project asked for. If auto-instrumentation
+ * is ever wanted, that constraint is what has to be solved first.
+ */
+export function initSentry(isServer: boolean): void {
+	if (initialized) return;
+
+	const dsn = import.meta.env.VITE_SENTRY_DSN;
+	if (!dsn) return;
+
+	initialized = true;
+	Sentry.init({ ...sentryOptions(dsn), serverName: isServer ? 'web-ssr' : undefined });
 }

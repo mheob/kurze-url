@@ -8,6 +8,7 @@ import { useMemo } from 'react';
 import { I18nextProvider, useTranslation } from 'react-i18next';
 
 import { createI18n, documentTitle } from '../i18n';
+import { reportUnexpected } from '../lib/observability';
 import { DEFAULT_LANGUAGE, readLanguage, readTheme, themeClassName } from '../lib/preferences';
 
 import appCss from '../styles/app.css?url';
@@ -83,6 +84,39 @@ function NotFound() {
 }
 
 /**
+ * The one place every unhandled failure in the authenticated tree arrives,
+ * which is why reporting happens here rather than in each route's own
+ * `errorComponent`. Everything `classifyApiError` names — a 403, a 422, a
+ * field error — is rendered as ordinary UI by the route that caused it and
+ * never reaches this component; `reportUnexpected` refuses those anyway, so
+ * the two guards agree.
+ *
+ * Reported during render rather than in an effect: this component also
+ * renders on the server, where effects never run.
+ */
+export function RootErrorPage({ error }: { readonly error: Error }) {
+	const { t } = useTranslation();
+
+	reportUnexpected(error);
+
+	return (
+		<main className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
+			{/* This page has only one message, unlike `teams.new.tsx`'s heading
+			    (page title) plus separate `<p role="alert">` (error text) — a
+			    sibling paragraph here would just repeat the same sentence on
+			    screen. Wrapping the `<h1>` in `role="alert"` instead keeps its
+			    heading semantics intact (the role sits on the wrapping `<div>`,
+			    not the heading itself) while still exposing the whole block as
+			    a live region, so it is both reachable as a heading and announced
+			    as an alert. */}
+			<div role="alert">
+				<h1 className="text-3xl font-bold">{t('errors.unknown')}</h1>
+			</div>
+		</main>
+	);
+}
+
+/**
  * `queryClient` is the one piece of context every route in the tree can rely
  * on: `router.tsx`'s `getRouter` creates a fresh `QueryClient` per request
  * and passes it in here, so `context.queryClient` is what
@@ -92,6 +126,7 @@ function NotFound() {
  * redeclaring it.
  */
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
+	errorComponent: RootErrorPage,
 	loader: () => getPreferences(),
 	notFoundComponent: NotFound,
 	// `loaderData` is what makes `head` able to see the request's language at
