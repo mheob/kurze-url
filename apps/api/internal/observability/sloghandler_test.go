@@ -149,7 +149,8 @@ func TestDifferentMessagesAreReportedSeparately(t *testing.T) {
 }
 
 // The attributes this codebase logs are the difference between an actionable
-// event and a mystery: health.go sends one message for both dependencies, and
+// event and a mystery: when a message is shared across call sites (health.go
+// used to send this exact message for both its Postgres and Redis pings),
 // "dependency" is the only thing that says which one failed. Nothing about
 // Sentry's grouping depended on dropping them — it groups on the exception or
 // the message and on fingerprint, never on a context.

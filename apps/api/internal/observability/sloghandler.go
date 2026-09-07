@@ -161,9 +161,10 @@ func capture(ctx context.Context, record slog.Record, suppressed int) {
 //
 // Grouping is unaffected by this: Sentry groups on the exception or the
 // message and on fingerprint, never on a context. Dropping the attributes was
-// costing real information — health.go logs the same message for a Postgres
-// and a Redis failure, and "dependency" is the only thing that tells them
-// apart.
+// costing real information: when two call sites share a message, an
+// attribute such as "dependency" can be the only thing telling their events
+// apart (health.go's two pings did exactly this, until distinct messages
+// per dependency replaced it — see health.go's HandleDeepHealth).
 func logFields(record slog.Record, suppressed int) sentry.Context {
 	fields := make(sentry.Context, record.NumAttrs())
 

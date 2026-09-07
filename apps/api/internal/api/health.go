@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -67,10 +68,12 @@ func (d Deps) HandleDeepHealth(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		defer wg.Done()
+		defer recoverPing(&postgresErr)
 		postgresErr = d.pingPostgres(ctx)
 	}()
 	go func() {
 		defer wg.Done()
+		defer recoverPing(&redisErr)
 		redisErr = d.pingRedis(ctx)
 	}()
 
@@ -90,18 +93,43 @@ func (d Deps) HandleDeepHealth(w http.ResponseWriter, r *http.Request) {
 		// cache miss or create a link. The uptime monitor should say so.
 		body.Status = "failed"
 		status = http.StatusServiceUnavailable
-		d.Log.Error("deep health check failed", "dependency", "postgres", "error", postgresErr)
+		// A distinct message per dependency, not one message plus a
+		// "dependency" attribute: sloghandler.go's Sentry throttle admits at
+		// most one event per distinct record.Message per window, so a
+		// Postgres and a Redis failure sharing a message shared one throttle
+		// slot too — whichever logged second was silently dropped. Two
+		// messages give the throttle two keys.
+		d.Log.Error("deep health check failed: postgres", "dependency", "postgres", "error", postgresErr)
 	}
 	if redisErr != nil {
 		// Still 200. Redirects fall back to Postgres and keep working, so
 		// this is degradation — it travels to Sentry through this error log
 		// rather than paging the maintainer about a service that is serving.
-		d.Log.Error("deep health check failed", "dependency", "redis", "error", redisErr)
+		d.Log.Error("deep health check failed: redis", "dependency", "redis", "error", redisErr)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(body)
+}
+
+// recoverPing turns a panic inside a ping goroutine into that dependency's
+// error. A bare `go func()` has no recover anywhere else on its stack: a
+// nil Pool, a nil Cache, or a driver panic on the uptime monitor's
+// three-minute poll would otherwise take the whole process down, the
+// redirect surface included — root.With(middleware.Recoverer) on this route
+// (router.go) does not help, because it only contains a panic that unwinds
+// through the handler's own goroutine, and a goroutine this handler spawned
+// unwinds on its own stack instead.
+//
+// The "panic: " prefix is deliberate: it is what lets a reader tell this
+// failure apart from an ordinary returned error — in the error log's
+// "error" attribute, and in the Sentry exception message it becomes once
+// that log reaches capture() in sloghandler.go.
+func recoverPing(err *error) {
+	if r := recover(); r != nil {
+		*err = fmt.Errorf("panic: %v", r)
+	}
 }
 
 func checkStatus(err error) string {

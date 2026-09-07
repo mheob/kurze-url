@@ -4,13 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/stretchr/testify/require"
 
 	"github.com/mheob/kurze-url/apps/api/internal/api"
+	"github.com/mheob/kurze-url/apps/api/internal/observability"
 )
 
 const testHealthToken = "test-health-token"
@@ -124,6 +129,79 @@ func TestASlowPostgresDoesNotMakeRedisReportFailed(t *testing.T) {
 
 	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
 	require.Equal(t, map[string]string{"postgres": "failed", "redis": "ok"}, decodeChecks(t, rec))
+}
+
+// A goroutine panic has no recover anywhere else on its stack. A bare
+// `go func()` here would take the whole process down — the redirect surface
+// with it — on a nil Pool, a nil Cache, or a driver panic during the uptime
+// monitor's three-minute poll. root.With(middleware.Recoverer) does not save
+// it: that only contains a panic that unwinds through the handler's own
+// goroutine, and a panic in a goroutine this handler spawned never does.
+// Recovering inside the goroutine turns the panic into that dependency's
+// error instead, with the same severity a returned error would have produced.
+func TestDeepHealthRecoversFromAPostgresPingPanic(t *testing.T) {
+	f := newFixture(t)
+	f.deps.Config.HealthCheckToken = testHealthToken
+	f.deps.PingPostgres = func(context.Context) error { panic("nil pool") }
+
+	rec := deepHealth(t, api.NewRouter(f.deps), testHealthToken)
+
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
+	require.Equal(t, "failed", decodeChecks(t, rec)["postgres"])
+}
+
+// The other severity, same recovery: a panicking Redis ping must still
+// answer 200, exactly like a returned Redis error does — degradation, not an
+// outage.
+func TestDeepHealthRecoversFromARedisPingPanic(t *testing.T) {
+	f := newFixture(t)
+	f.deps.Config.HealthCheckToken = testHealthToken
+	f.deps.PingRedis = func(context.Context) error { panic("nil cache") }
+
+	rec := deepHealth(t, api.NewRouter(f.deps), testHealthToken)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "failed", decodeChecks(t, rec)["redis"])
+}
+
+// collectingTransport is this file's own copy of the fake transport used in
+// internal/observability's tests: it lives on the other side of a package
+// boundary those tests don't cross, and five lines of duplication is cheaper
+// than exporting a test helper.
+type collectingTransport struct{ events []*sentry.Event }
+
+func (t *collectingTransport) Configure(sentry.ClientOptions)        {}
+func (t *collectingTransport) SendEvent(event *sentry.Event)         { t.events = append(t.events, event) }
+func (t *collectingTransport) Flush(time.Duration) bool              { return true }
+func (t *collectingTransport) FlushWithContext(context.Context) bool { return true }
+func (t *collectingTransport) Close()                                {}
+
+// Both dependencies failing in the same poll is the throttle collision this
+// fix is about: the per-message Sentry throttle (sloghandler.go) admits at
+// most one event per distinct record.Message per window, and health.go used
+// to log the identical message for a Postgres and a Redis failure — so only
+// whichever logged first survived, and which one that was depended on
+// goroutine scheduling. Distinct messages per dependency give the throttle
+// two keys instead of one, so both reach Sentry.
+func TestDeepHealthReportsBothFailuresToSentryWhenBothDependenciesFail(t *testing.T) {
+	f := newFixture(t)
+	f.deps.Config.HealthCheckToken = testHealthToken
+	f.deps.PingPostgres = func(context.Context) error { return errors.New("no route to host") }
+	f.deps.PingRedis = func(context.Context) error { return errors.New("connection refused") }
+	f.deps.Log = slog.New(observability.NewSlogHandler(slog.NewTextHandler(io.Discard, nil)))
+
+	transport := &collectingTransport{}
+	client, err := sentry.NewClient(sentry.ClientOptions{
+		Dsn:       "https://key@example.test/1",
+		Transport: transport,
+	})
+	require.NoError(t, err)
+	sentry.CurrentHub().BindClient(client)
+
+	rec := deepHealth(t, api.NewRouter(f.deps), testHealthToken)
+
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
+	require.Len(t, transport.events, 2)
 }
 
 // The flat /health must stay flat: domainverify's reachability probe fetches
