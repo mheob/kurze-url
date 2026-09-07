@@ -137,6 +137,7 @@ Not decided yet — do not silently invent an answer, flag it instead:
 
 - **Backups**: Supabase free tier provides none. A scheduled `supabase db dump` to off-site storage is the obvious mitigation, not yet designed.
 - **Signup gate**: open self-service vs. maintainer approval for new teams on the shared instance. Affects abuse exposure and shared free-tier budget.
+- **Rate limit values**: Defaults for all limits now ship in `apps/api/internal/config/config.go` (documented in `apps/api/.env.example`), but none has been validated against real usage. The domain-related limits (`RATE_LIMIT_DOMAIN_CLAIM_PER_HOUR`, `RATE_LIMIT_DOMAIN_VERIFY_PER_HOUR`) were set during implementation rather than through deliberate design. The verify limit is enforced on two axes (per domain and per user) against the same threshold — a coupling to weigh when the numbers are eventually chosen.
 - **`audit_log.action` value taxonomy** — falls out of the endpoint list, needs writing down.
 - **Alert notification channel** (email vs. webhook) for free-tier thresholds, Sentry and Better Stack.
 - **Legal texts** (Impressum, Datenschutzerklärung, AVV) need a lawyer before the instance opens to real Vereine; two specific questions are flagged in doc 08.
