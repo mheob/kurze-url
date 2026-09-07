@@ -38,7 +38,15 @@ export async function loadVerifiedDomains(
 		return (page.items ?? [])
 			.filter((domain) => domain.verification_status === 'verified')
 			.map((domain) => ({ hostname: domain.hostname, id: domain.id }));
-	} catch {
+	} catch (error) {
+		// The fallback below must stay silent to the visitor — see the doc
+		// comment above — but "silent" must not mean "invisible everywhere".
+		// Vercel Hobby only retains runtime logs for an hour, so this is not
+		// this failure's durable record, but it is what turns "every link now
+		// quietly goes to the shared hostname" from a mystery someone notices
+		// downstream into something a `runtime-logs`/Sentry search on this
+		// route actually surfaces.
+		console.error('loadVerifiedDomains: falling back to no domain picker', error);
 		return [];
 	}
 }

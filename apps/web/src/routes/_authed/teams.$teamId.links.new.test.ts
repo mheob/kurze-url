@@ -118,4 +118,24 @@ describe('loadVerifiedDomains', () => {
 
 		await expect(loadVerifiedDomains({ ensureQueryData }, 'team-a')).resolves.toEqual([]);
 	});
+
+	it('logs the swallowed error rather than failing completely silently', async () => {
+		// Finding 6: the graceful fallback above must stay silent to the
+		// *visitor*, not to every possible observer — otherwise a broken
+		// domains fetch makes every later link land on the shared hostname
+		// with nothing anywhere to notice it.
+		const error = new Error('boom');
+		const ensureQueryData = vi.fn(async (): Promise<PageDomain> => {
+			throw error;
+		});
+		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+		await loadVerifiedDomains({ ensureQueryData }, 'team-a');
+
+		expect(consoleError).toHaveBeenCalledWith(
+			expect.stringContaining('loadVerifiedDomains'),
+			error,
+		);
+		consoleError.mockRestore();
+	});
 });
