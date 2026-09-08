@@ -103,6 +103,8 @@ type Team struct {
 	ID        uuid.UUID
 	Name      string
 	CreatedAt time.Time
+	// Immutable, globally unique, human-readable identifier used in the frontend's URLs. The API addresses teams by id.
+	Slug string
 }
 
 type TeamMember struct {

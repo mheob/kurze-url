@@ -160,7 +160,10 @@ func TestInTxRollsBackEverythingWhenTheCallbackFails(t *testing.T) {
 	wantErr := errTest
 
 	err := db.InTx(ctx, pool, func(q *db.Queries) error {
-		team, err := q.CreateTeam(ctx, "rolled back")
+		team, err := q.CreateTeam(ctx, db.CreateTeamParams{
+			Name: "rolled back",
+			Slug: "rolled-back-" + uuid.NewString()[:8],
+		})
 		require.NoError(t, err)
 		teamID = team.ID
 		return wantErr
@@ -180,7 +183,10 @@ func TestInTxCommitsWhenTheCallbackSucceeds(t *testing.T) {
 
 	var teamID uuid.UUID
 	require.NoError(t, db.InTx(ctx, pool, func(q *db.Queries) error {
-		team, err := q.CreateTeam(ctx, "committed")
+		team, err := q.CreateTeam(ctx, db.CreateTeamParams{
+			Name: "committed",
+			Slug: "committed-" + uuid.NewString()[:8],
+		})
 		if err != nil {
 			return err
 		}

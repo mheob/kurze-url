@@ -7,21 +7,21 @@ from team_member
 where team_id = $1 and user_id = $2;
 
 -- name: CreateTeam :one
-insert into team (name) values ($1)
-returning id, name, created_at;
+insert into team (name, slug) values ($1, $2)
+returning id, name, slug, created_at;
 
 -- name: GetTeam :one
-select id, name, created_at from team where id = $1;
+select id, name, slug, created_at from team where id = $1;
 
 -- name: RenameTeam :one
 update team set name = $2 where id = $1
-returning id, name, created_at;
+returning id, name, slug, created_at;
 
 -- Paginated. count(*) over () gives the total in the same scan, so the list
 -- and its total_count cannot disagree the way two separate queries can.
 
 -- name: ListTeamsForUser :many
-select t.id, t.name, t.created_at, tm.role, count(*) over () as total_count
+select t.id, t.name, t.slug, t.created_at, tm.role, count(*) over () as total_count
 from team t
 join team_member tm on tm.team_id = t.id
 where tm.user_id = $1
@@ -40,7 +40,7 @@ select count(*) from team_member tm where tm.user_id = $1;
 -- person belongs to a handful of Vereine.
 
 -- name: ListMembershipsForUser :many
-select tm.team_id, t.name as team_name, tm.role
+select tm.team_id, t.name as team_name, t.slug as team_slug, tm.role
 from team_member tm
 join team t on t.id = tm.team_id
 where tm.user_id = $1

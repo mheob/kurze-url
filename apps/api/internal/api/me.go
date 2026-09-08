@@ -13,6 +13,7 @@ import (
 type TeamMembership struct {
 	TeamID uuid.UUID `json:"team_id"`
 	Name   string    `json:"name"`
+	Slug   string    `json:"slug"`
 	Role   string    `json:"role"`
 }
 
@@ -59,6 +60,7 @@ func (d Deps) registerMe(api huma.API) {
 			memberships = append(memberships, TeamMembership{
 				TeamID: row.TeamID,
 				Name:   row.TeamName,
+				Slug:   row.TeamSlug,
 				Role:   row.Role,
 			})
 		}

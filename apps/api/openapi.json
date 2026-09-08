@@ -181,9 +181,16 @@
 						"maxLength": 200,
 						"minLength": 1,
 						"type": "string"
+					},
+					"slug": {
+						"description": "Immutable identifier used in the app's URLs, e.g. \"sv-gruenwald\".",
+						"maxLength": 40,
+						"minLength": 3,
+						"pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$",
+						"type": "string"
 					}
 				},
-				"required": ["name"],
+				"required": ["name", "slug"],
 				"type": "object"
 			},
 			"DNSRecord": {
@@ -781,9 +788,12 @@
 					},
 					"role": {
 						"type": "string"
+					},
+					"slug": {
+						"type": "string"
 					}
 				},
-				"required": ["id", "name", "created_at", "role"],
+				"required": ["id", "name", "slug", "created_at", "role"],
 				"type": "object"
 			},
 			"TeamMembership": {
@@ -795,11 +805,14 @@
 					"role": {
 						"type": "string"
 					},
+					"slug": {
+						"type": "string"
+					},
 					"team_id": {
 						"type": "string"
 					}
 				},
-				"required": ["team_id", "name", "role"],
+				"required": ["team_id", "name", "slug", "role"],
 				"type": "object"
 			},
 			"UpdateFolderInputBody": {

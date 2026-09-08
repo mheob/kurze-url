@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"testing"
 	"time"
@@ -17,7 +18,7 @@ func TestCreateTeamIsRefusedForANonMaintainer(t *testing.T) {
 	f := newTenancyFixture(t)
 
 	rec := f.do(t, f.members[authz.RoleAdmin], http.MethodPost, "/v1/teams",
-		map[string]string{"name": "Neuer Verein"})
+		map[string]string{"name": "Neuer Verein", "slug": "some-valid-slug"})
 
 	require.Equal(t, http.StatusForbidden, rec.Code,
 		"team creation is maintainer-only; an admin of another team is still a stranger here")
@@ -27,13 +28,15 @@ func TestCreateTeamIsRefusedForANonMaintainer(t *testing.T) {
 func TestCreateTeamMakesTheMaintainerTheOwnerAndAuditsIt(t *testing.T) {
 	f := newTenancyFixture(t)
 	maintainer := f.members[authz.RoleOwner]
+	slug := "verein-" + uuid.NewString()[:8]
 
 	rec := f.do(t, maintainer, http.MethodPost, "/v1/teams",
-		map[string]string{"name": "Neuer Verein"})
+		map[string]string{"name": "Neuer Verein", "slug": slug})
 
 	require.Equal(t, http.StatusCreated, rec.Code, "body: %s", rec.Body.String())
 	created := decode[api.Team](t, rec)
 	require.Equal(t, "Neuer Verein", created.Name)
+	require.Equal(t, slug, created.Slug)
 	require.Equal(t, "owner", created.Role)
 
 	t.Cleanup(func() {
@@ -56,7 +59,7 @@ func TestCreateTeamRejectsAnEmptyName(t *testing.T) {
 	f := newTenancyFixture(t)
 
 	rec := f.do(t, f.members[authz.RoleOwner], http.MethodPost, "/v1/teams",
-		map[string]string{"name": ""})
+		map[string]string{"name": "", "slug": "some-valid-slug"})
 
 	require.Equal(t, http.StatusUnprocessableEntity, rec.Code)
 }
@@ -232,4 +235,84 @@ func TestGetTeamRejectsAMalformedTeamID(t *testing.T) {
 
 	require.Equal(t, http.StatusUnprocessableEntity, rec.Code)
 	require.NotEqual(t, uuid.Nil.String(), rec.Body.String())
+}
+
+func TestCreateTeamStoresTheSlugAndReportsItBack(t *testing.T) {
+	f := newTenancyFixture(t)
+	slug := "verein-" + uuid.NewString()[:8]
+
+	rec := f.do(t, f.members[authz.RoleOwner], http.MethodPost, "/v1/teams",
+		map[string]string{"name": "Neuer Verein", "slug": slug})
+
+	require.Equal(t, http.StatusCreated, rec.Code, "body: %s", rec.Body.String())
+	created := decode[api.Team](t, rec)
+	require.Equal(t, slug, created.Slug)
+
+	t.Cleanup(func() {
+		_, _ = f.pool.Exec(t.Context(), `delete from team where id = $1`, created.ID)
+	})
+
+	var stored string
+	require.NoError(t, f.pool.QueryRow(t.Context(),
+		`select slug from team where id = $1`, created.ID).Scan(&stored))
+	require.Equal(t, slug, stored)
+}
+
+func TestCreateTeamRejectsAMalformedSlug(t *testing.T) {
+	f := newTenancyFixture(t)
+
+	for _, malformed := range []string{"SV-Gruenwald", "sv_gruenwald", "-leading", "ab"} {
+		rec := f.do(t, f.members[authz.RoleOwner], http.MethodPost, "/v1/teams",
+			map[string]string{"name": "Neuer Verein", "slug": malformed})
+
+		require.Equal(t, http.StatusUnprocessableEntity, rec.Code,
+			"%q must be refused by the request schema", malformed)
+	}
+}
+
+func TestCreateTeamRefusesAReservedSlug(t *testing.T) {
+	f := newTenancyFixture(t)
+
+	rec := f.do(t, f.members[authz.RoleOwner], http.MethodPost, "/v1/teams",
+		map[string]string{"name": "Neuer Verein", "slug": "new"})
+
+	// 422, and located on the field, so the create form can render the reason
+	// next to the input rather than as a page-level "something went wrong".
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+	require.Contains(t, rec.Body.String(), "body.slug")
+}
+
+func TestCreateTeamReportsATakenSlugAsAConflict(t *testing.T) {
+	f := newTenancyFixture(t)
+	slug := "verein-" + uuid.NewString()[:8]
+	body := map[string]string{"name": "Neuer Verein", "slug": slug}
+
+	first := f.do(t, f.members[authz.RoleOwner], http.MethodPost, "/v1/teams", body)
+	require.Equal(t, http.StatusCreated, first.Code, "body: %s", first.Body.String())
+	created := decode[api.Team](t, first)
+	t.Cleanup(func() {
+		_, _ = f.pool.Exec(t.Context(), `delete from team where id = $1`, created.ID)
+	})
+
+	second := f.do(t, f.members[authz.RoleOwner], http.MethodPost, "/v1/teams", body)
+
+	require.Equal(t, http.StatusConflict, second.Code)
+	// The frontend keys on the typed location, never on the message text, so
+	// this assertion is what a reworded message must not break.
+	require.Contains(t, second.Body.String(), "body.slug")
+}
+
+func TestMeCarriesTheTeamSlug(t *testing.T) {
+	f := newTenancyFixture(t)
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet, "/v1/me", nil)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var body struct {
+		Memberships []api.TeamMembership `json:"memberships"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.NotEmpty(t, body.Memberships)
+	require.NotEmpty(t, body.Memberships[0].Slug,
+		"the frontend resolves a URL slug out of this payload; an empty slug makes every team page unreachable")
 }

@@ -18,6 +18,7 @@ import (
 type Team struct {
 	ID        uuid.UUID `json:"id"`
 	Name      string    `json:"name"`
+	Slug      string    `json:"slug"`
 	CreatedAt time.Time `json:"created_at"`
 	Role      string    `json:"role"`
 }
@@ -26,7 +27,20 @@ type Team struct {
 type CreateTeamInput struct {
 	Body struct {
 		Name string `json:"name" minLength:"1" maxLength:"200" doc:"The Verein's display name."`
+		Slug string `json:"slug" minLength:"3" maxLength:"40" pattern:"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$" doc:"Immutable identifier used in the app's URLs, e.g. \"sv-gruenwald\"."`
 	}
+}
+
+// reservedTeamSlugs may not be taken, because the frontend has static route
+// segments that would shadow them. TanStack Router matches a static segment
+// before a dynamic one, so a team holding one of these would have its pages
+// permanently answered by another screen. The create form itself has already
+// moved out of /teams/, so this list is the guard for the *next* static child
+// route someone adds there — without it, adding a route is silently also a
+// decision to strip an existing team of its URL.
+var reservedTeamSlugs = map[string]struct{}{
+	"new": {}, "create": {}, "settings": {}, "admin": {}, "api": {},
+	"login": {}, "logout": {}, "me": {}, "invite": {}, "teams": {},
 }
 
 // TeamOutput is the response body shared by every single-team operation.
@@ -106,9 +120,18 @@ func (d Deps) createTeam(ctx context.Context, in *CreateTeamInput) (*TeamOutput,
 		return nil, huma.Error403Forbidden("team creation is limited to the instance maintainers")
 	}
 
-	var created db.Team
+	if _, reserved := reservedTeamSlugs[in.Body.Slug]; reserved {
+		return nil, huma.Error422UnprocessableEntity("that slug is reserved",
+			&huma.ErrorDetail{
+				Location: "body.slug",
+				Message:  "this slug is reserved; choose another",
+				Value:    in.Body.Slug,
+			})
+	}
+
+	var created db.CreateTeamRow
 	err := db.InTx(ctx, d.Pool, func(q *db.Queries) error {
-		team, err := q.CreateTeam(ctx, in.Body.Name)
+		team, err := q.CreateTeam(ctx, db.CreateTeamParams{Name: in.Body.Name, Slug: in.Body.Slug})
 		if err != nil {
 			return err
 		}
@@ -130,10 +153,18 @@ func (d Deps) createTeam(ctx context.Context, in *CreateTeamInput) (*TeamOutput,
 			Action:      audit.ActionTeamCreated,
 			EntityType:  audit.EntityTeam,
 			EntityID:    team.ID,
-			Metadata:    map[string]any{"name": team.Name},
+			Metadata:    map[string]any{"name": team.Name, "slug": team.Slug},
 		})
 	})
-	if err != nil {
+	switch {
+	case isUniqueViolation(err):
+		return nil, huma.Error409Conflict("a team with that slug already exists",
+			&huma.ErrorDetail{
+				Location: "body.slug",
+				Message:  "this slug is already taken",
+				Value:    in.Body.Slug,
+			})
+	case err != nil:
 		d.Log.Error("create team", "error", err)
 		return nil, huma.Error500InternalServerError("could not create the team")
 	}
@@ -141,6 +172,7 @@ func (d Deps) createTeam(ctx context.Context, in *CreateTeamInput) (*TeamOutput,
 	return &TeamOutput{Body: Team{
 		ID:        created.ID,
 		Name:      created.Name,
+		Slug:      created.Slug,
 		CreatedAt: created.CreatedAt,
 		Role:      authz.RoleOwner.String(),
 	}}, nil
@@ -169,6 +201,7 @@ func (d Deps) listTeams(ctx context.Context, in *ListTeamsInput) (*ListTeamsOutp
 		items = append(items, Team{
 			ID:        row.ID,
 			Name:      row.Name,
+			Slug:      row.Slug,
 			CreatedAt: row.CreatedAt,
 			Role:      row.Role,
 		})
@@ -197,6 +230,7 @@ func (d Deps) getTeam(ctx context.Context, in *GetTeamInput) (*TeamOutput, error
 	return &TeamOutput{Body: Team{
 		ID:        team.ID,
 		Name:      team.Name,
+		Slug:      team.Slug,
 		CreatedAt: team.CreatedAt,
 		Role:      member.Role.String(),
 	}}, nil
@@ -205,7 +239,14 @@ func (d Deps) getTeam(ctx context.Context, in *GetTeamInput) (*TeamOutput, error
 func (d Deps) updateTeam(ctx context.Context, in *UpdateTeamInput) (*TeamOutput, error) {
 	member := in.Member()
 
-	var renamed db.Team
+	// GetTeam and RenameTeam return distinct row types (their own selects
+	// don't line up column-for-column with db.Team), so the row that survives
+	// to the response is captured field by field rather than as one shared
+	// struct.
+	var id uuid.UUID
+	var name, slug string
+	var createdAt time.Time
+
 	err := db.InTx(ctx, d.Pool, func(q *db.Queries) error {
 		before, err := q.GetTeam(ctx, member.TeamID)
 		if err != nil {
@@ -213,7 +254,7 @@ func (d Deps) updateTeam(ctx context.Context, in *UpdateTeamInput) (*TeamOutput,
 		}
 
 		if before.Name == in.Body.Name {
-			renamed = before
+			id, name, slug, createdAt = before.ID, before.Name, before.Slug, before.CreatedAt
 			return nil // Nothing changed; do not write a misleading audit entry.
 		}
 
@@ -221,7 +262,7 @@ func (d Deps) updateTeam(ctx context.Context, in *UpdateTeamInput) (*TeamOutput,
 		if err != nil {
 			return err
 		}
-		renamed = after
+		id, name, slug, createdAt = after.ID, after.Name, after.Slug, after.CreatedAt
 
 		return audit.Log(ctx, q, audit.Entry{
 			TeamID:      member.TeamID,
@@ -238,9 +279,10 @@ func (d Deps) updateTeam(ctx context.Context, in *UpdateTeamInput) (*TeamOutput,
 	}
 
 	return &TeamOutput{Body: Team{
-		ID:        renamed.ID,
-		Name:      renamed.Name,
-		CreatedAt: renamed.CreatedAt,
+		ID:        id,
+		Name:      name,
+		Slug:      slug,
+		CreatedAt: createdAt,
 		Role:      member.Role.String(),
 	}}, nil
 }
