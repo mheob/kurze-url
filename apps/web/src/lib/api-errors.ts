@@ -19,6 +19,7 @@ export type ApiFailure =
 	| { kind: 'rateLimited' }
 	| { kind: 'fields'; fields: Record<string, string> }
 	| { kind: 'domainHasLinks'; count: number }
+	| { kind: 'slugTaken' }
 	| { kind: 'unknown' };
 
 /** The `ErrorDetail` fields this module reads; see `apps/api/openapi.json`. */
@@ -115,6 +116,18 @@ function blockingLinkCountOf(error: unknown): number | undefined {
 	return undefined;
 }
 
+/**
+ * `createTeam` answers a taken slug with 409 and a typed detail on the field,
+ * the same convention `deleteDomain`'s blocking-link count uses one level over
+ * (`path.domain_id` there, a body field here). Reading `location` rather than
+ * matching the message means a reworded message cannot silently turn this back
+ * into a generic failure — and there is deliberately no text fallback, since
+ * that is exactly how such drift goes unnoticed.
+ */
+function isSlugConflict(error: unknown): boolean {
+	return problemDetailsOf(error).some((detail) => detail.location === 'body.slug');
+}
+
 export function classifyApiError(error: unknown): ApiFailure {
 	const status = statusOf(error);
 
@@ -128,6 +141,7 @@ export function classifyApiError(error: unknown): ApiFailure {
 	if (status === 409) {
 		const count = blockingLinkCountOf(error);
 		if (count !== undefined) return { count, kind: 'domainHasLinks' };
+		if (isSlugConflict(error)) return { kind: 'slugTaken' };
 	}
 
 	if (status === 400 || status === 422) {

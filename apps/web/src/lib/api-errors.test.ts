@@ -189,3 +189,47 @@ describe('statusOf', () => {
 		expect(statusOf({})).toBeUndefined();
 	});
 });
+
+describe('a slug conflict', () => {
+	it('is its own kind, not the generic unknown failure', () => {
+		expect(
+			classifyApiError(
+				problem(
+					409,
+					[{ location: 'body.slug', message: 'this slug is already taken' }],
+					'a team with that slug already exists',
+				),
+			),
+		).toEqual({ kind: 'slugTaken' });
+	});
+
+	/**
+	 * Keyed on the typed location, never on the prose: a 409 that carries no
+	 * recognised detail — the domain verify endpoint's "another team already
+	 * verified this hostname" — must keep collapsing into `unknown`, or every
+	 * such call site would start rendering a message about slugs.
+	 */
+	it('does not swallow a conflict that carries no field detail', () => {
+		expect(classifyApiError(problem(409, undefined, 'already verified elsewhere'))).toEqual({
+			kind: 'unknown',
+		});
+	});
+
+	/**
+	 * Falsifies message-text matching directly: this 409's prose mentions
+	 * "slug", but the typed `location` is `body.hostname`, not `body.slug`. An
+	 * implementation that classified on `detail`'s wording instead of the typed
+	 * location would misfile this as `slugTaken` — it must stay `unknown`.
+	 */
+	it('does not classify on message wording when the location is unrelated', () => {
+		expect(
+			classifyApiError(
+				problem(
+					409,
+					[{ location: 'body.hostname', message: 'hostname already claimed' }],
+					'the requested slug conflicts with an existing team',
+				),
+			),
+		).toEqual({ kind: 'unknown' });
+	});
+});

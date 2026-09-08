@@ -76,10 +76,10 @@ describe('createTeamFor', () => {
 			}),
 		);
 
-		const team = await createTeamFor(request, 'Verein A');
+		const team = await createTeamFor(request, 'Verein A', 'verein-a');
 
 		expect(seenAuth).toBe('Bearer tok');
-		expect(seenBody).toEqual({ name: 'Verein A' });
+		expect(seenBody).toEqual({ name: 'Verein A', slug: 'verein-a' });
 		expect(team.id).toBe('team-1');
 	});
 
@@ -106,7 +106,7 @@ describe('createTeamFor', () => {
 			),
 		);
 
-		await expect(createTeamFor(request, 'Verein A')).rejects.toBeDefined();
+		await expect(createTeamFor(request, 'Verein A', 'verein-a')).rejects.toBeDefined();
 	});
 
 	/**
@@ -129,7 +129,7 @@ describe('createTeamFor', () => {
 			),
 		);
 
-		await createTeamFor(request, 'Verein A');
+		await createTeamFor(request, 'Verein A', 'verein-a');
 
 		expect(appended).toContain('sb-access-token=refreshed; Path=/; HttpOnly');
 	});

@@ -33,7 +33,8 @@ function RouteComponent(): React.JSX.Element {
 	const [failure, setFailure] = useState<ApiFailure | null>(null);
 
 	const mutation = useMutation({
-		mutationFn: (name: string) => createTeamFn({ data: { name } }),
+		mutationFn: ({ name, slug }: { name: string; slug: string }) =>
+			createTeamFn({ data: { name, slug } }),
 		onError: (error: unknown) => {
 			const classified = classifyApiError(error);
 			// A mutation callback is not a render and not a loader, so it cannot
@@ -57,16 +58,27 @@ function RouteComponent(): React.JSX.Element {
 	});
 
 	const form = useForm({
-		defaultValues: { name: '' },
+		defaultValues: { name: '', slug: '' },
 		onSubmit: ({ value }) => {
-			mutation.mutate(value.name);
+			mutation.mutate({ name: value.name, slug: value.slug });
 		},
 	});
 
 	const fieldError = failure?.kind === 'fields' ? failure.fields.name : undefined;
+	const slugFieldError =
+		failure?.kind === 'slugTaken'
+			? t('teams.slugTaken')
+			: failure?.kind === 'fields'
+				? failure.fields.slug
+				: undefined;
 	// A field error renders on the field itself; a second generic banner for
-	// the same failure is what the create-link route deliberately avoids.
-	const formMessage = failure && failure.kind !== 'fields' ? t(`errors.${failure.kind}`) : null;
+	// the same failure is what the create-link route deliberately avoids. A
+	// taken slug is the same case: it renders once, on the slug field above,
+	// never in this banner too.
+	const formMessage =
+		failure && failure.kind !== 'fields' && failure.kind !== 'slugTaken'
+			? t(`errors.${failure.kind}`)
+			: null;
 
 	return (
 		<>
@@ -97,6 +109,41 @@ function RouteComponent(): React.JSX.Element {
 									aria-describedby={errorMessage ? errorId : undefined}
 									aria-invalid={errorMessage ? true : undefined}
 									id="name"
+									name={field.name}
+									onBlur={field.handleBlur}
+									onChange={(event) => field.handleChange(event.target.value)}
+									required
+									value={field.state.value}
+								/>
+								{errorMessage ? (
+									<p id={errorId} role="alert">
+										{errorMessage}
+									</p>
+								) : null}
+							</div>
+						);
+					}}
+				</form.Field>
+
+				<form.Field
+					name="slug"
+					validators={{
+						onChange: ({ value }) => (value.trim() === '' ? t('teams.slugRequired') : undefined),
+					}}
+				>
+					{(field) => {
+						const errorId = 'slug-error';
+						const errorMessage =
+							slugFieldError ??
+							(field.state.meta.isTouched ? field.state.meta.errors[0] : undefined);
+
+						return (
+							<div>
+								<label htmlFor="slug">{t('teams.slug')}</label>
+								<input
+									aria-describedby={errorMessage ? errorId : undefined}
+									aria-invalid={errorMessage ? true : undefined}
+									id="slug"
 									name={field.name}
 									onBlur={field.handleBlur}
 									onChange={(event) => field.handleChange(event.target.value)}

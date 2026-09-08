@@ -44,6 +44,9 @@
 		"none": "Du gehörst noch keinem Verein an. Frag die Person, die dich eingeladen hat, ob sie dich hinzufügen kann.",
 		"noneMaintainer": "Du gehörst noch keinem Verein an. Als Betreiber kannst du einen anlegen.",
 		"save": "Speichern",
+		"slug": "URL-Name",
+		"slugRequired": "Ein URL-Name ist erforderlich.",
+		"slugTaken": "Dieser URL-Name ist schon vergeben. Bitte wähle einen anderen.",
 		"switcherLabel": "Vereine"
 	},
 	"links": {

@@ -44,6 +44,9 @@
 		"none": "You are not a member of any team yet. Ask the person who invited you to add you to one.",
 		"noneMaintainer": "You are not a member of any team yet. As a maintainer you can create one.",
 		"save": "Save",
+		"slug": "URL name",
+		"slugRequired": "A URL name is required.",
+		"slugTaken": "That URL name is already taken. Please choose another.",
 		"switcherLabel": "Teams"
 	},
 	"links": {
