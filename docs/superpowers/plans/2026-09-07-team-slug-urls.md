@@ -1180,3 +1180,27 @@ but commit -m "docs: record the team slug decisions"
 **Type consistency.** `requireTeamId(memberships, teamSlug): string` is used identically in Task 4's four routes. `suggestTeamSlug`, `TEAM_SLUG_PATTERN`, `TEAM_SLUG_MIN_LENGTH`, `TEAM_SLUG_MAX_LENGTH` are defined in Task 3 and consumed in Task 5. `createTeamFor(request, name, slug)` and `createTeamFn({ data: { name, slug } })` match between Task 5's form and its server function. Go: `db.CreateTeamParams{Name, Slug}` and `row.TeamSlug` match Task 2's queries; `api.Team.Slug` and `api.TeamMembership.Slug` match the tests that assert on them.
 
 **Open risk, flagged rather than assumed.** Production's backfilled slugs get one manual read-through (Task 1, Step 10, repeated against Production after merge). If a real Verein's name transliterates to something the maintainer dislikes, the fix is one `update team set slug = …` before anybody has the URL — not a plan change.
+
+---
+
+## Corrections from execution, 2026-09-08
+
+The plan was executed task by task and four of its instructions turned out to be wrong. They are recorded here rather than edited into the steps above, so that the plan still reads as what was decided and this section reads as what was learned. Anyone copying a snippet from Task 5 in particular should read this first.
+
+**Task 5's suggestion wiring does not work as written**, and the failure is silent. The step gives:
+
+```tsx
+form.setFieldValue('slug', suggestTeamSlug(event.target.value));
+```
+
+`form.setFieldValue` in `@tanstack/form-core` sets that field's `isTouched` as a side effect, and `isTouched` is the very signal the guard above the call reads to decide whether the slug should keep following the name. So writing the suggestion is what stops the suggestion: typing "Sportverein Grünwald" leaves the slug at `s`. The field also now counts as touched, so its validator runs and renders `teams.slugInvalid` on an input the maintainer has never focused. Both options are needed — `{ dontUpdateMeta: true, dontValidate: true }` — because `setFieldValue`'s internal `validateField` call marks an untouched field touched regardless of `dontUpdateMeta`.
+
+**Task 1 misses one insert.** `supabase/seed.sql` creates a team, and `supabase db reset` replays the migrations and then the seed — so Step 5 fails on the seed rather than on anything the task wrote. The 23 Go test inserts the step does list are correct; the seed is the twenty-fourth writer.
+
+**Task 1's Step 9 cannot pass.** It expects a green Go suite, but `CreateTeam` still inserts `team (name)` at that point and Task 2 is what changes it, so three tests fail on the missing slug until then. Giving the query a generated slug to close them would be the column default the spec rejected, one layer up.
+
+**Task 3's Step 1 belongs to Task 2.** A Go test asserts the committed `openapi.json` matches the code, so Task 2's own full-suite gate forces `pnpm generate:api` — which regenerates the spec and `packages/api-client` together. Task 2 also breaks `apps/web/src/server/teams.ts` by making `slug` required, so `pnpm typecheck` cannot pass until that file and its caller are updated.
+
+**Task 5 needs `pnpm generate-routes`.** The step list goes from moving the route file straight to `pnpm typecheck`, which cannot pass while the generated route tree still names a route at the old path. Task 4 Step 11 regenerates; Task 5 was missed.
+
+One smaller thing, throughout: the plan writes `pnpm test -- <filter>`, which silently runs the whole suite because the `--` swallows the filter. `pnpm test <filter>` is the working form.
