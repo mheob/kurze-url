@@ -10,7 +10,7 @@ Project context: one shared multi-tenant instance (see `01-architecture.md`) ope
 | --- | --- | --- |
 | Impressum | The maintainer(s), as operator of the shared instance, publish one Impressum for the app itself | Required under DDG §5 (successor to TMG §5 — substantively unchanged); doesn't replace each Verein's own existing Impressum obligation for their own separate website |
 | Datenschutzerklärung | The maintainer(s) publish one privacy policy covering the platform's own data processing | Must name every third-party processor in the stack — see below |
-| Processor relationship | Standard AVV (Auftragsverarbeitungsvertrag / DPA), accepted by each Verein when they create a team | Maintainer(s) act as Auftragsverarbeiter for Verein-controlled data; one specific nuance flagged, not resolved, for click analytics — see below |
+| Processor relationship | Standard AVV (Auftragsverarbeitungsvertrag / DPA), concluded with each Verein outside the application, before the maintainer creates their team | Maintainer(s) act as Auftragsverarbeiter for Verein-controlled data; the in-app acceptance checkbox this row used to describe cannot work while team creation is maintainer-only — see below. One specific nuance flagged, not resolved, for click analytics |
 | Cloud provider region | **Frankfurt/EU region**, selected wherever the provider offers it (confirmed available on Supabase's free tier) | Addresses data _residency_, not full data _sovereignty_ — see "Data processor locations" below |
 
 ## Impressum
@@ -32,7 +32,13 @@ Decided: the maintainer(s) publish one privacy policy for the platform, covering
 
 ## Processor relationships & the AVV
 
-Decided: a standard AVV/DPA, presented to and accepted by each Verein at team-creation time (a natural fit for the already-designed `POST /v1/teams` flow in `06-api-design.md` — an acceptance checkbox referencing a versioned document, not a novel piece of infrastructure to build).
+Decided: a standard AVV/DPA concluded with each Verein before their team exists.
+
+**Corrected 2026-09-08.** This section used to say the AVV would be "presented to and accepted by each Verein at team-creation time", as an acceptance checkbox in the `POST /v1/teams` flow. That mechanism cannot work on this instance, and the reason is the signup decision made the same day: the instance is invitation-only, `MAINTAINER_USER_IDS` gates team creation, and so **the only person who ever sees the create form is the maintainer**. A checkbox there would record the maintainer agreeing to a contract on the Verein's behalf, which is not the Verein accepting it — and a lawyer reading the old text would have been specifying a screen nobody reaches.
+
+So for as long as the maintainer creates the teams, the AVV is concluded outside the system: signed by the Verein's board, by paper or by email, before the maintainer creates their team. The application records nothing about it. That is deliberate rather than lazy — the legal texts do not exist yet, and storing an acceptance date for a document that has no version is worse than storing nothing, because it looks like evidence.
+
+The checkbox becomes the right mechanism again the moment either half changes: if the instance is ever opened so that Vereine create their own teams, or once the texts exist and are versioned. At that point `team` gains the accepted version and a timestamp, and it belongs in the same change as the texts, not before them.
 
 For most of the data in this system, the relationship is the standard SaaS shape: the Verein is **Verantwortlicher** (controller) — they decide to use the tool, create links, add members — and the maintainer(s) are **Auftragsverarbeiter** (processor), acting only on the Verein's instructions per Art. 28 DSGVO.
 
