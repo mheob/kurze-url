@@ -86,15 +86,17 @@ Grouped by resource. All under `/v1` and Bearer-authenticated unless noted other
 
 **Session**
 
-- `GET /v1/me` — current user's profile plus their team memberships and roles (drives the team switcher in the frontend).
+- `GET /v1/me` — current user's profile plus their team memberships and roles (drives the team switcher in the frontend). Each membership carries the team's `slug` alongside its id, so the frontend can resolve a slug from its own URL to a team id without a second request.
 
 **Teams**
 
-- `POST /v1/teams` — create a team; creator becomes `owner`.
+- `POST /v1/teams` — create a team; creator becomes `owner`. Takes `{name, slug}`: `slug` is the immutable, human-readable identifier the frontend addresses the team by in its own URLs (`/teams/sv-gruenwald/links`; see `05-database-schema.md`). A malformed or reserved slug answers 422, an already-taken one answers 409, both carrying `huma.ErrorDetail{Location: "body.slug"}` rather than only a message, so the create form can point at the field without parsing free text.
 - `GET /v1/teams` — teams the caller belongs to.
 - `GET /v1/teams/{team_id}`
-- `PATCH /v1/teams/{team_id}` — e.g. rename.
+- `PATCH /v1/teams/{team_id}` — e.g. rename. Renaming never touches `slug`: it is immutable once created, and a slug that followed the name would break every URL a Verein had already written down.
 - Team deletion: **not exposed for MVP** — a rare, destructive operation with no clear requirement for it yet; revisit if/when a real need shows up.
+
+Every team response body — `POST`, `GET`, and `PATCH /v1/teams/{team_id}` alike — carries `slug` alongside `id`. No endpoint accepts a slug in place of a team id: doing so would put a resolution step in front of every tenancy-critical query's membership check, a second way into the same path for no gain the frontend can feel. The frontend resolves a slug to a team id itself, from the membership list `GET /v1/me` already returned.
 
 **Team members**
 

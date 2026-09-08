@@ -24,6 +24,9 @@ Project context: Postgres via Supabase, schema owned by Supabase CLI migrations,
 team (
   id                uuid primary key default gen_random_uuid(),
   name              text not null,
+  slug              text not null unique                -- frontend URLs address a team by this, never by id
+                      check (slug ~ '^[a-z0-9]([a-z0-9-]*[a-z0-9])?$')
+                      check (length(slug) between 3 and 40),
   created_at        timestamptz not null default now()
 )
 
@@ -216,6 +219,12 @@ Recorded here so this doc stays the schema's source of truth rather than driftin
 - **`link_click_stats.dimension_type` carries a `check` constraint** listing the nine permitted values, so a typo in application code fails the insert rather than silently creating a new dimension. The set must stay in sync with what the backend emits per click.
 - **Explicit `on delete` clauses** were added to the foreign keys (`cascade` for the tenancy and link relationships, `set null` for `folder.parent_folder_id`, `link.folder_id` and the `audit_log` references). The sketch above left them implicit.
 - **GeoIP** resolves from Vercel's `x-vercel-ip-country` request header rather than a bundled database — see `01-architecture.md`.
+
+## Team slugs (`team.slug`)
+
+Added 2026-09-07/08 (see `docs/superpowers/specs/2026-09-07-team-slug-urls-design.md`): the frontend addresses a team by a short, human-readable slug in its URLs (`/teams/sv-gruenwald/links`) rather than the UUID; the API is unaffected and keeps addressing teams by id everywhere.
+
+`slug` is `not null` and carries no column default. That is deliberate, not an oversight: a default that invented a value whenever one was left out would turn a forgotten slug from an error into a silently accepted one, and an invariant that lives in the schema is exactly the kind of thing a column default lets a later writer forget. Because the column has no default, the existing rows needed real values before the `not null` constraint could land, so one migration does both: it derives a slug for every existing team from `team.name` (lowercased, with the German transliteration a form-side suggestion would also apply — `ä/ö/ü` to `ae/oe/ue`, `ß` to `ss`, a trailing `e.V.` stripped), disambiguates two Vereine that normalize to the same value with a numeric suffix ordered by `created_at`, and falls back to `team-<first 8 hex of the id>` for a name that normalizes to fewer than three characters. Production holds only the maintainer's own teams, so the derived values will need a manual read-through after the migration runs rather than an exhaustive SQL implementation of the transliteration table.
 
 ## Not yet decided / to revisit
 
