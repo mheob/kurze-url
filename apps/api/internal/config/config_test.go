@@ -28,6 +28,11 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	require.Equal(t, 60, cfg.RedirectRateLimitPerMin)
 	require.Equal(t, 5, cfg.PasswordRateLimitPerMin)
 	require.Equal(t, 20, cfg.LinkCreateRateLimitPerMin)
+	require.Equal(t, 20, cfg.InviteRateLimitPerHour)
+	require.Equal(t, 200, cfg.InviteGlobalRateLimitPerMonth)
+	require.Equal(t, 5, cfg.DomainClaimRateLimitPerHour)
+	require.Equal(t, 10, cfg.DomainVerifyPerDomainRateLimitPerHour)
+	require.Equal(t, 40, cfg.DomainVerifyPerUserRateLimitPerHour)
 	require.Equal(t, time.Hour, cfg.LinkCacheTTL)
 	require.Equal(t, time.Minute, cfg.NotFoundCacheTTL)
 	require.Equal(t, 25*time.Hour, cfg.UniqueVisitorTTL)
@@ -137,6 +142,41 @@ func TestInviteRateLimitDefaultsAndOverrides(t *testing.T) {
 	cfg, err = config.Load()
 	require.NoError(t, err)
 	require.Equal(t, 5, cfg.InviteRateLimitPerHour)
+}
+
+func TestInviteGlobalRateLimitDefaultsAndOverrides(t *testing.T) {
+	setRequired(t)
+	t.Setenv("RATE_LIMIT_INVITE_GLOBAL_PER_MONTH", "")
+
+	cfg, err := config.Load()
+	require.NoError(t, err)
+	require.Equal(t, 200, cfg.InviteGlobalRateLimitPerMonth)
+
+	t.Setenv("RATE_LIMIT_INVITE_GLOBAL_PER_MONTH", "50")
+	cfg, err = config.Load()
+	require.NoError(t, err)
+	require.Equal(t, 50, cfg.InviteGlobalRateLimitPerMonth)
+}
+
+// TestDomainVerifyLimitIsLooserPerUserThanPerDomain guards the reason the two
+// axes were given separate thresholds. They shared one until 2026-09-08,
+// which meant a maintainer onboarding three domains at once exhausted the
+// user allowance while every one of those domains was still well inside its
+// own. Collapsing them back to a single value would restore that quietly, so
+// the relationship is asserted and not only the two numbers.
+func TestDomainVerifyLimitIsLooserPerUserThanPerDomain(t *testing.T) {
+	setRequired(t)
+	t.Setenv("RATE_LIMIT_DOMAIN_VERIFY_PER_DOMAIN_PER_HOUR", "")
+	t.Setenv("RATE_LIMIT_DOMAIN_VERIFY_PER_USER_PER_HOUR", "")
+
+	cfg, err := config.Load()
+	require.NoError(t, err)
+
+	require.Equal(t, 10, cfg.DomainVerifyPerDomainRateLimitPerHour)
+	require.Equal(t, 40, cfg.DomainVerifyPerUserRateLimitPerHour)
+	require.Greater(t,
+		cfg.DomainVerifyPerUserRateLimitPerHour, cfg.DomainVerifyPerDomainRateLimitPerHour,
+		"one user legitimately spans several domains, so the user axis must be the looser one")
 }
 
 func TestSharedDomainHostnameDefaultsToLocalhost(t *testing.T) {

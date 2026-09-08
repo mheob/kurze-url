@@ -168,15 +168,8 @@ func (d Deps) addMember(ctx context.Context, in *AddMemberInput) (*MemberOutput,
 		return nil, huma.Error403Forbidden("granting the owner role requires the owner role")
 	}
 
-	// Invitations spend real email quota, so cap them per team.
-	allowed, _, err := d.Cache.Allow(ctx, "rl:invite:"+in.TeamID.String(),
-		d.Config.InviteRateLimitPerHour, time.Hour)
-	if err != nil {
-		d.Log.Error("invite rate limit", "error", err, "team_id", in.TeamID)
-		return nil, huma.Error500InternalServerError("could not check the invitation rate limit")
-	}
-	if !allowed {
-		return nil, huma.Error429TooManyRequests("too many invitations for this team; try again later")
+	if err := d.allowInvite(ctx, in.TeamID); err != nil {
+		return nil, err
 	}
 
 	userID, invited, err := d.resolveInvitee(ctx, in)
@@ -230,6 +223,56 @@ func (d Deps) addMember(ctx context.Context, in *AddMemberInput) (*MemberOutput,
 		Role:      role.String(),
 		CreatedAt: createdAt,
 	}}, nil
+}
+
+// inviteGlobalWindow is the window InviteGlobalRateLimitPerMonth is measured
+// over. Thirty rolling days rather than a calendar month: the limiter takes a
+// duration, and a rolling window is the conservative reading of a quota whose
+// reset boundary belongs to Resend rather than to us.
+const inviteGlobalWindow = 30 * 24 * time.Hour
+
+// allowInvite caps invitations on two levels, and the order is deliberate.
+// The per-team hourly limit is a burst guard — it keeps one team from
+// hammering the endpoint. The instance-wide monthly limit is the one that
+// actually bounds the shared Resend quota that sign-in depends on, because a
+// per-team window cannot: ten teams each staying inside 20 an hour still add
+// up to far more mail than the quota holds. Checking the team first means an
+// invitation already refused for its own team never spends instance budget.
+//
+// Both are charged before the address is resolved, because resolving it is
+// what sends the mail. An address that turns out to already have an account
+// therefore spends budget on a mail nobody sends — conservative in the right
+// direction, and the alternative is sending first and asking afterwards.
+func (d Deps) allowInvite(ctx context.Context, teamID uuid.UUID) error {
+	allowed, _, err := d.Cache.Allow(ctx, "rl:invite:"+teamID.String(),
+		d.Config.InviteRateLimitPerHour, time.Hour)
+	if err != nil {
+		d.Log.Error("invite rate limit", "error", err, "team_id", teamID)
+		return huma.Error500InternalServerError("could not check the invitation rate limit")
+	}
+	if !allowed {
+		return huma.Error429TooManyRequests("too many invitations for this team; try again later")
+	}
+
+	allowed, _, err = d.Cache.Allow(ctx, "rl:invite:global",
+		d.Config.InviteGlobalRateLimitPerMonth, inviteGlobalWindow)
+	if err != nil {
+		d.Log.Error("global invite rate limit", "error", err, "team_id", teamID)
+		return huma.Error500InternalServerError("could not check the invitation rate limit")
+	}
+	if !allowed {
+		// Error rather than Warn, unlike the per-team refusal above: a team
+		// reaching its hourly cap is ordinary use, but the instance running
+		// out of mail budget locks every Verein out of a magic-link login
+		// that has no password fallback. Only slog.LevelError reaches Sentry,
+		// and Sentry is the only record that outlives Vercel's log retention.
+		d.Log.Error("instance-wide invitation budget exhausted",
+			"limit", d.Config.InviteGlobalRateLimitPerMonth, "team_id", teamID)
+		return huma.Error429TooManyRequests(
+			"this instance has reached its monthly invitation limit; ask the maintainer")
+	}
+
+	return nil
 }
 
 // resolveInvitee returns the user ID to add and whether an invitation email

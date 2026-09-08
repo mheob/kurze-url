@@ -183,6 +183,52 @@ func TestAddMemberIsRateLimited(t *testing.T) {
 
 	require.Equal(t, http.StatusTooManyRequests, second.Code,
 		"invitations spend real email quota, so the endpoint is capped per team")
+	require.Contains(t, second.Body.String(), "too many invitations for this team",
+		"the team's own cap must refuse before the instance-wide one is consulted, "+
+			"so a team that hammers the endpoint never spends instance budget")
+}
+
+// TestAddMemberIsRateLimitedInstanceWide pins the second half of allowInvite.
+// A per-team hourly cap cannot protect Resend's quota, because that quota is
+// shared across teams the limiter never compares: ten teams each staying
+// inside their own cap still add up to far more mail than the free tier
+// holds, and an exhausted quota locks every Verein out of a magic-link
+// sign-in that has no password fallback.
+//
+// The instance-wide counter is keyed on nothing test-local, so its starting
+// value depends on what the rest of the suite has already invited. The
+// assertion is written not to care: with the team cap raised out of the way,
+// four attempts against a budget of three must produce a refusal, and that
+// refusal must name the instance limit rather than blaming the team.
+func TestAddMemberIsRateLimitedInstanceWide(t *testing.T) {
+	f := newTenancyFixture(t)
+	f.deps.Config.InviteRateLimitPerHour = 50
+	f.deps.Config.InviteGlobalRateLimitPerMonth = 3
+	f.rebuildRouter()
+
+	// Every address here already has an account and is already a member, so
+	// each attempt is refused with a 409 after the limiter has charged it.
+	// That is the point: the budget is spent before the address is resolved,
+	// because resolving it is what would send the mail. It also keeps the
+	// test off the invitation path entirely, so nothing here depends on how
+	// the Supabase stand-in mints users.
+	var refusal string
+	for _, role := range []authz.Role{
+		authz.RoleOwner, authz.RoleAdmin, authz.RoleEditor, authz.RoleViewer,
+	} {
+		rec := f.do(t, f.members[authz.RoleAdmin], http.MethodPost,
+			"/v1/teams/"+f.teamID.String()+"/members",
+			map[string]string{"email": f.members[role].email, "role": "viewer"})
+		if rec.Code == http.StatusTooManyRequests {
+			refusal = rec.Body.String()
+			break
+		}
+		require.Equal(t, http.StatusConflict, rec.Code, "body: %s", rec.Body.String())
+	}
+
+	require.Contains(t, refusal, "monthly invitation limit",
+		"a budget of three must refuse the fourth invitation, and must say the "+
+			"instance is out of mail rather than pointing at the team")
 }
 
 func memberPath(f *tenancyFixture, user testUser) string {

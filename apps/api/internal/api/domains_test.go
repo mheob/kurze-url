@@ -345,11 +345,13 @@ func TestVerifyIsRefusedBelowAdmin(t *testing.T) {
 // allowDomainVerify in isolation from the user axis: two different admins of
 // the same team (f.members[authz.RoleAdmin] and f.members[authz.RoleOwner],
 // both clearing DomainAdminScope's threshold) call verify on the very same
-// domain. The second caller's own per-user count is still fresh — this can
-// only fail if the shared domain-keyed limit is what is doing the blocking.
+// domain. The second caller's own per-user count is still fresh, and the user
+// axis is given headroom explicitly — this can only fail if the shared
+// domain-keyed limit is what is doing the blocking.
 func TestVerifyDomainIsRateLimitedPerDomain(t *testing.T) {
 	f := newTenancyFixture(t)
-	f.deps.Config.DomainVerifyRateLimitPerHour = 1
+	f.deps.Config.DomainVerifyPerDomainRateLimitPerHour = 1
+	f.deps.Config.DomainVerifyPerUserRateLimitPerHour = 100
 	f.rebuildRouter()
 	f.domainVerifier.reason = domainverify.ReasonNone
 
@@ -375,7 +377,8 @@ func TestVerifyDomainIsRateLimitedPerDomain(t *testing.T) {
 // axis is not a theoretical gap.
 func TestVerifyDomainIsRateLimitedPerUser(t *testing.T) {
 	f := newTenancyFixture(t)
-	f.deps.Config.DomainVerifyRateLimitPerHour = 1
+	f.deps.Config.DomainVerifyPerUserRateLimitPerHour = 1
+	f.deps.Config.DomainVerifyPerDomainRateLimitPerHour = 100
 	f.rebuildRouter()
 	f.domainVerifier.reason = domainverify.ReasonTokenMissing
 

@@ -56,12 +56,36 @@ type Config struct {
 	SupabaseAuthURL        string
 	SupabaseServiceRoleKey string
 
-	RedirectRateLimitPerMin      int
-	PasswordRateLimitPerMin      int
-	LinkCreateRateLimitPerMin    int
-	InviteRateLimitPerHour       int
-	DomainClaimRateLimitPerHour  int
-	DomainVerifyRateLimitPerHour int
+	// The per-subject rate limits. Each one caps a single subject inside a
+	// single window: an IP, a user, a team, a domain. That shape stops one
+	// runaway client, and it is the only thing it can do — a per-subject
+	// window cannot bound a global monthly quota, because the quota is shared
+	// across subjects the limiter never compares. Where a shared quota is
+	// what is actually at risk, the bound has to be global too; see
+	// InviteGlobalRateLimitPerMonth for the one case where that is affordable,
+	// and apps/api/.env.example for what each limit does not protect.
+	RedirectRateLimitPerMin   int
+	PasswordRateLimitPerMin   int
+	LinkCreateRateLimitPerMin int
+	InviteRateLimitPerHour    int
+
+	// InviteGlobalRateLimitPerMonth bounds invitations across the whole
+	// instance over a rolling 30 days. Resend's free tier allows 3,000 mails
+	// a month for every Supabase auth email together, and sign-in here is a
+	// magic link with no password fallback — an exhausted quota locks
+	// everybody out with no way to recover from inside the app. The per-team
+	// hourly limit cannot prevent that: it is per team, and the quota is not.
+	InviteGlobalRateLimitPerMonth int
+
+	DomainClaimRateLimitPerHour int
+
+	// The two axes of the domain-verification limit carry separate thresholds
+	// on purpose. A single user legitimately spans several domains, so the
+	// per-user axis has to be the looser one; sharing a threshold made a
+	// maintainer onboarding three domains at once hit the user axis while
+	// each domain was still well inside its own.
+	DomainVerifyPerDomainRateLimitPerHour int
+	DomainVerifyPerUserRateLimitPerHour   int
 
 	// DomainDNSTarget is what a Verein is told to point their CNAME at. The
 	// default is the generic record Vercel now calls legacy; production
@@ -171,10 +195,19 @@ func Load() (Config, error) {
 	if cfg.InviteRateLimitPerHour, err = envInt("RATE_LIMIT_INVITE_PER_HOUR", 20); err != nil {
 		return Config{}, err
 	}
+	if cfg.InviteGlobalRateLimitPerMonth, err = envInt(
+		"RATE_LIMIT_INVITE_GLOBAL_PER_MONTH", 200); err != nil {
+		return Config{}, err
+	}
 	if cfg.DomainClaimRateLimitPerHour, err = envInt("RATE_LIMIT_DOMAIN_CLAIM_PER_HOUR", 5); err != nil {
 		return Config{}, err
 	}
-	if cfg.DomainVerifyRateLimitPerHour, err = envInt("RATE_LIMIT_DOMAIN_VERIFY_PER_HOUR", 20); err != nil {
+	if cfg.DomainVerifyPerDomainRateLimitPerHour, err = envInt(
+		"RATE_LIMIT_DOMAIN_VERIFY_PER_DOMAIN_PER_HOUR", 10); err != nil {
+		return Config{}, err
+	}
+	if cfg.DomainVerifyPerUserRateLimitPerHour, err = envInt(
+		"RATE_LIMIT_DOMAIN_VERIFY_PER_USER_PER_HOUR", 40); err != nil {
 		return Config{}, err
 	}
 
