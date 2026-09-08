@@ -99,7 +99,9 @@ func TestListTeamsOutOfRangePageReportsTheTrueTotal(t *testing.T) {
 	// there is more than one page to run past the end of.
 	var secondTeamID uuid.UUID
 	require.NoError(t, f.pool.QueryRow(t.Context(),
-		`insert into team (name) values ('Zweiter Verein') returning id`).Scan(&secondTeamID))
+		`insert into team (name, slug)
+		 values ('Zweiter Verein', 'zweiter-verein-' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 12))
+		 returning id`).Scan(&secondTeamID))
 	t.Cleanup(func() {
 		_, _ = f.pool.Exec(context.Background(), `delete from team where id = $1`, secondTeamID)
 	})

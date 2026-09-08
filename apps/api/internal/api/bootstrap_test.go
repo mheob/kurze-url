@@ -39,7 +39,9 @@ func TestProvisionSharedDomainFailsOnATeamsHostname(t *testing.T) {
 	hostname := "claimed-" + uuid.NewString()[:8] + ".test"
 	var teamID uuid.UUID
 	require.NoError(t, pool.QueryRow(ctx,
-		`insert into team (name) values ('claimant') returning id`).Scan(&teamID))
+		`insert into team (name, slug)
+		 values ('claimant', 'claimant-' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 12))
+		 returning id`).Scan(&teamID))
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), `delete from team where id = $1`, teamID)
 	})

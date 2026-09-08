@@ -45,7 +45,9 @@ func TestUpsertSharedDomainIgnoresAPendingClaim(t *testing.T) {
 	hostname := "pending-" + uuid.NewString()[:8] + ".test"
 	var teamID uuid.UUID
 	require.NoError(t, pool.QueryRow(ctx,
-		`insert into team (name) values ('claims a hostname') returning id`).Scan(&teamID))
+		`insert into team (name, slug)
+		 values ('claims a hostname', 'claims-hostname-' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 12))
+		 returning id`).Scan(&teamID))
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), `delete from team where id = $1`, teamID)
 		_, _ = pool.Exec(context.Background(), `delete from domain where hostname = $1`, hostname)
@@ -80,7 +82,9 @@ func TestUpsertSharedDomainRefusesToHijackATeamsDomain(t *testing.T) {
 	hostname := "owned-" + uuid.NewString()[:8] + ".test"
 	var teamID uuid.UUID
 	require.NoError(t, pool.QueryRow(ctx,
-		`insert into team (name) values ('owner of a custom domain') returning id`).Scan(&teamID))
+		`insert into team (name, slug)
+		 values ('owner of a custom domain', 'owner-custom-domain-' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 12))
+		 returning id`).Scan(&teamID))
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), `delete from team where id = $1`, teamID)
 	})
@@ -104,8 +108,14 @@ func TestGetLinkableDomainAcceptsSharedAndOwnRejectsOthers(t *testing.T) {
 	queries := db.New(pool)
 
 	var mine, theirs uuid.UUID
-	require.NoError(t, pool.QueryRow(ctx, `insert into team (name) values ('mine') returning id`).Scan(&mine))
-	require.NoError(t, pool.QueryRow(ctx, `insert into team (name) values ('theirs') returning id`).Scan(&theirs))
+	require.NoError(t, pool.QueryRow(ctx,
+		`insert into team (name, slug)
+		 values ('mine', 'mine-' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 12))
+		 returning id`).Scan(&mine))
+	require.NoError(t, pool.QueryRow(ctx,
+		`insert into team (name, slug)
+		 values ('theirs', 'theirs-' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 12))
+		 returning id`).Scan(&theirs))
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), `delete from team where id = any($1)`,
 			[]uuid.UUID{mine, theirs})

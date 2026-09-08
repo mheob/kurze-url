@@ -9,8 +9,8 @@ values ('00000000-0000-0000-0000-0000000000a1',
         '', now(), now(), now())
 on conflict (id) do nothing;
 
-insert into team (id, name)
-values ('00000000-0000-0000-0000-0000000000b1', 'Dev Verein')
+insert into team (id, name, slug)
+values ('00000000-0000-0000-0000-0000000000b1', 'Dev Verein', 'dev-verein')
 on conflict (id) do nothing;
 
 insert into team_member (team_id, user_id, role)

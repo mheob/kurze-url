@@ -33,9 +33,13 @@ func newLinkFixture(t *testing.T) *linkFixture {
 	require.NoError(t, pool.QueryRow(ctx, `select id from auth.users limit 1`).Scan(&f.userID))
 
 	require.NoError(t, pool.QueryRow(ctx,
-		`insert into team (name) values ('links') returning id`).Scan(&f.teamID))
+		`insert into team (name, slug)
+		 values ('links', 'links-' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 12))
+		 returning id`).Scan(&f.teamID))
 	require.NoError(t, pool.QueryRow(ctx,
-		`insert into team (name) values ('other links') returning id`).Scan(&f.otherTeamID))
+		`insert into team (name, slug)
+		 values ('other links', 'other-links-' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 12))
+		 returning id`).Scan(&f.otherTeamID))
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), `delete from team where id = any($1)`,
 			[]uuid.UUID{f.teamID, f.otherTeamID})

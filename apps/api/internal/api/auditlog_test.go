@@ -119,7 +119,9 @@ func TestAuditLogNeverCrossesTeams(t *testing.T) {
 	// A second, unrelated team with its own audit entry.
 	var otherTeamID uuid.UUID
 	require.NoError(t, f.pool.QueryRow(ctx,
-		`insert into team (name) values ($1) returning id`, "Anderer Verein").Scan(&otherTeamID))
+		`insert into team (name, slug)
+		 values ($1, 'verein-' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 12))
+		 returning id`, "Anderer Verein").Scan(&otherTeamID))
 	t.Cleanup(func() {
 		_, _ = f.pool.Exec(context.Background(), `delete from team where id = $1`, otherTeamID)
 	})
