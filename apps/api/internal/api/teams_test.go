@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -228,6 +229,31 @@ func TestRenameTeamIs404ForAStranger(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, rec.Code)
 }
 
+// TestRenameTeamLeavesTheSlugUnchanged guards the branch's central claim: a
+// team's slug is immutable, chosen once at creation and never touched by
+// PATCH /v1/teams/{team_id}. UpdateTeamInput's body carries only Name, and
+// RenameTeam only ever writes that column — but nothing before this actually
+// renamed a team and re-read its slug, so a future change that added Slug to
+// both would break immutability with every other test here still green.
+func TestRenameTeamLeavesTheSlugUnchanged(t *testing.T) {
+	f := newTenancyFixture(t)
+
+	var before string
+	require.NoError(t, f.pool.QueryRow(t.Context(),
+		`select slug from team where id = $1`, f.teamID).Scan(&before))
+
+	rec := f.do(t, f.members[authz.RoleAdmin], http.MethodPatch,
+		"/v1/teams/"+f.teamID.String(), map[string]string{"name": "Umbenannt"})
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	require.Equal(t, before, decode[api.Team](t, rec).Slug, "the response must report the same slug")
+
+	var after string
+	require.NoError(t, f.pool.QueryRow(t.Context(),
+		`select slug from team where id = $1`, f.teamID).Scan(&after))
+	require.Equal(t, before, after, "renaming a team must not change its slug")
+}
+
 func TestGetTeamRejectsAMalformedTeamID(t *testing.T) {
 	f := newTenancyFixture(t)
 
@@ -261,7 +287,12 @@ func TestCreateTeamStoresTheSlugAndReportsItBack(t *testing.T) {
 func TestCreateTeamRejectsAMalformedSlug(t *testing.T) {
 	f := newTenancyFixture(t)
 
-	for _, malformed := range []string{"SV-Gruenwald", "sv_gruenwald", "-leading", "ab"} {
+	// "ab" exercises the request schema's minLength (3); the 41-character
+	// value exercises its maxLength (40) — the same bounds
+	// `team_slug_length` enforces one layer down, in the database.
+	for _, malformed := range []string{
+		"SV-Gruenwald", "sv_gruenwald", "-leading", "ab", strings.Repeat("a", 41),
+	} {
 		rec := f.do(t, f.members[authz.RoleOwner], http.MethodPost, "/v1/teams",
 			map[string]string{"name": "Neuer Verein", "slug": malformed})
 

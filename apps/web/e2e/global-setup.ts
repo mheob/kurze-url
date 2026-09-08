@@ -9,7 +9,7 @@ import { request } from '@playwright/test';
  * serving the branch alias — with a "Deployment was cancelled" page, at
  * **HTTP 200**. Nothing about that looks like an outage: `withRelatedProject`
  * hands the web preview that alias, `getMe` parses the HTML as JSON, the
- * memberships come back empty, and `assertMembership` throws `notFound()`. The
+ * memberships come back empty, and `requireTeamId` throws `notFound()`. The
  * suite then fails four specs deep inside `waitForHydration`, on a page that
  * says "Page not found", which reads as a frontend bug and is not one.
  *

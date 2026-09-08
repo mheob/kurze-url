@@ -16,7 +16,7 @@ import { createTeamFn } from '../../server/teams';
 import { type Me } from '../_authed';
 
 /**
- * 404, not 403, and the same reasoning `assertMembership` gives: a route a
+ * 404, not 403, and the same reasoning `requireTeamId` gives: a route a
  * visitor may not use should not confirm that it exists. Maintainer status is
  * not tenant data, so nothing leaks either way — but two guards in one tree
  * answering differently is the kind of inconsistency that later gets copied

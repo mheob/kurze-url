@@ -255,7 +255,7 @@ export const test = base.extend<{
 	 * Thin derivatives over `team`, not their own independent setup: Playwright
 	 * scopes a fixture's provisioning/teardown to run once per test regardless
 	 * of how many other fixtures depend on it, so `links.spec.ts` destructuring
-	 * only `teamId` (as it did before `team` existed) still gets exactly one
+	 * only `teamSlug` (as it did before `team` existed) still gets exactly one
 	 * team created and torn down, not two. `i18n.spec.ts`'s authenticated crawl
 	 * is the one caller that needs `teamName` too. `teamId` stays for direct
 	 * database assertions — it is a real column value, not a URL fragment —

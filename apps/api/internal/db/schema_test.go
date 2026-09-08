@@ -3,6 +3,7 @@ package db_test
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -138,7 +139,13 @@ func TestTeamSlugRejectsMalformedAndDuplicateValues(t *testing.T) {
 	_, err = tx.Exec(ctx, `rollback to savepoint s0`)
 	require.NoError(t, err)
 
-	for _, malformed := range []string{"SV-Gruenwald", "-leading", "trailing-", "sv_gruenwald", "ab"} {
+	// "ab" exercises the lower bound of team_slug_length (3), and the
+	// 41-character value the upper bound (40) — both from the same migration
+	// (20260908082955_team_slug.sql) as team_slug_format, which the rest of
+	// this slice covers.
+	for _, malformed := range []string{
+		"SV-Gruenwald", "-leading", "trailing-", "sv_gruenwald", "ab", strings.Repeat("a", 41),
+	} {
 		_, err = tx.Exec(ctx, `savepoint s`)
 		require.NoError(t, err)
 		_, err = tx.Exec(ctx, insert, malformed)

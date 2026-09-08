@@ -58,12 +58,12 @@ describe('resolveHomeOutcome', () => {
 	});
 
 	/**
-	 * The property Task 7 adds: the redirect target is whatever team id the
-	 * loader resolved — via `getCurrentTeamId`, which wraps
+	 * The property Task 7 adds: the redirect target is whatever team slug the
+	 * loader resolved — via `getCurrentTeamSlug`, which wraps
 	 * `resolveCurrentTeam` around the `team` cookie — not hardcoded to the
 	 * first membership. `resolveHomeOutcome` itself no longer picks a
-	 * membership at all; it only turns an already-resolved id into an
-	 * outcome, so passing a non-first id through unchanged is exactly what
+	 * membership at all; it only turns an already-resolved slug into an
+	 * outcome, so passing a non-first slug through unchanged is exactly what
 	 * proves that. `resolveCurrentTeam`'s own tests in
 	 * `lib/current-team.test.ts` cover the cookie-vs-first-membership
 	 * decision, including the "removed from that team" falsification.

@@ -21,7 +21,7 @@ function link(overrides: Partial<ApiLink> = {}): ApiLink {
 		slug: 'abc123',
 		state: 'active',
 		tags: [],
-		team_id: 'team-a',
+		team_id: 'a',
 		updated_at: '2026-01-01T00:00:00Z',
 		...overrides,
 	};
@@ -43,7 +43,7 @@ export default meta;
  * into link creation (Finding 2), not a dead end.
  */
 export const Empty: StoryObj<typeof meta> = {
-	args: { data: pageOf(), page: 1, teamSlug: 'team-a' },
+	args: { data: pageOf(), page: 1, teamSlug: 'verein-a' },
 };
 
 /** A team that already has links: each row offers copy and edit. */
@@ -62,7 +62,7 @@ export const Populated: StoryObj<typeof meta> = {
 			total_count: 2,
 		}),
 		page: 1,
-		teamSlug: 'team-a',
+		teamSlug: 'verein-a',
 	},
 };
 
@@ -78,6 +78,6 @@ export const NoShortDomainConfigured: StoryObj<typeof meta> = {
 			total_count: 1,
 		}),
 		page: 1,
-		teamSlug: 'team-a',
+		teamSlug: 'verein-a',
 	},
 };

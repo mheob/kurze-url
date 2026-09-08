@@ -9,7 +9,10 @@ import (
 )
 
 // TeamMembership is one entry in GET /v1/me — it drives the frontend's team
-// switcher, which needs the team's name and the caller's role in it.
+// switcher, which needs the team's name, its slug, and the caller's role in
+// it. The slug is the field the whole frontend's slug-to-id resolution
+// depends on: every `/teams/{teamSlug}/...` route looks up its `team_id`
+// here rather than trusting the URL directly.
 type TeamMembership struct {
 	TeamID uuid.UUID `json:"team_id"`
 	Name   string    `json:"name"`

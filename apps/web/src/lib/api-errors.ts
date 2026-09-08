@@ -44,7 +44,7 @@ function isProblemDetail(value: unknown): value is ProblemDetail {
 
 /**
  * Exported for the rare call site that needs the raw HTTP status alongside
- * `ApiFailure`'s kind — `teams.$teamId.domains.tsx`'s verify mutation is the
+ * `ApiFailure`'s kind — `teams.$teamSlug.domains.tsx`'s verify mutation is the
  * first: a 409 there ("another team already verified this hostname") carries
  * no `ErrorDetail` to key on, the same as a 500 or a network failure, so
  * `classifyApiError` alone cannot tell them apart — both fall into `unknown`.
@@ -123,6 +123,18 @@ function blockingLinkCountOf(error: unknown): number | undefined {
  * matching the message means a reworded message cannot silently turn this back
  * into a generic failure — and there is deliberately no text fallback, since
  * that is exactly how such drift goes unnoticed.
+ *
+ * This matches any 409 carrying `location === 'body.slug'`, not only one from
+ * `createTeam` — it is just the only caller today. The link-slug conflicts in
+ * `apps/api/internal/api/links.go` (`create link`, `update link`) still
+ * answer with a free-text 409 and no `ErrorDetail`, so they never reach this
+ * function. The moment one of those gains a typed detail here, this function
+ * starts matching it too, and `classifyApiError` reports `slugTaken` for a
+ * link the same way it does for a team — but the create-link and edit-link
+ * banners render `t(\`errors.${failure.kind}\`)` for every kind except
+ * `fields`, and `errors.slugTaken` exists in neither catalogue. Whoever adds
+ * that typed detail to a link-slug 409 needs to also teach those two banners
+ * about `slugTaken`, the way `new-team.tsx` already excludes it from its own.
  */
 function isSlugConflict(error: unknown): boolean {
 	return problemDetailsOf(error).some((detail) => detail.location === 'body.slug');

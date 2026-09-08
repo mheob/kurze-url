@@ -71,7 +71,7 @@ describe('loadLink', () => {
 	 * a team the caller isn't in (or that doesn't exist at all) must not be
 	 * reachable. `internal/authz` answers both with 404, and
 	 * `classifyApiError` folds a 403 into the same `notFound` kind for the
-	 * identical reason `assertMembership` throws `notFound()` for a
+	 * identical reason `requireTeamId` throws `notFound()` for a
 	 * non-member team — asserting `isNotFound`, not a bare `.toThrow()`, is
 	 * what would catch a regression to a generic error page here.
 	 */

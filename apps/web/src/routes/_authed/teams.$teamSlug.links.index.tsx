@@ -61,8 +61,8 @@ export async function loadLinks(
 }
 
 export const Route = createFileRoute('/_authed/teams/$teamSlug/links/')({
-	// Pagination lives in the URL — the same reasoning that put the team id in
-	// the path — so the back button works and a page can be sent to a
+	// Pagination lives in the URL — the same reasoning that put the team slug
+	// in the path — so the back button works and a page can be sent to a
 	// colleague. The parameter type intersects `SearchSchemaInput` (TanStack
 	// Router's marker for "this validator's write side differs from its read
 	// side") so that linking to this route, from `TeamSwitcher` or `/`'s

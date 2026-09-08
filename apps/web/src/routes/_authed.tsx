@@ -59,14 +59,14 @@ export interface Me {
  * one. That second shape exists only for logic that needs testing
  * independent of a request (`sendMagicLinkFor`'s enumeration-timing
  * guarantee); nothing here does — the only thing this task's brief asks to
- * be unit-tested is the pure `assertMembership` below. Extracting this body
+ * be unit-tested is the pure `requireTeamId` below. Extracting this body
  * into a named helper would need `createServerOnlyFn` to keep the client
  * bundle buildable (see `sendMagicLinkFor`'s docstring for why); left inline,
  * it doesn't.
  *
  * `memberships` is normalized from the generated client's
  * `Array<TeamMembership> | null` (Huma serialises a nil Go slice as JSON
- * `null`) to a plain array: `assertMembership` below and every later
+ * `null`) to a plain array: `requireTeamId` below and every later
  * consumer of `Me` are written against `Membership[]`, so the `?? []`
  * happens once, here, instead of once per call site.
  */
