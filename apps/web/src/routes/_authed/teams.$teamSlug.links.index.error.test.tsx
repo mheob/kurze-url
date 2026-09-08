@@ -12,7 +12,7 @@ import { I18nextProvider } from 'react-i18next';
 import { describe, expect, it } from 'vitest';
 
 import { createI18n } from '../../i18n';
-import { LinksError } from './teams.$teamId.links.index';
+import { LinksError } from './teams.$teamSlug.links.index';
 
 /**
  * Named `....index.error.test.tsx`, not `....index.test.tsx` (which would
@@ -67,7 +67,7 @@ describe('LinksError', () => {
 	 * `refetchOnWindowFocus` (`router.tsx` sets no `defaultOptions`) means a
 	 * background refetch of the already-mounted list query can throw an
 	 * unauthenticated failure to this boundary directly — a path
-	 * `loadLinks`'s own redirect (covered in `teams.$teamId.links.index.test.ts`)
+	 * `loadLinks`'s own redirect (covered in `teams.$teamSlug.links.index.test.ts`)
 	 * never sees, since it isn't a loader run at all. Asserting only that
 	 * *some* navigation fired would still pass if `<Navigate>` targeted the
 	 * wrong route, or if the guard were deleted and something else entirely

@@ -222,7 +222,9 @@ func newTenancyFixture(t *testing.T) *tenancyFixture {
 
 	var teamID uuid.UUID
 	require.NoError(t, pool.QueryRow(ctx,
-		`insert into team (name) values ($1) returning id`, "Verein "+suffix).Scan(&teamID))
+		`insert into team (name, slug)
+		 values ($1, 'verein-' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 12))
+		 returning id`, "Verein "+suffix).Scan(&teamID))
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), `delete from team where id = $1`, teamID)
 	})
@@ -279,7 +281,9 @@ func newTenancyFixture(t *testing.T) *tenancyFixture {
 
 	var otherTeamID uuid.UUID
 	require.NoError(t, pool.QueryRow(ctx,
-		`insert into team (name) values ($1) returning id`, "Anderer Verein "+suffix).Scan(&otherTeamID))
+		`insert into team (name, slug)
+		 values ($1, 'verein-' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 12))
+		 returning id`, "Anderer Verein "+suffix).Scan(&otherTeamID))
 	otherAdmin := seedAuthUser(ctx, t, pool, "other-admin-"+suffix+"@verein.test")
 	// Registered after seedAuthUser(otherAdmin) so LIFO deletes the team
 	// first, same ordering as the members/teamID block above: the team_id

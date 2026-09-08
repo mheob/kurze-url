@@ -12,7 +12,7 @@ import { LinkList } from '../../components/link-list';
 import { classifyApiError, type ApiFailure } from '../../lib/api-errors';
 import { reportUnexpected } from '../../lib/observability';
 import { linksQueryOptions } from '../../server/links';
-import { assertMembership } from '../_authed';
+import { requireTeamId } from '../_authed';
 
 /**
  * The one method this loader reaches through on `context.queryClient` — a
@@ -45,7 +45,7 @@ interface LinksDataSource {
  *
  * Extracted from the route's `loader` option so it can be unit-tested with a
  * fake `LinksDataSource` instead of a real router loader context; see
- * `teams.$teamId.links.index.test.ts`.
+ * `teams.$teamSlug.links.index.test.ts`.
  */
 export async function loadLinks(
 	queryClient: LinksDataSource,
@@ -60,9 +60,9 @@ export async function loadLinks(
 	}
 }
 
-export const Route = createFileRoute('/_authed/teams/$teamId/links/')({
-	// Pagination lives in the URL — the same reasoning that put the team id in
-	// the path — so the back button works and a page can be sent to a
+export const Route = createFileRoute('/_authed/teams/$teamSlug/links/')({
+	// Pagination lives in the URL — the same reasoning that put the team slug
+	// in the path — so the back button works and a page can be sent to a
 	// colleague. The parameter type intersects `SearchSchemaInput` (TanStack
 	// Router's marker for "this validator's write side differs from its read
 	// side") so that linking to this route, from `TeamSwitcher` or `/`'s
@@ -87,11 +87,11 @@ export const Route = createFileRoute('/_authed/teams/$teamId/links/')({
 		const page = Number(search.page ?? 1);
 		return { page: Number.isFinite(page) && page > 0 ? page : 1 };
 	},
+	beforeLoad: ({ context, params }) => ({
+		teamId: requireTeamId(context.me.memberships, params.teamSlug),
+	}),
 	loaderDeps: ({ search }) => ({ page: search.page }),
-	beforeLoad: ({ context, params }) => {
-		assertMembership(context.me.memberships, params.teamId);
-	},
-	loader: ({ context, deps, params }) => loadLinks(context.queryClient, params.teamId, deps.page),
+	loader: ({ context, deps }) => loadLinks(context.queryClient, context.teamId, deps.page),
 	component: RouteComponent,
 	errorComponent: LinksError,
 });
@@ -148,9 +148,10 @@ export function LinksError({ error }: { readonly error: unknown }): React.JSX.El
 }
 
 function RouteComponent(): React.JSX.Element {
-	const { teamId } = Route.useParams();
+	const { teamSlug } = Route.useParams();
+	const { teamId } = Route.useRouteContext();
 	const { page } = Route.useSearch();
 	const { data } = useSuspenseQuery(linksQueryOptions(teamId, page));
 
-	return <LinkList data={data} page={page} teamId={teamId} />;
+	return <LinkList data={data} page={page} teamSlug={teamSlug} />;
 }

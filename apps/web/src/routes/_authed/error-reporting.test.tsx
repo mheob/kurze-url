@@ -24,8 +24,8 @@ vi.mock('@sentry/tanstackstart-react', async (importOriginal) => ({
 	captureException: sentryMocks.captureException,
 }));
 
-const { LinksError } = await import('./teams.$teamId.links.index');
-const { DomainsError } = await import('./teams.$teamId.domains');
+const { LinksError } = await import('./teams.$teamSlug.links.index');
+const { DomainsError } = await import('./teams.$teamSlug.domains');
 
 /**
  * The finding (Fix round 3): `LinksError` and `DomainsError` are route-level
@@ -37,7 +37,7 @@ const { DomainsError } = await import('./teams.$teamId.domains');
  *
  * Both components render `<Navigate>` for an unauthenticated failure, which
  * needs a router in context — the same minimal tree
- * `teams.$teamId.links.index.error.test.tsx` builds, and for the same reason.
+ * `teams.$teamSlug.links.index.error.test.tsx` builds, and for the same reason.
  */
 function renderInRouter(element: React.JSX.Element): void {
 	const rootRoute = createRootRoute({ component: () => <Outlet /> });

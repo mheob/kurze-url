@@ -23,7 +23,9 @@ func seedTeamWithOwner(ctx context.Context, t *testing.T, tx pgx.Tx) (teamID, us
 
 	require.NoError(t, tx.QueryRow(ctx, `select id from auth.users limit 1`).Scan(&userID))
 	require.NoError(t, tx.QueryRow(ctx,
-		`insert into team (name) values ('tenancy fixture') returning id`).Scan(&teamID))
+		`insert into team (name, slug)
+		 values ('tenancy fixture', 'tenancy-fixture-' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 12))
+		 returning id`).Scan(&teamID))
 	_, err := tx.Exec(ctx,
 		`insert into team_member (team_id, user_id, role) values ($1, $2, 'owner')`, teamID, userID)
 	require.NoError(t, err)
@@ -95,7 +97,9 @@ func TestListTeamsForUserOnlyReturnsTeamsTheUserBelongsTo(t *testing.T) {
 
 	var otherTeamID uuid.UUID
 	require.NoError(t, tx.QueryRow(ctx,
-		`insert into team (name) values ('someone else') returning id`).Scan(&otherTeamID))
+		`insert into team (name, slug)
+		 values ('someone else', 'someone-else-' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 12))
+		 returning id`).Scan(&otherTeamID))
 
 	q := db.New(tx)
 	rows, err := q.ListTeamsForUser(ctx, db.ListTeamsForUserParams{
@@ -156,7 +160,10 @@ func TestInTxRollsBackEverythingWhenTheCallbackFails(t *testing.T) {
 	wantErr := errTest
 
 	err := db.InTx(ctx, pool, func(q *db.Queries) error {
-		team, err := q.CreateTeam(ctx, "rolled back")
+		team, err := q.CreateTeam(ctx, db.CreateTeamParams{
+			Name: "rolled back",
+			Slug: "rolled-back-" + uuid.NewString()[:8],
+		})
 		require.NoError(t, err)
 		teamID = team.ID
 		return wantErr
@@ -176,7 +183,10 @@ func TestInTxCommitsWhenTheCallbackSucceeds(t *testing.T) {
 
 	var teamID uuid.UUID
 	require.NoError(t, db.InTx(ctx, pool, func(q *db.Queries) error {
-		team, err := q.CreateTeam(ctx, "committed")
+		team, err := q.CreateTeam(ctx, db.CreateTeamParams{
+			Name: "committed",
+			Slug: "committed-" + uuid.NewString()[:8],
+		})
 		if err != nil {
 			return err
 		}
@@ -240,7 +250,9 @@ func TestListAuditLogNeverCrossesTeams(t *testing.T) {
 
 	var otherTeamID uuid.UUID
 	require.NoError(t, tx.QueryRow(ctx,
-		`insert into team (name) values ('other') returning id`).Scan(&otherTeamID))
+		`insert into team (name, slug)
+		 values ('other', 'other-' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 12))
+		 returning id`).Scan(&otherTeamID))
 
 	q := db.New(tx)
 	emptyMetadata := []byte("{}")
@@ -283,7 +295,9 @@ func TestCountFoldersForTeamOnlyCountsTheCallersFolders(t *testing.T) {
 
 	var otherTeamID uuid.UUID
 	require.NoError(t, tx.QueryRow(ctx,
-		`insert into team (name) values ('other') returning id`).Scan(&otherTeamID))
+		`insert into team (name, slug)
+		 values ('other', 'other-' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 12))
+		 returning id`).Scan(&otherTeamID))
 
 	_, err = tx.Exec(ctx,
 		`insert into folder (team_id, name) values ($1, 'Mine A'), ($1, 'Mine B')`, teamID)
@@ -311,7 +325,9 @@ func TestCountTagsForTeamOnlyCountsTheCallersTags(t *testing.T) {
 
 	var otherTeamID uuid.UUID
 	require.NoError(t, tx.QueryRow(ctx,
-		`insert into team (name) values ('other') returning id`).Scan(&otherTeamID))
+		`insert into team (name, slug)
+		 values ('other', 'other-' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 12))
+		 returning id`).Scan(&otherTeamID))
 
 	_, err = tx.Exec(ctx,
 		`insert into tag (team_id, name) values ($1, 'Mine A'), ($1, 'Mine B')`, teamID)
@@ -473,7 +489,9 @@ func TestLockTeamOwnersSerializesConcurrentDemotions(t *testing.T) {
 
 	var teamID uuid.UUID
 	require.NoError(t, pool.QueryRow(ctx,
-		`insert into team (name) values ('lock owners fixture') returning id`).Scan(&teamID))
+		`insert into team (name, slug)
+		 values ('lock owners fixture', 'lock-owners-fixture-' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 12))
+		 returning id`).Scan(&teamID))
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), `delete from team where id = $1`, teamID)
 	})
@@ -583,7 +601,9 @@ func TestDomainQueriesFilterByTeam(t *testing.T) {
 
 	var otherTeamID uuid.UUID
 	require.NoError(t, tx.QueryRow(ctx,
-		`insert into team (name) values ('other') returning id`).Scan(&otherTeamID))
+		`insert into team (name, slug)
+		 values ('other', 'other-' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 12))
+		 returning id`).Scan(&otherTeamID))
 
 	q := db.New(tx)
 

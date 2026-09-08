@@ -2,7 +2,7 @@ import type { Domain, PageDomain } from '@kurze-url/api-client';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { LinkFormValues } from '../../components/link-form';
-import { afterCreate, loadVerifiedDomains, toRequestBody } from './teams.$teamId.links.new';
+import { afterCreate, loadVerifiedDomains, toRequestBody } from './teams.$teamSlug.links.new';
 
 const baseValues: LinkFormValues = {
 	analytics_enabled: true,

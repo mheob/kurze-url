@@ -118,7 +118,9 @@ func newFixture(t *testing.T, opts ...func(*linkOptions)) *fixture {
 	var userID, teamID, domainID, linkID uuid.UUID
 	require.NoError(t, pool.QueryRow(ctx, `select id from auth.users limit 1`).Scan(&userID))
 	require.NoError(t, pool.QueryRow(ctx,
-		`insert into team (name) values ('fixture') returning id`).Scan(&teamID))
+		`insert into team (name, slug)
+		 values ('fixture', 'fixture-' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 12))
+		 returning id`).Scan(&teamID))
 	require.NoError(t, pool.QueryRow(ctx,
 		`insert into domain (team_id, hostname, verification_status, verified_at)
 		 values ($1, $2, $3, now()) returning id`,

@@ -18,8 +18,8 @@ import { waitForHydration } from './fixtures/hydration';
  * that assertion, and the accessibility scan below it, exercise the list's
  * actual populated markup rather than its empty one.
  */
-async function createLink(page: Page, teamId: string, destinationUrl: string): Promise<void> {
-	await page.goto(`/teams/${teamId}/links/new`);
+async function createLink(page: Page, teamSlug: string, destinationUrl: string): Promise<void> {
+	await page.goto(`/teams/${teamSlug}/links/new`);
 
 	// Not decorative: `goto` resolves on `load`, which this server-rendered
 	// form reaches well before React wires it up, and a value typed in that
@@ -36,24 +36,24 @@ async function createLink(page: Page, teamId: string, destinationUrl: string): P
 	await expect(page.getByText(destinationUrl)).toBeVisible();
 }
 
-test('creates a link and shows it in the list', async ({ page, teamId }) => {
-	await createLink(page, teamId, 'https://example.org/a-page');
+test('creates a link and shows it in the list', async ({ page, teamSlug }) => {
+	await createLink(page, teamSlug, 'https://example.org/a-page');
 });
 
-test('warns that the short domain does not resolve', async ({ page, teamId }) => {
-	await createLink(page, teamId, 'https://example.org/a-page');
+test('warns that the short domain does not resolve', async ({ page, teamSlug }) => {
+	await createLink(page, teamSlug, 'https://example.org/a-page');
 	await expect(page.getByRole('note')).toBeVisible();
 });
 
-test('has no accessibility violations on the list', async ({ page, teamId }) => {
-	await createLink(page, teamId, 'https://example.org/a-page');
+test('has no accessibility violations on the list', async ({ page, teamSlug }) => {
+	await createLink(page, teamSlug, 'https://example.org/a-page');
 
 	const results = await new AxeBuilder({ page }).analyze();
 	expect(results.violations).toEqual([]);
 });
 
-test('sends a signed-out visitor to login', async ({ browser, teamId }, testInfo) => {
-	// A fresh context carries none of the `teamId` fixture's session cookies —
+test('sends a signed-out visitor to login', async ({ browser, teamSlug }, testInfo) => {
+	// A fresh context carries none of the `teamSlug` fixture's session cookies —
 	// nothing has signed it in, so there is nothing to sign it out of.
 	//
 	// `testInfo.project.use`, not a bare `browser.newContext()`: a manually
@@ -70,7 +70,7 @@ test('sends a signed-out visitor to login', async ({ browser, teamId }, testInfo
 	// to close (see `fixtures/auth.ts`'s own docstring on the same point).
 	const context = await browser.newContext(testInfo.project.use);
 	const page = await context.newPage();
-	await page.goto(`/teams/${teamId}/links`);
+	await page.goto(`/teams/${teamSlug}/links`);
 
 	await expect(page).toHaveURL(/\/login$/);
 

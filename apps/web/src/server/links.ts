@@ -159,13 +159,13 @@ export const createLinkFn = createServerFn({ method: 'POST' })
 /**
  * Same `...For`/`...Fn` split, same reason: `getLinkFn`'s `createServerFn` is
  * unreachable under Vitest ("No Start context found"), so
- * `teams.$teamId.links.$linkId.test.ts` calls this directly with a synthetic
+ * `teams.$teamSlug.links.$linkId.test.ts` calls this directly with a synthetic
  * request instead.
  *
  * Not scoped by `team_id` here, deliberately: the API's own entity-scoped
  * authorization (`internal/authz`, per CLAUDE.md) is what decides whether this
  * caller may see this link at all, answering with 404 for a non-member the
- * same way `assertMembership` does for a whole team. Re-deriving that check
+ * same way `requireTeamId` does for a whole team. Re-deriving that check
  * here would be a second, divergent copy of a decision the API already makes
  * correctly.
  */

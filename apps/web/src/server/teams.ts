@@ -18,13 +18,13 @@ import { authedApiClient, flushSessionCookies, requireSession } from './session'
  * this app has already hit twice.
  */
 export const createTeamFor = createServerOnlyFn(
-	async (request: Request, name: string): Promise<Team> => {
+	async (request: Request, name: string, slug: string): Promise<Team> => {
 		const headers = new Headers();
 		const { accessToken } = await requireSession(request, headers);
 		flushSessionCookies(headers);
 
 		const { data } = await createTeam({
-			body: { name },
+			body: { name, slug },
 			client: authedApiClient(accessToken),
 			// Required: the generated client's default never rejects, so the 403 a
 			// non-maintainer gets would resolve to `{ data: undefined, error }` and
@@ -37,5 +37,5 @@ export const createTeamFor = createServerOnlyFn(
 );
 
 export const createTeamFn = createServerFn({ method: 'POST' })
-	.validator((data: { name: string }) => data)
-	.handler(async ({ data }) => createTeamFor(getRequest(), data.name));
+	.validator((data: { name: string; slug: string }) => data)
+	.handler(async ({ data }) => createTeamFor(getRequest(), data.name, data.slug));

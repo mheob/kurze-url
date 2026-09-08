@@ -90,7 +90,7 @@ function reasonLabel(t: TFunction, reason: VerifyReason): string {
  * Presentational and prop-driven, the same contract as `LinkList`: it takes
  * the already-fetched domains as a prop rather than calling
  * `useSuspenseQuery` itself, and callbacks (`onVerify`, `onDelete`) for the
- * actions it offers rather than owning a mutation. `teams.$teamId.domains.tsx`
+ * actions it offers rather than owning a mutation. `teams.$teamSlug.domains.tsx`
  * is the only caller, wiring this to the query cache and the verify/delete
  * mutations; `domain-list.test.tsx` renders it directly with hand-built
  * `Domain` fixtures instead.

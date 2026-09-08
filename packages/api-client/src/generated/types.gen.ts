@@ -110,6 +110,10 @@ export type CreateTeamInputBody = {
      * The Verein's display name.
      */
     name: string;
+    /**
+     * Immutable identifier used in the app's URLs, e.g. "sv-gruenwald".
+     */
+    slug: string;
 };
 
 export type DnsRecord = {
@@ -343,11 +347,13 @@ export type Team = {
     id: string;
     name: string;
     role: string;
+    slug: string;
 };
 
 export type TeamMembership = {
     name: string;
     role: string;
+    slug: string;
     team_id: string;
 };
 
@@ -488,6 +494,10 @@ export type CreateTeamInputBodyWritable = {
      * The Verein's display name.
      */
     name: string;
+    /**
+     * Immutable identifier used in the app's URLs, e.g. "sv-gruenwald".
+     */
+    slug: string;
 };
 
 export type DomainWritable = {
@@ -632,6 +642,7 @@ export type TeamWritable = {
     id: string;
     name: string;
     role: string;
+    slug: string;
 };
 
 export type UpdateFolderInputBodyWritable = {

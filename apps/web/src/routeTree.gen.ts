@@ -12,12 +12,12 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as AuthedNewTeamRouteImport } from './routes/_authed/new-team'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
-import { Route as AuthedTeamsNewRouteImport } from './routes/_authed/teams.new'
-import { Route as AuthedTeamsTeamIdDomainsRouteImport } from './routes/_authed/teams.$teamId.domains'
-import { Route as AuthedTeamsTeamIdLinksIndexRouteImport } from './routes/_authed/teams.$teamId.links.index'
-import { Route as AuthedTeamsTeamIdLinksLinkIdRouteImport } from './routes/_authed/teams.$teamId.links.$linkId'
-import { Route as AuthedTeamsTeamIdLinksNewRouteImport } from './routes/_authed/teams.$teamId.links.new'
+import { Route as AuthedTeamsTeamSlugDomainsRouteImport } from './routes/_authed/teams.$teamSlug.domains'
+import { Route as AuthedTeamsTeamSlugLinksIndexRouteImport } from './routes/_authed/teams.$teamSlug.links.index'
+import { Route as AuthedTeamsTeamSlugLinksLinkIdRouteImport } from './routes/_authed/teams.$teamSlug.links.$linkId'
+import { Route as AuthedTeamsTeamSlugLinksNewRouteImport } from './routes/_authed/teams.$teamSlug.links.new'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -33,105 +33,105 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthedNewTeamRoute = AuthedNewTeamRouteImport.update({
+  id: '/new-team',
+  path: '/new-team',
+  getParentRoute: () => AuthedRoute,
+} as any)
 const AuthCallbackRoute = AuthCallbackRouteImport.update({
   id: '/auth/callback',
   path: '/auth/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthedTeamsNewRoute = AuthedTeamsNewRouteImport.update({
-  id: '/teams/new',
-  path: '/teams/new',
-  getParentRoute: () => AuthedRoute,
-} as any)
-const AuthedTeamsTeamIdDomainsRoute =
-  AuthedTeamsTeamIdDomainsRouteImport.update({
-    id: '/teams/$teamId/domains',
-    path: '/teams/$teamId/domains',
+const AuthedTeamsTeamSlugDomainsRoute =
+  AuthedTeamsTeamSlugDomainsRouteImport.update({
+    id: '/teams/$teamSlug/domains',
+    path: '/teams/$teamSlug/domains',
     getParentRoute: () => AuthedRoute,
   } as any)
-const AuthedTeamsTeamIdLinksIndexRoute =
-  AuthedTeamsTeamIdLinksIndexRouteImport.update({
-    id: '/teams/$teamId/links/',
-    path: '/teams/$teamId/links/',
+const AuthedTeamsTeamSlugLinksIndexRoute =
+  AuthedTeamsTeamSlugLinksIndexRouteImport.update({
+    id: '/teams/$teamSlug/links/',
+    path: '/teams/$teamSlug/links/',
     getParentRoute: () => AuthedRoute,
   } as any)
-const AuthedTeamsTeamIdLinksLinkIdRoute =
-  AuthedTeamsTeamIdLinksLinkIdRouteImport.update({
-    id: '/teams/$teamId/links/$linkId',
-    path: '/teams/$teamId/links/$linkId',
+const AuthedTeamsTeamSlugLinksLinkIdRoute =
+  AuthedTeamsTeamSlugLinksLinkIdRouteImport.update({
+    id: '/teams/$teamSlug/links/$linkId',
+    path: '/teams/$teamSlug/links/$linkId',
     getParentRoute: () => AuthedRoute,
   } as any)
-const AuthedTeamsTeamIdLinksNewRoute =
-  AuthedTeamsTeamIdLinksNewRouteImport.update({
-    id: '/teams/$teamId/links/new',
-    path: '/teams/$teamId/links/new',
+const AuthedTeamsTeamSlugLinksNewRoute =
+  AuthedTeamsTeamSlugLinksNewRouteImport.update({
+    id: '/teams/$teamSlug/links/new',
+    path: '/teams/$teamSlug/links/new',
     getParentRoute: () => AuthedRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/new-team': typeof AuthedNewTeamRoute
   '/auth/callback': typeof AuthCallbackRoute
-  '/teams/new': typeof AuthedTeamsNewRoute
-  '/teams/$teamId/domains': typeof AuthedTeamsTeamIdDomainsRoute
-  '/teams/$teamId/links/$linkId': typeof AuthedTeamsTeamIdLinksLinkIdRoute
-  '/teams/$teamId/links/new': typeof AuthedTeamsTeamIdLinksNewRoute
-  '/teams/$teamId/links/': typeof AuthedTeamsTeamIdLinksIndexRoute
+  '/teams/$teamSlug/domains': typeof AuthedTeamsTeamSlugDomainsRoute
+  '/teams/$teamSlug/links/$linkId': typeof AuthedTeamsTeamSlugLinksLinkIdRoute
+  '/teams/$teamSlug/links/new': typeof AuthedTeamsTeamSlugLinksNewRoute
+  '/teams/$teamSlug/links/': typeof AuthedTeamsTeamSlugLinksIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/new-team': typeof AuthedNewTeamRoute
   '/auth/callback': typeof AuthCallbackRoute
-  '/teams/new': typeof AuthedTeamsNewRoute
-  '/teams/$teamId/domains': typeof AuthedTeamsTeamIdDomainsRoute
-  '/teams/$teamId/links/$linkId': typeof AuthedTeamsTeamIdLinksLinkIdRoute
-  '/teams/$teamId/links/new': typeof AuthedTeamsTeamIdLinksNewRoute
-  '/teams/$teamId/links': typeof AuthedTeamsTeamIdLinksIndexRoute
+  '/teams/$teamSlug/domains': typeof AuthedTeamsTeamSlugDomainsRoute
+  '/teams/$teamSlug/links/$linkId': typeof AuthedTeamsTeamSlugLinksLinkIdRoute
+  '/teams/$teamSlug/links/new': typeof AuthedTeamsTeamSlugLinksNewRoute
+  '/teams/$teamSlug/links': typeof AuthedTeamsTeamSlugLinksIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_authed': typeof AuthedRouteWithChildren
   '/login': typeof LoginRoute
+  '/_authed/new-team': typeof AuthedNewTeamRoute
   '/auth/callback': typeof AuthCallbackRoute
-  '/_authed/teams/new': typeof AuthedTeamsNewRoute
-  '/_authed/teams/$teamId/domains': typeof AuthedTeamsTeamIdDomainsRoute
-  '/_authed/teams/$teamId/links/$linkId': typeof AuthedTeamsTeamIdLinksLinkIdRoute
-  '/_authed/teams/$teamId/links/new': typeof AuthedTeamsTeamIdLinksNewRoute
-  '/_authed/teams/$teamId/links/': typeof AuthedTeamsTeamIdLinksIndexRoute
+  '/_authed/teams/$teamSlug/domains': typeof AuthedTeamsTeamSlugDomainsRoute
+  '/_authed/teams/$teamSlug/links/$linkId': typeof AuthedTeamsTeamSlugLinksLinkIdRoute
+  '/_authed/teams/$teamSlug/links/new': typeof AuthedTeamsTeamSlugLinksNewRoute
+  '/_authed/teams/$teamSlug/links/': typeof AuthedTeamsTeamSlugLinksIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/login'
+    | '/new-team'
     | '/auth/callback'
-    | '/teams/new'
-    | '/teams/$teamId/domains'
-    | '/teams/$teamId/links/$linkId'
-    | '/teams/$teamId/links/new'
-    | '/teams/$teamId/links/'
+    | '/teams/$teamSlug/domains'
+    | '/teams/$teamSlug/links/$linkId'
+    | '/teams/$teamSlug/links/new'
+    | '/teams/$teamSlug/links/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/login'
+    | '/new-team'
     | '/auth/callback'
-    | '/teams/new'
-    | '/teams/$teamId/domains'
-    | '/teams/$teamId/links/$linkId'
-    | '/teams/$teamId/links/new'
-    | '/teams/$teamId/links'
+    | '/teams/$teamSlug/domains'
+    | '/teams/$teamSlug/links/$linkId'
+    | '/teams/$teamSlug/links/new'
+    | '/teams/$teamSlug/links'
   id:
     | '__root__'
     | '/'
     | '/_authed'
     | '/login'
+    | '/_authed/new-team'
     | '/auth/callback'
-    | '/_authed/teams/new'
-    | '/_authed/teams/$teamId/domains'
-    | '/_authed/teams/$teamId/links/$linkId'
-    | '/_authed/teams/$teamId/links/new'
-    | '/_authed/teams/$teamId/links/'
+    | '/_authed/teams/$teamSlug/domains'
+    | '/_authed/teams/$teamSlug/links/$linkId'
+    | '/_authed/teams/$teamSlug/links/new'
+    | '/_authed/teams/$teamSlug/links/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -164,6 +164,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authed/new-team': {
+      id: '/_authed/new-team'
+      path: '/new-team'
+      fullPath: '/new-team'
+      preLoaderRoute: typeof AuthedNewTeamRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/auth/callback': {
       id: '/auth/callback'
       path: '/auth/callback'
@@ -171,58 +178,51 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_authed/teams/new': {
-      id: '/_authed/teams/new'
-      path: '/teams/new'
-      fullPath: '/teams/new'
-      preLoaderRoute: typeof AuthedTeamsNewRouteImport
+    '/_authed/teams/$teamSlug/domains': {
+      id: '/_authed/teams/$teamSlug/domains'
+      path: '/teams/$teamSlug/domains'
+      fullPath: '/teams/$teamSlug/domains'
+      preLoaderRoute: typeof AuthedTeamsTeamSlugDomainsRouteImport
       parentRoute: typeof AuthedRoute
     }
-    '/_authed/teams/$teamId/domains': {
-      id: '/_authed/teams/$teamId/domains'
-      path: '/teams/$teamId/domains'
-      fullPath: '/teams/$teamId/domains'
-      preLoaderRoute: typeof AuthedTeamsTeamIdDomainsRouteImport
+    '/_authed/teams/$teamSlug/links/': {
+      id: '/_authed/teams/$teamSlug/links/'
+      path: '/teams/$teamSlug/links'
+      fullPath: '/teams/$teamSlug/links/'
+      preLoaderRoute: typeof AuthedTeamsTeamSlugLinksIndexRouteImport
       parentRoute: typeof AuthedRoute
     }
-    '/_authed/teams/$teamId/links/': {
-      id: '/_authed/teams/$teamId/links/'
-      path: '/teams/$teamId/links'
-      fullPath: '/teams/$teamId/links/'
-      preLoaderRoute: typeof AuthedTeamsTeamIdLinksIndexRouteImport
+    '/_authed/teams/$teamSlug/links/$linkId': {
+      id: '/_authed/teams/$teamSlug/links/$linkId'
+      path: '/teams/$teamSlug/links/$linkId'
+      fullPath: '/teams/$teamSlug/links/$linkId'
+      preLoaderRoute: typeof AuthedTeamsTeamSlugLinksLinkIdRouteImport
       parentRoute: typeof AuthedRoute
     }
-    '/_authed/teams/$teamId/links/$linkId': {
-      id: '/_authed/teams/$teamId/links/$linkId'
-      path: '/teams/$teamId/links/$linkId'
-      fullPath: '/teams/$teamId/links/$linkId'
-      preLoaderRoute: typeof AuthedTeamsTeamIdLinksLinkIdRouteImport
-      parentRoute: typeof AuthedRoute
-    }
-    '/_authed/teams/$teamId/links/new': {
-      id: '/_authed/teams/$teamId/links/new'
-      path: '/teams/$teamId/links/new'
-      fullPath: '/teams/$teamId/links/new'
-      preLoaderRoute: typeof AuthedTeamsTeamIdLinksNewRouteImport
+    '/_authed/teams/$teamSlug/links/new': {
+      id: '/_authed/teams/$teamSlug/links/new'
+      path: '/teams/$teamSlug/links/new'
+      fullPath: '/teams/$teamSlug/links/new'
+      preLoaderRoute: typeof AuthedTeamsTeamSlugLinksNewRouteImport
       parentRoute: typeof AuthedRoute
     }
   }
 }
 
 interface AuthedRouteChildren {
-  AuthedTeamsNewRoute: typeof AuthedTeamsNewRoute
-  AuthedTeamsTeamIdDomainsRoute: typeof AuthedTeamsTeamIdDomainsRoute
-  AuthedTeamsTeamIdLinksLinkIdRoute: typeof AuthedTeamsTeamIdLinksLinkIdRoute
-  AuthedTeamsTeamIdLinksNewRoute: typeof AuthedTeamsTeamIdLinksNewRoute
-  AuthedTeamsTeamIdLinksIndexRoute: typeof AuthedTeamsTeamIdLinksIndexRoute
+  AuthedNewTeamRoute: typeof AuthedNewTeamRoute
+  AuthedTeamsTeamSlugDomainsRoute: typeof AuthedTeamsTeamSlugDomainsRoute
+  AuthedTeamsTeamSlugLinksLinkIdRoute: typeof AuthedTeamsTeamSlugLinksLinkIdRoute
+  AuthedTeamsTeamSlugLinksNewRoute: typeof AuthedTeamsTeamSlugLinksNewRoute
+  AuthedTeamsTeamSlugLinksIndexRoute: typeof AuthedTeamsTeamSlugLinksIndexRoute
 }
 
 const AuthedRouteChildren: AuthedRouteChildren = {
-  AuthedTeamsNewRoute: AuthedTeamsNewRoute,
-  AuthedTeamsTeamIdDomainsRoute: AuthedTeamsTeamIdDomainsRoute,
-  AuthedTeamsTeamIdLinksLinkIdRoute: AuthedTeamsTeamIdLinksLinkIdRoute,
-  AuthedTeamsTeamIdLinksNewRoute: AuthedTeamsTeamIdLinksNewRoute,
-  AuthedTeamsTeamIdLinksIndexRoute: AuthedTeamsTeamIdLinksIndexRoute,
+  AuthedNewTeamRoute: AuthedNewTeamRoute,
+  AuthedTeamsTeamSlugDomainsRoute: AuthedTeamsTeamSlugDomainsRoute,
+  AuthedTeamsTeamSlugLinksLinkIdRoute: AuthedTeamsTeamSlugLinksLinkIdRoute,
+  AuthedTeamsTeamSlugLinksNewRoute: AuthedTeamsTeamSlugLinksNewRoute,
+  AuthedTeamsTeamSlugLinksIndexRoute: AuthedTeamsTeamSlugLinksIndexRoute,
 }
 
 const AuthedRouteWithChildren =

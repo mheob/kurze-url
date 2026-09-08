@@ -83,7 +83,9 @@ func createTestLink(ctx context.Context, t *testing.T, pool *pgxpool.Pool) uuid.
 	require.NoError(t, pool.QueryRow(ctx,
 		`select id from auth.users limit 1`).Scan(&userID))
 	require.NoError(t, pool.QueryRow(ctx,
-		`insert into team (name) values ('click-stats-test') returning id`).Scan(&teamID))
+		`insert into team (name, slug)
+		 values ('click-stats-test', 'click-stats-test-' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 12))
+		 returning id`).Scan(&teamID))
 	require.NoError(t, pool.QueryRow(ctx,
 		`insert into domain (team_id, hostname, verification_status, verified_at)
 		 values ($1, $2, 'verified', now()) returning id`,

@@ -3,6 +3,7 @@ package db_test
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -42,7 +43,9 @@ func TestSlugIsUniquePerDomainNotGlobally(t *testing.T) {
 
 	var teamID, userID string
 	require.NoError(t, tx.QueryRow(ctx,
-		`insert into team (name) values ('t') returning id`).Scan(&teamID))
+		`insert into team (name, slug)
+		 values ('t', 'schema-fixture-' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 12))
+		 returning id`).Scan(&teamID))
 	require.NoError(t, tx.QueryRow(ctx,
 		`select id from auth.users limit 1`).Scan(&userID))
 
@@ -77,7 +80,9 @@ func TestTotalRollupRowIncrementsInsteadOfDuplicating(t *testing.T) {
 
 	var teamID, userID, domainID, linkID string
 	require.NoError(t, tx.QueryRow(ctx,
-		`insert into team (name) values ('t') returning id`).Scan(&teamID))
+		`insert into team (name, slug)
+		 values ('t', 'rollup-fixture-' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 12))
+		 returning id`).Scan(&teamID))
 	require.NoError(t, tx.QueryRow(ctx,
 		`select id from auth.users limit 1`).Scan(&userID))
 	require.NoError(t, tx.QueryRow(ctx,
@@ -107,4 +112,45 @@ func TestTotalRollupRowIncrementsInsteadOfDuplicating(t *testing.T) {
 
 	require.Equal(t, 1, rows, "the total row must not duplicate — needs UNIQUE NULLS NOT DISTINCT")
 	require.Equal(t, 2, clicks)
+}
+
+func TestTeamSlugRejectsMalformedAndDuplicateValues(t *testing.T) {
+	ctx := context.Background()
+	pool := testPool(t)
+
+	tx, err := pool.Begin(ctx)
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	insert := `insert into team (name, slug) values ('t', $1)`
+
+	_, err = tx.Exec(ctx, insert, "sv-gruenwald")
+	require.NoError(t, err, "a well-formed slug is accepted")
+
+	// A savepoint here, mirroring the loop below, is required: without it the
+	// duplicate-key error below aborts the transaction, and Postgres refuses
+	// even a bare SAVEPOINT afterwards ("current transaction is aborted,
+	// commands ignored until end of transaction block") — there is no prior
+	// savepoint yet for it to roll back to.
+	_, err = tx.Exec(ctx, `savepoint s0`)
+	require.NoError(t, err)
+	_, err = tx.Exec(ctx, insert, "sv-gruenwald")
+	require.Error(t, err, "slugs are globally unique, not unique per anything")
+	_, err = tx.Exec(ctx, `rollback to savepoint s0`)
+	require.NoError(t, err)
+
+	// "ab" exercises the lower bound of team_slug_length (3), and the
+	// 41-character value the upper bound (40) — both from the same migration
+	// (20260908082955_team_slug.sql) as team_slug_format, which the rest of
+	// this slice covers.
+	for _, malformed := range []string{
+		"SV-Gruenwald", "-leading", "trailing-", "sv_gruenwald", "ab", strings.Repeat("a", 41),
+	} {
+		_, err = tx.Exec(ctx, `savepoint s`)
+		require.NoError(t, err)
+		_, err = tx.Exec(ctx, insert, malformed)
+		require.Error(t, err, "the schema must reject %q, not only Go", malformed)
+		_, err = tx.Exec(ctx, `rollback to savepoint s`)
+		require.NoError(t, err)
+	}
 }

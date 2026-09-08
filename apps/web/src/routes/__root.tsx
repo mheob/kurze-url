@@ -101,7 +101,7 @@ export function RootErrorPage({ error }: { readonly error: Error }) {
 
 	return (
 		<main className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
-			{/* This page has only one message, unlike `teams.new.tsx`'s heading
+			{/* This page has only one message, unlike `new-team.tsx`'s heading
 			    (page title) plus separate `<p role="alert">` (error text) — a
 			    sibling paragraph here would just repeat the same sentence on
 			    screen. Wrapping the `<h1>` in `role="alert"` instead keeps its
@@ -120,7 +120,7 @@ export function RootErrorPage({ error }: { readonly error: Error }) {
  * `queryClient` is the one piece of context every route in the tree can rely
  * on: `router.tsx`'s `getRouter` creates a fresh `QueryClient` per request
  * and passes it in here, so `context.queryClient` is what
- * `teams.$teamId.links.index.tsx`'s loader calls `ensureQueryData` on. Typed
+ * `teams.$teamSlug.links.index.tsx`'s loader calls `ensureQueryData` on. Typed
  * here, at the root, because router context is cumulative down the tree —
  * every descendant route (via `createFileRoute`) inherits this type without
  * redeclaring it.

@@ -18,8 +18,8 @@ vi.mock('./_authed', () => ({ fetchMe: mocks.fetchMe }));
 const { fetchCurrentUser, resolveHomeOutcome } = await import('./index');
 
 const memberships = [
-	{ name: 'Verein A', role: 'owner', team_id: 'a' },
-	{ name: 'Verein B', role: 'editor', team_id: 'b' },
+	{ name: 'Verein A', role: 'owner', slug: 'verein-a', team_id: 'a' },
+	{ name: 'Verein B', role: 'editor', slug: 'verein-b', team_id: 'b' },
 ];
 
 describe('fetchCurrentUser', () => {
@@ -54,23 +54,23 @@ describe('resolveHomeOutcome', () => {
 
 	it('redirects a signed-in visitor to the resolved team', () => {
 		const me: Me = { email: 'a@example.test', is_maintainer: false, memberships, user_id: 'u1' };
-		expect(resolveHomeOutcome(me, 'a')).toEqual({ kind: 'redirect', teamId: 'a' });
+		expect(resolveHomeOutcome(me, 'verein-a')).toEqual({ kind: 'redirect', teamSlug: 'verein-a' });
 	});
 
 	/**
-	 * The property Task 7 adds: the redirect target is whatever team id the
-	 * loader resolved — via `getCurrentTeamId`, which wraps
+	 * The property Task 7 adds: the redirect target is whatever team slug the
+	 * loader resolved — via `getCurrentTeamSlug`, which wraps
 	 * `resolveCurrentTeam` around the `team` cookie — not hardcoded to the
 	 * first membership. `resolveHomeOutcome` itself no longer picks a
-	 * membership at all; it only turns an already-resolved id into an
-	 * outcome, so passing a non-first id through unchanged is exactly what
+	 * membership at all; it only turns an already-resolved slug into an
+	 * outcome, so passing a non-first slug through unchanged is exactly what
 	 * proves that. `resolveCurrentTeam`'s own tests in
 	 * `lib/current-team.test.ts` cover the cookie-vs-first-membership
 	 * decision, including the "removed from that team" falsification.
 	 */
 	it('redirects to the remembered team, not necessarily the first membership', () => {
 		const me: Me = { email: 'a@example.test', is_maintainer: false, memberships, user_id: 'u1' };
-		expect(resolveHomeOutcome(me, 'b')).toEqual({ kind: 'redirect', teamId: 'b' });
+		expect(resolveHomeOutcome(me, 'verein-b')).toEqual({ kind: 'redirect', teamSlug: 'verein-b' });
 	});
 
 	it('shows the no-team outcome for a signed-in visitor with no resolved team', () => {

@@ -42,14 +42,31 @@ func (q *Queries) CountTeamsForUser(ctx context.Context, userID uuid.UUID) (int6
 }
 
 const createTeam = `-- name: CreateTeam :one
-insert into team (name) values ($1)
-returning id, name, created_at
+insert into team (name, slug) values ($1, $2)
+returning id, name, slug, created_at
 `
 
-func (q *Queries) CreateTeam(ctx context.Context, name string) (Team, error) {
-	row := q.db.QueryRow(ctx, createTeam, name)
-	var i Team
-	err := row.Scan(&i.ID, &i.Name, &i.CreatedAt)
+type CreateTeamParams struct {
+	Name string
+	Slug string
+}
+
+type CreateTeamRow struct {
+	ID        uuid.UUID
+	Name      string
+	Slug      string
+	CreatedAt time.Time
+}
+
+func (q *Queries) CreateTeam(ctx context.Context, arg CreateTeamParams) (CreateTeamRow, error) {
+	row := q.db.QueryRow(ctx, createTeam, arg.Name, arg.Slug)
+	var i CreateTeamRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Slug,
+		&i.CreatedAt,
+	)
 	return i, err
 }
 
@@ -68,13 +85,25 @@ func (q *Queries) DeleteTeamMember(ctx context.Context, arg DeleteTeamMemberPara
 }
 
 const getTeam = `-- name: GetTeam :one
-select id, name, created_at from team where id = $1
+select id, name, slug, created_at from team where id = $1
 `
 
-func (q *Queries) GetTeam(ctx context.Context, id uuid.UUID) (Team, error) {
+type GetTeamRow struct {
+	ID        uuid.UUID
+	Name      string
+	Slug      string
+	CreatedAt time.Time
+}
+
+func (q *Queries) GetTeam(ctx context.Context, id uuid.UUID) (GetTeamRow, error) {
 	row := q.db.QueryRow(ctx, getTeam, id)
-	var i Team
-	err := row.Scan(&i.ID, &i.Name, &i.CreatedAt)
+	var i GetTeamRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Slug,
+		&i.CreatedAt,
+	)
 	return i, err
 }
 
@@ -139,7 +168,7 @@ func (q *Queries) InsertTeamMember(ctx context.Context, arg InsertTeamMemberPara
 
 const listMembershipsForUser = `-- name: ListMembershipsForUser :many
 
-select tm.team_id, t.name as team_name, tm.role
+select tm.team_id, t.name as team_name, t.slug as team_slug, tm.role
 from team_member tm
 join team t on t.id = tm.team_id
 where tm.user_id = $1
@@ -149,6 +178,7 @@ order by t.name, t.id
 type ListMembershipsForUserRow struct {
 	TeamID   uuid.UUID
 	TeamName string
+	TeamSlug string
 	Role     string
 }
 
@@ -163,7 +193,12 @@ func (q *Queries) ListMembershipsForUser(ctx context.Context, userID uuid.UUID) 
 	items := []ListMembershipsForUserRow{}
 	for rows.Next() {
 		var i ListMembershipsForUserRow
-		if err := rows.Scan(&i.TeamID, &i.TeamName, &i.Role); err != nil {
+		if err := rows.Scan(
+			&i.TeamID,
+			&i.TeamName,
+			&i.TeamSlug,
+			&i.Role,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -225,7 +260,7 @@ func (q *Queries) ListTeamMembers(ctx context.Context, arg ListTeamMembersParams
 
 const listTeamsForUser = `-- name: ListTeamsForUser :many
 
-select t.id, t.name, t.created_at, tm.role, count(*) over () as total_count
+select t.id, t.name, t.slug, t.created_at, tm.role, count(*) over () as total_count
 from team t
 join team_member tm on tm.team_id = t.id
 where tm.user_id = $1
@@ -242,6 +277,7 @@ type ListTeamsForUserParams struct {
 type ListTeamsForUserRow struct {
 	ID         uuid.UUID
 	Name       string
+	Slug       string
 	CreatedAt  time.Time
 	Role       string
 	TotalCount int64
@@ -261,6 +297,7 @@ func (q *Queries) ListTeamsForUser(ctx context.Context, arg ListTeamsForUserPara
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
+			&i.Slug,
 			&i.CreatedAt,
 			&i.Role,
 			&i.TotalCount,
@@ -307,7 +344,7 @@ func (q *Queries) LockTeamOwners(ctx context.Context, teamID uuid.UUID) ([]uuid.
 
 const renameTeam = `-- name: RenameTeam :one
 update team set name = $2 where id = $1
-returning id, name, created_at
+returning id, name, slug, created_at
 `
 
 type RenameTeamParams struct {
@@ -315,10 +352,22 @@ type RenameTeamParams struct {
 	Name string
 }
 
-func (q *Queries) RenameTeam(ctx context.Context, arg RenameTeamParams) (Team, error) {
+type RenameTeamRow struct {
+	ID        uuid.UUID
+	Name      string
+	Slug      string
+	CreatedAt time.Time
+}
+
+func (q *Queries) RenameTeam(ctx context.Context, arg RenameTeamParams) (RenameTeamRow, error) {
 	row := q.db.QueryRow(ctx, renameTeam, arg.ID, arg.Name)
-	var i Team
-	err := row.Scan(&i.ID, &i.Name, &i.CreatedAt)
+	var i RenameTeamRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Slug,
+		&i.CreatedAt,
+	)
 	return i, err
 }
 

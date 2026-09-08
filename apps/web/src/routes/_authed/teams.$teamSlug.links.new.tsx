@@ -8,7 +8,7 @@ import { LinkForm, type LinkFormValues } from '../../components/link-form';
 import { classifyApiError, type ApiFailure } from '../../lib/api-errors';
 import { domainsQueryOptions } from '../../server/domains';
 import { createLinkFn } from '../../server/links';
-import { assertMembership } from '../_authed';
+import { requireTeamId } from '../_authed';
 
 /**
  * The one method this loader reaches through on `context.queryClient` — same
@@ -51,11 +51,11 @@ export async function loadVerifiedDomains(
 	}
 }
 
-export const Route = createFileRoute('/_authed/teams/$teamId/links/new')({
-	beforeLoad: ({ context, params }) => {
-		assertMembership(context.me.memberships, params.teamId);
-	},
-	loader: ({ context, params }) => loadVerifiedDomains(context.queryClient, params.teamId),
+export const Route = createFileRoute('/_authed/teams/$teamSlug/links/new')({
+	beforeLoad: ({ context, params }) => ({
+		teamId: requireTeamId(context.me.memberships, params.teamSlug),
+	}),
+	loader: ({ context }) => loadVerifiedDomains(context.queryClient, context.teamId),
 	component: RouteComponent,
 });
 
@@ -127,7 +127,8 @@ export async function afterCreate(
 }
 
 function RouteComponent(): React.JSX.Element {
-	const { teamId } = Route.useParams();
+	const { teamSlug } = Route.useParams();
+	const { teamId } = Route.useRouteContext();
 	const domains = Route.useLoaderData();
 	const { t } = useTranslation();
 	const router = useRouter();
@@ -157,7 +158,7 @@ function RouteComponent(): React.JSX.Element {
 			// the same function also be called with hand-built fakes in the test
 			// for this property.
 			await afterCreate(queryClient, router, teamId);
-			await router.navigate({ params: { teamId }, to: '/teams/$teamId/links' });
+			await router.navigate({ params: { teamSlug }, to: '/teams/$teamSlug/links' });
 		},
 	});
 

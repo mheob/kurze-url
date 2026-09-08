@@ -8,18 +8,20 @@ import { ShortUrlNotice } from './short-url-notice';
 interface LinkListViewProps {
 	readonly data: PageLink;
 	readonly page: number;
-	readonly teamId: string;
+	readonly teamSlug: string;
 }
 
 /**
  * Presentational: takes the already-fetched `PageLink` as a prop rather than
  * calling `useSuspenseQuery` itself, so it can be rendered — and its empty
  * state and `.invalid`-domain notice exercised — without a `QueryClient`,
- * a router loader, or a live API. `teams.$teamId.links.index.tsx` is the
+ * a router loader, or a live API. `teams.$teamSlug.links.index.tsx` is the
  * only caller, wiring this to the query cache; `link-list.test.tsx` renders
- * it directly with hand-built `PageLink` fixtures instead.
+ * it directly with hand-built `PageLink` fixtures instead. This component
+ * only ever used the team value for navigation, so it takes the slug rather
+ * than the id — unlike its caller, it never feeds an API call.
  */
-export function LinkList({ data, page, teamId }: LinkListViewProps): React.JSX.Element {
+export function LinkList({ data, page, teamSlug }: LinkListViewProps): React.JSX.Element {
 	const { t } = useTranslation();
 
 	// `items` is nullable on the wire — `PageLink.items: Array<Link> | null`,
@@ -43,7 +45,7 @@ export function LinkList({ data, page, teamId }: LinkListViewProps): React.JSX.E
 		return (
 			<p>
 				{t('links.empty')}{' '}
-				<Link params={{ teamId }} to="/teams/$teamId/links/new">
+				<Link params={{ teamSlug }} to="/teams/$teamSlug/links/new">
 					{t('links.create')}
 				</Link>
 			</p>
@@ -55,7 +57,7 @@ export function LinkList({ data, page, teamId }: LinkListViewProps): React.JSX.E
 			<h1>{t('links.heading')}</h1>
 			{/* The entry point for a team that already has links — the empty
 			    state above has its own, since it can never render both. */}
-			<Link params={{ teamId }} to="/teams/$teamId/links/new">
+			<Link params={{ teamSlug }} to="/teams/$teamSlug/links/new">
 				{t('links.create')}
 			</Link>
 			<ShortUrlNotice hostname={invalidHostname} />
@@ -65,7 +67,7 @@ export function LinkList({ data, page, teamId }: LinkListViewProps): React.JSX.E
 						<a href={link.short_url}>{link.short_url}</a>
 						<CopyButton value={link.short_url} />
 						<span>{link.destination_url}</span>
-						<Link params={{ linkId: link.id, teamId }} to="/teams/$teamId/links/$linkId">
+						<Link params={{ linkId: link.id, teamSlug }} to="/teams/$teamSlug/links/$linkId">
 							{t('links.edit')}
 						</Link>
 					</li>
@@ -73,14 +75,14 @@ export function LinkList({ data, page, teamId }: LinkListViewProps): React.JSX.E
 			</ul>
 			<nav aria-label={t('links.paginationLabel')}>
 				{hasPreviousPage ? (
-					<Link params={{ teamId }} search={{ page: page - 1 }} to="/teams/$teamId/links">
+					<Link params={{ teamSlug }} search={{ page: page - 1 }} to="/teams/$teamSlug/links">
 						{t('links.previousPage')}
 					</Link>
 				) : (
 					<span aria-disabled="true">{t('links.previousPage')}</span>
 				)}
 				{hasNextPage ? (
-					<Link params={{ teamId }} search={{ page: page + 1 }} to="/teams/$teamId/links">
+					<Link params={{ teamSlug }} search={{ page: page + 1 }} to="/teams/$teamSlug/links">
 						{t('links.nextPage')}
 					</Link>
 				) : (

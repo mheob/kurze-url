@@ -44,6 +44,11 @@
 		"none": "You are not a member of any team yet. Ask the person who invited you to add you to one.",
 		"noneMaintainer": "You are not a member of any team yet. As a maintainer you can create one.",
 		"save": "Save",
+		"slug": "URL name",
+		"slugHint": "Appears in this team's web address, e.g. sv-gruenwald. It cannot be changed later.",
+		"slugInvalid": "Use 3 to 40 lowercase letters, digits and hyphens, starting and ending with a letter or digit.",
+		"slugRequired": "A URL name is required.",
+		"slugTaken": "That URL name is already taken. Please choose another.",
 		"switcherLabel": "Teams"
 	},
 	"links": {

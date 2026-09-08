@@ -17,7 +17,7 @@ import { routeTree } from './routeTree.gen';
  *
  * `setupRouterSsrQueryIntegration` does three things at once:
  * - wires `context.queryClient` into every route, which is what
- *   `teams.$teamId.links.index.tsx`'s loader calls `ensureQueryData` on
+ *   `teams.$teamSlug.links.index.tsx`'s loader calls `ensureQueryData` on
  * - dehydrates whatever queries were populated during the server render into
  *   the SSR payload, and rehydrates them into the client's own (separate)
  *   `QueryClient` — without this, a client-side run of the same loader

@@ -15,8 +15,8 @@ import type { Membership } from '../routes/_authed';
 import { AuthedShell } from './authed-shell';
 
 const memberships: Membership[] = [
-	{ name: 'Verein A', role: 'owner', team_id: 'a' },
-	{ name: 'Verein B', role: 'editor', team_id: 'b' },
+	{ name: 'Verein A', role: 'owner', slug: 'verein-a', team_id: 'a' },
+	{ name: 'Verein B', role: 'editor', slug: 'verein-b', team_id: 'b' },
 ];
 
 /**
@@ -25,14 +25,14 @@ const memberships: Membership[] = [
  * test-only route tree.
  */
 function renderShell(props: {
-	readonly currentTeamId?: string;
+	readonly currentTeamSlug?: string;
 	readonly isMaintainer?: boolean;
 	readonly memberships?: readonly Membership[];
 	readonly onSignOut?: () => void;
 	readonly signingOut?: boolean;
 }): ReturnType<typeof render> {
 	const {
-		currentTeamId = 'a',
+		currentTeamSlug = 'verein-a',
 		isMaintainer = false,
 		memberships: membershipsProp = memberships,
 		onSignOut = vi.fn(),
@@ -42,7 +42,7 @@ function renderShell(props: {
 	const rootRoute = createRootRoute({
 		component: () => (
 			<AuthedShell
-				currentTeamId={currentTeamId}
+				currentTeamSlug={currentTeamSlug}
 				isMaintainer={isMaintainer}
 				memberships={membershipsProp}
 				onSignOut={onSignOut}
@@ -53,17 +53,17 @@ function renderShell(props: {
 	const linksRoute = createRoute({
 		component: () => null,
 		getParentRoute: () => rootRoute,
-		path: '/teams/$teamId/links',
+		path: '/teams/$teamSlug/links',
 	});
 	const domainsRoute = createRoute({
 		component: () => null,
 		getParentRoute: () => rootRoute,
-		path: '/teams/$teamId/domains',
+		path: '/teams/$teamSlug/domains',
 	});
 	const newTeamRoute = createRoute({
 		component: () => null,
 		getParentRoute: () => rootRoute,
-		path: '/teams/new',
+		path: '/new-team',
 	});
 	const router = createRouter({
 		history: createMemoryHistory({ initialEntries: ['/'] }),
@@ -105,7 +105,7 @@ describe('AuthedShell', () => {
 		// A maintainer who already belongs to a team never sees `/`'s own
 		// "create team" link, because `/` redirects them straight into their
 		// team. Without this control they would have no way to reach
-		// `/teams/new` from inside the app at all.
+		// `/new-team` from inside the app at all.
 		renderShell({ isMaintainer: true });
 		expect(await screen.findByRole('link', { name: 'Create team' })).toBeInTheDocument();
 	});
@@ -129,7 +129,7 @@ describe('AuthedShell', () => {
 	it('omits the team-page navigation when there is no resolved current team', async () => {
 		// Same condition as the team switcher: nothing to navigate between for
 		// a visitor with zero memberships or a stale bookmark.
-		renderShell({ currentTeamId: undefined, memberships: [] });
+		renderShell({ currentTeamSlug: undefined, memberships: [] });
 		expect(await screen.findByRole('button', { name: 'Sign out' })).toBeInTheDocument();
 		expect(screen.queryByRole('link', { name: 'Links' })).not.toBeInTheDocument();
 		expect(screen.queryByRole('link', { name: 'Domains' })).not.toBeInTheDocument();
@@ -139,7 +139,7 @@ describe('AuthedShell', () => {
 		// A visitor with zero memberships (or a stale bookmark to a team they
 		// have since left) can still reach this shell — `TeamSwitcher` has
 		// nothing to switch between in that case.
-		renderShell({ currentTeamId: undefined, memberships: [] });
+		renderShell({ currentTeamSlug: undefined, memberships: [] });
 		expect(await screen.findByRole('button', { name: 'Sign out' })).toBeInTheDocument();
 		expect(screen.queryByRole('navigation', { name: 'Teams' })).not.toBeInTheDocument();
 	});

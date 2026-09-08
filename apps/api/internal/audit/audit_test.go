@@ -42,7 +42,9 @@ func seedTeam(ctx context.Context, t *testing.T, pool *pgxpool.Pool) (teamID, us
 
 	require.NoError(t, pool.QueryRow(ctx, `select id from auth.users limit 1`).Scan(&userID))
 	require.NoError(t, pool.QueryRow(ctx,
-		`insert into team (name) values ('audit fixture') returning id`).Scan(&teamID))
+		`insert into team (name, slug)
+		 values ('audit fixture', 'audit-fixture-' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 12))
+		 returning id`).Scan(&teamID))
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), `delete from team where id = $1`, teamID)
 	})
