@@ -18,8 +18,8 @@ vi.mock('./_authed', () => ({ fetchMe: mocks.fetchMe }));
 const { fetchCurrentUser, resolveHomeOutcome } = await import('./index');
 
 const memberships = [
-	{ name: 'Verein A', role: 'owner', team_id: 'a' },
-	{ name: 'Verein B', role: 'editor', team_id: 'b' },
+	{ name: 'Verein A', role: 'owner', slug: 'verein-a', team_id: 'a' },
+	{ name: 'Verein B', role: 'editor', slug: 'verein-b', team_id: 'b' },
 ];
 
 describe('fetchCurrentUser', () => {
@@ -54,7 +54,7 @@ describe('resolveHomeOutcome', () => {
 
 	it('redirects a signed-in visitor to the resolved team', () => {
 		const me: Me = { email: 'a@example.test', is_maintainer: false, memberships, user_id: 'u1' };
-		expect(resolveHomeOutcome(me, 'a')).toEqual({ kind: 'redirect', teamId: 'a' });
+		expect(resolveHomeOutcome(me, 'verein-a')).toEqual({ kind: 'redirect', teamSlug: 'verein-a' });
 	});
 
 	/**
@@ -70,7 +70,7 @@ describe('resolveHomeOutcome', () => {
 	 */
 	it('redirects to the remembered team, not necessarily the first membership', () => {
 		const me: Me = { email: 'a@example.test', is_maintainer: false, memberships, user_id: 'u1' };
-		expect(resolveHomeOutcome(me, 'b')).toEqual({ kind: 'redirect', teamId: 'b' });
+		expect(resolveHomeOutcome(me, 'verein-b')).toEqual({ kind: 'redirect', teamSlug: 'verein-b' });
 	});
 
 	it('shows the no-team outcome for a signed-in visitor with no resolved team', () => {

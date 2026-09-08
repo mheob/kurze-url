@@ -2,7 +2,7 @@ import type { Link } from '@kurze-url/api-client';
 import { isNotFound, isRedirect } from '@tanstack/react-router';
 import { describe, expect, it, vi } from 'vitest';
 
-import { afterMutation, loadLink, toDateTimeLocal } from './teams.$teamId.links.$linkId';
+import { afterMutation, loadLink, toDateTimeLocal } from './teams.$teamSlug.links.$linkId';
 
 function link(overrides: Partial<Link> = {}): Link {
 	return {
@@ -28,7 +28,7 @@ function link(overrides: Partial<Link> = {}): Link {
 }
 
 /**
- * Same reasoning as `teams.$teamId.links.index.test.ts`'s identical helper:
+ * Same reasoning as `teams.$teamSlug.links.index.test.ts`'s identical helper:
  * asserting on a returned value, unconditionally, instead of inside a
  * try/catch — `no-conditional-expect` is error-level, and an `expect` inside
  * `catch` silently skips when nothing throws.

@@ -22,16 +22,16 @@ import { fetchMe, type Me, type Membership } from './_authed';
 const getHealthStatus = createServerFn({ method: 'GET' }).handler(() => fetchHealth());
 
 /**
- * Resolves the remembered team id inside a server function for the same
+ * Resolves the remembered team slug inside a server function for the same
  * reason `__root.tsx`'s `getPreferences` reads `lang`/`theme` inside one:
  * `getRequestHeader` only works inside the server's per-request context, so
  * a plain call would throw the moment this loader re-runs client-side on a
  * navigation back to `/`.
  *
  * The resolution itself — not just the header read — stays inside this
- * function; only the resolved team id (already visible to the client as
- * one of `me.memberships`' own ids, so no new information) crosses back out.
- * The Supabase session cookie in `server/supabase.ts` is deliberately
+ * function; only the resolved team slug (already visible to the client as
+ * one of `me.memberships`' own slugs, so no new information) crosses back
+ * out. The Supabase session cookie in `server/supabase.ts` is deliberately
  * `httpOnly` so client JS can never read it; returning the raw `Cookie`
  * header from a server function would hand an RPC response — readable by
  * any script on the page — exactly the value `httpOnly` exists to keep from
@@ -39,7 +39,7 @@ const getHealthStatus = createServerFn({ method: 'GET' }).handler(() => fetchHea
  * `resolveCurrentTeam` call in here instead of at the loader call site is
  * what avoids that.
  */
-const getCurrentTeamId = createServerFn({ method: 'GET' })
+const getCurrentTeamSlug = createServerFn({ method: 'GET' })
 	.validator((memberships: Membership[]) => memberships)
 	.handler(({ data: memberships }) => resolveCurrentTeam(getRequestHeader('cookie'), memberships));
 
@@ -74,7 +74,7 @@ export async function fetchCurrentUser(): Promise<Me | undefined> {
 export type HomeOutcome =
 	| { kind: 'marketing' }
 	| { kind: 'noTeam'; isMaintainer: boolean }
-	| { kind: 'redirect'; teamId: string };
+	| { kind: 'redirect'; teamSlug: string };
 
 /**
  * The three cases `/` owns. `_authed/index.tsx` was dropped from the plan:
@@ -84,31 +84,33 @@ export type HomeOutcome =
  * visitor to their team" job moved here instead, onto the route that
  * actually owns `/`.
  *
- * `teamId` arrives already resolved — by `getCurrentTeamId`, which wraps
+ * `teamSlug` arrives already resolved — by `getCurrentTeamSlug`, which wraps
  * `resolveCurrentTeam` around the request's `team` cookie and this visitor's
  * memberships — rather than being picked here. That keeps this function a
  * plain, three-way decision with no cookie or membership-list logic of its
  * own, and it's what makes a returning visitor land back on the team they
  * last used instead of always the first one in membership order.
  */
-export function resolveHomeOutcome(me: Me | undefined, teamId: string | undefined): HomeOutcome {
+export function resolveHomeOutcome(me: Me | undefined, teamSlug: string | undefined): HomeOutcome {
 	if (!me) return { kind: 'marketing' };
 
 	// `isMaintainer` rides on the outcome rather than being read off `me` in
 	// the component: this is the one place that already decides what a signed-in
 	// visitor without a team sees, and a maintainer's answer ("create one") is a
 	// different answer, not different chrome around the same one.
-	return teamId ? { kind: 'redirect', teamId } : { isMaintainer: me.is_maintainer, kind: 'noTeam' };
+	return teamSlug
+		? { kind: 'redirect', teamSlug }
+		: { isMaintainer: me.is_maintainer, kind: 'noTeam' };
 }
 
 export const Route = createFileRoute('/')({
 	component: Home,
 	loader: async () => {
 		const [health, me] = await Promise.all([getHealthStatus(), fetchCurrentUser()]);
-		const teamId = me ? await getCurrentTeamId({ data: me.memberships }) : undefined;
-		const outcome = resolveHomeOutcome(me, teamId);
+		const teamSlug = me ? await getCurrentTeamSlug({ data: me.memberships }) : undefined;
+		const outcome = resolveHomeOutcome(me, teamSlug);
 		if (outcome.kind === 'redirect') {
-			throw redirect({ params: { teamId: outcome.teamId }, to: '/teams/$teamId/links' });
+			throw redirect({ params: { teamSlug: outcome.teamSlug }, to: '/teams/$teamSlug/links' });
 		}
 		return { outcome, status: health.status };
 	},

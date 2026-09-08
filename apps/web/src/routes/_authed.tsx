@@ -29,6 +29,7 @@ import {
 export interface Membership {
 	name: string;
 	role: string;
+	slug: string;
 	team_id: string;
 }
 
@@ -84,15 +85,23 @@ export const fetchMe = createServerFn({ method: 'GET' }).handler(async (): Promi
 });
 
 /**
- * 404, never 403: `internal/authz` in the Go API already answers a
- * non-member with 404, never 403, so the API itself never confirms that a
- * team exists at all. A frontend that rendered "forbidden" here would leak
- * exactly the information the API withholds — so this throws the router's
- * own `notFound()`, not a generic error, and the test file asserts on that
- * distinction with `isNotFound` rather than a bare `.toThrow()`.
+ * 404, never 403: `internal/authz` in the Go API already answers a non-member
+ * with 404, never 403, so the API itself never confirms that a team exists at
+ * all. A frontend that rendered "forbidden" here would leak exactly the
+ * information the API withholds — so this throws the router's own `notFound()`,
+ * and the test file asserts on that distinction with `isNotFound` rather than a
+ * bare `.toThrow()`.
+ *
+ * It returns the team id rather than only asserting, because the URL now
+ * carries the slug while every API call still takes the UUID. Both questions —
+ * "may this caller be here" and "which team is this" — are answered by one
+ * lookup in the membership list `_authed`'s `beforeLoad` has already fetched,
+ * so nothing here costs a request.
  */
-export function assertMembership(memberships: Membership[], teamId: string): void {
-	if (!memberships.some((membership) => membership.team_id === teamId)) throw notFound();
+export function requireTeamId(memberships: Membership[], teamSlug: string): string {
+	const membership = memberships.find((entry) => entry.slug === teamSlug);
+	if (!membership) throw notFound();
+	return membership.team_id;
 }
 
 export const Route = createFileRoute('/_authed')({
@@ -114,16 +123,16 @@ export const Route = createFileRoute('/_authed')({
  *
  * `useParams({ strict: false })` (not `Route.useParams()`, which only sees
  * this route's *own* params — `_authed` is a pathless layout with none) is
- * what reaches `teamId` from whichever child route is actually matched;
+ * what reaches `teamSlug` from whichever child route is actually matched;
  * falling back to the first membership covers the layout rendering above a
- * child that has no `teamId` of its own, or none at all (see `AuthedShell`'s
- * own docstring for why `currentTeamId` is optional rather than assumed).
+ * child that has no `teamSlug` of its own, or none at all (see `AuthedShell`'s
+ * own docstring for why `currentTeamSlug` is optional rather than assumed).
  */
 function AuthedLayout(): React.JSX.Element {
 	const { me } = Route.useRouteContext();
 	const { t } = useTranslation();
 	const router = useRouter();
-	const { teamId } = useParams({ strict: false });
+	const { teamSlug } = useParams({ strict: false });
 	const [signOutFailed, setSignOutFailed] = useState(false);
 
 	const signOutMutation = useMutation({
@@ -148,7 +157,7 @@ function AuthedLayout(): React.JSX.Element {
 	return (
 		<>
 			<AuthedShell
-				currentTeamId={teamId ?? me.memberships[0]?.team_id}
+				currentTeamSlug={teamSlug ?? me.memberships[0]?.slug}
 				isMaintainer={me.is_maintainer}
 				memberships={me.memberships}
 				onSignOut={() => signOutMutation.mutate()}

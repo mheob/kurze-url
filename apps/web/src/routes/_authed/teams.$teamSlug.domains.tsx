@@ -15,7 +15,7 @@ import {
 	domainsQueryOptions,
 	verifyDomainFn,
 } from '../../server/domains';
-import { assertMembership } from '../_authed';
+import { requireTeamId } from '../_authed';
 
 type VerifyReason = VerifyDomainOutputBody['reason'];
 
@@ -70,11 +70,11 @@ export async function loadDomains(
 	}
 }
 
-export const Route = createFileRoute('/_authed/teams/$teamId/domains')({
-	beforeLoad: ({ context, params }) => {
-		assertMembership(context.me.memberships, params.teamId);
-	},
-	loader: ({ context, params }) => loadDomains(context.queryClient, params.teamId),
+export const Route = createFileRoute('/_authed/teams/$teamSlug/domains')({
+	beforeLoad: ({ context, params }) => ({
+		teamId: requireTeamId(context.me.memberships, params.teamSlug),
+	}),
+	loader: ({ context }) => loadDomains(context.queryClient, context.teamId),
 	component: RouteComponent,
 	errorComponent: DomainsError,
 });
@@ -106,7 +106,7 @@ export function DomainsError({ error }: { readonly error: unknown }): React.JSX.
 }
 
 function RouteComponent(): React.JSX.Element {
-	const { teamId } = Route.useParams();
+	const { teamId } = Route.useRouteContext();
 	const { t } = useTranslation();
 	const router = useRouter();
 	const queryClient = useQueryClient();

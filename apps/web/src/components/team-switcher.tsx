@@ -5,7 +5,7 @@ import { teamCookie } from '../lib/current-team';
 import type { Membership } from '../routes/_authed';
 
 interface TeamSwitcherProps {
-	readonly currentTeamId: string;
+	readonly currentTeamSlug: string;
 	readonly memberships: readonly Membership[];
 }
 
@@ -21,11 +21,14 @@ interface TeamSwitcherProps {
  * actually is (the same reasoning `language-switcher.tsx`'s `choose` is
  * factored out for).
  */
-function remember(teamId: string): void {
-	document.cookie = teamCookie(teamId);
+function remember(teamSlug: string): void {
+	document.cookie = teamCookie(teamSlug);
 }
 
-export function TeamSwitcher({ currentTeamId, memberships }: TeamSwitcherProps): React.JSX.Element {
+export function TeamSwitcher({
+	currentTeamSlug,
+	memberships,
+}: TeamSwitcherProps): React.JSX.Element {
 	const { t } = useTranslation();
 
 	return (
@@ -34,10 +37,10 @@ export function TeamSwitcher({ currentTeamId, memberships }: TeamSwitcherProps):
 				{memberships.map((membership) => (
 					<li key={membership.team_id}>
 						<Link
-							aria-current={membership.team_id === currentTeamId ? 'page' : undefined}
-							onClick={() => remember(membership.team_id)}
-							params={{ teamId: membership.team_id }}
-							to="/teams/$teamId/links"
+							aria-current={membership.slug === currentTeamSlug ? 'page' : undefined}
+							onClick={() => remember(membership.slug)}
+							params={{ teamSlug: membership.slug }}
+							to="/teams/$teamSlug/links"
 						>
 							{membership.name}
 						</Link>

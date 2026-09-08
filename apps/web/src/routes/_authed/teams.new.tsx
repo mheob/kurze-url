@@ -53,7 +53,7 @@ function RouteComponent(): React.JSX.Element {
 			// Without this the team switcher on the destination page renders the
 			// membership list from before the team existed.
 			await router.invalidate();
-			await router.navigate({ params: { teamId: team.id }, to: '/teams/$teamId/links' });
+			await router.navigate({ params: { teamSlug: team.slug }, to: '/teams/$teamSlug/links' });
 		},
 	});
 

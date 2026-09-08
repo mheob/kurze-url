@@ -34,19 +34,25 @@ function readCookie(cookieHeader: string | undefined, name: string): string | un
  * Falls back to the first membership — arbitrary, but stable, and always
  * defined whenever there is at least one — when the cookie is absent, names
  * a team the caller no longer belongs to, or there simply is no cookie yet.
+ *
+ * The stored value is the team's slug, not its id: `/`'s redirect builds a URL
+ * from it, and an id would have to be translated straight back. The slug is
+ * immutable, so it is exactly as stable a cookie value as the UUID was — and a
+ * cookie written before the slug existed simply fails the membership check
+ * below and falls back, the same path a cookie for a team you have left takes.
  */
 export function resolveCurrentTeam(
 	cookieHeader: string | undefined,
 	memberships: Membership[],
 ): string | undefined {
 	const remembered = readCookie(cookieHeader, TEAM_COOKIE);
-	if (remembered && memberships.some((membership) => membership.team_id === remembered)) {
+	if (remembered && memberships.some((membership) => membership.slug === remembered)) {
 		return remembered;
 	}
 
-	return memberships[0]?.team_id;
+	return memberships[0]?.slug;
 }
 
-export function teamCookie(teamId: string): string {
-	return preferenceCookie(TEAM_COOKIE, teamId);
+export function teamCookie(teamSlug: string): string {
+	return preferenceCookie(TEAM_COOKIE, teamSlug);
 }

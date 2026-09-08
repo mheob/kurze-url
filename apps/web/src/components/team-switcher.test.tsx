@@ -15,8 +15,8 @@ import type { Membership } from '../routes/_authed';
 import { TeamSwitcher } from './team-switcher';
 
 const memberships: Membership[] = [
-	{ name: 'Verein A', role: 'owner', team_id: 'a' },
-	{ name: 'Verein B', role: 'editor', team_id: 'b' },
+	{ name: 'Verein A', role: 'owner', slug: 'verein-a', team_id: 'a' },
+	{ name: 'Verein B', role: 'editor', slug: 'verein-b', team_id: 'b' },
 ];
 
 /**
@@ -27,13 +27,13 @@ const memberships: Membership[] = [
  * that mounts the component and the one path it actually links to — is
  * enough; it doesn't need any of the real app's routes or loaders.
  */
-function renderWith(currentTeamId: string): ReturnType<typeof render> {
+function renderWith(currentTeamSlug: string): ReturnType<typeof render> {
 	const rootRoute = createRootRoute({
-		component: () => <TeamSwitcher currentTeamId={currentTeamId} memberships={memberships} />,
+		component: () => <TeamSwitcher currentTeamSlug={currentTeamSlug} memberships={memberships} />,
 	});
 	const linksRoute = createRoute({
 		getParentRoute: () => rootRoute,
-		path: '/teams/$teamId/links',
+		path: '/teams/$teamSlug/links',
 		component: () => null,
 	});
 	const router = createRouter({
@@ -50,12 +50,12 @@ function renderWith(currentTeamId: string): ReturnType<typeof render> {
 
 describe('TeamSwitcher', () => {
 	it('labels itself with the switcher name', async () => {
-		renderWith('a');
+		renderWith('verein-a');
 		expect(await screen.findByRole('navigation', { name: 'Teams' })).toBeInTheDocument();
 	});
 
 	it('marks only the current team as the current page', async () => {
-		renderWith('b');
+		renderWith('verein-b');
 		expect(await screen.findByRole('link', { name: 'Verein B' })).toHaveAttribute(
 			'aria-current',
 			'page',
@@ -64,8 +64,8 @@ describe('TeamSwitcher', () => {
 	});
 
 	it('writes the cookie for the clicked team, not the current one', async () => {
-		renderWith('a');
+		renderWith('verein-a');
 		await userEvent.click(await screen.findByRole('link', { name: 'Verein B' }));
-		expect(document.cookie).toContain('team=b');
+		expect(document.cookie).toContain('team=verein-b');
 	});
 });

@@ -11,10 +11,10 @@ export default meta;
 
 export const TwoTeams: StoryObj<typeof meta> = {
 	args: {
-		currentTeamId: 'a',
+		currentTeamSlug: 'tsg-irlich',
 		memberships: [
-			{ name: 'TSG Irlich', role: 'owner', team_id: 'a' },
-			{ name: 'SV Beispiel', role: 'editor', team_id: 'b' },
+			{ name: 'TSG Irlich', role: 'owner', slug: 'tsg-irlich', team_id: 'a' },
+			{ name: 'SV Beispiel', role: 'editor', slug: 'sv-beispiel', team_id: 'b' },
 		],
 	},
 };

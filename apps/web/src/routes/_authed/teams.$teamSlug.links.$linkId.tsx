@@ -8,12 +8,12 @@ import { ConfirmDelete } from '../../components/confirm-delete';
 import { LinkForm, type LinkFormValues } from '../../components/link-form';
 import { classifyApiError, type ApiFailure } from '../../lib/api-errors';
 import { deleteLinkFn, getLinkFn, updateLinkFn } from '../../server/links';
-import { assertMembership } from '../_authed';
+import { requireTeamId } from '../_authed';
 
 /**
  * The one shape `loadLink` below reaches through — a real `getLinkFn`
  * satisfies this structurally, so the loader needs no cast, and
- * `teams.$teamId.links.$linkId.test.ts` can pass a hand-built fake instead of
+ * `teams.$teamSlug.links.$linkId.test.ts` can pass a hand-built fake instead of
  * a real server function (which cannot run directly under Vitest — see
  * `server/links.ts`'s docstrings). Same shape `LinksDataSource` uses in the
  * list route (Task 9) for the identical reason.
@@ -21,14 +21,14 @@ import { assertMembership } from '../_authed';
 type LinkFetcher = (options: { data: { linkId: string } }) => Promise<Link>;
 
 /**
- * A non-member of `teamId` never reaches this loader at all — `beforeLoad`'s
- * `assertMembership` throws first. This is the narrower case: a caller who
+ * A non-member of the team never reaches this loader at all — `beforeLoad`'s
+ * `requireTeamId` throws first. This is the narrower case: a caller who
  * *is* a team member, but whose `linkId` names a link that either doesn't
  * exist or belongs to someone else. `internal/authz` answers that the same
- * way it answers a non-member team, 404 never 403 (see `assertMembership`'s
+ * way it answers a non-member team, 404 never 403 (see `requireTeamId`'s
  * own docstring), so `classifyApiError`'s `notFound` is what this throws the
  * router's own `notFound()` for — a generic error page here would be exactly
- * the kind of leak `assertMembership` exists to prevent, just reached by a
+ * the kind of leak `requireTeamId` exists to prevent, just reached by a
  * different door.
  *
  * `unauthenticated` redirects for the same reason `loadLinks` does in the
@@ -147,16 +147,17 @@ export async function afterMutation(
 	await router.invalidate();
 }
 
-export const Route = createFileRoute('/_authed/teams/$teamId/links/$linkId')({
-	beforeLoad: ({ context, params }) => {
-		assertMembership(context.me.memberships, params.teamId);
-	},
+export const Route = createFileRoute('/_authed/teams/$teamSlug/links/$linkId')({
+	beforeLoad: ({ context, params }) => ({
+		teamId: requireTeamId(context.me.memberships, params.teamSlug),
+	}),
 	loader: ({ params }) => loadLink(getLinkFn, params.linkId),
 	component: RouteComponent,
 });
 
 function RouteComponent(): React.JSX.Element {
-	const { linkId, teamId } = Route.useParams();
+	const { linkId, teamSlug } = Route.useParams();
+	const { teamId } = Route.useRouteContext();
 	const link = Route.useLoaderData();
 	const { t } = useTranslation();
 	const router = useRouter();
@@ -197,7 +198,7 @@ function RouteComponent(): React.JSX.Element {
 			await afterMutation(queryClient, router, teamId);
 			// Nothing restores a deleted link — navigate back to the list rather
 			// than leaving this page rendering a link that no longer exists.
-			await router.navigate({ params: { teamId }, to: '/teams/$teamId/links' });
+			await router.navigate({ params: { teamSlug }, to: '/teams/$teamSlug/links' });
 		},
 	});
 

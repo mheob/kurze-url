@@ -44,8 +44,8 @@ function pageOf(overrides: Partial<PageLink> = {}): PageLink {
  * `LinkList` renders TanStack Router `<Link>` elements for pagination, which
  * need a router in context — the same reasoning `team-switcher.test.tsx`
  * gives for its own minimal, test-only route tree. Also registers
- * `/teams/$teamId/links/new` (Finding 2's create-link entry point) and
- * `/teams/$teamId/links/$linkId` (Finding 2's edit-link entry point): `<Link>`
+ * `/teams/$teamSlug/links/new` (Finding 2's create-link entry point) and
+ * `/teams/$teamSlug/links/$linkId` (Finding 2's edit-link entry point): `<Link>`
  * builds its `href` from the `to` path template regardless of whether this
  * router's own tree contains a matching route (verified — omitting either
  * here does not fail any test), but registering them keeps this fixture
@@ -54,22 +54,22 @@ function pageOf(overrides: Partial<PageLink> = {}): PageLink {
  */
 function renderWith(data: PageLink, page = 1): ReturnType<typeof render> {
 	const rootRoute = createRootRoute({
-		component: () => <LinkList data={data} page={page} teamId="team-a" />,
+		component: () => <LinkList data={data} page={page} teamSlug="team-a" />,
 	});
 	const linksRoute = createRoute({
 		component: () => null,
 		getParentRoute: () => rootRoute,
-		path: '/teams/$teamId/links',
+		path: '/teams/$teamSlug/links',
 	});
 	const newLinkRoute = createRoute({
 		component: () => null,
 		getParentRoute: () => rootRoute,
-		path: '/teams/$teamId/links/new',
+		path: '/teams/$teamSlug/links/new',
 	});
 	const editLinkRoute = createRoute({
 		component: () => null,
 		getParentRoute: () => rootRoute,
-		path: '/teams/$teamId/links/$linkId',
+		path: '/teams/$teamSlug/links/$linkId',
 	});
 	const router = createRouter({
 		history: createMemoryHistory({ initialEntries: ['/'] }),
@@ -123,7 +123,7 @@ describe('LinkList', () => {
 	it('offers an edit link per row, addressed at both the team and the link', async () => {
 		// Finding 2: rows had no edit link at all, so Task 11's entire edit and
 		// delete surface was reachable only by hand-typing a URL containing a
-		// UUID. The edit link interpolates *two* params — a wrong `teamId` or a
+		// UUID. The edit link interpolates *two* params — a wrong `teamSlug` or a
 		// row's link confused with another's would both compile and pass a
 		// role/name-only assertion, so this pins the actual `href` for each row.
 		renderWith(

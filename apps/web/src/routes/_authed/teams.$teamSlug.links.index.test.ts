@@ -2,7 +2,7 @@ import type { PageLink } from '@kurze-url/api-client';
 import { isRedirect } from '@tanstack/react-router';
 import { describe, expect, it } from 'vitest';
 
-import { loadLinks } from './teams.$teamId.links.index';
+import { loadLinks } from './teams.$teamSlug.links.index';
 
 /** The one method `loadLinks` reaches through on `context.queryClient`. */
 interface FakeQueryClient {
