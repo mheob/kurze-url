@@ -93,7 +93,7 @@ for (const path of PATHS) {
 }
 
 /**
- * The screens people actually use, reached through the same `teamId` fixture
+ * The screens people actually use, reached through the same `teamSlug` fixture
  * `links.spec.ts` uses — `test` above is `./fixtures/auth`'s extended one, a
  * superset of `@playwright/test`'s own, so the loop over the public `PATHS`
  * above never pays for provisioning a team it never asks for: a fixture only
@@ -126,7 +126,7 @@ for (const suffix of AUTHENTICATED_PATHS) {
 	test(`no user-facing string is identical across languages (authenticated /${suffix})`, async ({
 		page,
 		baseURL,
-		teamId,
+		teamSlug,
 		teamName,
 	}) => {
 		if (!baseURL) throw new Error('baseURL fixture is unset — check playwright.config.ts');
@@ -145,7 +145,7 @@ for (const suffix of AUTHENTICATED_PATHS) {
 			// nav — all real, translated strings this crawl would otherwise miss.
 			// Created once, before either language visits the page, so both passes
 			// compare the same rendered list.
-			await page.goto(`/teams/${teamId}/links/new`);
+			await page.goto(`/teams/${teamSlug}/links/new`);
 
 			// The same guard the domains branch below uses, and for the same
 			// reason: `goto` resolves on `load`, which this server-rendered form
@@ -187,7 +187,7 @@ for (const suffix of AUTHENTICATED_PATHS) {
 			// claims, against that same database.
 			const hostname = `i18n-${Date.now()}.e2e.test`;
 
-			await page.goto(`/teams/${teamId}/domains`);
+			await page.goto(`/teams/${teamSlug}/domains`);
 
 			// Not decorative: this form is server-rendered too, and `goto` resolves
 			// before React hydrates it — see `waitForHydration`.
@@ -240,7 +240,7 @@ for (const suffix of AUTHENTICATED_PATHS) {
 			...domainStrings,
 		]);
 
-		const path = `/teams/${teamId}/${suffix}`;
+		const path = `/teams/${teamSlug}/${suffix}`;
 		const english = new Set(await visibleText(page, baseURL, 'en', path, identicalByDesign));
 		const german = await visibleText(page, baseURL, 'de', path, identicalByDesign);
 

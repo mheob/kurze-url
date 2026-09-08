@@ -155,9 +155,15 @@ function toBrowserCookies(
 interface Team {
 	readonly id: string;
 	readonly name: string;
+	readonly slug: string;
 }
 
-export const test = base.extend<{ team: Team; teamId: string; teamName: string }>({
+export const test = base.extend<{
+	team: Team;
+	teamId: string;
+	teamName: string;
+	teamSlug: string;
+}>({
 	team: async ({ context, baseURL }, use): Promise<void> => {
 		const url = process.env.SUPABASE_URL;
 		const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -207,9 +213,14 @@ export const test = base.extend<{ team: Team; teamId: string; teamName: string }
 			// value to tell its own crawl "this string is this run's team name, not
 			// hardcoded UI copy" (`teamName` fixture, further down).
 			const teamName = `e2e ${randomUUID()}`;
+			// Twelve hex characters, not the full UUID: the slug format caps at 40
+			// characters and forbids a trailing hyphen, and these rows are deleted
+			// at the end of each test, so 48 bits of entropy is far more than the
+			// collision window needs.
+			const teamSlug = `e2e-${randomUUID().replaceAll('-', '').slice(0, 12)}`;
 			const teamResult = await db.query<{ id: string }>(
-				'insert into team (name) values ($1) returning id',
-				[teamName],
+				'insert into team (name, slug) values ($1, $2) returning id',
+				[teamName, teamSlug],
 			);
 			const teamRow = teamResult.rows[0];
 			if (!teamRow) {
@@ -226,7 +237,7 @@ export const test = base.extend<{ team: Team; teamId: string; teamName: string }
 			const cookies = await mintSessionCookies(admin, url, serviceRoleKey, email);
 			await context.addCookies(toBrowserCookies(cookies, baseURL));
 
-			await use({ id: teamId, name: teamName });
+			await use({ id: teamId, name: teamName, slug: teamSlug });
 		} finally {
 			// Team first, then user: `link.created_by` references `auth.users`
 			// with no `on delete cascade` (deliberately — see the migration's own
@@ -246,7 +257,10 @@ export const test = base.extend<{ team: Team; teamId: string; teamName: string }
 	 * of how many other fixtures depend on it, so `links.spec.ts` destructuring
 	 * only `teamId` (as it did before `team` existed) still gets exactly one
 	 * team created and torn down, not two. `i18n.spec.ts`'s authenticated crawl
-	 * is the one caller that needs `teamName` too.
+	 * is the one caller that needs `teamName` too. `teamId` stays for direct
+	 * database assertions — it is a real column value, not a URL fragment —
+	 * while `teamSlug` is what every spec now builds `/teams/...` URLs from,
+	 * since that is what the app itself routes on.
 	 */
 	teamId: async ({ team }, use): Promise<void> => {
 		await use(team.id);
@@ -254,5 +268,9 @@ export const test = base.extend<{ team: Team; teamId: string; teamName: string }
 
 	teamName: async ({ team }, use): Promise<void> => {
 		await use(team.name);
+	},
+
+	teamSlug: async ({ team }, use): Promise<void> => {
+		await use(team.slug);
 	},
 });
