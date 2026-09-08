@@ -6,6 +6,12 @@ import { useTranslation } from 'react-i18next';
 
 import { Button } from '../../components/ui/button';
 import { classifyApiError, type ApiFailure } from '../../lib/api-errors';
+import {
+	suggestTeamSlug,
+	TEAM_SLUG_MAX_LENGTH,
+	TEAM_SLUG_MIN_LENGTH,
+	TEAM_SLUG_PATTERN,
+} from '../../lib/team-slug';
 import { createTeamFn } from '../../server/teams';
 import { type Me } from '../_authed';
 
@@ -20,14 +26,43 @@ export function assertMaintainer(me: Me): void {
 	if (!me.is_maintainer) throw notFound();
 }
 
-export const Route = createFileRoute('/_authed/teams/new')({
+/**
+ * At `/new-team`, not `/teams/new`: a static segment under `/teams/` is matched
+ * before the dynamic `$teamSlug`, so a team whose slug were `new` would have
+ * this form rendered at its own URL forever. The Go API also refuses a
+ * reserved slug (`reservedTeamSlugs` in `internal/api/teams.go`), which is what
+ * covers the *next* static child route someone adds under `/teams/`.
+ */
+export const Route = createFileRoute('/_authed/new-team')({
 	beforeLoad: ({ context }) => {
 		assertMaintainer(context.me);
 	},
 	component: RouteComponent,
 });
 
-function RouteComponent(): React.JSX.Element {
+/**
+ * Exported and translate-injected so it can be unit-tested without rendering
+ * the form — the same shape `assertMaintainer` above uses for the same reason.
+ */
+export function validateSlugField(value: string, t: (key: string) => string): string | undefined {
+	const slug = value.trim();
+	if (slug === '') return t('teams.slugRequired');
+	if (
+		slug.length < TEAM_SLUG_MIN_LENGTH ||
+		slug.length > TEAM_SLUG_MAX_LENGTH ||
+		!TEAM_SLUG_PATTERN.test(slug)
+	) {
+		return t('teams.slugInvalid');
+	}
+	return undefined;
+}
+
+/**
+ * Exported for the same reason `validateSlugField` above is: the name-to-slug
+ * suggestion wiring lives entirely in this component's JSX event handlers, so
+ * proving it works means rendering it, not just calling a pure function.
+ */
+export function RouteComponent(): React.JSX.Element {
 	const { t } = useTranslation();
 	const router = useRouter();
 	const [failure, setFailure] = useState<ApiFailure | null>(null);
@@ -60,11 +95,11 @@ function RouteComponent(): React.JSX.Element {
 	const form = useForm({
 		defaultValues: { name: '', slug: '' },
 		onSubmit: ({ value }) => {
-			mutation.mutate({ name: value.name, slug: value.slug });
+			mutation.mutate({ name: value.name, slug: value.slug.trim() });
 		},
 	});
 
-	const fieldError = failure?.kind === 'fields' ? failure.fields.name : undefined;
+	const nameFieldError = failure?.kind === 'fields' ? failure.fields.name : undefined;
 	const slugFieldError =
 		failure?.kind === 'slugTaken'
 			? t('teams.slugTaken')
@@ -100,7 +135,8 @@ function RouteComponent(): React.JSX.Element {
 					{(field) => {
 						const errorId = 'name-error';
 						const errorMessage =
-							fieldError ?? (field.state.meta.isTouched ? field.state.meta.errors[0] : undefined);
+							nameFieldError ??
+							(field.state.meta.isTouched ? field.state.meta.errors[0] : undefined);
 
 						return (
 							<div>
@@ -111,7 +147,21 @@ function RouteComponent(): React.JSX.Element {
 									id="name"
 									name={field.name}
 									onBlur={field.handleBlur}
-									onChange={(event) => field.handleChange(event.target.value)}
+									onChange={(event) => {
+										field.handleChange(event.target.value);
+										if (!form.getFieldMeta('slug')?.isTouched) {
+											// `dontUpdateMeta` alone is not enough: `setFieldValue`'s own
+											// `validateField` call (run unless `dontValidate` is also set)
+											// marks the field touched as a side effect of validating it,
+											// independently of the `dontUpdateMeta` flag above — see
+											// `FormApi.ts`'s `validateField`. Both are required to write the
+											// suggestion without it counting as the maintainer's own edit.
+											form.setFieldValue('slug', suggestTeamSlug(event.target.value), {
+												dontUpdateMeta: true,
+												dontValidate: true,
+											});
+										}
+									}}
 									required
 									value={field.state.value}
 								/>
@@ -127,11 +177,10 @@ function RouteComponent(): React.JSX.Element {
 
 				<form.Field
 					name="slug"
-					validators={{
-						onChange: ({ value }) => (value.trim() === '' ? t('teams.slugRequired') : undefined),
-					}}
+					validators={{ onChange: ({ value }) => validateSlugField(value, t) }}
 				>
 					{(field) => {
+						const hintId = 'slug-hint';
 						const errorId = 'slug-error';
 						const errorMessage =
 							slugFieldError ??
@@ -141,7 +190,7 @@ function RouteComponent(): React.JSX.Element {
 							<div>
 								<label htmlFor="slug">{t('teams.slug')}</label>
 								<input
-									aria-describedby={errorMessage ? errorId : undefined}
+									aria-describedby={errorMessage ? `${hintId} ${errorId}` : hintId}
 									aria-invalid={errorMessage ? true : undefined}
 									id="slug"
 									name={field.name}
@@ -150,6 +199,7 @@ function RouteComponent(): React.JSX.Element {
 									required
 									value={field.state.value}
 								/>
+								<p id={hintId}>{t('teams.slugHint')}</p>
 								{errorMessage ? (
 									<p id={errorId} role="alert">
 										{errorMessage}

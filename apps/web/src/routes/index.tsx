@@ -134,7 +134,7 @@ function Home() {
 						    no team, so no `_authed` chrome to reach team creation from. Without
 						    this link the first team can only be made with SQL. */}
 						{outcome.isMaintainer ? (
-							<Link className={buttonVariants({ variant: 'default' })} to="/teams/new">
+							<Link className={buttonVariants({ variant: 'default' })} to="/new-team">
 								{t('teams.create')}
 							</Link>
 						) : null}

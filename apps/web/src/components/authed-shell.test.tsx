@@ -63,7 +63,7 @@ function renderShell(props: {
 	const newTeamRoute = createRoute({
 		component: () => null,
 		getParentRoute: () => rootRoute,
-		path: '/teams/new',
+		path: '/new-team',
 	});
 	const router = createRouter({
 		history: createMemoryHistory({ initialEntries: ['/'] }),
@@ -105,7 +105,7 @@ describe('AuthedShell', () => {
 		// A maintainer who already belongs to a team never sees `/`'s own
 		// "create team" link, because `/` redirects them straight into their
 		// team. Without this control they would have no way to reach
-		// `/teams/new` from inside the app at all.
+		// `/new-team` from inside the app at all.
 		renderShell({ isMaintainer: true });
 		expect(await screen.findByRole('link', { name: 'Create team' })).toBeInTheDocument();
 	});

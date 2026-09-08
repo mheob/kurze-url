@@ -9,7 +9,7 @@ interface AuthedShellProps {
 	readonly currentTeamSlug: string | undefined;
 	// Whether to offer team creation at all. `/` covers the maintainer who has
 	// no team yet; this covers the one who does, and who would otherwise have
-	// no way back to `/teams/new` from inside the app.
+	// no way back to `/new-team` from inside the app.
 	readonly isMaintainer: boolean;
 	readonly memberships: readonly Membership[];
 	readonly onSignOut: () => void;
@@ -70,7 +70,7 @@ export function AuthedShell({
 				</nav>
 			) : null}
 			<div className="flex items-center gap-2">
-				{isMaintainer ? <Link to="/teams/new">{t('teams.create')}</Link> : null}
+				{isMaintainer ? <Link to="/new-team">{t('teams.create')}</Link> : null}
 				<Button disabled={signingOut} onClick={onSignOut} type="button" variant="outline">
 					{t('auth.signOut')}
 				</Button>
