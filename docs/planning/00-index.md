@@ -36,19 +36,19 @@ Findings from research that actually changed a decision, rather than just confir
 - **UptimeRobot's free tier became personal/non-commercial-only in Dec 2024**, so uptime monitoring goes to Better Stack instead.
 - **Password protection was moved back into MVP scope** after being briefly mis-tiered as advanced — it's Core in the original feature list, and retrofitting security later is worse than designing it now.
 - **RLS is deliberately off**: a service-role connection bypasses it anyway, so authorization lives in the Go backend where it can actually be enforced.
+- **The Supabase free tier has no backups at all**, which was an open item from the first planning pass until 2026-09-07. It is now closed: a nightly `age`-encrypted dump runs from a separate private repository, and the restore procedure in `docs/restore.md` was proved by running it rather than by writing it down.
+- **The shared instance stays invitation-only** (decided 2026-09-08). The deciding argument is not abuse in general but the shape of it here: `go.kurze-url.app` is one shared slug namespace, and a domain's reputation cannot be divided between its tenants — a single spammer who self-registers gets the hostname blocklisted and every Verein's links stop working at once. Open self-service would hand that risk to Vereine who have no way to influence it. Two gates enforce the decision, `shouldCreateUser: false` on sign-in and `MAINTAINER_USER_IDS` on team creation; see `CLAUDE.md`. Revisit when Vereine start arriving that the maintainer does not already know, or when the legal texts are written and the instance goes public.
 
 ## What is not settled
 
 Carried into implementation as explicit open items — all also listed in `CLAUDE.md`:
 
-1. Backups (Supabase free tier has none) — mitigation not yet designed.
-2. Signup gate for the shared instance: open self-service vs. maintainer approval.
-3. Concrete rate-limit values (mechanism is decided).
-4. `audit_log.action` taxonomy.
-5. Alert notification channel (email vs. webhook).
-6. Legal texts, plus two flagged questions for a lawyer (interstitial-page Impressum; controller role for click analytics).
-7. `public.profile` table — only if the frontend needs it.
-8. Notification for the "existing user added to a second team" path.
+1. Concrete rate-limit values (mechanism is decided).
+2. `audit_log.action` taxonomy.
+3. Alert notification channel (email vs. webhook).
+4. Legal texts, plus two flagged questions for a lawyer (interstitial-page Impressum; controller role for click analytics).
+5. `public.profile` table — only if the frontend needs it.
+6. Notification for the "existing user added to a second team" path.
 
 ## Next step
 
