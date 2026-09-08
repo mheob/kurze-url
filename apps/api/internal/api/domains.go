@@ -299,16 +299,30 @@ func (d Deps) allowDomainClaim(ctx context.Context, userID uuid.UUID) error {
 // one caller sweeping many domains. A Redis outage must not stop a Verein
 // verifying a domain, the same choice allowLinkCreate makes: log and allow
 // rather than fail the request when the limiter itself errors.
+//
+// The two axes carry separate thresholds because they bound different things.
+// The domain axis is the tighter one: verification reads DNS, and retrying an
+// unpropagated record more than a handful of times an hour cannot succeed, so
+// a low cap costs a Verein nothing it could have used. The user axis has to be
+// looser, because one person legitimately onboards several domains at once —
+// while the two shared a threshold, a maintainer verifying three domains ran
+// out of user allowance with every one of them still well inside its own.
 func (d Deps) allowDomainVerify(ctx context.Context, domainID, userID uuid.UUID) error {
-	if d.Cache == nil || d.Config.DomainVerifyRateLimitPerHour <= 0 {
+	if d.Cache == nil {
 		return nil
 	}
 
-	for _, key := range []string{
-		"rl:domain-verify:domain:" + domainID.String(),
-		"rl:domain-verify:user:" + userID.String(),
+	for _, axis := range []struct {
+		key   string
+		limit int
+	}{
+		{"rl:domain-verify:domain:" + domainID.String(), d.Config.DomainVerifyPerDomainRateLimitPerHour},
+		{"rl:domain-verify:user:" + userID.String(), d.Config.DomainVerifyPerUserRateLimitPerHour},
 	} {
-		ok, _, err := d.Cache.Allow(ctx, key, d.Config.DomainVerifyRateLimitPerHour, time.Hour)
+		if axis.limit <= 0 {
+			continue
+		}
+		ok, _, err := d.Cache.Allow(ctx, axis.key, axis.limit, time.Hour)
 		if err != nil {
 			d.Log.Error("domain verify rate limit check failed", "error", err)
 			continue

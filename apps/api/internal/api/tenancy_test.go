@@ -307,6 +307,12 @@ func newTenancyFixture(t *testing.T) *tenancyFixture {
 	// must be refused by POST /v1/teams.
 	cfg.MaintainerUserIDs = []uuid.UUID{members[authz.RoleOwner].id}
 	cfg.InviteRateLimitPerHour = 20
+	// The instance-wide invitation budget is keyed on nothing test-local, so
+	// every fixture in this package shares one counter and every successful
+	// invitation anywhere in the suite spends from it. Set it far above what a
+	// whole run can consume and let the one test that exercises it lower the
+	// limit deliberately.
+	cfg.InviteGlobalRateLimitPerMonth = 10_000
 	cfg.SharedDomainHostname = sharedHostname
 	cfg.LinkCreateRateLimitPerMin = 100
 
