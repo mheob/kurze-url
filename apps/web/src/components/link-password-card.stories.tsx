@@ -37,3 +37,13 @@ export const Protected: StoryObj<typeof meta> = {
 export const WithRejection: StoryObj<typeof meta> = {
 	args: { context, hasPassword: false, onRemove: fn(), onSet: fn(), rejection: 'too_common' },
 };
+
+/**
+ * `'rejected'` is the fallback for a reason token this build does not
+ * recognise — the API-only case `validateLinkPassword` can never produce
+ * locally, so it is the one value a dropped or mis-keyed `messageKeys` entry
+ * would not be caught by `WithRejection` above alone.
+ */
+export const WithUnrecognizedRejection: StoryObj<typeof meta> = {
+	args: { context, hasPassword: false, onRemove: fn(), onSet: fn(), rejection: 'rejected' },
+};

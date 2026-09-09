@@ -129,4 +129,22 @@ describe('LinkPasswordCard', () => {
 			screen.getByText('That password is one of the most common ones. Pick another.'),
 		).toBeInTheDocument();
 	});
+
+	/**
+	 * `'rejected'` is the fallback for a reason token this build does not
+	 * recognise — the one value `validateLinkPassword` itself can never
+	 * produce, so a `messageKeys` entry that got dropped or mis-keyed would
+	 * still compile and pass every other test. This is the one that pins it.
+	 */
+	it('renders the fallback message for a reason the mirror cannot predict', () => {
+		renderCard({
+			context,
+			hasPassword: false,
+			onRemove: vi.fn(),
+			onSet: vi.fn(),
+			rejection: 'rejected',
+		});
+
+		expect(screen.getByText('That password cannot be used. Pick another.')).toBeInTheDocument();
+	});
 });
