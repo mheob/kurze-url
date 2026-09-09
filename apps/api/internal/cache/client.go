@@ -64,6 +64,10 @@ func (c *Client) Raw() *redis.Client { return c.rdb }
 
 // Allow applies a sliding-window rate limit to key. Costs one Redis command
 // (a single EVAL, regardless of how many operations the script performs).
+// WithinLimit and Increment below count differently — two commands each,
+// the operations inside their scripts rather than the EVAL wrapping them —
+// deliberately the more conservative reading, since Upstash does not
+// document which of the two a Lua EVAL is billed as.
 func (c *Client) Allow(ctx context.Context, key string, limit int, window time.Duration) (bool, int, error) {
 	res, err := rateLimitScript.Run(ctx, c.rdb,
 		[]string{key},
@@ -87,6 +91,13 @@ func (c *Client) Allow(ctx context.Context, key string, limit int, window time.D
 // Allow wherever every attempt should count; use this with Increment where
 // only some attempts should — the password interstitial charges failures and
 // lets a visitor who knows the password through for free.
+//
+// This primitive has no notion of "disabled" — a limit of 0 evaluates
+// `0 >= 0` and refuses everything, the opposite of this codebase's
+// convention that 0 means an axis is not enforced — so any caller that
+// treats 0 as off (allowPasswordSet, the password-failure counter in
+// verify.go) must guard for it before calling rather than rely on this
+// method to do it.
 func (c *Client) WithinLimit(
 	ctx context.Context, key string, limit int, window time.Duration,
 ) (bool, error) {
