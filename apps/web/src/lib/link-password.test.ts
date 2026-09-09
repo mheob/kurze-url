@@ -56,4 +56,20 @@ describe('validateLinkPassword', () => {
 	it('still checks the common list when normalized is too short for context', () => {
 		expect(validateLinkPassword('!@#$%^ja', gruenwald)).toBe('too_common');
 	});
+
+	// gruenwald's destinationUrl host ("sv-gruenwald") happens to equal its
+	// teamSlug, so the cases above never prove the destination host is wired
+	// in as its own context source rather than piggybacking on teamSlug. This
+	// context makes every other source too short to contribute (single
+	// characters normalize below the four-character token floor), isolating
+	// the match to the destination host alone.
+	it('derives context from the destination host on its own', () => {
+		const context = {
+			destinationUrl: 'https://www.langlebig-imkerverein.de/x',
+			linkSlug: 'x',
+			teamName: 'y',
+			teamSlug: 'z',
+		};
+		expect(validateLinkPassword('imkerverein2026', context)).toBe('derived_from_context');
+	});
 });
