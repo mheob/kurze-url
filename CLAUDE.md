@@ -77,7 +77,7 @@ Inside `apps/api`: `cmd/api/main.go` and `cmd/openapi/main.go` (writes `openapi.
 
 All under `/v1`, all Bearer-authenticated, except the public redirect surface.
 
-`GET /me` · teams (`POST|GET /teams`, `GET|PATCH /teams/{id}`) · members (`GET|POST /teams/{id}/members`, `PATCH|DELETE .../{user_id}`) · domains (under team, plus `POST /domains/{id}/verify`) · folders · tags · links (`POST|GET /teams/{id}/links`, `GET|PATCH|DELETE /links/{id}`) · `PUT|DELETE /links/{id}/password` (deliberately separate from PATCH — own audit action, own rate limit) · `GET /links/{id}/qr` (returns raw image bytes) · `GET /links/{id}/stats` · `GET /teams/{id}/audit-log`.
+`GET /me` · teams (`POST|GET /teams`, `GET|PATCH /teams/{id}`) · members (`GET|POST /teams/{id}/members`, `PATCH|DELETE .../{user_id}`) · domains (under team, plus `POST /domains/{id}/verify`) · folders · tags · links (`POST|GET /teams/{id}/links`, `GET|PATCH|DELETE /links/{id}`) · `PUT|DELETE /links/{id}/password` (deliberately separate from PATCH — own audit actions, and a rate limit on the setter) · `GET /links/{id}/qr` (returns raw image bytes) · `GET /links/{id}/stats` · `GET /teams/{id}/audit-log`.
 
 **Public, hostname-routed, plain chi handlers outside Huma:** `GET /{slug}` (redirect) · `GET /{slug}/verify` (password interstitial, server-rendered HTML, deliberately framework-free) · `POST /{slug}/verify` (tight rate limit).
 
