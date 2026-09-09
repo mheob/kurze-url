@@ -36,6 +36,29 @@ func TestSetLinkPasswordProtectsTheLink(t *testing.T) {
 		"the response must carry has_password so the client needs no refetch")
 }
 
+// TestSetLinkPasswordKeepsTheLinksTags pins the same rule
+// TestUpdateLinkWithoutTagIDsLeavesTagsAlone pins for PATCH: linkResponse
+// defaults Tags to [], so any handler returning a full Link must call
+// attachTags itself or a tagged link reports "tags": [] the moment its
+// password changes. f.createLink makes an untagged link, which is why none
+// of the other tests here would catch this — Tags: [] is accidentally
+// correct for them.
+func TestSetLinkPasswordKeepsTheLinksTags(t *testing.T) {
+	f := newTenancyFixture(t)
+	tag := f.createTag(t, "Presse")
+	linkID := f.createLinkWithTags(t, "https://example.org/x", tag.ID)
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPut,
+		"/v1/links/"+linkID.String()+"/password",
+		map[string]any{"password": "Kartoffelsalat!7"})
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	body := decode[linkBody](t, rec)
+	require.Len(t, body.Tags, 1, "response must report the link's actual tags, not []")
+	require.Equal(t, tag.ID, body.Tags[0].ID)
+	require.Equal(t, "Presse", body.Tags[0].Name)
+}
+
 func TestSetLinkPasswordIsRefusedBelowEditor(t *testing.T) {
 	f := newTenancyFixture(t)
 	created := f.createLink(t, "nurlesen", "https://example.org/nurlesen")

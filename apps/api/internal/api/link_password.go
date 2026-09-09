@@ -75,13 +75,26 @@ func (d Deps) setLinkPassword(ctx context.Context, in *SetLinkPasswordInput) (*L
 		return nil, huma.Error500InternalServerError("could not set the password")
 	}
 
-	action := audit.ActionPasswordSet
-	if before.HasPassword {
-		action = audit.ActionPasswordChanged
-	}
-
+	// The set-vs-changed decision is read again here, inside the transaction,
+	// immediately before the write it feeds. The pre-transaction `before` read
+	// above is still needed for ValidatePassword's context (slug, destination),
+	// but GetTeam, ValidatePassword and HashPassword run tens of milliseconds
+	// between that read and this one, and two near-simultaneous requests could
+	// otherwise both observe HasPassword=false and both write password_set.
 	var updated linkRow
 	err = db.InTx(ctx, d.Pool, func(q *db.Queries) error {
+		current, err := q.GetLinkForAPI(ctx, db.GetLinkForAPIParams{
+			ID: before.ID, TeamID: member.TeamID,
+		})
+		if err != nil {
+			return err
+		}
+
+		action := audit.ActionPasswordSet
+		if current.HasPassword {
+			action = audit.ActionPasswordChanged
+		}
+
 		row, err := q.SetLinkPassword(ctx, db.SetLinkPasswordParams{
 			ID: before.ID, TeamID: member.TeamID, PasswordHash: &hash,
 		})
@@ -98,7 +111,13 @@ func (d Deps) setLinkPassword(ctx context.Context, in *SetLinkPasswordInput) (*L
 			EntityID:    row.ID,
 		})
 	})
-	if err != nil {
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		// The link was deleted between the pre-transaction read and this
+		// transaction — mirror updateLink's mapping rather than logging an
+		// error and paging the maintainer for an expected race.
+		return nil, huma.Error404NotFound("link not found")
+	case err != nil:
 		d.Log.Error("set link password", "error", err, "link_id", before.ID)
 		return nil, huma.Error500InternalServerError("could not set the password")
 	}
@@ -108,7 +127,16 @@ func (d Deps) setLinkPassword(ctx context.Context, in *SetLinkPasswordInput) (*L
 	// change here, so unlike updateLink there is only ever one key.
 	d.invalidateLink(ctx, updated.Hostname, updated.Slug)
 
-	return &LinkOutput{Status: http.StatusOK, Body: d.linkResponse(updated)}, nil
+	// linkResponse defaults Tags to []; without attachTags a link that already
+	// carries tags would report them as gone the moment its password changes,
+	// the same bug getLink and updateLink's no-tag-change branch guard against.
+	items := []Link{d.linkResponse(updated)}
+	if err := d.attachTags(ctx, member.TeamID, items); err != nil {
+		d.Log.Error("attach tags to link", "error", err, "link_id", updated.ID)
+		return nil, huma.Error500InternalServerError("could not set the password")
+	}
+
+	return &LinkOutput{Status: http.StatusOK, Body: items[0]}, nil
 }
 
 func (d Deps) linkPasswordReadError(err error, linkID uuid.UUID) error {
