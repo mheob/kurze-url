@@ -38,10 +38,12 @@ const (
 	// person could type.
 	minContextToken = 4
 
-	// minNormalizedForContext skips the context rules for a password that
+	// minNormalizedForContext skips the context loop for a password that
 	// normalizes to almost nothing — punctuation, which minDistinctRunes has
 	// already judged. Comparing an empty string against tokens matches every
-	// token.
+	// token. It does not skip the common-list check below: that comparison
+	// is equality, not containment, so a short normalized password is not a
+	// short comparison — it is simply unlikely to match.
 	minNormalizedForContext = 3
 )
 
@@ -76,9 +78,16 @@ func loadCommonPasswords(source string) map[string]struct{} {
 	return set
 }
 
-// ValidatePassword applies the policy in a fixed order, so the reason a
-// caller sees for a password that trips several rules does not depend on
-// anything unwritten.
+// ValidatePassword applies the policy in a fixed order — length, repetition,
+// context, then the common list — so the reason a caller sees for a
+// password that trips several rules does not depend on anything unwritten.
+// Context runs before the common list on purpose: a word that is both a
+// context fixture and a common password (e.g. a Verein's own event name)
+// should be reported as "derived_from_context", the more specific and more
+// actionable reason, rather than the generic "too_common". Reversing the
+// order would also mean any word used to test the context rules could never
+// appear in the common list, and vice versa — a constraint nobody would
+// remember to maintain.
 func ValidatePassword(plain string, ctx PolicyContext) error {
 	runes := []rune(plain)
 	switch {
@@ -96,20 +105,24 @@ func ValidatePassword(plain string, ctx PolicyContext) error {
 	}
 
 	normalized := normalizeForPolicy(plain)
-	if _, common := commonPasswords[normalized]; common {
-		return ErrPasswordTooCommon
+
+	// A normalized password too short to judge against context tokens is
+	// not too short to look up in the common list: that lookup is equality,
+	// not containment, so it isn't sensitive to length the way the
+	// containment check is. Skip the context loop, not the whole function.
+	if len(normalized) >= minNormalizedForContext {
+		for _, token := range contextTokens(ctx) {
+			// Both directions: "sommerfest" is contained by the slug
+			// "sommerfest-2026", and "svgruenwaldsommerfest" contains the
+			// team slug "sv-gruenwald".
+			if strings.Contains(normalized, token) || strings.Contains(token, normalized) {
+				return ErrPasswordFromContext
+			}
+		}
 	}
 
-	if len(normalized) < minNormalizedForContext {
-		return nil
-	}
-	for _, token := range contextTokens(ctx) {
-		// Both directions: "sommerfest" is contained by the slug
-		// "sommerfest-2026", and "svgruenwaldsommerfest" contains the team
-		// slug "sv-gruenwald".
-		if strings.Contains(normalized, token) || strings.Contains(token, normalized) {
-			return ErrPasswordFromContext
-		}
+	if _, common := commonPasswords[normalized]; common {
+		return ErrPasswordTooCommon
 	}
 	return nil
 }
