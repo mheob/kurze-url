@@ -117,6 +117,16 @@ func rowFromGet(r db.GetLinkForAPIRow) linkRow {
 	}
 }
 
+func rowFromSetPassword(r db.SetLinkPasswordRow) linkRow {
+	return linkRow{
+		ID: r.ID, TeamID: r.TeamID, DomainID: r.DomainID, Hostname: r.Hostname,
+		Slug: r.Slug, DestinationURL: r.DestinationURL, RedirectType: r.RedirectType,
+		State: r.State, ExpiresAt: r.ExpiresAt, HasPassword: r.HasPassword,
+		AnalyticsEnabled: r.AnalyticsEnabled, FolderID: r.FolderID, CreatedBy: r.CreatedBy,
+		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+	}
+}
+
 func rowFromUpdate(r db.UpdateLinkRow) linkRow {
 	return linkRow{
 		ID: r.ID, TeamID: r.TeamID, DomainID: r.DomainID, Hostname: r.Hostname,
@@ -371,6 +381,15 @@ func (d Deps) registerLinks(api huma.API) {
 		DefaultStatus: http.StatusNoContent,
 		Security:      []map[string][]string{{"bearerAuth": {}}},
 	}, d.deleteLink)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "set-link-password",
+		Method:      http.MethodPut,
+		Path:        "/v1/links/{link_id}/password",
+		Summary:     "Set or change a link's password",
+		Tags:        []string{"Links"},
+		Security:    []map[string][]string{{"bearerAuth": {}}},
+	}, d.setLinkPassword)
 }
 
 func (d Deps) createLink(ctx context.Context, in *CreateLinkInput) (*LinkOutput, error) {

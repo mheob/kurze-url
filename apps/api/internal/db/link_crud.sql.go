@@ -350,6 +350,75 @@ func (q *Queries) ListLinksForTeam(ctx context.Context, arg ListLinksForTeamPara
 	return items, nil
 }
 
+const setLinkPassword = `-- name: SetLinkPassword :one
+
+with updated as (
+  update link set
+    password_hash = $3,
+    updated_at = now()
+  where link.id = $1 and link.team_id = $2
+  returning id, domain_id, team_id, slug, destination_url, redirect_type, state, folder_id, expires_at, password_hash, analytics_enabled, created_by, created_at, updated_at, qr_size, qr_error_correction, qr_margin, qr_logo_url, qr_fg_color, qr_bg_color
+)
+select u.id, u.domain_id, u.team_id, d.hostname, u.slug, u.destination_url,
+       u.redirect_type, u.state, u.expires_at,
+       (u.password_hash is not null)::boolean as has_password,
+       u.analytics_enabled, u.folder_id, u.created_by, u.created_at, u.updated_at
+from updated u
+join domain d on d.id = u.domain_id
+`
+
+type SetLinkPasswordParams struct {
+	ID           uuid.UUID
+	TeamID       uuid.UUID
+	PasswordHash *string
+}
+
+type SetLinkPasswordRow struct {
+	ID               uuid.UUID
+	DomainID         uuid.UUID
+	TeamID           uuid.UUID
+	Hostname         string
+	Slug             string
+	DestinationURL   string
+	RedirectType     int16
+	State            string
+	ExpiresAt        *time.Time
+	HasPassword      bool
+	AnalyticsEnabled bool
+	FolderID         *uuid.UUID
+	CreatedBy        uuid.UUID
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
+// SetLinkPassword writes password_hash and nothing else. One query serves both
+// PUT and DELETE on the password subresource: removal passes null. The
+// returned column list is UpdateLink's, copied verbatim rather than
+// abbreviated, so linkResponse consumes the generated row unchanged and the
+// two queries stay diffable against each other.
+func (q *Queries) SetLinkPassword(ctx context.Context, arg SetLinkPasswordParams) (SetLinkPasswordRow, error) {
+	row := q.db.QueryRow(ctx, setLinkPassword, arg.ID, arg.TeamID, arg.PasswordHash)
+	var i SetLinkPasswordRow
+	err := row.Scan(
+		&i.ID,
+		&i.DomainID,
+		&i.TeamID,
+		&i.Hostname,
+		&i.Slug,
+		&i.DestinationURL,
+		&i.RedirectType,
+		&i.State,
+		&i.ExpiresAt,
+		&i.HasPassword,
+		&i.AnalyticsEnabled,
+		&i.FolderID,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const updateLink = `-- name: UpdateLink :one
 
 with updated as (

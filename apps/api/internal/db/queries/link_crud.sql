@@ -111,3 +111,24 @@ join domain d on d.id = u.domain_id;
 
 -- name: DeleteLink :execrows
 delete from link where id = $1 and team_id = $2;
+
+-- SetLinkPassword writes password_hash and nothing else. One query serves both
+-- PUT and DELETE on the password subresource: removal passes null. The
+-- returned column list is UpdateLink's, copied verbatim rather than
+-- abbreviated, so linkResponse consumes the generated row unchanged and the
+-- two queries stay diffable against each other.
+
+-- name: SetLinkPassword :one
+with updated as (
+  update link set
+    password_hash = $3,
+    updated_at = now()
+  where link.id = $1 and link.team_id = $2
+  returning *
+)
+select u.id, u.domain_id, u.team_id, d.hostname, u.slug, u.destination_url,
+       u.redirect_type, u.state, u.expires_at,
+       (u.password_hash is not null)::boolean as has_password,
+       u.analytics_enabled, u.folder_id, u.created_by, u.created_at, u.updated_at
+from updated u
+join domain d on d.id = u.domain_id;

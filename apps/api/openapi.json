@@ -743,6 +743,24 @@
 				"required": ["items", "page", "per_page", "total_count"],
 				"type": "object"
 			},
+			"SetLinkPasswordInputBody": {
+				"additionalProperties": false,
+				"properties": {
+					"$schema": {
+						"description": "A URL to the JSON Schema for this object.",
+						"examples": ["https://example.com/schemas/SetLinkPasswordInputBody.json"],
+						"format": "uri",
+						"readOnly": true,
+						"type": "string"
+					},
+					"password": {
+						"description": "8 to 128 characters. Must not repeat one character, and must not be derived from the link's short path, its destination, or the Verein's name.",
+						"type": "string"
+					}
+				},
+				"required": ["password"],
+				"type": "object"
+			},
 			"Tag": {
 				"additionalProperties": false,
 				"properties": {
@@ -1367,6 +1385,62 @@
 					}
 				],
 				"summary": "Update a link",
+				"tags": ["Links"]
+			}
+		},
+		"/v1/links/{link_id}/password": {
+			"put": {
+				"operationId": "set-link-password",
+				"parameters": [
+					{
+						"description": "The link this request operates on.",
+						"in": "path",
+						"name": "link_id",
+						"required": true,
+						"schema": {
+							"description": "The link this request operates on.",
+							"type": "string"
+						}
+					}
+				],
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/SetLinkPasswordInputBody"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/Link"
+								}
+							}
+						},
+						"description": "OK"
+					},
+					"default": {
+						"content": {
+							"application/problem+json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorModel"
+								}
+							}
+						},
+						"description": "Error"
+					}
+				},
+				"security": [
+					{
+						"bearerAuth": []
+					}
+				],
+				"summary": "Set or change a link's password",
 				"tags": ["Links"]
 			}
 		},

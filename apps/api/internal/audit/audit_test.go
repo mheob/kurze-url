@@ -181,6 +181,9 @@ func TestLinkActionsAreInTheTaxonomy(t *testing.T) {
 		audit.ActionLinkCreated,
 		audit.ActionLinkUpdated,
 		audit.ActionLinkDeleted,
+		audit.ActionPasswordSet,
+		audit.ActionPasswordChanged,
+		audit.ActionPasswordRemoved,
 	} {
 		t.Run(string(action), func(t *testing.T) {
 			require.NotErrorIs(t, audit.CheckAction(action), audit.ErrUnknownAction)
