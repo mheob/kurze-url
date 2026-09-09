@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AddTeamMemberData, AddTeamMemberErrors, AddTeamMemberResponses, CreateDomainData, CreateDomainErrors, CreateDomainResponses, CreateFolderData, CreateFolderErrors, CreateFolderResponses, CreateLinkData, CreateLinkErrors, CreateLinkResponses, CreateTagData, CreateTagErrors, CreateTagResponses, CreateTeamData, CreateTeamErrors, CreateTeamResponses, DeleteDomainData, DeleteDomainErrors, DeleteDomainResponses, DeleteFolderData, DeleteFolderErrors, DeleteFolderResponses, DeleteLinkData, DeleteLinkErrors, DeleteLinkResponses, DeleteTagData, DeleteTagErrors, DeleteTagResponses, GetDomainData, GetDomainErrors, GetDomainResponses, GetHealthData, GetHealthErrors, GetHealthResponses, GetLinkData, GetLinkErrors, GetLinkResponses, GetMeData, GetMeErrors, GetMeResponses, GetTeamData, GetTeamErrors, GetTeamResponses, ListAuditLogData, ListAuditLogErrors, ListAuditLogResponses, ListDomainsData, ListDomainsErrors, ListDomainsResponses, ListFoldersData, ListFoldersErrors, ListFoldersResponses, ListLinksData, ListLinksErrors, ListLinksResponses, ListTagsData, ListTagsErrors, ListTagsResponses, ListTeamMembersData, ListTeamMembersErrors, ListTeamMembersResponses, ListTeamsData, ListTeamsErrors, ListTeamsResponses, RemoveTeamMemberData, RemoveTeamMemberErrors, RemoveTeamMemberResponses, UpdateFolderData, UpdateFolderErrors, UpdateFolderResponses, UpdateLinkData, UpdateLinkErrors, UpdateLinkResponses, UpdateTagData, UpdateTagErrors, UpdateTagResponses, UpdateTeamData, UpdateTeamErrors, UpdateTeamMemberData, UpdateTeamMemberErrors, UpdateTeamMemberResponses, UpdateTeamResponses, VerifyDomainData, VerifyDomainErrors, VerifyDomainResponses } from './types.gen';
+import type { AddTeamMemberData, AddTeamMemberErrors, AddTeamMemberResponses, CreateDomainData, CreateDomainErrors, CreateDomainResponses, CreateFolderData, CreateFolderErrors, CreateFolderResponses, CreateLinkData, CreateLinkErrors, CreateLinkResponses, CreateTagData, CreateTagErrors, CreateTagResponses, CreateTeamData, CreateTeamErrors, CreateTeamResponses, DeleteDomainData, DeleteDomainErrors, DeleteDomainResponses, DeleteFolderData, DeleteFolderErrors, DeleteFolderResponses, DeleteLinkData, DeleteLinkErrors, DeleteLinkResponses, DeleteTagData, DeleteTagErrors, DeleteTagResponses, GetDomainData, GetDomainErrors, GetDomainResponses, GetHealthData, GetHealthErrors, GetHealthResponses, GetLinkData, GetLinkErrors, GetLinkResponses, GetMeData, GetMeErrors, GetMeResponses, GetTeamData, GetTeamErrors, GetTeamResponses, ListAuditLogData, ListAuditLogErrors, ListAuditLogResponses, ListDomainsData, ListDomainsErrors, ListDomainsResponses, ListFoldersData, ListFoldersErrors, ListFoldersResponses, ListLinksData, ListLinksErrors, ListLinksResponses, ListTagsData, ListTagsErrors, ListTagsResponses, ListTeamMembersData, ListTeamMembersErrors, ListTeamMembersResponses, ListTeamsData, ListTeamsErrors, ListTeamsResponses, RemoveLinkPasswordData, RemoveLinkPasswordErrors, RemoveLinkPasswordResponses, RemoveTeamMemberData, RemoveTeamMemberErrors, RemoveTeamMemberResponses, SetLinkPasswordData, SetLinkPasswordErrors, SetLinkPasswordResponses, UpdateFolderData, UpdateFolderErrors, UpdateFolderResponses, UpdateLinkData, UpdateLinkErrors, UpdateLinkResponses, UpdateTagData, UpdateTagErrors, UpdateTagResponses, UpdateTeamData, UpdateTeamErrors, UpdateTeamMemberData, UpdateTeamMemberErrors, UpdateTeamMemberResponses, UpdateTeamResponses, VerifyDomainData, VerifyDomainErrors, VerifyDomainResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -96,6 +96,28 @@ export const getLink = <ThrowOnError extends boolean = false>(options: Options<G
 export const updateLink = <ThrowOnError extends boolean = false>(options: Options<UpdateLinkData, ThrowOnError>): RequestResult<UpdateLinkResponses, UpdateLinkErrors, ThrowOnError> => (options.client ?? client).patch<UpdateLinkResponses, UpdateLinkErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v1/links/{link_id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Remove a link's password
+ */
+export const removeLinkPassword = <ThrowOnError extends boolean = false>(options: Options<RemoveLinkPasswordData, ThrowOnError>): RequestResult<RemoveLinkPasswordResponses, RemoveLinkPasswordErrors, ThrowOnError> => (options.client ?? client).delete<RemoveLinkPasswordResponses, RemoveLinkPasswordErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v1/links/{link_id}/password',
+    ...options
+});
+
+/**
+ * Set or change a link's password
+ */
+export const setLinkPassword = <ThrowOnError extends boolean = false>(options: Options<SetLinkPasswordData, ThrowOnError>): RequestResult<SetLinkPasswordResponses, SetLinkPasswordErrors, ThrowOnError> => (options.client ?? client).put<SetLinkPasswordResponses, SetLinkPasswordErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v1/links/{link_id}/password',
     ...options,
     headers: {
         'Content-Type': 'application/json',

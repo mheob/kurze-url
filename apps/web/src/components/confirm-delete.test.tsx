@@ -47,6 +47,43 @@ describe('ConfirmDelete', () => {
 		expect(onConfirm).toHaveBeenCalledOnce();
 	});
 
+	/**
+	 * `confirmLabel` is optional precisely so a caller that omits it — both
+	 * existing callers, link delete and domain delete — keeps this exact
+	 * wording. This is the behaviour a future change to the default would
+	 * silently break.
+	 */
+	it('falls back to the generic confirm label when the caller does not override it', async () => {
+		const onConfirm = vi.fn();
+		renderWith(onConfirm);
+
+		await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
+		expect(screen.getByRole('button', { name: 'Yes, delete it' })).toBeInTheDocument();
+	});
+
+	/**
+	 * A caller whose `onConfirm` does not delete anything — removing a link's
+	 * password, not the link — supplies its own fully rendered string instead
+	 * of the generic "Yes, delete it".
+	 */
+	it('shows the caller-supplied confirm label instead of the generic one', async () => {
+		const onConfirm = vi.fn();
+		render(
+			<I18nextProvider i18n={createI18n('en')}>
+				<ConfirmDelete
+					confirmLabel="Yes, remove it"
+					label="Remove protection"
+					onConfirm={onConfirm}
+					question="Remove the password? Anyone with the short URL will get straight through afterwards."
+				/>
+			</I18nextProvider>,
+		);
+
+		await userEvent.click(screen.getByRole('button', { name: 'Remove protection' }));
+		expect(screen.getByRole('button', { name: 'Yes, remove it' })).toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: 'Yes, delete it' })).not.toBeInTheDocument();
+	});
+
 	/** The armed state must read as a labelled alert dialog, not a bare paragraph. */
 	it('names the confirmation prompt on the alertdialog', async () => {
 		const onConfirm = vi.fn();

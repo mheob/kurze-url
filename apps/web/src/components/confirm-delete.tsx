@@ -4,6 +4,13 @@ import { useTranslation } from 'react-i18next';
 import { Button } from './ui/button';
 
 interface ConfirmDeleteProps {
+	/**
+	 * Fully rendered string, not a translation key — the same convention
+	 * `label` and `question` already use. Defaults to `links.deleteConfirm`
+	 * ("Yes, delete it") when omitted; see the docstring below for when to
+	 * override it.
+	 */
+	readonly confirmLabel?: string;
 	readonly label: string;
 	readonly onConfirm: () => void;
 	readonly question: string;
@@ -25,6 +32,16 @@ interface ConfirmDeleteProps {
  * per-caller wording, the same reason `CopyButton`'s visible "Copy" text
  * stayed put when *its* `label` prop was added for a second caller.
  *
+ * That reasoning covered two callers who both genuinely delete an entity. It
+ * stopped covering a third: removing a link's password deletes nothing, and
+ * "Yes, delete it" on that control reads as an offer to delete the *link* —
+ * exactly the misclick this component exists to prevent. `confirmLabel` is
+ * the fix, optional and defaulted to `links.deleteConfirm` so both existing
+ * callers are unaffected: the default stays generic because most callers of
+ * this component do delete something, and a caller whose action is not a
+ * deletion overrides it with its own fully rendered string, on the same
+ * "only the caller knows which" reasoning as `question`.
+ *
  * `role="alertdialog"` needs an accessible name to mean anything to a screen
  * reader — the plan's own sample rendered a bare `<p role="alertdialog">`
  * with no `aria-label`/`aria-labelledby`, which is exactly the "proper
@@ -34,6 +51,7 @@ interface ConfirmDeleteProps {
  * without two instances colliding on the same id.
  */
 export function ConfirmDelete({
+	confirmLabel,
 	label,
 	onConfirm,
 	question,
@@ -54,7 +72,7 @@ export function ConfirmDelete({
 		<div aria-labelledby={questionId} role="alertdialog">
 			<p id={questionId}>{question}</p>
 			<Button onClick={onConfirm} type="button">
-				{t('links.deleteConfirm')}
+				{confirmLabel ?? t('links.deleteConfirm')}
 			</Button>
 			<Button onClick={() => setArmed(false)} type="button">
 				{t('links.cancel')}

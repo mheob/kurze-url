@@ -40,6 +40,17 @@ const (
 	ActionLinkUpdated Action = "link.updated"
 	ActionLinkDeleted Action = "link.deleted"
 
+	// The password subresource gets its own actions rather than folding into
+	// link.updated, which is why PATCH excludes the field at all: a password
+	// change is worth finding in the log on its own. Set and changed are
+	// distinguished because the handler learns it for free — it reads the row
+	// before writing, the way updateLink does. Metadata stays empty on all
+	// three: ErrForbiddenMetadata already refuses a plaintext or a hash, and
+	// the action name is the whole of what happened.
+	ActionPasswordSet     Action = "link.password_set"
+	ActionPasswordChanged Action = "link.password_changed"
+	ActionPasswordRemoved Action = "link.password_removed"
+
 	// Folder and tag changes made through a link write do not get their own
 	// action: they are part of that write's link.updated row, with the
 	// affected fields in metadata.changed. The rule above — one row per PATCH,
@@ -87,6 +98,9 @@ var knownActions = map[Action]struct{}{
 	ActionLinkCreated:       {},
 	ActionLinkUpdated:       {},
 	ActionLinkDeleted:       {},
+	ActionPasswordSet:       {},
+	ActionPasswordChanged:   {},
+	ActionPasswordRemoved:   {},
 	ActionFolderCreated:     {},
 	ActionFolderUpdated:     {},
 	ActionFolderDeleted:     {},

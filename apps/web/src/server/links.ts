@@ -3,6 +3,8 @@ import {
 	deleteLink,
 	getLink,
 	listLinks,
+	removeLinkPassword,
+	setLinkPassword,
 	updateLink,
 	type CreateLinkInputBodyWritable,
 	type Link,
@@ -238,3 +240,48 @@ export const deleteLinkFor = createServerOnlyFn(
 export const deleteLinkFn = createServerFn({ method: 'POST' })
 	.validator((data: { linkId: string }) => data)
 	.handler(async ({ data }) => deleteLinkFor(getRequest(), data.linkId));
+
+/**
+ * Same `...For`/`...Fn` split and the same reasoning as `updateLinkFor`. Both
+ * password calls return the whole `Link` rather than nothing, because the API
+ * answers with it — the card needs `has_password` back and would otherwise
+ * refetch every time.
+ */
+export const setLinkPasswordFor = createServerOnlyFn(
+	async (request: Request, linkId: string, password: string): Promise<Link> => {
+		const headers = new Headers();
+		const { accessToken } = await requireSession(request, headers);
+		flushSessionCookies(headers);
+
+		const { data } = await setLinkPassword({
+			body: { password },
+			client: authedApiClient(accessToken),
+			path: { link_id: linkId },
+			throwOnError: true,
+		});
+		return data;
+	},
+);
+
+export const setLinkPasswordFn = createServerFn({ method: 'POST' })
+	.validator((data: { linkId: string; password: string }) => data)
+	.handler(async ({ data }) => setLinkPasswordFor(getRequest(), data.linkId, data.password));
+
+export const removeLinkPasswordFor = createServerOnlyFn(
+	async (request: Request, linkId: string): Promise<Link> => {
+		const headers = new Headers();
+		const { accessToken } = await requireSession(request, headers);
+		flushSessionCookies(headers);
+
+		const { data } = await removeLinkPassword({
+			client: authedApiClient(accessToken),
+			path: { link_id: linkId },
+			throwOnError: true,
+		});
+		return data;
+	},
+);
+
+export const removeLinkPasswordFn = createServerFn({ method: 'POST' })
+	.validator((data: { linkId: string }) => data)
+	.handler(async ({ data }) => removeLinkPasswordFor(getRequest(), data.linkId));

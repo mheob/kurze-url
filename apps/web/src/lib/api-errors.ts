@@ -1,3 +1,5 @@
+import type { LinkPasswordReason } from './link-password';
+
 /**
  * Turns whatever a failed API call throws into something a route or form can
  * act on, without either of them needing to know Huma's wire format.
@@ -20,6 +22,7 @@ export type ApiFailure =
 	| { kind: 'fields'; fields: Record<string, string> }
 	| { kind: 'domainHasLinks'; count: number }
 	| { kind: 'slugTaken' }
+	| { kind: 'passwordRejected'; reason: LinkPasswordReason | 'rejected' }
 	| { kind: 'unknown' };
 
 /** The `ErrorDetail` fields this module reads; see `apps/api/openapi.json`. */
@@ -140,6 +143,55 @@ function isSlugConflict(error: unknown): boolean {
 	return problemDetailsOf(error).some((detail) => detail.location === 'body.slug');
 }
 
+/**
+ * The reason tokens `validateLinkPassword` (and the Go policy it mirrors) can
+ * actually produce today, written as a `switch` rather than a `Set` so
+ * narrowing to `LinkPasswordReason` needs no type assertion: TypeScript
+ * narrows a `string` to a literal union across matching `case`s on its own.
+ * `LinkPasswordReason` only constrains this at the type level, so this
+ * predicate is what lets `passwordRejectionOf` tell a token this build
+ * recognizes apart from one it doesn't — the latter maps to `'rejected'`
+ * rather than being passed through as a string with no translation.
+ */
+function isKnownLinkPasswordReason(value: string): value is LinkPasswordReason {
+	switch (value) {
+		case 'derived_from_context':
+		case 'too_common':
+		case 'too_long':
+		case 'too_repetitive':
+		case 'too_short':
+			return true;
+		default:
+			return false;
+	}
+}
+
+/**
+ * `setLinkPassword` answers a policy violation with 422 and a typed detail on
+ * the field, the same convention `deleteDomain`'s blocking-link count and
+ * `createTeam`'s taken slug already use. The token is the Go sentinel's own
+ * `Error()` string, pinned by `policy_test.go`, so it is a wire contract
+ * rather than prose — reading it here rather than matching the message means
+ * a reworded message cannot silently turn a precise reason into a generic
+ * failure.
+ *
+ * Returns `'rejected'`, not `undefined`, whenever the 422 is on the password
+ * field at all but carries no value this build can use — a missing `Value`,
+ * or a token a newer server knows about and this build doesn't. Only a 422
+ * on a *different* field returns `undefined`, so it still falls through to
+ * `fieldsOf` below rather than being misread as a password rejection.
+ */
+function passwordRejectionOf(error: unknown): (LinkPasswordReason | 'rejected') | undefined {
+	for (const detail of problemDetailsOf(error)) {
+		if (detail.location !== 'body.password') continue;
+		if (typeof detail.value === 'string' && isKnownLinkPasswordReason(detail.value)) {
+			return detail.value;
+		}
+		return 'rejected';
+	}
+	return undefined;
+}
+
 export function classifyApiError(error: unknown): ApiFailure {
 	const status = statusOf(error);
 
@@ -157,6 +209,9 @@ export function classifyApiError(error: unknown): ApiFailure {
 	}
 
 	if (status === 400 || status === 422) {
+		const reason = passwordRejectionOf(error);
+		if (reason !== undefined) return { kind: 'passwordRejected', reason };
+
 		const fields = fieldsOf(error);
 		if (Object.keys(fields).length > 0) return { fields, kind: 'fields' };
 	}
