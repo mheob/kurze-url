@@ -13,7 +13,16 @@ export interface LinkPasswordCardProps {
 	readonly context: LinkPasswordContext;
 	readonly hasPassword: boolean;
 	readonly onRemove: () => void;
-	readonly onSet: (password: string) => void;
+	/**
+	 * Resolves on a successful set/change, rejects on failure. The card owns
+	 * `changing`/`password` and has no other way to learn which one
+	 * happened, so it awaits this call: a resolved promise closes the editor
+	 * and clears the field, a rejected one leaves both exactly as the reader
+	 * left them. The parent still classifies *why* a failure happened and
+	 * feeds a policy rejection back through `rejection` below — this return
+	 * value only carries success-or-not, never the reason.
+	 */
+	readonly onSet: (password: string) => Promise<void>;
 	/** A reason the API returned that the mirrored policy did not predict. */
 	readonly rejection?: LinkPasswordReason | 'rejected';
 }
@@ -79,11 +88,31 @@ export function LinkPasswordCard({
 	const reason = localReason ?? rejection;
 	const message = reason ? t(messageKeys[reason]) : undefined;
 
-	function handleSubmit(event: React.FormEvent<HTMLFormElement>): void {
+	/**
+	 * Async so a successful `onSet` can close the editor and clear the field
+	 * from right here — the one place that knows both "the mirrored policy
+	 * passed" and "the server accepted it". A rejection leaves `password`
+	 * and `changing` untouched: the reader's just-typed value stays in the
+	 * field so they can edit and resubmit, and the parent's `rejection` prop
+	 * (or its own banner, for a failure that isn't a policy rejection at
+	 * all) is what tells them why.
+	 */
+	async function handleSubmit(event: React.FormEvent<HTMLFormElement>): Promise<void> {
 		event.preventDefault();
 		const violation = validateLinkPassword(password, context);
 		setLocalReason(violation);
-		if (violation === null) onSet(password);
+		if (violation !== null) return;
+
+		try {
+			await onSet(password);
+			setPassword('');
+			setLocalReason(null);
+			setChanging(false);
+		} catch {
+			// Rejected: keep the field open with its value. Nothing else to do
+			// here — the parent already re-renders with an updated `rejection`
+			// prop, or its own banner, depending on what classifyApiError found.
+		}
 	}
 
 	const submitLabel = t(hasPassword ? 'links.passwordChange' : 'links.passwordProtect');

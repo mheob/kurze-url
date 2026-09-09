@@ -318,8 +318,12 @@ function RouteComponent(): React.JSX.Element {
 				onRemove={() => {
 					removePasswordMutation.mutate();
 				}}
-				onSet={(password) => {
-					setPasswordMutation.mutate(password);
+				onSet={async (password) => {
+					// `mutateAsync`, not `mutate`: the card awaits this to know
+					// whether to close the editor and clear the field (see
+					// `LinkPasswordCard`'s own `onSet` docstring) — `onError`/
+					// `onSuccess` above still run first, either way.
+					await setPasswordMutation.mutateAsync(password);
 				}}
 				rejection={passwordRejection}
 			/>
