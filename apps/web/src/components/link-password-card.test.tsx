@@ -36,6 +36,20 @@ describe('LinkPasswordCard', () => {
 		expect(screen.getByRole('button', { name: 'Remove protection' })).toBeInTheDocument();
 	});
 
+	/**
+	 * Removing a password deletes nothing, so its confirm control must not
+	 * read as "Yes, delete it" — that would offer to delete the link itself.
+	 * `ConfirmDelete`'s `confirmLabel` override is what keeps this specific.
+	 */
+	it('labels the removal confirmation with password-specific text, not the generic delete text', async () => {
+		renderCard({ context, hasPassword: true, onRemove: vi.fn(), onSet: vi.fn() });
+
+		await userEvent.click(screen.getByRole('button', { name: 'Remove protection' }));
+
+		expect(screen.getByRole('button', { name: 'Yes, remove it' })).toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: 'Yes, delete it' })).not.toBeInTheDocument();
+	});
+
 	it('refuses a context-derived password without calling the server', async () => {
 		const onSet = vi.fn();
 		renderCard({ context, hasPassword: false, onRemove: vi.fn(), onSet });

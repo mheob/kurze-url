@@ -126,6 +126,7 @@ export function LinkPasswordCard({
 						{t('links.passwordChange')}
 					</Button>
 					<ConfirmDelete
+						confirmLabel={t('links.passwordRemoveConfirm')}
 						label={t('links.passwordRemove')}
 						onConfirm={onRemove}
 						question={t('links.passwordRemoveQuestion')}
