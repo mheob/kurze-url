@@ -64,8 +64,8 @@ type Config struct {
 	// what is actually at risk, the bound has to be global too; see
 	// InviteGlobalRateLimitPerMonth for the one case where that is affordable,
 	// and apps/api/.env.example for what each limit does not protect.
-	RedirectRateLimitPerMin   int
-	PasswordRateLimitPerMin   int
+	RedirectRateLimitPerMin int
+	PasswordRateLimitPerMin int
 
 	// PasswordSetRateLimitPerHour caps PUT /v1/links/{id}/password per user.
 	// The endpoint computes an Argon2id hash — 19 MiB and two passes — so an
