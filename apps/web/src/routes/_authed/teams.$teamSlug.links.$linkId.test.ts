@@ -187,7 +187,7 @@ describe('handlePasswordError', () => {
 		handlePasswordError(error, { navigateToLogin, setFailure, setPasswordRejection });
 
 		expect(setPasswordRejection).toHaveBeenCalledExactlyOnceWith('too_common');
-		expect(setFailure).not.toHaveBeenCalled();
+		expect(setFailure).toHaveBeenCalledExactlyOnceWith(null);
 		expect(navigateToLogin).not.toHaveBeenCalled();
 	});
 
@@ -200,7 +200,7 @@ describe('handlePasswordError', () => {
 		handlePasswordError(error, { navigateToLogin, setFailure, setPasswordRejection });
 
 		expect(setFailure).toHaveBeenCalledExactlyOnceWith({ kind: 'rateLimited' });
-		expect(setPasswordRejection).not.toHaveBeenCalled();
+		expect(setPasswordRejection).toHaveBeenCalledExactlyOnceWith(undefined);
 		expect(navigateToLogin).not.toHaveBeenCalled();
 	});
 

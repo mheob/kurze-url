@@ -231,9 +231,11 @@ export function handlePasswordError(error: unknown, handlers: PasswordErrorHandl
 		return;
 	}
 	if (classified.kind === 'passwordRejected') {
+		handlers.setFailure(null);
 		handlers.setPasswordRejection(classified.reason);
 		return;
 	}
+	handlers.setPasswordRejection(undefined);
 	handlers.setFailure(classified);
 }
 
@@ -380,6 +382,10 @@ function RouteComponent(): React.JSX.Element {
 			<LinkPasswordCard
 				context={toPasswordContext(link, me.memberships, teamSlug)}
 				hasPassword={hasPassword}
+				key={linkId}
+				onDismissRejection={() => {
+					setPasswordRejection(undefined);
+				}}
 				onRemove={() => {
 					removePasswordMutation.mutate();
 				}}
