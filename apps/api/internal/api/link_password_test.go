@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/mheob/kurze-url/apps/api/internal/authz"
+	"github.com/mheob/kurze-url/apps/api/internal/cache"
 )
 
 // countAuditActions is the same direct query links_test.go uses for
@@ -57,6 +58,68 @@ func TestSetLinkPasswordKeepsTheLinksTags(t *testing.T) {
 	require.Len(t, body.Tags, 1, "response must report the link's actual tags, not []")
 	require.Equal(t, tag.ID, body.Tags[0].ID)
 	require.Equal(t, "Presse", body.Tags[0].Name)
+}
+
+// TestSetLinkPasswordIsRateLimited pins allowPasswordSet the same way
+// TestClaimDomainIsRateLimited (domains_test.go) pins allowDomainClaim: before
+// this, allowPasswordSet was the only rate limiter in the codebase with no
+// test driving it to refusal at all.
+func TestSetLinkPasswordIsRateLimited(t *testing.T) {
+	f := newTenancyFixture(t)
+	f.deps.Config.PasswordSetRateLimitPerHour = 1
+	f.rebuildRouter()
+	created := f.createLink(t, "ratelimited", "https://example.org/ratelimited")
+
+	first := f.do(t, f.members[authz.RoleEditor], http.MethodPut,
+		"/v1/links/"+created.ID.String()+"/password",
+		map[string]any{"password": "Kartoffelsalat!7"})
+	require.Equal(t, http.StatusOK, first.Code, "body: %s", first.Body.String())
+
+	second := f.do(t, f.members[authz.RoleEditor], http.MethodPut,
+		"/v1/links/"+created.ID.String()+"/password",
+		map[string]any{"password": "Bratkartoffeln!9"})
+	require.Equal(t, http.StatusTooManyRequests, second.Code, "body: %s", second.Body.String())
+}
+
+// TestSetLinkPasswordRateLimitDisabledAtZero pins Ruling D from the SDD
+// ledger: RATE_LIMIT_PASSWORD_SET_PER_HOUR=0 means "not enforced," the same
+// as every other per-subject limit except RATE_LIMIT_INVITE_GLOBAL_PER_MONTH,
+// which refuses everything at 0 instead. Nothing else in this suite drives
+// the value to zero, so nothing else would catch a regression here.
+func TestSetLinkPasswordRateLimitDisabledAtZero(t *testing.T) {
+	f := newTenancyFixture(t)
+	f.deps.Config.PasswordSetRateLimitPerHour = 0
+	f.rebuildRouter()
+	created := f.createLink(t, "unlimited", "https://example.org/unlimited")
+
+	for i, password := range []string{"Kartoffelsalat!7", "Bratkartoffeln!9", "Zwiebelkuchen!3"} {
+		rec := f.do(t, f.members[authz.RoleEditor], http.MethodPut,
+			"/v1/links/"+created.ID.String()+"/password",
+			map[string]any{"password": password})
+		require.Equal(t, http.StatusOK, rec.Code, "call %d, body: %s", i+1, rec.Body.String())
+	}
+}
+
+// TestSetLinkPasswordRateLimitFailsClosed pins the divergence
+// allowPasswordSet's own comment states: unlike allowLinkCreate, which logs
+// and allows a Redis error through, allowPasswordSet must refuse the
+// request. The broken client points at an address nothing listens on;
+// cache.New never dials eagerly, so this only fails once Allow actually runs
+// the script.
+func TestSetLinkPasswordRateLimitFailsClosed(t *testing.T) {
+	f := newTenancyFixture(t)
+	created := f.createLink(t, "brokenredis", "https://example.org/brokenredis")
+
+	broken, err := cache.New("redis://127.0.0.1:1/0")
+	require.NoError(t, err)
+	f.deps.Cache = broken
+	f.rebuildRouter()
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPut,
+		"/v1/links/"+created.ID.String()+"/password",
+		map[string]any{"password": "Kartoffelsalat!7"})
+
+	require.Equal(t, http.StatusInternalServerError, rec.Code, "body: %s", rec.Body.String())
 }
 
 func TestSetLinkPasswordIsRefusedBelowEditor(t *testing.T) {
