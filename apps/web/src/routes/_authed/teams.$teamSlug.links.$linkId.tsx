@@ -170,8 +170,12 @@ export const Route = createFileRoute('/_authed/teams/$teamSlug/links/$linkId')({
  * `teamName` is unreachable: `beforeLoad` has already thrown `notFound()` for
  * a `teamSlug` with no matching membership, and the `?? ''` only exists so
  * the type is `string` without a non-null assertion.
+ *
+ * Exported (like `loadLink`/`afterMutation` above) so
+ * `teams.$teamSlug.links.$linkId.test.ts` can exercise it with a hand-built
+ * `memberships` array, no router or React tree required.
  */
-function toPasswordContext(
+export function toPasswordContext(
 	link: Link,
 	memberships: readonly { name: string; slug: string }[],
 	teamSlug: string,
@@ -183,6 +187,91 @@ function toPasswordContext(
 		teamName: membership?.name ?? '',
 		teamSlug,
 	};
+}
+
+/**
+ * The one `queryClient` method `applyPasswordSuccess` needs, narrowed the
+ * same way `InvalidatableQueryClient` above narrows `invalidateQueries` — a
+ * real `QueryClient` satisfies this structurally, and a hand-built fake can
+ * satisfy it for the test without constructing one.
+ */
+interface CacheWritableQueryClient {
+	setQueriesData: (
+		filters: { exact: boolean; queryKey: readonly unknown[] },
+		updater: (old: PageLink | undefined) => PageLink | undefined,
+	) => unknown;
+}
+
+/** Dependencies `handlePasswordError` needs from the component, narrowed to exactly the calls it makes — see `CacheWritableQueryClient` above for why this shape, not the real hooks, is what gets threaded through. */
+interface PasswordErrorHandlers {
+	navigateToLogin: () => void;
+	setFailure: (failure: ApiFailure | null) => void;
+	setPasswordRejection: (reason: LinkPasswordReason | 'rejected' | undefined) => void;
+}
+
+/**
+ * Shared by both password mutations: a policy rejection (Task 8's
+ * `passwordRejected`) goes to the card's own `rejection` prop, never the
+ * page banner — `<LinkPasswordCard>` already renders it next to the field
+ * it belongs to. Every other failure kind (rate limited, not found, a
+ * genuine 500) falls through to the same `failure` state the form and
+ * delete mutations already use, so it renders through the one banner this
+ * route has rather than a second, parallel one.
+ *
+ * Exported and taking its dependencies as an explicit parameter, rather than
+ * closing over the component's hooks, is what makes this the layer the
+ * task-9 review found untested: `teams.$teamSlug.links.$linkId.test.ts` can
+ * call this directly with hand-built spies, the same pattern `afterMutation`
+ * already uses above.
+ */
+export function handlePasswordError(error: unknown, handlers: PasswordErrorHandlers): void {
+	const classified = classifyApiError(error);
+	if (classified.kind === 'unauthenticated') {
+		handlers.navigateToLogin();
+		return;
+	}
+	if (classified.kind === 'passwordRejected') {
+		handlers.setPasswordRejection(classified.reason);
+		return;
+	}
+	handlers.setFailure(classified);
+}
+
+/** Dependencies `applyPasswordSuccess` needs from the component — see `PasswordErrorHandlers` above for the same reasoning. */
+interface PasswordSuccessHandlers {
+	linkId: string;
+	queryClient: CacheWritableQueryClient;
+	setFailure: (failure: ApiFailure | null) => void;
+	setHasPassword: (hasPassword: boolean) => void;
+	setPasswordRejection: (reason: LinkPasswordReason | 'rejected' | undefined) => void;
+	teamId: string;
+}
+
+/**
+ * Writes the returned `Link` straight into the cached link list
+ * (`['links', teamId, page]`, whichever pages happen to be cached — the
+ * page number isn't known here) so the lock badge (Task 9, `LinkList`)
+ * reflects the change without waiting on a refetch, the same reasoning
+ * `teams.$teamSlug.domains.tsx`'s verify mutation merges one row into its
+ * own cached list instead of invalidating it. `hasPassword` is this same
+ * value, tracked locally because it is what this page's own card reads.
+ */
+export function applyPasswordSuccess(updatedLink: Link, handlers: PasswordSuccessHandlers): void {
+	handlers.setHasPassword(updatedLink.has_password);
+	handlers.setPasswordRejection(undefined);
+	handlers.setFailure(null);
+	handlers.queryClient.setQueriesData(
+		{ exact: false, queryKey: ['links', handlers.teamId] },
+		(old) =>
+			old
+				? {
+						...old,
+						items: (old.items ?? []).map((item) =>
+							item.id === handlers.linkId ? updatedLink : item,
+						),
+					}
+				: old,
+	);
 }
 
 function RouteComponent(): React.JSX.Element {
@@ -240,61 +329,37 @@ function RouteComponent(): React.JSX.Element {
 		},
 	});
 
-	/**
-	 * Shared by both password mutations: a policy rejection (Task 8's
-	 * `passwordRejected`) goes to the card's own `rejection` prop, never the
-	 * page banner — `<LinkPasswordCard>` already renders it next to the field
-	 * it belongs to. Every other failure kind (rate limited, not found, a
-	 * genuine 500) falls through to the same `failure` state the form and
-	 * delete mutations already use, so it renders through the one banner this
-	 * route has rather than a second, parallel one.
-	 */
-	function handlePasswordError(error: unknown): void {
-		const classified = classifyApiError(error);
-		if (classified.kind === 'unauthenticated') {
-			void router.navigate({ to: '/login' });
-			return;
-		}
-		if (classified.kind === 'passwordRejected') {
-			setPasswordRejection(classified.reason);
-			return;
-		}
-		setFailure(classified);
+	function onPasswordError(error: unknown): void {
+		handlePasswordError(error, {
+			navigateToLogin: () => {
+				void router.navigate({ to: '/login' });
+			},
+			setFailure,
+			setPasswordRejection,
+		});
 	}
 
-	/**
-	 * Writes the returned `Link` straight into the cached link list
-	 * (`['links', teamId, page]`, whichever pages happen to be cached — the
-	 * page number isn't known here) so the lock badge (Task 9, `LinkList`)
-	 * reflects the change without waiting on a refetch, the same reasoning
-	 * `teams.$teamSlug.domains.tsx`'s verify mutation merges one row into its
-	 * own cached list instead of invalidating it. `hasPassword` is this same
-	 * value, tracked locally because it is what this page's own card reads.
-	 */
-	function applyPasswordSuccess(updatedLink: Link): void {
-		setHasPassword(updatedLink.has_password);
-		setPasswordRejection(undefined);
-		setFailure(null);
-		queryClient.setQueriesData<PageLink>({ exact: false, queryKey: ['links', teamId] }, (old) =>
-			old
-				? {
-						...old,
-						items: (old.items ?? []).map((item) => (item.id === linkId ? updatedLink : item)),
-					}
-				: old,
-		);
+	function onPasswordSuccess(updatedLink: Link): void {
+		applyPasswordSuccess(updatedLink, {
+			linkId,
+			queryClient,
+			setFailure,
+			setHasPassword,
+			setPasswordRejection,
+			teamId,
+		});
 	}
 
 	const setPasswordMutation = useMutation({
 		mutationFn: (password: string) => setLinkPasswordFn({ data: { linkId, password } }),
-		onError: handlePasswordError,
-		onSuccess: applyPasswordSuccess,
+		onError: onPasswordError,
+		onSuccess: onPasswordSuccess,
 	});
 
 	const removePasswordMutation = useMutation({
 		mutationFn: () => removeLinkPasswordFn({ data: { linkId } }),
-		onError: handlePasswordError,
-		onSuccess: applyPasswordSuccess,
+		onError: onPasswordError,
+		onSuccess: onPasswordSuccess,
 	});
 
 	const fieldErrors = failure?.kind === 'fields' ? failure.fields : undefined;

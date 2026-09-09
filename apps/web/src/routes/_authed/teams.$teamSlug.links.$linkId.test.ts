@@ -1,8 +1,15 @@
-import type { Link } from '@kurze-url/api-client';
+import type { Link, PageLink } from '@kurze-url/api-client';
 import { isNotFound, isRedirect } from '@tanstack/react-router';
 import { describe, expect, it, vi } from 'vitest';
 
-import { afterMutation, loadLink, toDateTimeLocal } from './teams.$teamSlug.links.$linkId';
+import {
+	afterMutation,
+	applyPasswordSuccess,
+	handlePasswordError,
+	loadLink,
+	toDateTimeLocal,
+	toPasswordContext,
+} from './teams.$teamSlug.links.$linkId';
 
 function link(overrides: Partial<Link> = {}): Link {
 	return {
@@ -132,5 +139,145 @@ describe('afterMutation', () => {
 
 		expect(invalidateQueries).toHaveBeenCalledExactlyOnceWith({ queryKey: ['links', 'team-a'] });
 		expect(invalidate).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe('toPasswordContext', () => {
+	it('builds the password context from the link and its own membership', () => {
+		const data = link({ destination_url: 'https://example.org/summer', slug: 'sommer' });
+		const memberships = [
+			{ name: 'Other Verein', slug: 'other' },
+			{ name: 'SV Grünwald e.V.', slug: 'sv-gruenwald' },
+		];
+
+		expect(toPasswordContext(data, memberships, 'sv-gruenwald')).toEqual({
+			destinationUrl: 'https://example.org/summer',
+			linkSlug: 'sommer',
+			teamName: 'SV Grünwald e.V.',
+			teamSlug: 'sv-gruenwald',
+		});
+	});
+
+	/**
+	 * Unreachable in the running app — `beforeLoad` already threw `notFound()`
+	 * for a `teamSlug` with no matching membership — but the `?? ''` fallback
+	 * exists purely so the type is `string` without a non-null assertion.
+	 * Pinned here so that fallback keeps doing what it's for.
+	 */
+	it('falls back to an empty team name when no membership matches', () => {
+		expect(toPasswordContext(link(), [], 'sv-gruenwald').teamName).toBe('');
+	});
+});
+
+/**
+ * `handlePasswordError`'s three-way split is the seam the task-9 review
+ * found untested: a `passwordRejected` failure must reach the card's own
+ * `rejection` prop, never the page banner, and every other kind must reach
+ * the banner instead — mixing those up either drowns a policy message in the
+ * generic banner or renders an unrelated failure (rate limited, a genuine
+ * 500) as if it were about the password field.
+ */
+describe('handlePasswordError', () => {
+	it('routes a passwordRejected failure into the rejection channel, not the banner', () => {
+		const setFailure = vi.fn();
+		const setPasswordRejection = vi.fn();
+		const navigateToLogin = vi.fn();
+		const error = { errors: [{ location: 'body.password', value: 'too_common' }], status: 422 };
+
+		handlePasswordError(error, { navigateToLogin, setFailure, setPasswordRejection });
+
+		expect(setPasswordRejection).toHaveBeenCalledExactlyOnceWith('too_common');
+		expect(setFailure).not.toHaveBeenCalled();
+		expect(navigateToLogin).not.toHaveBeenCalled();
+	});
+
+	it('routes a rate-limited failure into the banner, not the rejection channel', () => {
+		const setFailure = vi.fn();
+		const setPasswordRejection = vi.fn();
+		const navigateToLogin = vi.fn();
+		const error = { status: 429 };
+
+		handlePasswordError(error, { navigateToLogin, setFailure, setPasswordRejection });
+
+		expect(setFailure).toHaveBeenCalledExactlyOnceWith({ kind: 'rateLimited' });
+		expect(setPasswordRejection).not.toHaveBeenCalled();
+		expect(navigateToLogin).not.toHaveBeenCalled();
+	});
+
+	it('navigates to login for an unauthenticated failure, touching neither state', () => {
+		const setFailure = vi.fn();
+		const setPasswordRejection = vi.fn();
+		const navigateToLogin = vi.fn();
+		const error = { status: 401 };
+
+		handlePasswordError(error, { navigateToLogin, setFailure, setPasswordRejection });
+
+		expect(navigateToLogin).toHaveBeenCalledTimes(1);
+		expect(setFailure).not.toHaveBeenCalled();
+		expect(setPasswordRejection).not.toHaveBeenCalled();
+	});
+});
+
+/**
+ * The lock badge (`LinkList`) reads the cached link list, not a refetch —
+ * see this function's own docstring. A fake `queryClient` that implements
+ * only `setQueriesData` is what proves that directly: if this ever started
+ * invalidating instead of writing through, there would be no
+ * `invalidateQueries` here for it to call.
+ */
+describe('applyPasswordSuccess', () => {
+	it('clears failure/rejection state and reports the new hasPassword value', () => {
+		const updated = link({ has_password: true });
+		const setFailure = vi.fn();
+		const setHasPassword = vi.fn();
+		const setPasswordRejection = vi.fn();
+		const setQueriesData = vi.fn();
+
+		applyPasswordSuccess(updated, {
+			linkId: updated.id,
+			queryClient: { setQueriesData },
+			setFailure,
+			setHasPassword,
+			setPasswordRejection,
+			teamId: 'team-a',
+		});
+
+		expect(setHasPassword).toHaveBeenCalledExactlyOnceWith(true);
+		expect(setPasswordRejection).toHaveBeenCalledExactlyOnceWith(undefined);
+		expect(setFailure).toHaveBeenCalledExactlyOnceWith(null);
+		expect(setQueriesData).toHaveBeenCalledExactlyOnceWith(
+			{ exact: false, queryKey: ['links', 'team-a'] },
+			expect.any(Function),
+		);
+	});
+
+	it('writes the returned link into an already-cached page in place, leaving others untouched', () => {
+		const updated = link({ has_password: true, id: 'link-a' });
+		const other = link({ has_password: false, id: 'link-b' });
+		let updater: ((old: PageLink | undefined) => PageLink | undefined) | undefined;
+		const setQueriesData = vi.fn(
+			(_filters: unknown, fn: (old: PageLink | undefined) => PageLink | undefined) => {
+				updater = fn;
+			},
+		);
+
+		applyPasswordSuccess(updated, {
+			linkId: 'link-a',
+			queryClient: { setQueriesData },
+			setFailure: vi.fn(),
+			setHasPassword: vi.fn(),
+			setPasswordRejection: vi.fn(),
+			teamId: 'team-a',
+		});
+
+		const page: PageLink = {
+			items: [other, link({ has_password: false, id: 'link-a' })],
+			page: 1,
+			per_page: 100,
+			total_count: 2,
+		};
+
+		expect(updater?.(page)).toEqual({ ...page, items: [other, updated] });
+		expect(updater?.(undefined)).toBeUndefined();
 	});
 });
