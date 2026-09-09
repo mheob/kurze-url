@@ -74,21 +74,21 @@ test('protects a link with a password and removes it again', async ({ page, team
 
 	// A fresh team's list holds exactly this one row, so `edit` resolves
 	// without scoping it to the row's own text.
-	await page.getByRole('link', { name: 'Edit' }).click();
+	await page.getByRole('link', { name: /edit/i }).click();
 
-	const password = page.getByLabel('Password', { exact: true });
+	const password = page.getByLabel(/password/i);
 	await waitForHydration(password);
 	await password.fill('Kartoffelsalat!7');
-	await page.getByRole('button', { name: 'Protect this link' }).click();
+	await page.getByRole('button', { name: /protect this link/i }).click();
 
 	await expect(page.getByText('This link is protected by a password.')).toBeVisible();
 
 	await page.goto(`/teams/${teamSlug}/links`);
 	await expect(page.getByText('Password protected')).toBeVisible();
 
-	await page.getByRole('link', { name: 'Edit' }).click();
-	await page.getByRole('button', { name: 'Remove protection' }).click();
-	await page.getByRole('button', { name: 'Yes, remove it' }).click();
+	await page.getByRole('link', { name: /edit/i }).click();
+	await page.getByRole('button', { name: /remove protection/i }).click();
+	await page.getByRole('button', { name: /yes, remove it/i }).click();
 
 	await expect(page.getByText('This link is not protected.')).toBeVisible();
 
