@@ -233,3 +233,51 @@ describe('a slug conflict', () => {
 		).toEqual({ kind: 'unknown' });
 	});
 });
+
+describe('a rejected link password', () => {
+	// A 422 on the password field carries a typed reason, and it has to be
+	// read BEFORE the generic field-error branch: `fieldsOf` would otherwise
+	// swallow it into `{ kind: 'fields' }` and the card would render the
+	// API's English prose instead of the German the policy deserves.
+	it('classifies a rejected link password by its typed reason', () => {
+		const failure = classifyApiError(
+			problem(422, [{ location: 'body.password', value: 'derived_from_context' }]),
+		);
+
+		expect(failure).toEqual({ kind: 'passwordRejected', reason: 'derived_from_context' });
+	});
+
+	it('still classifies other 422s as field errors', () => {
+		const failure = classifyApiError(
+			problem(422, [{ location: 'body.destination_url', message: 'must be https' }]),
+		);
+
+		expect(failure.kind).toBe('fields');
+	});
+
+	/**
+	 * A server ahead of this build may send a reason token this build's
+	 * `LinkPasswordReason` union doesn't (yet) list. The failure must still
+	 * classify as `passwordRejected`, with the deliberately generic fallback
+	 * reason, rather than passing an unrecognized string straight through as
+	 * if it were a token the UI has a translation for.
+	 */
+	it('falls back to a generic reason for an unrecognized token', () => {
+		const failure = classifyApiError(
+			problem(422, [{ location: 'body.password', value: 'too_predictable' }]),
+		);
+
+		expect(failure).toEqual({ kind: 'passwordRejected', reason: 'rejected' });
+	});
+
+	/**
+	 * Same fallback when the detail carries no usable value at all. This must
+	 * not fall through to `fieldsOf` (there's no `message` here either) and
+	 * collapse into a bare `unknown` that renders no message at all.
+	 */
+	it('falls back to a generic reason when the value is missing', () => {
+		const failure = classifyApiError(problem(422, [{ location: 'body.password' }]));
+
+		expect(failure).toEqual({ kind: 'passwordRejected', reason: 'rejected' });
+	});
+});
