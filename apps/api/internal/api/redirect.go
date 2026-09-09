@@ -94,6 +94,15 @@ func (d Deps) HandleRedirect(w http.ResponseWriter, r *http.Request) {
 // Redis is unreachable the redirect still works, because availability of the
 // redirect is the product. The failure is logged loudly instead.
 func (d Deps) allowRedirect(ctx context.Context, ip string) bool {
+	// Zero means the axis is off, the convention every other per-subject
+	// limit follows. Without this the meaning inverts rather than degrades:
+	// Allow's script compares `>= limit`, so a zero refuses every redirect on
+	// the instance instead of none, and an operator setting it is far likelier
+	// to mean "no limit" than "serve nothing".
+	if d.Cache == nil || d.Config.RedirectRateLimitPerMin <= 0 {
+		return true
+	}
+
 	allowed, _, err := d.Cache.Allow(ctx, "rl:redirect:"+analytics.RateLimitKey(d.Config.VisitorSalt, ip),
 		d.Config.RedirectRateLimitPerMin, time.Minute)
 	if err != nil {

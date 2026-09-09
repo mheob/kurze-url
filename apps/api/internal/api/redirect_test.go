@@ -190,6 +190,21 @@ func TestRedirectRateLimitsPerClientIP(t *testing.T) {
 	require.Equal(t, http.StatusFound, otherRec.Code, "a different IP has its own budget")
 }
 
+// TestRedirectRateLimitDisabledAtZero pins that RATE_LIMIT_REDIRECT_PER_MIN=0
+// means "not enforced", the convention every other per-subject limit follows.
+// It matters more here than anywhere else: Allow's script compares
+// `>= limit`, so without a guard a zero would refuse every redirect on the
+// instance — the one thing it exists to do — and an operator setting 0 is
+// far more likely to mean "no limit" than "serve nothing".
+func TestRedirectRateLimitDisabledAtZero(t *testing.T) {
+	f := newFixture(t)
+	f.deps.Config.RedirectRateLimitPerMin = 0
+
+	for i := range 4 {
+		require.Equal(t, http.StatusFound, get(t, f, "/hello", nil).Code, "redirect %d", i+1)
+	}
+}
+
 func TestRedirectRefusesAStoredNonHTTPDestination(t *testing.T) {
 	// Creation-time validation (the HTTPS-only allowlist) is out of scope
 	// here, so this seeds a link the way a pre-validation bug or a direct
