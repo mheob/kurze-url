@@ -72,4 +72,53 @@ describe('validateLinkPassword', () => {
 		};
 		expect(validateLinkPassword('imkerverein2026', context)).toBe('derived_from_context');
 	});
+
+	// gruenwald's teamSlug ("sv-gruenwald") happens to equal its
+	// destinationUrl's host label, so every case above that reaches
+	// derived_from_context through gruenwald leaves it unproven that teamSlug
+	// is wired in as its own context source, rather than piggybacking on the
+	// destination host. This context puts an unrelated host on the
+	// destination and makes linkSlug/teamName too short to contribute, so a
+	// match can only come from teamSlug.
+	it('derives context from the team slug on its own', () => {
+		const context = {
+			destinationUrl: 'https://example.com/x',
+			linkSlug: 'x',
+			teamName: 'y',
+			teamSlug: 'imkerverein-grossstadt',
+		};
+		expect(validateLinkPassword('imkervereingrossstadt2026', context)).toBe('derived_from_context');
+	});
+
+	// Mirrors policy_test.go's TestValidatePasswordFoldsEveryGermanCharacter.
+	// Before this, only ü had a fixture — folded implicitly via "Grünwald" in
+	// the shared gruenwald context, to catch "Gruenwald2026" — leaving ä, ö
+	// and ß unverified. Each case is judged against its own context so a
+	// failure to fold isolates to exactly one character.
+	it.each([
+		['ä to ae', 'FC Bärental', 'baerental'],
+		['ö to oe', 'SV Schönau', 'schoenau'],
+		['ü to ue', 'TV Grünberg', 'gruenberg'],
+		['ß to ss', 'SC Großstadt', 'grossstadt'],
+	])('folds %s', (_name, teamName, password) => {
+		const context = { ...gruenwald, teamName };
+		expect(validateLinkPassword(password, context)).toBe('derived_from_context');
+	});
+
+	// Mirrors policy_test.go's TestValidatePasswordIgnoresContextFragmentsBelowFourChars:
+	// "ab" appears as a token source in three different places (a slug's
+	// leading segment, a name's initial, a team slug's prefix) and normalizes
+	// to only two characters in every one of them, so it must be dropped
+	// everywhere rather than rejecting almost any password that starts with
+	// it. Without MIN_CONTEXT_TOKEN, "abwesenheit9" would be reported
+	// derived_from_context against the "ab-" fragment.
+	it('ignores context fragments below four characters', () => {
+		const context = {
+			destinationUrl: 'https://example.com/',
+			linkSlug: 'ab-kartoffelsalat',
+			teamName: 'AB Beispielverein',
+			teamSlug: 'ab-beispielverein',
+		};
+		expect(validateLinkPassword('abwesenheit9', context)).toBeNull();
+	});
 });
