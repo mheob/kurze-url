@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -197,4 +198,37 @@ func TestVerifyOnAnInactiveLinkIsRefusedBeforeCheckingThePassword(t *testing.T) 
 
 	require.Equal(t, http.StatusForbidden,
 		postPassword(t, f, "hello", "hunter2", "203.0.113.1").Code)
+}
+
+// TestVerifySubmitCapsFailuresPerLinkAcrossAddresses pins the axis the per-IP
+// limit cannot cover. Every request here comes from a DIFFERENT address, so
+// the existing per-link-per-IP limit lets all of them through; only the
+// link-keyed failure counter can refuse the last one.
+func TestVerifySubmitCapsFailuresPerLinkAcrossAddresses(t *testing.T) {
+	f := protectedFixture(t, "Kartoffelsalat!7")
+	f.deps.Config.PasswordFailureRateLimitPerHour = 2
+
+	for i := range 2 {
+		require.Equal(t, http.StatusUnauthorized,
+			postPassword(t, f, "hello", "wrong", fmt.Sprintf("203.0.113.%d", i+1)).Code)
+	}
+
+	require.Equal(t, http.StatusTooManyRequests,
+		postPassword(t, f, "hello", "wrong", "203.0.113.99").Code,
+		"a third failure from a third address must hit the per-link cap")
+}
+
+// TestVerifySubmitDoesNotChargeACorrectPassword is the property the whole
+// two-script split in internal/cache exists for. A link whose password a whole
+// Verein has been given must never approach the failure cap, no matter how
+// many people follow it.
+func TestVerifySubmitDoesNotChargeACorrectPassword(t *testing.T) {
+	f := protectedFixture(t, "Kartoffelsalat!7")
+	f.deps.Config.PasswordFailureRateLimitPerHour = 2
+
+	for i := range 5 {
+		require.Equal(t, http.StatusFound,
+			postPassword(t, f, "hello", "Kartoffelsalat!7", fmt.Sprintf("198.51.100.%d", i+1)).Code,
+			"attempt %d must redirect", i+1)
+	}
 }
