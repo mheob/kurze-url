@@ -16,10 +16,15 @@ import (
 // link that is not theirs. A slice, not a map: map iteration order is
 // randomised, which would otherwise reorder these subtests on every run and
 // make a failure harder to reproduce.
+//
+// pathSuffix is appended to the base link path — empty for the four
+// operations that live directly on it, "/password" for the two that live on
+// the password subresource instead.
 type isolationAttempt struct {
-	name   string
-	method string
-	body   any
+	name       string
+	method     string
+	pathSuffix string
+	body       any
 }
 
 // TestALinkIsInvisibleToEveryOtherTeam is the whole point of the entity scope.
@@ -32,12 +37,14 @@ func TestALinkIsInvisibleToEveryOtherTeam(t *testing.T) {
 	path := "/v1/links/" + victim.ID.String()
 
 	for _, tc := range []isolationAttempt{
-		{"read", http.MethodGet, nil},
-		{"update", http.MethodPatch, map[string]any{"state": "disabled"}},
-		{"delete", http.MethodDelete, nil},
+		{"read", http.MethodGet, "", nil},
+		{"update", http.MethodPatch, "", map[string]any{"state": "disabled"}},
+		{"delete", http.MethodDelete, "", nil},
+		{"set password", http.MethodPut, "/password", map[string]any{"password": "Kartoffelsalat!7"}},
+		{"remove password", http.MethodDelete, "/password", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			rec := mine.do(t, mine.members[authz.RoleOwner], tc.method, path, tc.body)
+			rec := mine.do(t, mine.members[authz.RoleOwner], tc.method, path+tc.pathSuffix, tc.body)
 
 			// Checked before the status code, and deliberately not gated on
 			// it succeeding or failing: the status code alone is not proof
@@ -49,7 +56,7 @@ func TestALinkIsInvisibleToEveryOtherTeam(t *testing.T) {
 			// authorization path it is testing — and confirm it still
 			// matches what createLink produced. Ordered first so a `require`
 			// failure on the status-code check below can never skip it.
-			if tc.name == "update" || tc.name == "delete" {
+			if tc.name != "read" {
 				assertLinkRowUnchanged(t, theirs.pool, victim.ID, victim.State, victim.DestinationURL)
 			}
 
@@ -63,7 +70,9 @@ func TestALinkIsInvisibleToEveryOtherTeam(t *testing.T) {
 	// And nothing was actually done to it.
 	rec := theirs.do(t, theirs.members[authz.RoleViewer], http.MethodGet, path, nil)
 	require.Equal(t, http.StatusOK, rec.Code)
-	require.Equal(t, "active", decode[linkBody](t, rec).State)
+	body := decode[linkBody](t, rec)
+	require.Equal(t, "active", body.State)
+	require.False(t, body.HasPassword, "the password attempts above must not have protected the link")
 }
 
 // assertLinkRowUnchanged reads a link row directly from Postgres and fails
@@ -71,17 +80,25 @@ func TestALinkIsInvisibleToEveryOtherTeam(t *testing.T) {
 // destination. It bypasses the API entirely: an update or delete leaking
 // across teams must be caught here even if the handler that attempted it
 // answered with a status code that looks like a refusal.
+//
+// password_hash is checked the same way for the same reason: victim links in
+// this suite are always created without a password, so it must still read
+// NULL afterwards — the one column a cross-team "set password" attempt could
+// have written without moving state or destination_url at all.
 func assertLinkRowUnchanged(
 	t *testing.T, pool *pgxpool.Pool, linkID uuid.UUID, wantState, wantDestination string,
 ) {
 	t.Helper()
 
 	var state, destination string
+	var passwordHash *string
 	err := pool.QueryRow(context.Background(),
-		`select state, destination_url from link where id = $1`, linkID).Scan(&state, &destination)
+		`select state, destination_url, password_hash from link where id = $1`, linkID).
+		Scan(&state, &destination, &passwordHash)
 	require.NoError(t, err, "the link must still exist in the database, unmodified")
 	require.Equal(t, wantState, state, "the link's state must not have changed")
 	require.Equal(t, wantDestination, destination, "the link's destination must not have changed")
+	require.Nil(t, passwordHash, "the link's password_hash must still be unset")
 }
 
 func TestAStrangerSeesNoLinksAtAll(t *testing.T) {

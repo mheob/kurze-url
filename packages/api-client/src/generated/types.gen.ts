@@ -328,6 +328,17 @@ export type PageTeam = {
     total_count: number;
 };
 
+export type SetLinkPasswordInputBody = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * 8 to 128 characters. Must not repeat one character, and must not be derived from the link's short path, its destination, or the Verein's name.
+     */
+    password: string;
+};
+
 export type Tag = {
     /**
      * A URL to the JSON Schema for this object.
@@ -629,6 +640,13 @@ export type PageTeamWritable = {
     page: number;
     per_page: number;
     total_count: number;
+};
+
+export type SetLinkPasswordInputBodyWritable = {
+    /**
+     * 8 to 128 characters. Must not repeat one character, and must not be derived from the link's short path, its destination, or the Verein's name.
+     */
+    password: string;
 };
 
 export type TagWritable = {
@@ -950,6 +968,66 @@ export type UpdateLinkResponses = {
 };
 
 export type UpdateLinkResponse = UpdateLinkResponses[keyof UpdateLinkResponses];
+
+export type RemoveLinkPasswordData = {
+    body?: never;
+    path: {
+        /**
+         * The link this request operates on.
+         */
+        link_id: string;
+    };
+    query?: never;
+    url: '/v1/links/{link_id}/password';
+};
+
+export type RemoveLinkPasswordErrors = {
+    /**
+     * Error
+     */
+    default: ErrorModel;
+};
+
+export type RemoveLinkPasswordError = RemoveLinkPasswordErrors[keyof RemoveLinkPasswordErrors];
+
+export type RemoveLinkPasswordResponses = {
+    /**
+     * OK
+     */
+    200: Link;
+};
+
+export type RemoveLinkPasswordResponse = RemoveLinkPasswordResponses[keyof RemoveLinkPasswordResponses];
+
+export type SetLinkPasswordData = {
+    body: SetLinkPasswordInputBodyWritable;
+    path: {
+        /**
+         * The link this request operates on.
+         */
+        link_id: string;
+    };
+    query?: never;
+    url: '/v1/links/{link_id}/password';
+};
+
+export type SetLinkPasswordErrors = {
+    /**
+     * Error
+     */
+    default: ErrorModel;
+};
+
+export type SetLinkPasswordError = SetLinkPasswordErrors[keyof SetLinkPasswordErrors];
+
+export type SetLinkPasswordResponses = {
+    /**
+     * OK
+     */
+    200: Link;
+};
+
+export type SetLinkPasswordResponse = SetLinkPasswordResponses[keyof SetLinkPasswordResponses];
 
 export type GetMeData = {
     body?: never;

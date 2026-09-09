@@ -21,6 +21,16 @@ var rateLimitSource string
 
 var rateLimitScript = redis.NewScript(rateLimitSource)
 
+//go:embed lua/ratelimit_peek.lua
+var rateLimitPeekSource string
+
+var rateLimitPeekScript = redis.NewScript(rateLimitPeekSource)
+
+//go:embed lua/ratelimit_count.lua
+var rateLimitCountSource string
+
+var rateLimitCountScript = redis.NewScript(rateLimitCountSource)
+
 //go:embed lua/redirect_lookup.lua
 var redirectLookupSource string
 
@@ -54,6 +64,10 @@ func (c *Client) Raw() *redis.Client { return c.rdb }
 
 // Allow applies a sliding-window rate limit to key. Costs one Redis command
 // (a single EVAL, regardless of how many operations the script performs).
+// WithinLimit and Increment below count differently — two commands each,
+// the operations inside their scripts rather than the EVAL wrapping them —
+// deliberately the more conservative reading, since Upstash does not
+// document which of the two a Lua EVAL is billed as.
 func (c *Client) Allow(ctx context.Context, key string, limit int, window time.Duration) (bool, int, error) {
 	res, err := rateLimitScript.Run(ctx, c.rdb,
 		[]string{key},
@@ -68,6 +82,48 @@ func (c *Client) Allow(ctx context.Context, key string, limit int, window time.D
 		return false, 0, fmt.Errorf("cache: rate limit: unexpected reply length %d", len(res))
 	}
 	return res[0] == 1, int(res[1]), nil
+}
+
+// WithinLimit reports whether one more event on this key would stay inside
+// limit over window, without recording one. Two Redis commands, no writes.
+//
+// It is the read half of the pair Allow collapses into a single step. Use
+// Allow wherever every attempt should count; use this with Increment where
+// only some attempts should — the password interstitial charges failures and
+// lets a visitor who knows the password through for free.
+//
+// This primitive has no notion of "disabled" — a limit of 0 evaluates
+// `0 >= 0` and refuses everything, the opposite of this codebase's
+// convention that 0 means an axis is not enforced — so any caller that
+// treats 0 as off (allowPasswordSet, the password-failure counter in
+// verify.go) must guard for it before calling rather than rely on this
+// method to do it.
+func (c *Client) WithinLimit(
+	ctx context.Context, key string, limit int, window time.Duration,
+) (bool, error) {
+	res, err := rateLimitPeekScript.Run(ctx, c.rdb,
+		[]string{key},
+		limit,
+		int(window.Seconds()),
+		time.Now().UnixMilli(),
+	).Int64()
+	if err != nil {
+		return false, fmt.Errorf("cache: within limit: %w", err)
+	}
+	return res == 1, nil
+}
+
+// Increment records one event on this key, in the same sliding window
+// WithinLimit reads. Two Redis commands.
+func (c *Client) Increment(ctx context.Context, key string, window time.Duration) error {
+	if err := rateLimitCountScript.Run(ctx, c.rdb,
+		[]string{key},
+		int(window.Seconds()),
+		time.Now().UnixMilli(),
+	).Err(); err != nil {
+		return fmt.Errorf("cache: increment: %w", err)
+	}
+	return nil
 }
 
 // Lookup is the result of a redirect-path cache read.

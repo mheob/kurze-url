@@ -181,6 +181,9 @@ func TestLinkActionsAreInTheTaxonomy(t *testing.T) {
 		audit.ActionLinkCreated,
 		audit.ActionLinkUpdated,
 		audit.ActionLinkDeleted,
+		audit.ActionPasswordSet,
+		audit.ActionPasswordChanged,
+		audit.ActionPasswordRemoved,
 	} {
 		t.Run(string(action), func(t *testing.T) {
 			require.NotErrorIs(t, audit.CheckAction(action), audit.ErrUnknownAction)
@@ -192,6 +195,9 @@ func TestLinkActionNamesFollowTheEntityDotVerbShape(t *testing.T) {
 	require.Equal(t, audit.Action("link.created"), audit.ActionLinkCreated)
 	require.Equal(t, audit.Action("link.updated"), audit.ActionLinkUpdated)
 	require.Equal(t, audit.Action("link.deleted"), audit.ActionLinkDeleted)
+	require.Equal(t, audit.Action("link.password_set"), audit.ActionPasswordSet)
+	require.Equal(t, audit.Action("link.password_changed"), audit.ActionPasswordChanged)
+	require.Equal(t, audit.Action("link.password_removed"), audit.ActionPasswordRemoved)
 	require.Equal(t, "link", audit.EntityLink)
 }
 

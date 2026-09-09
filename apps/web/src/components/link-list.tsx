@@ -1,5 +1,6 @@
 import type { PageLink } from '@kurze-url/api-client';
 import { Link } from '@tanstack/react-router';
+import { LockIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { CopyButton } from './copy-button';
@@ -66,6 +67,12 @@ export function LinkList({ data, page, teamSlug }: LinkListViewProps): React.JSX
 					<li key={link.id}>
 						<a href={link.short_url}>{link.short_url}</a>
 						<CopyButton value={link.short_url} />
+						{link.has_password ? (
+							<span>
+								<LockIcon aria-hidden />
+								<span className="sr-only">{t('links.passwordBadge')}</span>
+							</span>
+						) : null}
 						<span>{link.destination_url}</span>
 						<Link params={{ linkId: link.id, teamSlug }} to="/teams/$teamSlug/links/$linkId">
 							{t('links.edit')}

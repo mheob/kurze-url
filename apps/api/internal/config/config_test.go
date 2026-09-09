@@ -27,6 +27,8 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	require.Equal(t, "localhost", cfg.APIHostname)
 	require.Equal(t, 60, cfg.RedirectRateLimitPerMin)
 	require.Equal(t, 5, cfg.PasswordRateLimitPerMin)
+	require.Equal(t, 20, cfg.PasswordSetRateLimitPerHour)
+	require.Equal(t, 100, cfg.PasswordFailureRateLimitPerHour)
 	require.Equal(t, 20, cfg.LinkCreateRateLimitPerMin)
 	require.Equal(t, 20, cfg.InviteRateLimitPerHour)
 	require.Equal(t, 200, cfg.InviteGlobalRateLimitPerMonth)
@@ -68,6 +70,18 @@ func TestLoadRejectsNonNumericRateLimit(t *testing.T) {
 	_, err := config.Load()
 
 	require.ErrorContains(t, err, "RATE_LIMIT_REDIRECT_PER_MIN")
+}
+
+func TestPasswordRateLimitsOverrideFromEnv(t *testing.T) {
+	setRequired(t)
+	t.Setenv("RATE_LIMIT_PASSWORD_SET_PER_HOUR", "3")
+	t.Setenv("RATE_LIMIT_PASSWORD_FAILURES_PER_HOUR", "7")
+
+	cfg, err := config.Load()
+
+	require.NoError(t, err)
+	require.Equal(t, 3, cfg.PasswordSetRateLimitPerHour)
+	require.Equal(t, 7, cfg.PasswordFailureRateLimitPerHour)
 }
 
 func TestLoadParsesTheMaintainerAllowlist(t *testing.T) {

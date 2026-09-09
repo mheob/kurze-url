@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"time"
@@ -75,6 +76,16 @@ func (d Deps) HandleVerifySubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The second axis: per link, independent of the address, so somebody
+	// rotating addresses is bounded too. Consulted before the Argon2id
+	// verification below, which is the expensive thing it exists to cap.
+	failureKey := passwordFailureKey(hostname, slug)
+	if !d.allowPasswordAttempt(ctx, failureKey) {
+		w.Header().Set("Retry-After", "3600")
+		pages.RenderError(w, http.StatusTooManyRequests, locale, pages.KindRateLimited)
+		return
+	}
+
 	resolved, hash, ok := d.loadProtectedLink(w, r, locale, slug)
 	if !ok {
 		return
@@ -93,6 +104,9 @@ func (d Deps) HandleVerifySubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !valid {
+		// After the verification, not before: the counter's meaning is
+		// "failures", not "attempts".
+		d.countPasswordFailure(ctx, failureKey)
 		pages.RenderPasswordPrompt(w, http.StatusUnauthorized, locale, "/"+slug+"/verify", true)
 		return
 	}
@@ -160,4 +174,48 @@ func (d Deps) loadProtectedLink(
 	}
 
 	return resolved, *row.PasswordHash, true
+}
+
+// passwordFailureWindow is the window PasswordFailureRateLimitPerHour is
+// measured over.
+const passwordFailureWindow = time.Hour
+
+func passwordFailureKey(hostname, slug string) string {
+	return "rl:pwfail:" + hostname + ":" + slug
+}
+
+// allowPasswordAttempt is the link-keyed half of the verify path's rate
+// limiting, independent of the client address. It reports whether one more
+// failure would stay inside the cap WITHOUT recording one, because the caller
+// does not yet know whether this attempt is a failure — and the whole point
+// of the axis is that a visitor who knows the password spends nothing.
+//
+// Fails closed, like the per-IP check beside it: an unbounded number of
+// Argon2id verifications is a worse outcome than a temporarily unusable
+// protected link.
+func (d Deps) allowPasswordAttempt(ctx context.Context, key string) bool {
+	if d.Config.PasswordFailureRateLimitPerHour <= 0 {
+		return true
+	}
+
+	within, err := d.Cache.WithinLimit(ctx, key,
+		d.Config.PasswordFailureRateLimitPerHour, passwordFailureWindow)
+	if err != nil {
+		d.Log.Error("password failure limit unavailable, failing closed", "error", err)
+		return false
+	}
+	return within
+}
+
+// countPasswordFailure records one failed attempt. Best effort: the guess has
+// already been made and refused, so a Redis error here must not turn a wrong
+// password into a server error for the visitor. It is logged loudly instead,
+// which is also how a failing counter becomes visible at all.
+func (d Deps) countPasswordFailure(ctx context.Context, key string) {
+	if d.Config.PasswordFailureRateLimitPerHour <= 0 {
+		return
+	}
+	if err := d.Cache.Increment(ctx, key, passwordFailureWindow); err != nil {
+		d.Log.Error("recording a password failure failed", "error", err)
+	}
 }

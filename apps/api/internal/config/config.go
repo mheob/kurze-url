@@ -64,8 +64,23 @@ type Config struct {
 	// what is actually at risk, the bound has to be global too; see
 	// InviteGlobalRateLimitPerMonth for the one case where that is affordable,
 	// and apps/api/.env.example for what each limit does not protect.
-	RedirectRateLimitPerMin   int
-	PasswordRateLimitPerMin   int
+	RedirectRateLimitPerMin int
+	PasswordRateLimitPerMin int
+
+	// PasswordSetRateLimitPerHour caps PUT /v1/links/{id}/password per user.
+	// The endpoint computes an Argon2id hash — 19 MiB and two passes — so an
+	// authenticated member looping it is a CPU and memory amplifier against
+	// the function, and no other limit covers that route.
+	PasswordSetRateLimitPerHour int
+
+	// PasswordFailureRateLimitPerHour caps failed password attempts per link
+	// on POST /{slug}/verify, independently of the per-IP limit beside it.
+	// It is sized to protect the function rather than the password: with the
+	// policy in internal/auth in place, guessing is bounded by the policy,
+	// while the cost of each guess is not bounded by anything else. Only
+	// failures count, so a visitor who knows the password spends nothing.
+	PasswordFailureRateLimitPerHour int
+
 	LinkCreateRateLimitPerMin int
 	InviteRateLimitPerHour    int
 
@@ -187,6 +202,14 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	if cfg.PasswordRateLimitPerMin, err = envInt("RATE_LIMIT_PASSWORD_PER_MIN", 5); err != nil {
+		return Config{}, err
+	}
+	if cfg.PasswordSetRateLimitPerHour, err = envInt(
+		"RATE_LIMIT_PASSWORD_SET_PER_HOUR", 20); err != nil {
+		return Config{}, err
+	}
+	if cfg.PasswordFailureRateLimitPerHour, err = envInt(
+		"RATE_LIMIT_PASSWORD_FAILURES_PER_HOUR", 100); err != nil {
 		return Config{}, err
 	}
 	if cfg.LinkCreateRateLimitPerMin, err = envInt("RATE_LIMIT_LINK_CREATE_PER_MIN", 20); err != nil {
