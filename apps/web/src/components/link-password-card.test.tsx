@@ -149,4 +149,47 @@ describe('LinkPasswordCard', () => {
 
 		expect(screen.getByText('That password cannot be used. Pick another.')).toBeInTheDocument();
 	});
+
+	/**
+	 * Before this fix, `changing` had no way back to `false` other than a
+	 * successful submit: `<ConfirmDelete>` unmounted the moment "Change
+	 * password" was clicked, and nothing else set `changing` back. A reader
+	 * who clicked it by mistake had no way out short of navigating away.
+	 */
+	it('cancels out of the change-password editor back to the protected view', async () => {
+		const onSet = vi.fn();
+		renderCard({ context, hasPassword: true, onRemove: vi.fn(), onSet });
+
+		await userEvent.click(screen.getByRole('button', { name: 'Change password' }));
+		await userEvent.type(screen.getByLabelText('Password'), 'Kartoffelsalat!7');
+		await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+		expect(onSet).not.toHaveBeenCalled();
+		expect(screen.queryByLabelText('Password')).not.toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Change password' })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Remove protection' })).toBeInTheDocument();
+	});
+
+	/**
+	 * The other half of "a fresh keystroke clears a stale message": `onChange`
+	 * cleared `localReason` but left an API-reported `rejection` rendered,
+	 * `aria-invalid` still true, over a password the reader was in the middle
+	 * of correcting. `onDismissRejection` is the card's way of asking the
+	 * parent — the owner of `rejection` — to clear it too.
+	 */
+	it('asks the parent to dismiss a stale API-reported rejection when the reader edits the field', async () => {
+		const onDismissRejection = vi.fn();
+		renderCard({
+			context,
+			hasPassword: false,
+			onDismissRejection,
+			onRemove: vi.fn(),
+			onSet: vi.fn(),
+			rejection: 'too_common',
+		});
+
+		await userEvent.type(screen.getByLabelText('Password'), 'x');
+
+		expect(onDismissRejection).toHaveBeenCalledTimes(1);
+	});
 });

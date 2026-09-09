@@ -12,6 +12,13 @@ import { Button } from './ui/button';
 export interface LinkPasswordCardProps {
 	readonly context: LinkPasswordContext;
 	readonly hasPassword: boolean;
+	/**
+	 * Called when the reader edits the field, so a stale API-reported
+	 * `rejection` does not linger over a password they are in the middle of
+	 * correcting. Optional: `rejection` is state the parent owns, so a caller
+	 * with none of it set has nothing to clear.
+	 */
+	readonly onDismissRejection?: () => void;
 	readonly onRemove: () => void;
 	/**
 	 * Resolves on a successful set/change, rejects on failure. The card owns
@@ -67,6 +74,7 @@ const messageKeys: Record<LinkPasswordReason | 'rejected', string> = {
 export function LinkPasswordCard({
 	context,
 	hasPassword,
+	onDismissRejection,
 	onRemove,
 	onSet,
 	rejection,
@@ -77,8 +85,10 @@ export function LinkPasswordCard({
 
 	const [password, setPassword] = useState('');
 	// The reason the *last local check* found, distinct from `rejection` (the
-	// API's own finding): a fresh keystroke clears this so a stale local
-	// message doesn't linger over a password the reader has already changed.
+	// API's own finding): a fresh keystroke clears this, and calls
+	// `onDismissRejection` to ask the parent to clear its half too, so a
+	// stale message doesn't linger over a password the reader has already
+	// changed.
 	const [localReason, setLocalReason] = useState<LinkPasswordReason | null>(null);
 	// Protecting a link starts with the input visible; once protected, it
 	// stays hidden until the reader explicitly asks to change the password —
@@ -116,6 +126,17 @@ export function LinkPasswordCard({
 	}
 
 	const submitLabel = t(hasPassword ? 'links.passwordChange' : 'links.passwordProtect');
+	// A cancel control only makes sense once there is a "back" to go to — the
+	// initial, unprotected-link input has no prior state, but opening
+	// "Change password" on an already-protected link does, and until now
+	// there was no way back out of it short of a submit.
+	const showCancel = hasPassword && changing;
+
+	function handleCancel(): void {
+		setChanging(false);
+		setPassword('');
+		setLocalReason(null);
+	}
 
 	const passwordInput = (
 		<form onSubmit={handleSubmit}>
@@ -129,6 +150,7 @@ export function LinkPasswordCard({
 					onChange={(event) => {
 						setPassword(event.target.value);
 						setLocalReason(null);
+						onDismissRejection?.();
 					}}
 					type="password"
 					value={password}
@@ -140,6 +162,11 @@ export function LinkPasswordCard({
 				) : null}
 			</div>
 			<Button type="submit">{submitLabel}</Button>
+			{showCancel ? (
+				<Button onClick={handleCancel} type="button">
+					{t('links.cancel')}
+				</Button>
+			) : null}
 		</form>
 	);
 
