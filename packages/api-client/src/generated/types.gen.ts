@@ -969,6 +969,36 @@ export type UpdateLinkResponses = {
 
 export type UpdateLinkResponse = UpdateLinkResponses[keyof UpdateLinkResponses];
 
+export type RemoveLinkPasswordData = {
+    body?: never;
+    path: {
+        /**
+         * The link this request operates on.
+         */
+        link_id: string;
+    };
+    query?: never;
+    url: '/v1/links/{link_id}/password';
+};
+
+export type RemoveLinkPasswordErrors = {
+    /**
+     * Error
+     */
+    default: ErrorModel;
+};
+
+export type RemoveLinkPasswordError = RemoveLinkPasswordErrors[keyof RemoveLinkPasswordErrors];
+
+export type RemoveLinkPasswordResponses = {
+    /**
+     * OK
+     */
+    200: Link;
+};
+
+export type RemoveLinkPasswordResponse = RemoveLinkPasswordResponses[keyof RemoveLinkPasswordResponses];
+
 export type SetLinkPasswordData = {
     body: SetLinkPasswordInputBodyWritable;
     path: {

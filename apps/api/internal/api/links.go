@@ -390,6 +390,15 @@ func (d Deps) registerLinks(api huma.API) {
 		Tags:        []string{"Links"},
 		Security:    []map[string][]string{{"bearerAuth": {}}},
 	}, d.setLinkPassword)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "remove-link-password",
+		Method:      http.MethodDelete,
+		Path:        "/v1/links/{link_id}/password",
+		Summary:     "Remove a link's password",
+		Tags:        []string{"Links"},
+		Security:    []map[string][]string{{"bearerAuth": {}}},
+	}, d.removeLinkPassword)
 }
 
 func (d Deps) createLink(ctx context.Context, in *CreateLinkInput) (*LinkOutput, error) {

@@ -139,6 +139,69 @@ func (d Deps) setLinkPassword(ctx context.Context, in *SetLinkPasswordInput) (*L
 	return &LinkOutput{Status: http.StatusOK, Body: items[0]}, nil
 }
 
+// RemoveLinkPasswordInput declares its authorization in its type: the same
+// LinkEditorScope the setter uses.
+type RemoveLinkPasswordInput struct {
+	authz.LinkEditorScope
+}
+
+// removeLinkPassword is DELETE /v1/links/{link_id}/password. It answers 200
+// with the link on a link that has no password too: DELETE is idempotent, and
+// a 404 there would say nothing the caller does not already know.
+//
+// Unlike the setter there is no set-vs-changed decision to make — DELETE
+// always logs the same action — so there is nothing to re-read for inside the
+// transaction. It carries no rate limit of its own either: unlike the setter
+// it computes no hash, so it is an ordinary authenticated write with nothing
+// to amplify.
+func (d Deps) removeLinkPassword(
+	ctx context.Context, in *RemoveLinkPasswordInput,
+) (*LinkOutput, error) {
+	member := in.Member()
+
+	var updated linkRow
+	err := db.InTx(ctx, d.Pool, func(q *db.Queries) error {
+		row, err := q.SetLinkPassword(ctx, db.SetLinkPasswordParams{
+			ID: in.Link().ID, TeamID: member.TeamID, PasswordHash: nil,
+		})
+		if err != nil {
+			return err
+		}
+		updated = rowFromSetPassword(row)
+
+		return audit.Log(ctx, q, audit.Entry{
+			TeamID:      member.TeamID,
+			ActorUserID: member.UserID,
+			Action:      audit.ActionPasswordRemoved,
+			EntityType:  audit.EntityLink,
+			EntityID:    row.ID,
+		})
+	})
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return nil, huma.Error404NotFound("link not found")
+	case err != nil:
+		d.Log.Error("remove link password", "error", err, "link_id", in.Link().ID)
+		return nil, huma.Error500InternalServerError("could not remove the password")
+	}
+
+	// Same reason as the setter, in the other direction: without this the
+	// interstitial keeps being served for a link the Verein has unprotected.
+	d.invalidateLink(ctx, updated.Hostname, updated.Slug)
+
+	// linkResponse defaults Tags to []; without attachTags a link that already
+	// carries tags would report them as gone the moment its password is
+	// removed, the same bug the setter, getLink and updateLink's no-tag-change
+	// branch guard against.
+	items := []Link{d.linkResponse(updated)}
+	if err := d.attachTags(ctx, member.TeamID, items); err != nil {
+		d.Log.Error("attach tags to link", "error", err, "link_id", updated.ID)
+		return nil, huma.Error500InternalServerError("could not remove the password")
+	}
+
+	return &LinkOutput{Status: http.StatusOK, Body: items[0]}, nil
+}
+
 func (d Deps) linkPasswordReadError(err error, linkID uuid.UUID) error {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return huma.Error404NotFound("link not found")

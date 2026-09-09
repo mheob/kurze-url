@@ -151,3 +151,95 @@ func TestSetLinkPasswordWritesNoMetadata(t *testing.T) {
 	require.NotContains(t, metadata, "Kartoffelsalat")
 	require.NotContains(t, metadata, "argon2")
 }
+
+func TestRemoveLinkPasswordUnprotectsTheLink(t *testing.T) {
+	f := newTenancyFixture(t)
+	created := f.createLink(t, "wiederfrei", "https://example.org/wiederfrei")
+
+	set := f.do(t, f.members[authz.RoleEditor], http.MethodPut,
+		"/v1/links/"+created.ID.String()+"/password",
+		map[string]any{"password": "Kartoffelsalat!7"})
+	require.Equal(t, http.StatusOK, set.Code, "body: %s", set.Body.String())
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodDelete,
+		"/v1/links/"+created.ID.String()+"/password", nil)
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	require.False(t, decode[linkBody](t, rec).HasPassword)
+	require.Equal(t, 1, countAuditActions(t, f, "link.password_removed", created.ID))
+}
+
+// TestRemoveLinkPasswordKeepsTheLinksTags pins the same rule
+// TestSetLinkPasswordKeepsTheLinksTags pins for PUT: linkResponse defaults
+// Tags to [], so removeLinkPassword must call attachTags itself or a tagged
+// link reports "tags": [] the moment its password is removed. f.createLink
+// makes an untagged link, which is why the other remove tests here would not
+// catch this — Tags: [] is accidentally correct for them.
+func TestRemoveLinkPasswordKeepsTheLinksTags(t *testing.T) {
+	f := newTenancyFixture(t)
+	tag := f.createTag(t, "Presse")
+	linkID := f.createLinkWithTags(t, "https://example.org/x", tag.ID)
+
+	set := f.do(t, f.members[authz.RoleEditor], http.MethodPut,
+		"/v1/links/"+linkID.String()+"/password",
+		map[string]any{"password": "Kartoffelsalat!7"})
+	require.Equal(t, http.StatusOK, set.Code, "body: %s", set.Body.String())
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodDelete,
+		"/v1/links/"+linkID.String()+"/password", nil)
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	body := decode[linkBody](t, rec)
+	require.Len(t, body.Tags, 1, "response must report the link's actual tags, not []")
+	require.Equal(t, tag.ID, body.Tags[0].ID)
+	require.Equal(t, "Presse", body.Tags[0].Name)
+}
+
+// TestRemoveLinkPasswordIsIdempotent pins the choice the spec made: DELETE on
+// a link that has no password answers 200 with the link unchanged. A 404 there
+// would say nothing the caller does not already know while forcing every
+// client to special-case it.
+func TestRemoveLinkPasswordIsIdempotent(t *testing.T) {
+	f := newTenancyFixture(t)
+	created := f.createLink(t, "niegeschuetzt", "https://example.org/niegeschuetzt")
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodDelete,
+		"/v1/links/"+created.ID.String()+"/password", nil)
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	require.False(t, decode[linkBody](t, rec).HasPassword)
+}
+
+func TestRemoveLinkPasswordIsRefusedBelowEditor(t *testing.T) {
+	f := newTenancyFixture(t)
+	created := f.createLink(t, "nichtentfernen", "https://example.org/nichtentfernen")
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodDelete,
+		"/v1/links/"+created.ID.String()+"/password", nil)
+
+	require.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+// TestRemoveLinkPasswordInvalidatesTheRedirectCache is the mirror of the set
+// case and fails the other way round: without invalidation a visitor keeps
+// being asked for a password the Verein has already withdrawn.
+func TestRemoveLinkPasswordInvalidatesTheRedirectCache(t *testing.T) {
+	f := newTenancyFixture(t)
+	created := f.createLink(t, "cachefrei", "https://example.org/cachefrei")
+
+	set := f.do(t, f.members[authz.RoleEditor], http.MethodPut,
+		"/v1/links/"+created.ID.String()+"/password",
+		map[string]any{"password": "Kartoffelsalat!7"})
+	require.Equal(t, http.StatusOK, set.Code, "body: %s", set.Body.String())
+
+	warm := f.redirect(t, created.Hostname, created.Slug)
+	require.Equal(t, http.StatusOK, warm.Code, "the interstitial must be cached first")
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodDelete,
+		"/v1/links/"+created.ID.String()+"/password", nil)
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+
+	after := f.redirect(t, created.Hostname, created.Slug)
+	require.Equal(t, http.StatusFound, after.Code,
+		"an unprotected link must redirect again, not keep asking for a password")
+}

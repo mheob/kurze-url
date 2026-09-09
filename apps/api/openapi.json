@@ -1389,6 +1389,50 @@
 			}
 		},
 		"/v1/links/{link_id}/password": {
+			"delete": {
+				"operationId": "remove-link-password",
+				"parameters": [
+					{
+						"description": "The link this request operates on.",
+						"in": "path",
+						"name": "link_id",
+						"required": true,
+						"schema": {
+							"description": "The link this request operates on.",
+							"type": "string"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/Link"
+								}
+							}
+						},
+						"description": "OK"
+					},
+					"default": {
+						"content": {
+							"application/problem+json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorModel"
+								}
+							}
+						},
+						"description": "Error"
+					}
+				},
+				"security": [
+					{
+						"bearerAuth": []
+					}
+				],
+				"summary": "Remove a link's password",
+				"tags": ["Links"]
+			},
 			"put": {
 				"operationId": "set-link-password",
 				"parameters": [
