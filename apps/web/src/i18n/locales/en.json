@@ -93,9 +93,9 @@
 		"passwordTooShort": "Use at least 8 characters.",
 		"passwordTooLong": "Use at most 128 characters.",
 		"passwordTooRepetitive": "Use at least 4 different characters.",
-		"passwordDerivedFromContext": "Too easy to guess from this link, its destination, or the Verein's name.",
+		"passwordDerivedFromContext": "Too easy to guess from this link, its destination, or the Verein's name. Choose something unrelated to all three.",
 		"passwordTooCommon": "That password is one of the most common ones. Pick another.",
-		"passwordRejected": "That password cannot be used."
+		"passwordRejected": "That password cannot be used. Pick another."
 	},
 	"domains": {
 		"heading": "Your domains",

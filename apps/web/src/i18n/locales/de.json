@@ -80,7 +80,7 @@
 		"deleteConfirm": "Ja, löschen",
 		"cancel": "Abbrechen",
 		"passwordHeading": "Passwortschutz",
-		"passwordExplainer": "Besucherinnen und Besucher müssen dieses Passwort eingeben, bevor der Link sie weiterleitet. Gib es an die Personen weiter, die durchkommen sollen.",
+		"passwordExplainer": "Wer diesen Link öffnet, muss zuerst dieses Passwort eingeben. Gib es an die Personen weiter, die durchkommen sollen.",
 		"passwordUnprotected": "Dieser Link ist nicht geschützt.",
 		"passwordProtected": "Dieser Link ist durch ein Passwort geschützt.",
 		"passwordLabel": "Passwort",
@@ -93,9 +93,9 @@
 		"passwordTooShort": "Mindestens 8 Zeichen verwenden.",
 		"passwordTooLong": "Höchstens 128 Zeichen verwenden.",
 		"passwordTooRepetitive": "Mindestens 4 verschiedene Zeichen verwenden.",
-		"passwordDerivedFromContext": "Zu leicht aus diesem Link, seinem Ziel oder dem Vereinsnamen zu erraten.",
+		"passwordDerivedFromContext": "Zu leicht aus diesem Link, seinem Ziel oder dem Vereinsnamen zu erraten. Wähle ein Passwort, das mit keinem der drei etwas zu tun hat.",
 		"passwordTooCommon": "Dieses Passwort gehört zu den häufigsten. Bitte ein anderes wählen.",
-		"passwordRejected": "Dieses Passwort kann nicht verwendet werden."
+		"passwordRejected": "Dieses Passwort kann nicht verwendet werden. Bitte ein anderes wählen."
 	},
 	"domains": {
 		"heading": "Deine Domains",

@@ -58,7 +58,9 @@ describe('LinkPasswordCard', () => {
 		await userEvent.click(screen.getByRole('button', { name: 'Protect this link' }));
 
 		expect(
-			screen.getByText("Too easy to guess from this link, its destination, or the Verein's name."),
+			screen.getByText(
+				"Too easy to guess from this link, its destination, or the Verein's name. Choose something unrelated to all three.",
+			),
 		).toBeInTheDocument();
 		expect(onSet).not.toHaveBeenCalled();
 	});
