@@ -116,6 +116,41 @@ describe('LinkQRCard', () => {
 		});
 	});
 
+	/**
+	 * `Number('')` is `0`: an empty field must not reach either the preview's
+	 * `<img>` dimensions (a `0×0` image vanishes mid-edit, before the reader
+	 * has finished retyping) or a download request (the API rejects `size=0`
+	 * outright with a message that doesn't say why). Clamping at the point of
+	 * use, not on every keystroke, is what keeps the field itself showing the
+	 * empty value the reader just produced — see `requestedSize` in
+	 * `link-qr-card.tsx`.
+	 */
+	it('keeps the preview visible and the size in bounds when the field is cleared', async () => {
+		// Captured through the mock implementation, not read back from
+		// `.mock.calls` afterwards — indexing an array `noUncheckedIndexedAccess`
+		// treats as possibly empty would need an unrelated non-null assertion.
+		let sentSize: number | undefined;
+		const onDownload = vi.fn<LinkQRCardProps['onDownload']>((options) => {
+			sentSize = options.size;
+			return Promise.resolve();
+		});
+		renderCard({ onDownload });
+
+		await userEvent.selectOptions(screen.getByLabelText('File format'), 'png');
+		const size = screen.getByLabelText('Size in pixels');
+		await userEvent.clear(size);
+
+		const preview = screen.getByRole('img', { name: "Preview of this link's QR code" });
+		expect(Number(preview.getAttribute('width'))).toBeGreaterThan(0);
+		expect(Number(preview.getAttribute('height'))).toBeGreaterThan(0);
+
+		await userEvent.click(screen.getByRole('button', { name: 'Download' }));
+
+		expect(onDownload).toHaveBeenCalledOnce();
+		expect(sentSize).toBeGreaterThanOrEqual(64);
+		expect(sentSize).toBeLessThanOrEqual(2048);
+	});
+
 	/** A reason the mirror did not predict still has to reach the reader — the same escape hatch `LinkPasswordCard`'s `rejection` prop is. */
 	it('renders a rejection the API reported', () => {
 		renderCard({ rejection: 'size_requires_png' });

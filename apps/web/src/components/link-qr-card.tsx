@@ -101,6 +101,15 @@ export function LinkQRCard({
 	const reason = localReason ?? rejection;
 	const message = reason ? t(messageKeys[reason]) : undefined;
 
+	// `size` is kept raw in state so the field doesn't fight the reader
+	// mid-edit — clearing it to retype is ordinary, and `Number('')` is `0`.
+	// Clamping happens here, at the point of use, not on every keystroke:
+	// an empty or zero field falls back to the default before the min/max
+	// clamp, so it can never reach the preview's `<img>` dimensions or a
+	// download request as `0` — a `0` would make the preview vanish
+	// mid-edit and would make the API reject the download outright.
+	const requestedSize = Math.min(Math.max(size || DEFAULT_SIZE, MIN_SIZE), MAX_SIZE);
+
 	function changed(): void {
 		setLocalReason(null);
 		onDismissRejection?.();
@@ -117,7 +126,7 @@ export function LinkQRCard({
 				background: bare(background),
 				foreground: bare(foreground),
 				format,
-				size,
+				size: requestedSize,
 			});
 		} catch {
 			// The parent classifies why and feeds a reason back through
@@ -126,7 +135,8 @@ export function LinkQRCard({
 		}
 	}
 
-	const previewSize = format === 'png' ? Math.min(size, MAX_PREVIEW_PIXELS) : MAX_PREVIEW_PIXELS;
+	const previewSize =
+		format === 'png' ? Math.min(requestedSize, MAX_PREVIEW_PIXELS) : MAX_PREVIEW_PIXELS;
 	const preview = svg ? restyleQrSvg(svg, { background, foreground }) : undefined;
 
 	return (
