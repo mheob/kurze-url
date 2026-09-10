@@ -94,16 +94,7 @@ describe('LinkQRCard', () => {
 		fireEvent.change(screen.getByLabelText('Code colour'), { target: { value: '#ffd700' } });
 		await userEvent.click(screen.getByRole('button', { name: 'Download' }));
 
-		// oxlint's type-aware checker (oxlint-tsgolint) misresolves jest-dom's
-		// `Assertion` augmentation for this `RegExp` overload of
-		// `toHaveTextContent` and reports `TS2345` — `pnpm typecheck` (the real
-		// `tsc`, over the root tsconfig) raises nothing here, the same class of
-		// false positive documented in
-		// `teams.$teamSlug.links.index.error.test.tsx`. `@ts-ignore`, not
-		// `@ts-expect-error`: the real compiler sees no error to expect and
-		// would flag `@ts-expect-error` itself as unused.
-		// @ts-ignore: TS2345 — oxlint-tsgolint false positive, see comment above
-		expect(screen.getByRole('alert')).toHaveTextContent(/too close together/i);
+		expect(screen.getByRole('alert')).toHaveTextContent('too close together');
 		expect(onDownload).not.toHaveBeenCalled();
 	});
 
@@ -129,14 +120,22 @@ describe('LinkQRCard', () => {
 	it('renders a rejection the API reported', () => {
 		renderCard({ rejection: 'size_requires_png' });
 
-		// @ts-ignore: TS2345 — same oxlint-tsgolint false positive as above
-		expect(screen.getByRole('alert')).toHaveTextContent(/only applies to the PNG/i);
+		expect(screen.getByRole('alert')).toHaveTextContent('only applies to the PNG');
 	});
 
 	it('renders an unrecognised rejection through the generic message', () => {
 		renderCard({ rejection: 'rejected' });
 
-		// @ts-ignore: TS2345 — same oxlint-tsgolint false positive as above
-		expect(screen.getByRole('alert')).toHaveTextContent(/cannot be used/i);
+		expect(screen.getByRole('alert')).toHaveTextContent('cannot be used');
+	});
+
+	it('does not show the low-contrast warning with a good colour pair', async () => {
+		const onDownload = vi.fn().mockResolvedValue(undefined);
+		renderCard({ onDownload });
+
+		await userEvent.click(screen.getByRole('button', { name: 'Download' }));
+
+		expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+		expect(onDownload).toHaveBeenCalled();
 	});
 });
