@@ -2,6 +2,7 @@ import {
 	createLink,
 	deleteLink,
 	getLink,
+	getLinkQr,
 	listLinks,
 	removeLinkPassword,
 	setLinkPassword,
@@ -285,3 +286,113 @@ export const removeLinkPasswordFor = createServerOnlyFn(
 export const removeLinkPasswordFn = createServerFn({ method: 'POST' })
 	.validator((data: { linkId: string }) => data)
 	.handler(async ({ data }) => removeLinkPasswordFor(getRequest(), data.linkId));
+
+/** What `linkQrDownloadFor` hands back: the image, base64-encoded so it survives the server-function boundary, plus the media type to rebuild a `Blob` with. */
+export interface QrDownload {
+	base64: string;
+	contentType: string;
+}
+
+/** The colours, format and size one download asks for. */
+export interface QrDownloadOptions {
+	/** `rrggbb`, no leading `#` — a raw `#` in a query string is the fragment delimiter and would never reach the API. */
+	background: string;
+	foreground: string;
+	format: 'png' | 'svg';
+	/** Pixels. Ignored for SVG, and deliberately not sent then: the API answers 422 for a size on an SVG request. */
+	size: number;
+}
+
+/**
+ * Narrows whatever the generated client produced for an image response into
+ * bytes.
+ *
+ * The runtime behaviour is settled: `getParseAs` in the generated client maps
+ * any `image/*` content type to `blob`, so this receives a `Blob`. The string
+ * branch and the throw exist because the *declared* type is whatever
+ * `@hey-api/openapi-ts` chose for a `{type: string, format: binary}` schema,
+ * and a regenerated client is free to change that without changing the
+ * runtime. Throwing beats defaulting: an empty image is a broken download
+ * that reports success.
+ */
+export async function qrBodyBytes(body: unknown): Promise<Uint8Array> {
+	if (body instanceof Blob) return new Uint8Array(await body.arrayBuffer());
+	if (typeof body === 'string') return new TextEncoder().encode(body);
+	throw new TypeError('unexpected QR response body');
+}
+
+/**
+ * Fetches the link's QR code once, as SVG in the default colours.
+ *
+ * The card recolours this document locally for every preview change — neither
+ * colour nor size changes the QR matrix, so re-requesting on every drag of a
+ * colour picker would spend the endpoint's whole rate limit in seconds for no
+ * new information. Two requests per link, not fifty.
+ */
+export const linkQrSvgFor = createServerOnlyFn(
+	async (request: Request, linkId: string): Promise<string> => {
+		const headers = new Headers();
+		const { accessToken } = await requireSession(request, headers);
+		flushSessionCookies(headers);
+
+		const { data } = await getLinkQr({
+			client: authedApiClient(accessToken),
+			path: { link_id: linkId },
+			query: { format: 'svg' },
+			throwOnError: true,
+		});
+		return new TextDecoder().decode(await qrBodyBytes(data));
+	},
+);
+
+export const linkQrSvgFn = createServerFn({ method: 'POST' })
+	.validator((data: { linkId: string }) => data)
+	.handler(async ({ data }) => linkQrSvgFor(getRequest(), data.linkId));
+
+/**
+ * The second and last request: the actual download, in the chosen format and
+ * colours.
+ *
+ * `size` is sent only for PNG. A vector has no pixel size, and the API
+ * answers 422 rather than ignoring the parameter — the frontend hiding the
+ * control is the other half of that, not a replacement for it.
+ *
+ * The bytes come back base64-encoded because a server function's return value
+ * is serialised, and a `Uint8Array` does not survive that intact.
+ */
+export const linkQrDownloadFor = createServerOnlyFn(
+	async (request: Request, linkId: string, options: QrDownloadOptions): Promise<QrDownload> => {
+		const headers = new Headers();
+		const { accessToken } = await requireSession(request, headers);
+		flushSessionCookies(headers);
+
+		const { data } = await getLinkQr({
+			client: authedApiClient(accessToken),
+			path: { link_id: linkId },
+			query: {
+				bg: options.background,
+				fg: options.foreground,
+				format: options.format,
+				...(options.format === 'png' ? { size: options.size } : {}),
+			},
+			throwOnError: true,
+		});
+
+		const bytes = await qrBodyBytes(data);
+		return {
+			base64: Buffer.from(bytes).toString('base64'),
+			contentType: options.format === 'png' ? 'image/png' : 'image/svg+xml',
+		};
+	},
+);
+
+export const linkQrDownloadFn = createServerFn({ method: 'POST' })
+	.validator((data: QrDownloadOptions & { linkId: string }) => data)
+	.handler(async ({ data }) =>
+		linkQrDownloadFor(getRequest(), data.linkId, {
+			background: data.background,
+			foreground: data.foreground,
+			format: data.format,
+			size: data.size,
+		}),
+	);

@@ -45,7 +45,8 @@ vi.mock('@tanstack/react-start/server', () => ({
  * in. `listLinksFor` takes a `Request` as a plain parameter instead, which
  * is what makes it callable here at all; see its docstring in `links.ts`.
  */
-const { createLinkFor, listLinksFor } = await import('./links');
+const { createLinkFor, linkQrDownloadFor, linkQrSvgFor, listLinksFor, qrBodyBytes } =
+	await import('./links');
 
 /**
  * `createSupabase` also writes a refreshed session's cookies into the
@@ -255,5 +256,130 @@ describe('createLinkFor', () => {
 		await createLinkFor(request, 'team-a', { destination_url: 'https://example.org/' });
 
 		expect(appended).toEqual(['set-cookie: sb-access-token=refreshed; Path=/; HttpOnly']);
+	});
+});
+
+describe('qrBodyBytes', () => {
+	/**
+	 * The generated client parses by `Content-Type` (`getParseAs` in
+	 * `packages/api-client/src/generated/client/utils.gen.ts` maps anything
+	 * starting with `image/` to `blob`), so a QR response arrives as a
+	 * `Blob`. Narrowing at runtime rather than casting the generated type
+	 * means a regenerated client that types the body differently changes
+	 * nothing here.
+	 */
+	it('reads a Blob body', async () => {
+		const bytes = await qrBodyBytes(new Blob([new Uint8Array([1, 2, 3])]));
+
+		expect(Array.from(bytes)).toEqual([1, 2, 3]);
+	});
+
+	it('reads a string body', async () => {
+		const bytes = await qrBodyBytes('<svg/>');
+
+		expect(new TextDecoder().decode(bytes)).toBe('<svg/>');
+	});
+
+	it('refuses anything else rather than shipping an empty image', async () => {
+		await expect(qrBodyBytes({ not: 'an image' })).rejects.toThrow(TypeError);
+	});
+});
+
+describe('linkQrSvgFor', () => {
+	/**
+	 * This is the half of the two-call split that must never grow a colour
+	 * parameter: the card fetches this SVG exactly once and recolours it
+	 * locally for every preview change. If `bg`, `fg` or `size` ever leaked
+	 * into this request, every colour-picker drag would re-hit the API and
+	 * blow through its 30-requests-per-minute limit. Asserting only `format`
+	 * would still pass if that happened — each parameter's absence is
+	 * checked on its own.
+	 */
+	it('asks for the SVG and nothing else', async () => {
+		vi.stubEnv('API_HOST', 'http://api.test');
+		withSession('tok');
+
+		let seenSearch: string | null = null;
+		server.use(
+			http.get('http://api.test/v1/links/link-1/qr', ({ request: apiRequest }) => {
+				seenSearch = new URL(apiRequest.url).search;
+				return new HttpResponse('<svg/>', { headers: { 'content-type': 'image/svg+xml' } });
+			}),
+		);
+
+		const result = await linkQrSvgFor(request, 'link-1');
+
+		const query = new URLSearchParams(seenSearch ?? '');
+		expect(query.get('format')).toBe('svg');
+		expect(query.has('bg')).toBe(false);
+		expect(query.has('fg')).toBe(false);
+		expect(query.has('size')).toBe(false);
+		expect(result).toBe('<svg/>');
+	});
+});
+
+describe('linkQrDownloadFor', () => {
+	/**
+	 * The download is the one call allowed to carry colours — but they must
+	 * arrive bare. A raw `#` in a query string is the fragment delimiter, so
+	 * a leaked `#` would never reach the API at all; the API would silently
+	 * fall back to its default colours instead of the ones the user picked.
+	 */
+	it('sends what it was given, in the bare form', async () => {
+		vi.stubEnv('API_HOST', 'http://api.test');
+		withSession('tok');
+
+		let seenSearch: string | null = null;
+		server.use(
+			http.get('http://api.test/v1/links/link-1/qr', ({ request: apiRequest }) => {
+				seenSearch = new URL(apiRequest.url).search;
+				return new HttpResponse(new Uint8Array([1, 2, 3]), {
+					headers: { 'content-type': 'image/png' },
+				});
+			}),
+		);
+
+		const result = await linkQrDownloadFor(request, 'link-1', {
+			background: 'ffffff',
+			foreground: '000000',
+			format: 'png',
+			size: 256,
+		});
+
+		const query = new URLSearchParams(seenSearch ?? '');
+		expect(query.get('bg')).toBe('ffffff');
+		expect(query.get('fg')).toBe('000000');
+		expect(query.get('format')).toBe('png');
+		expect(query.get('size')).toBe('256');
+		expect(result.contentType).toBe('image/png');
+	});
+
+	/**
+	 * `size` has no meaning for a vector image, and the API answers 422 if one
+	 * is sent alongside `format=svg` — so an SVG download must omit it, not
+	 * send a default.
+	 */
+	it('omits size when downloading as SVG', async () => {
+		vi.stubEnv('API_HOST', 'http://api.test');
+		withSession('tok');
+
+		let seenSearch: string | null = null;
+		server.use(
+			http.get('http://api.test/v1/links/link-1/qr', ({ request: apiRequest }) => {
+				seenSearch = new URL(apiRequest.url).search;
+				return new HttpResponse('<svg/>', { headers: { 'content-type': 'image/svg+xml' } });
+			}),
+		);
+
+		await linkQrDownloadFor(request, 'link-1', {
+			background: 'ffffff',
+			foreground: '000000',
+			format: 'svg',
+			size: 256,
+		});
+
+		const query = new URLSearchParams(seenSearch ?? '');
+		expect(query.get('format')).toBe('svg');
+		expect(query.has('size')).toBe(false);
 	});
 });

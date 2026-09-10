@@ -5,8 +5,11 @@ import { describe, expect, it, vi } from 'vitest';
 import {
 	afterMutation,
 	applyPasswordSuccess,
+	completeQrDownload,
 	handlePasswordError,
+	handleQrError,
 	loadLink,
+	saveQrDownload,
 	toDateTimeLocal,
 	toPasswordContext,
 } from './teams.$teamSlug.links.$linkId';
@@ -279,5 +282,206 @@ describe('applyPasswordSuccess', () => {
 
 		expect(updater?.(page)).toEqual({ ...page, items: [other, updated] });
 		expect(updater?.(undefined)).toBeUndefined();
+	});
+});
+
+describe('handleQrError', () => {
+	it('sends an expired session to login', () => {
+		const handlers = {
+			navigateToLogin: vi.fn(),
+			setFailure: vi.fn(),
+			setQrRejection: vi.fn(),
+		};
+
+		handleQrError({ status: 401 }, handlers);
+
+		expect(handlers.navigateToLogin).toHaveBeenCalledOnce();
+		expect(handlers.setFailure).not.toHaveBeenCalled();
+	});
+
+	/**
+	 * A QR refusal belongs beside the controls that caused it, never in the
+	 * page banner — the card already renders it under the colour picker. Same
+	 * split `handlePasswordError` makes for a policy rejection.
+	 */
+	it('routes a QR refusal to the card, not the banner', () => {
+		const handlers = {
+			navigateToLogin: vi.fn(),
+			setFailure: vi.fn(),
+			setQrRejection: vi.fn(),
+		};
+
+		handleQrError(
+			{ errors: [{ location: 'query.fg', message: 'x', value: 'low_contrast' }], status: 422 },
+			handlers,
+		);
+
+		expect(handlers.setQrRejection).toHaveBeenCalledWith('low_contrast');
+		expect(handlers.setFailure).toHaveBeenCalledWith(null);
+	});
+
+	it('routes everything else to the page banner', () => {
+		const handlers = {
+			navigateToLogin: vi.fn(),
+			setFailure: vi.fn(),
+			setQrRejection: vi.fn(),
+		};
+
+		handleQrError({ status: 429 }, handlers);
+
+		expect(handlers.setQrRejection).toHaveBeenCalledWith(undefined);
+		expect(handlers.setFailure).toHaveBeenCalledWith({ kind: 'rateLimited' });
+	});
+});
+
+/**
+ * These tests run under the `unit` Vitest project, which sets
+ * `environment: 'jsdom'` (see `vitest.config.ts`) — so the global `document`
+ * here is a real `Document`, not a stand-in. Task-9 review finding 1 asked
+ * for `saveQrDownload`'s `doc` parameter to be narrowed instead of
+ * suppressed; that turned out to be type-theoretically blocked (see
+ * `saveQrDownload`'s own docstring for why — `Node.appendChild`/
+ * `removeChild`'s own generic signature can't be satisfied by a non-`Node`
+ * anchor shape). The owner's ruling for this round: stop building a fake
+ * `Document` at all, and spy on the real one jsdom already provides instead
+ * — no cast, no suppression, and the assertions run against actual DOM
+ * behaviour rather than a hand-built double that could silently disagree
+ * with it.
+ */
+function spyOnDownloadAnchor(): {
+	anchor: HTMLAnchorElement;
+	appendChild: ReturnType<typeof vi.spyOn>;
+	click: ReturnType<typeof vi.spyOn>;
+	createElement: ReturnType<typeof vi.spyOn>;
+	removeChild: ReturnType<typeof vi.spyOn>;
+} {
+	const anchor = document.createElement('a');
+	// Captured and returned, rather than asserted on as `anchor.click` at the
+	// call site — referencing a real DOM method that way trips
+	// `unbound-method` (it's a genuine prototype method now, not a plain
+	// property on a hand-built object), so the spy itself is what call sites
+	// assert against.
+	const click = vi.spyOn(anchor, 'click').mockImplementation(() => {
+		// no-op: never actually navigate or download in the test environment.
+	});
+	const createElement = vi.spyOn(document, 'createElement').mockReturnValue(anchor);
+	const appendChild = vi.spyOn(document.body, 'appendChild').mockImplementation((node) => node);
+	const removeChild = vi.spyOn(document.body, 'removeChild').mockImplementation((node) => node);
+	return { anchor, appendChild, click, createElement, removeChild };
+}
+
+describe('saveQrDownload', () => {
+	/**
+	 * The bytes cross the server-function boundary base64-encoded, so the
+	 * browser has to rebuild them before it can hand the file to the reader.
+	 * Spying on the real, jsdom-provided `document` is what lets this assert
+	 * the anchor was actually inserted, clicked and removed, without a router
+	 * or a real navigation.
+	 */
+	it('hands the decoded bytes to the browser under the link’s own name', () => {
+		const { anchor, appendChild, click, createElement, removeChild } = spyOnDownloadAnchor();
+		const createObjectURL = vi.fn().mockReturnValue('blob:fake');
+		const revokeObjectURL = vi.fn();
+		// `saveQrDownload` uses nothing else off `URL`, so a two-method stand-in
+		// is the whole surface it needs.
+		vi.stubGlobal('URL', { createObjectURL, revokeObjectURL });
+
+		saveQrDownload(
+			{ base64: btoa('<svg/>'), contentType: 'image/svg+xml' },
+			'sommerfest.svg',
+			document,
+		);
+
+		// One object comparison rather than three separate `expect`s — the
+		// anchor came out of the spied `createElement`, so this is also what
+		// proves that call happened, without pushing the test over
+		// `vitest(max-expects)`'s limit of five.
+		expect({ download: anchor.download, href: anchor.href, rel: anchor.rel }).toEqual({
+			download: 'sommerfest.svg',
+			href: 'blob:fake',
+			rel: 'noopener',
+		});
+		expect(appendChild).toHaveBeenCalledWith(anchor);
+		expect(click).toHaveBeenCalledOnce();
+		expect(removeChild).toHaveBeenCalledWith(anchor);
+		expect(revokeObjectURL).toHaveBeenCalledWith('blob:fake');
+
+		createElement.mockRestore();
+		appendChild.mockRestore();
+		removeChild.mockRestore();
+		click.mockRestore();
+		vi.unstubAllGlobals();
+	});
+});
+
+/**
+ * Task-9 review finding 2: the route's `onDownload` used to clear both error
+ * channels and then call `saveQrDownload` unguarded. A thrown DOM exception
+ * (a malformed decode, a blocked object URL, `createElement` itself failing)
+ * propagated into `LinkQRCard`'s own bare `catch {}` — whose comment assumes
+ * the parent already classified the failure and fed a reason back through
+ * `rejection` — and vanished with no banner, no card message, nothing,
+ * because both channels were already cleared by the time it threw.
+ * `completeQrDownload` is the guard: these tests are what prove a failed save
+ * now reaches the page's one banner instead.
+ */
+describe('completeQrDownload', () => {
+	it('clears both error channels and saves when nothing throws', () => {
+		const { click, createElement, appendChild, removeChild } = spyOnDownloadAnchor();
+		vi.stubGlobal('URL', {
+			createObjectURL: vi.fn().mockReturnValue('blob:fake'),
+			revokeObjectURL: vi.fn(),
+		});
+		const setFailure = vi.fn();
+		const setQrRejection = vi.fn();
+
+		completeQrDownload(
+			{ base64: btoa('<svg/>'), contentType: 'image/svg+xml' },
+			'sommerfest.svg',
+			document,
+			{ setFailure, setQrRejection },
+		);
+
+		expect(setQrRejection).toHaveBeenCalledExactlyOnceWith(undefined);
+		expect(setFailure).toHaveBeenCalledExactlyOnceWith(null);
+		expect(click).toHaveBeenCalledOnce();
+
+		createElement.mockRestore();
+		appendChild.mockRestore();
+		removeChild.mockRestore();
+		click.mockRestore();
+		vi.unstubAllGlobals();
+	});
+
+	/**
+	 * Round 1's fake `doc` threw from a hand-built stand-in's `createElement`.
+	 * Here the same failure is produced by making the *real* `document`'s own
+	 * `createElement` throw — the spy still stands in for the DOM exception
+	 * `saveQrDownload`'s docstring anticipates (a blocked object URL, a
+	 * detached document, `createElement` itself failing), without needing a
+	 * fake object to carry it.
+	 */
+	it('routes a failed save to the page banner instead of letting it vanish', () => {
+		const createElement = vi.spyOn(document, 'createElement').mockImplementation(() => {
+			throw new Error('detached document');
+		});
+		vi.stubGlobal('URL', {
+			createObjectURL: vi.fn().mockReturnValue('blob:fake'),
+			revokeObjectURL: vi.fn(),
+		});
+		const setFailure = vi.fn();
+		const setQrRejection = vi.fn();
+
+		completeQrDownload(
+			{ base64: btoa('<svg/>'), contentType: 'image/svg+xml' },
+			'sommerfest.svg',
+			document,
+			{ setFailure, setQrRejection },
+		);
+
+		expect(setFailure).toHaveBeenLastCalledWith({ kind: 'unknown' });
+
+		createElement.mockRestore();
+		vi.unstubAllGlobals();
 	});
 });

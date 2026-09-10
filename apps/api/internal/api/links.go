@@ -71,6 +71,14 @@ type linkRow struct {
 	UpdatedAt        time.Time
 }
 
+// shortURL composes a link's public address. It has two callers — the API
+// response below and the QR generator — and it is one function so a code
+// printed on two hundred flyers can never encode an address the dashboard
+// does not report.
+func (d Deps) shortURL(hostname, slug string) string {
+	return fmt.Sprintf("%s://%s/%s", d.Config.ShortURLScheme, hostname, slug)
+}
+
 // linkResponse defaults Tags to an empty slice rather than leaving it nil: a
 // client iterating tags should never have to nil-check. createLink and
 // updateLink overwrite it with the tags they already resolved; listLinks and
@@ -82,7 +90,7 @@ func (d Deps) linkResponse(r linkRow) Link {
 		DomainID:         r.DomainID,
 		Hostname:         r.Hostname,
 		Slug:             r.Slug,
-		ShortURL:         fmt.Sprintf("%s://%s/%s", d.Config.ShortURLScheme, r.Hostname, r.Slug),
+		ShortURL:         d.shortURL(r.Hostname, r.Slug),
 		DestinationURL:   r.DestinationURL,
 		RedirectType:     int(r.RedirectType),
 		State:            r.State,
@@ -399,6 +407,30 @@ func (d Deps) registerLinks(api huma.API) {
 		Tags:        []string{"Links"},
 		Security:    []map[string][]string{{"bearerAuth": {}}},
 	}, d.removeLinkPassword)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-link-qr",
+		Method:      http.MethodGet,
+		Path:        "/v1/links/{link_id}/qr",
+		Summary:     "Download a link's QR code",
+		Tags:        []string{"Links"},
+		Security:    []map[string][]string{{"bearerAuth": {}}},
+		// Declared by hand because this is the first /v1 operation that
+		// answers with something other than JSON. processOutputType only
+		// invents an application/json entry when Responses["200"].Content is
+		// empty, so pre-populating it here is what keeps the generated
+		// TypeScript client from typing a PNG as a JSON body and trying to
+		// parse it.
+		Responses: map[string]*huma.Response{
+			"200": {
+				Description: "The QR code image, as SVG or PNG.",
+				Content: map[string]*huma.MediaType{
+					"image/svg+xml": {Schema: &huma.Schema{Type: "string", Format: "binary"}},
+					"image/png":     {Schema: &huma.Schema{Type: "string", Format: "binary"}},
+				},
+			},
+		},
+	}, d.getLinkQR)
 }
 
 func (d Deps) createLink(ctx context.Context, in *CreateLinkInput) (*LinkOutput, error) {

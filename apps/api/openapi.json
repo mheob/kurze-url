@@ -1488,6 +1488,117 @@
 				"tags": ["Links"]
 			}
 		},
+		"/v1/links/{link_id}/qr": {
+			"get": {
+				"operationId": "get-link-qr",
+				"parameters": [
+					{
+						"description": "The link this request operates on.",
+						"in": "path",
+						"name": "link_id",
+						"required": true,
+						"schema": {
+							"description": "The link this request operates on.",
+							"type": "string"
+						}
+					},
+					{
+						"description": "svg (the default) for print, png for screens.",
+						"explode": false,
+						"in": "query",
+						"name": "format",
+						"schema": {
+							"description": "svg (the default) for print, png for screens.",
+							"enum": ["svg", "png"],
+							"type": "string"
+						}
+					},
+					{
+						"description": "Pixels, PNG only; 512 by default. A ceiling, not an exact dimension: the code is rendered at the largest whole number of pixels per module that fits, so the result can be up to one module narrower than asked for. A QR code is square and self-similar, so that code is the same code.",
+						"explode": false,
+						"in": "query",
+						"name": "size",
+						"schema": {
+							"description": "Pixels, PNG only; 512 by default. A ceiling, not an exact dimension: the code is rendered at the largest whole number of pixels per module that fits, so the result can be up to one module narrower than asked for. A QR code is square and self-similar, so that code is the same code.",
+							"format": "int64",
+							"maximum": 2048,
+							"minimum": 64,
+							"type": "integer"
+						}
+					},
+					{
+						"description": "The colour of the code itself, as rrggbb, with or without a leading '#'. Black by default. Send it without the '#': a raw '#' in a query string is the fragment delimiter and never reaches the server.",
+						"explode": false,
+						"in": "query",
+						"name": "fg",
+						"schema": {
+							"description": "The colour of the code itself, as rrggbb, with or without a leading '#'. Black by default. Send it without the '#': a raw '#' in a query string is the fragment delimiter and never reaches the server.",
+							"type": "string"
+						}
+					},
+					{
+						"description": "The background colour, as rrggbb, with or without a leading '#'. White by default.",
+						"explode": false,
+						"in": "query",
+						"name": "bg",
+						"schema": {
+							"description": "The background colour, as rrggbb, with or without a leading '#'. White by default.",
+							"type": "string"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"content": {
+							"image/png": {
+								"schema": {
+									"contentMediaType": "application/octet-stream",
+									"format": "binary",
+									"type": "string"
+								}
+							},
+							"image/svg+xml": {
+								"schema": {
+									"contentMediaType": "application/octet-stream",
+									"format": "binary",
+									"type": "string"
+								}
+							}
+						},
+						"description": "The QR code image, as SVG or PNG.",
+						"headers": {
+							"Content-Disposition": {
+								"schema": {
+									"type": "string"
+								}
+							},
+							"Content-Type": {
+								"schema": {
+									"type": "string"
+								}
+							}
+						}
+					},
+					"default": {
+						"content": {
+							"application/problem+json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorModel"
+								}
+							}
+						},
+						"description": "Error"
+					}
+				},
+				"security": [
+					{
+						"bearerAuth": []
+					}
+				],
+				"summary": "Download a link's QR code",
+				"tags": ["Links"]
+			}
+		},
 		"/v1/me": {
 			"get": {
 				"operationId": "get-me",

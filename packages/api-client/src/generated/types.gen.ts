@@ -1029,6 +1029,53 @@ export type SetLinkPasswordResponses = {
 
 export type SetLinkPasswordResponse = SetLinkPasswordResponses[keyof SetLinkPasswordResponses];
 
+export type GetLinkQrData = {
+    body?: never;
+    path: {
+        /**
+         * The link this request operates on.
+         */
+        link_id: string;
+    };
+    query?: {
+        /**
+         * svg (the default) for print, png for screens.
+         */
+        format?: 'svg' | 'png';
+        /**
+         * Pixels, PNG only; 512 by default. A ceiling, not an exact dimension: the code is rendered at the largest whole number of pixels per module that fits, so the result can be up to one module narrower than asked for. A QR code is square and self-similar, so that code is the same code.
+         */
+        size?: number;
+        /**
+         * The colour of the code itself, as rrggbb, with or without a leading '#'. Black by default. Send it without the '#': a raw '#' in a query string is the fragment delimiter and never reaches the server.
+         */
+        fg?: string;
+        /**
+         * The background colour, as rrggbb, with or without a leading '#'. White by default.
+         */
+        bg?: string;
+    };
+    url: '/v1/links/{link_id}/qr';
+};
+
+export type GetLinkQrErrors = {
+    /**
+     * Error
+     */
+    default: ErrorModel;
+};
+
+export type GetLinkQrError = GetLinkQrErrors[keyof GetLinkQrErrors];
+
+export type GetLinkQrResponses = {
+    /**
+     * The QR code image, as SVG or PNG.
+     */
+    200: Blob | File;
+};
+
+export type GetLinkQrResponse = GetLinkQrResponses[keyof GetLinkQrResponses];
+
 export type GetMeData = {
     body?: never;
     path?: never;

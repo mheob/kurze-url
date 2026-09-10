@@ -173,6 +173,49 @@ describe('classifyApiError', () => {
 	it('falls back to unknown for a non-object error', () => {
 		expect(classifyApiError('fetch failed')).toStrictEqual({ kind: 'unknown' });
 	});
+
+	/**
+	 * `getLinkQR` (apps/api/internal/api/link_qr.go) answers both of its
+	 * refusals with a typed detail on the query parameter at fault, the same
+	 * convention the password policy and `deleteDomain` already use. Reading
+	 * `location` rather than matching the message means a reworded message
+	 * cannot silently turn a precise reason into a generic failure.
+	 */
+	it('reads a QR contrast refusal off query.fg', () => {
+		expect(
+			classifyApiError({
+				errors: [{ location: 'query.fg', message: 'too close', value: 'low_contrast' }],
+				status: 422,
+			}),
+		).toEqual({ kind: 'qrRejected', reason: 'low_contrast' });
+	});
+
+	it('reads a QR size refusal off query.size', () => {
+		expect(
+			classifyApiError({
+				errors: [{ location: 'query.size', message: 'PNG only', value: 'size_requires_png' }],
+				status: 422,
+			}),
+		).toEqual({ kind: 'qrRejected', reason: 'size_requires_png' });
+	});
+
+	it('falls back to a generic QR rejection for a token this build does not know', () => {
+		expect(
+			classifyApiError({
+				errors: [{ location: 'query.fg', message: 'nope', value: 'invented_by_a_newer_server' }],
+				status: 422,
+			}),
+		).toEqual({ kind: 'qrRejected', reason: 'rejected' });
+	});
+
+	it('leaves a 422 on some other query parameter to the field path', () => {
+		expect(
+			classifyApiError({
+				errors: [{ location: 'query.per_page', message: 'too large' }],
+				status: 422,
+			}),
+		).toEqual({ fields: { per_page: 'too large' }, kind: 'fields' });
+	});
 });
 
 describe('statusOf', () => {
