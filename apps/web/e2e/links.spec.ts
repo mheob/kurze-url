@@ -96,6 +96,27 @@ test('protects a link with a password and removes it again', async ({ page, team
 	await expect(page.getByText('Password protected')).toHaveCount(0);
 });
 
+/**
+ * The dashboard side only. The image itself is deliberately not asserted
+ * here — that is what `apps/api/internal/qr`'s decode test is for, which
+ * reads the rendered code back and compares the decoded string. What this
+ * covers is the wiring nothing else does: the preview reaching the page at
+ * all, and the download control producing a file.
+ */
+test('downloads a link’s QR code', async ({ page, teamSlug }) => {
+	await createLink(page, teamSlug, `https://example.org/qr-${Date.now()}`);
+
+	await page.getByRole('link', { name: /edit/i }).click();
+
+	const preview = page.getByRole('img', { name: /preview of this link/i });
+	await expect(preview).toBeVisible();
+
+	const download = page.waitForEvent('download');
+	await page.getByRole('button', { name: /^download$/i }).click();
+
+	expect((await download).suggestedFilename()).toMatch(/\.svg$/);
+});
+
 test('sends a signed-out visitor to login', async ({ browser, teamSlug }, testInfo) => {
 	// A fresh context carries none of the `teamSlug` fixture's session cookies —
 	// nothing has signed it in, so there is nothing to sign it out of.
