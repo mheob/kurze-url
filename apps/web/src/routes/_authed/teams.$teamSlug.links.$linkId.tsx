@@ -414,14 +414,26 @@ function RouteComponent(): React.JSX.Element {
 		undefined,
 	);
 
-	// One fetch per link, for the whole life of the card. Every colour and
-	// size change is a local restyle of this document — see `LinkQRCard`.
-	// `staleTime: Infinity` says that out loud: the matrix depends only on the
-	// slug and the hostname, neither of which changes without a navigation
-	// that remounts this route.
+	// One fetch per link, for the whole life of the card, refetched only when
+	// the matrix itself could differ. The matrix depends on the slug and the
+	// hostname, so the slug is in the key below — `<LinkForm>` on this same
+	// route lets the slug change, and `afterMutation`'s `router.invalidate()`
+	// refreshes `link.slug` from the loader but never touches this query, so
+	// without the slug in the key a rename would keep showing the *old*
+	// short URL's matrix while Download (a fresh fetch) already serves the
+	// new one. The hostname is deliberately not in the key: this route
+	// passes no `domains` list to `<LinkForm>`, and `toUpdateBody` omits
+	// `domain_id`, so a link's domain cannot change from this page — that is
+	// what makes its absence here safe, not an oversight. Colour and size
+	// must never join the key either: neither changes the matrix, the card
+	// only restyles one fetched document locally (see `LinkQRCard`), and
+	// keying on them would refetch on every colour tweak and blow through
+	// the 30-request-per-minute limit this feature introduces. `staleTime:
+	// Infinity` rests on that same invariant: nothing in the key changes
+	// without a navigation this route already handles.
 	const qrQuery = useQuery({
 		queryFn: () => linkQrSvgFn({ data: { linkId } }),
-		queryKey: ['link-qr', linkId],
+		queryKey: ['link-qr', linkId, link.slug],
 		staleTime: Number.POSITIVE_INFINITY,
 	});
 
