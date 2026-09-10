@@ -22,15 +22,16 @@ import (
 // handler sees the value, which would make an explicit ?size=512 on an SVG
 // request indistinguishable from no size at all — and refusing that
 // combination is the whole point. Zero therefore means "absent", and
-// qr.DefaultSize is applied in the handler. Absent parameters skip validation
-// entirely (huma.go returns before Validate when the raw value is empty), so
-// the minimum below never fires on a request that omits it.
+// qr.DefaultSize is applied by qr.Render's scaleFor helper, not here. Absent
+// parameters skip validation entirely (huma.go returns before Validate when
+// the raw value is empty), so the minimum below never fires on a request
+// that omits it.
 type LinkQRInput struct {
 	authz.LinkViewerScope
 	Format string `query:"format" enum:"svg,png" doc:"svg (the default) for print, png for screens."`
 	Size   int    `query:"size" minimum:"64" maximum:"2048" doc:"Pixels, PNG only; 512 by default. A ceiling, not an exact dimension: the code is rendered at the largest whole number of pixels per module that fits, so the result can be up to one module narrower than asked for. A QR code is square and self-similar, so that code is the same code."`
-	FG     string `query:"fg" pattern:"^#?[0-9a-fA-F]{6}$" patternDescription:"rrggbb, with or without a leading #" doc:"The colour of the code itself. Black by default. Send it without the '#': a raw '#' in a query string is the fragment delimiter and never reaches the server."`
-	BG     string `query:"bg" pattern:"^#?[0-9a-fA-F]{6}$" patternDescription:"rrggbb, with or without a leading #" doc:"The background colour. White by default."`
+	FG     string `query:"fg" doc:"The colour of the code itself, as rrggbb, with or without a leading '#'. Black by default. Send it without the '#': a raw '#' in a query string is the fragment delimiter and never reaches the server."`
+	BG     string `query:"bg" doc:"The background colour, as rrggbb, with or without a leading '#'. White by default."`
 }
 
 // LinkQROutput answers with raw image bytes.

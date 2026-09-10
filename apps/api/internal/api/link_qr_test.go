@@ -102,6 +102,24 @@ func TestLinkQRRefusesALowContrastPair(t *testing.T) {
 	require.Equal(t, "low_contrast", body.Errors[0].Value)
 }
 
+// TestLinkQRRefusesAnInvalidColor pins parseQRColor as the sole enforcement
+// point for fg/bg now that the pattern tag is gone from the schema: nothex is
+// six characters, so this also proves the check is about hex digits and not
+// about length.
+func TestLinkQRRefusesAnInvalidColor(t *testing.T) {
+	f := newTenancyFixture(t)
+	created := f.createLink(t, "ungueltig", "https://example.org/ungueltig")
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		qrPath(created.ID.String(), "fg=nothex"), nil)
+
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code, "body: %s", rec.Body.String())
+	body := decode[problemBody](t, rec)
+	require.Len(t, body.Errors, 1)
+	require.Equal(t, "query.fg", body.Errors[0].Location)
+	require.Equal(t, "invalid_color", body.Errors[0].Value)
+}
+
 // TestLinkQRAcceptsAColourWithOrWithoutAHash pins the widening the plan makes
 // over the spec: a raw '#' in a query string is the fragment delimiter, so
 // only the bare form survives a browser at all.
