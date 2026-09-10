@@ -317,6 +317,16 @@ export function handleQrError(error: unknown, handlers: QrErrorHandlers): void {
  * the global so the route's test can drive this with a stub instead of a real
  * click, the same reasoning every other exported helper in this file follows.
  *
+ * NOTE (task-9 review, finding 1, fix round): this was meant to take a
+ * narrowed `DownloadDocument`/`DownloadAnchor` pair instead of the full
+ * `Document`, the same way every other injected dependency in this file is
+ * narrowed. That narrowing is blocked — see the fix report's escalation for
+ * why `Node.appendChild`/`removeChild`'s own generic signature
+ * (`<T extends Node>(node: T): T`) makes it type-theoretically impossible for
+ * a plain, non-`Node` anchor shape to satisfy both the real `document` and a
+ * hand-built test double at once, without an unsafe assertion somewhere. Left
+ * as `Document` pending a decision from whoever owns that trade-off.
+ *
  * The object URL is revoked immediately: the click has already started the
  * save, and leaving it alive would pin the whole image in memory for the life
  * of the document.
@@ -338,6 +348,47 @@ export function saveQrDownload(
 	anchor.click();
 	doc.body.removeChild(anchor);
 	URL.revokeObjectURL(url);
+}
+
+/** The two channels `completeQrDownload` can still touch once the mutation has already succeeded — a subset of `QrErrorHandlers`, minus `navigateToLogin`, which a save can never need. */
+interface QrDownloadSuccessHandlers {
+	setFailure: (failure: ApiFailure | null) => void;
+	setQrRejection: (reason: QrRejectionReason | 'rejected' | undefined) => void;
+}
+
+/**
+ * Runs once `onDownload`'s mutation has already succeeded: clears both error
+ * channels, then guards the save itself.
+ *
+ * Task-9 review finding 2: `saveQrDownload` can still throw — a malformed
+ * `atob` decode, a blocked `URL.createObjectURL`, any DOM exception — and that
+ * failure is not a QR refusal. Both channels were just cleared, so without a
+ * guard here the error would propagate into `LinkQRCard`'s own bare
+ * `catch {}`, whose comment assumes the parent already classified the failure
+ * and fed a reason back through `rejection` — true for a failed mutation, not
+ * for a failed save, so nothing would render at all. Routing it to
+ * `setFailure` instead puts it in the one banner this route already has, the
+ * same `{ kind: 'unknown' }` `classifyApiError` falls back to for anything it
+ * cannot classify — a DOM exception being exactly that.
+ *
+ * Extracted as its own exported function, taking `doc` and its handlers as
+ * parameters rather than closing over the component's hooks, for the same
+ * reason every other exported helper in this file is: so the route's test can
+ * drive the guard directly, without a router or a rendered tree.
+ */
+export function completeQrDownload(
+	download: { base64: string; contentType: string },
+	filename: string,
+	doc: Document,
+	handlers: QrDownloadSuccessHandlers,
+): void {
+	handlers.setQrRejection(undefined);
+	handlers.setFailure(null);
+	try {
+		saveQrDownload(download, filename, doc);
+	} catch {
+		handlers.setFailure({ kind: 'unknown' });
+	}
 }
 
 function RouteComponent(): React.JSX.Element {
@@ -502,9 +553,10 @@ function RouteComponent(): React.JSX.Element {
 				}}
 				onDownload={async (options) => {
 					const download = await qrDownloadMutation.mutateAsync(options);
-					setQrRejection(undefined);
-					setFailure(null);
-					saveQrDownload(download, `${link.slug}.${options.format}`, document);
+					completeQrDownload(download, `${link.slug}.${options.format}`, document, {
+						setFailure,
+						setQrRejection,
+					});
 				}}
 				rejection={qrRejection}
 				svg={qrQuery.data}

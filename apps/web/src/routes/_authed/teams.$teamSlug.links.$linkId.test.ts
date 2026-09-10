@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
 	afterMutation,
 	applyPasswordSuccess,
+	completeQrDownload,
 	handlePasswordError,
 	handleQrError,
 	loadLink,
@@ -333,6 +334,27 @@ describe('handleQrError', () => {
 	});
 });
 
+/**
+ * A real `Document` has far more required members than `saveQrDownload` (and
+ * its `completeQrDownload` wrapper) ever touch; asserting through `unknown`
+ * is what lets this stand-in implement only the three it calls. Task-9
+ * review finding 1 asked for this to be narrowed instead of suppressed — see
+ * `saveQrDownload`'s own docstring for why that narrowing turned out to be
+ * type-theoretically blocked (`Node.appendChild`/`removeChild`'s own generic
+ * signature can't be satisfied by a non-`Node` anchor shape). Factored into
+ * one helper so the suppression exists exactly once across every test that
+ * needs a fake `doc`, rather than once per test.
+ */
+function fakeDownloadDocument(
+	createElement: () => { click: () => void; download: string; href: string; rel: string },
+): Document {
+	// oxlint-disable-next-line typescript/no-unsafe-type-assertion
+	return {
+		body: { appendChild: vi.fn(), removeChild: vi.fn() },
+		createElement: vi.fn(createElement),
+	} as unknown as Document;
+}
+
 describe('saveQrDownload', () => {
 	/**
 	 * The bytes cross the server-function boundary base64-encoded, so the
@@ -342,14 +364,7 @@ describe('saveQrDownload', () => {
 	 */
 	it('hands the decoded bytes to the browser under the link’s own name', () => {
 		const anchor = { click: vi.fn(), download: '', href: '', rel: '' };
-		// A real `Document` has far more required members than `saveQrDownload`
-		// ever touches; asserting through `unknown` is what lets this stand-in
-		// implement only the three it calls.
-		// oxlint-disable-next-line typescript/no-unsafe-type-assertion
-		const doc = {
-			body: { appendChild: vi.fn(), removeChild: vi.fn() },
-			createElement: vi.fn().mockReturnValue(anchor),
-		} as unknown as Document;
+		const doc = fakeDownloadDocument(() => anchor);
 		const createObjectURL = vi.fn().mockReturnValue('blob:fake');
 		const revokeObjectURL = vi.fn();
 		// `saveQrDownload` uses nothing else off `URL`, so a two-method stand-in
@@ -362,6 +377,66 @@ describe('saveQrDownload', () => {
 		expect(anchor.href).toBe('blob:fake');
 		expect(anchor.click).toHaveBeenCalledOnce();
 		expect(revokeObjectURL).toHaveBeenCalledWith('blob:fake');
+
+		vi.unstubAllGlobals();
+	});
+});
+
+/**
+ * Task-9 review finding 2: the route's `onDownload` used to clear both error
+ * channels and then call `saveQrDownload` unguarded. A thrown DOM exception
+ * (a malformed decode, a blocked object URL, `createElement` itself failing)
+ * propagated into `LinkQRCard`'s own bare `catch {}` — whose comment assumes
+ * the parent already classified the failure and fed a reason back through
+ * `rejection` — and vanished with no banner, no card message, nothing,
+ * because both channels were already cleared by the time it threw.
+ * `completeQrDownload` is the guard: these tests are what prove a failed save
+ * now reaches the page's one banner instead.
+ */
+describe('completeQrDownload', () => {
+	it('clears both error channels and saves when nothing throws', () => {
+		const anchor = { click: vi.fn(), download: '', href: '', rel: '' };
+		const doc = fakeDownloadDocument(() => anchor);
+		vi.stubGlobal('URL', {
+			createObjectURL: vi.fn().mockReturnValue('blob:fake'),
+			revokeObjectURL: vi.fn(),
+		});
+		const setFailure = vi.fn();
+		const setQrRejection = vi.fn();
+
+		completeQrDownload(
+			{ base64: btoa('<svg/>'), contentType: 'image/svg+xml' },
+			'sommerfest.svg',
+			doc,
+			{ setFailure, setQrRejection },
+		);
+
+		expect(setQrRejection).toHaveBeenCalledExactlyOnceWith(undefined);
+		expect(setFailure).toHaveBeenCalledExactlyOnceWith(null);
+		expect(anchor.click).toHaveBeenCalledOnce();
+
+		vi.unstubAllGlobals();
+	});
+
+	it('routes a failed save to the page banner instead of letting it vanish', () => {
+		const doc = fakeDownloadDocument(() => {
+			throw new Error('detached document');
+		});
+		vi.stubGlobal('URL', {
+			createObjectURL: vi.fn().mockReturnValue('blob:fake'),
+			revokeObjectURL: vi.fn(),
+		});
+		const setFailure = vi.fn();
+		const setQrRejection = vi.fn();
+
+		completeQrDownload(
+			{ base64: btoa('<svg/>'), contentType: 'image/svg+xml' },
+			'sommerfest.svg',
+			doc,
+			{ setFailure, setQrRejection },
+		);
+
+		expect(setFailure).toHaveBeenLastCalledWith({ kind: 'unknown' });
 
 		vi.unstubAllGlobals();
 	});
