@@ -219,9 +219,15 @@ function isKnownQrRejectionReason(value: string): value is QrRejectionReason {
 }
 
 /**
+ * The `ErrorDetail.location` values that identify a QR rejection.
  * `GET /v1/links/{link_id}/qr` is the only operation with `fg`, `bg` or
- * `size` query parameters, so matching on those three locations cannot
- * collide with another endpoint's 422. A 422 on any *other* query parameter
+ * `size` query parameters, so matching on these three cannot collide with
+ * another endpoint's 422.
+ */
+const QR_LOCATIONS = new Set(['query.bg', 'query.fg', 'query.size']);
+
+/**
+ * A 422 on any query parameter *other* than the three in `QR_LOCATIONS`
  * returns `undefined` and falls through to `fieldsOf`, so pagination and
  * filter errors keep the shape their own call sites already read.
  *
@@ -229,8 +235,6 @@ function isKnownQrRejectionReason(value: string): value is QrRejectionReason {
  * those three but carries no value this build can use — a missing `value`, or
  * a token a newer server knows about and this build does not.
  */
-const QR_LOCATIONS = new Set(['query.bg', 'query.fg', 'query.size']);
-
 function qrRejectionOf(error: unknown): (QrRejectionReason | 'rejected') | undefined {
 	for (const detail of problemDetailsOf(error)) {
 		if (detail.location === undefined || !QR_LOCATIONS.has(detail.location)) continue;
