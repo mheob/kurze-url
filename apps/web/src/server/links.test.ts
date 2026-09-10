@@ -45,7 +45,7 @@ vi.mock('@tanstack/react-start/server', () => ({
  * in. `listLinksFor` takes a `Request` as a plain parameter instead, which
  * is what makes it callable here at all; see its docstring in `links.ts`.
  */
-const { createLinkFor, listLinksFor } = await import('./links');
+const { createLinkFor, listLinksFor, qrBodyBytes } = await import('./links');
 
 /**
  * `createSupabase` also writes a refreshed session's cookies into the
@@ -255,5 +255,31 @@ describe('createLinkFor', () => {
 		await createLinkFor(request, 'team-a', { destination_url: 'https://example.org/' });
 
 		expect(appended).toEqual(['set-cookie: sb-access-token=refreshed; Path=/; HttpOnly']);
+	});
+});
+
+describe('qrBodyBytes', () => {
+	/**
+	 * The generated client parses by `Content-Type` (`getParseAs` in
+	 * `packages/api-client/src/generated/client/utils.gen.ts` maps anything
+	 * starting with `image/` to `blob`), so a QR response arrives as a
+	 * `Blob`. Narrowing at runtime rather than casting the generated type
+	 * means a regenerated client that types the body differently changes
+	 * nothing here.
+	 */
+	it('reads a Blob body', async () => {
+		const bytes = await qrBodyBytes(new Blob([new Uint8Array([1, 2, 3])]));
+
+		expect(Array.from(bytes)).toEqual([1, 2, 3]);
+	});
+
+	it('reads a string body', async () => {
+		const bytes = await qrBodyBytes('<svg/>');
+
+		expect(new TextDecoder().decode(bytes)).toBe('<svg/>');
+	});
+
+	it('refuses anything else rather than shipping an empty image', async () => {
+		await expect(qrBodyBytes({ not: 'an image' })).rejects.toThrow(TypeError);
 	});
 });
