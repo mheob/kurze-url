@@ -1,5 +1,5 @@
 import type { Link, PageLink, UpdateLinkInputBodyWritable } from '@kurze-url/api-client';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, notFound, redirect, useRouter } from '@tanstack/react-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -7,11 +7,14 @@ import { useTranslation } from 'react-i18next';
 import { ConfirmDelete } from '../../components/confirm-delete';
 import { LinkForm, type LinkFormValues } from '../../components/link-form';
 import { LinkPasswordCard } from '../../components/link-password-card';
-import { classifyApiError, type ApiFailure } from '../../lib/api-errors';
+import { LinkQRCard } from '../../components/link-qr-card';
+import { classifyApiError, type ApiFailure, type QrRejectionReason } from '../../lib/api-errors';
 import type { LinkPasswordContext, LinkPasswordReason } from '../../lib/link-password';
 import {
 	deleteLinkFn,
 	getLinkFn,
+	linkQrDownloadFn,
+	linkQrSvgFn,
 	removeLinkPasswordFn,
 	setLinkPasswordFn,
 	updateLinkFn,
@@ -276,6 +279,67 @@ export function applyPasswordSuccess(updatedLink: Link, handlers: PasswordSucces
 	);
 }
 
+/** Dependencies `handleQrError` needs from the component — see `PasswordErrorHandlers` above for why the dependencies are a parameter rather than a closure. */
+interface QrErrorHandlers {
+	navigateToLogin: () => void;
+	setFailure: (failure: ApiFailure | null) => void;
+	setQrRejection: (reason: QrRejectionReason | 'rejected' | undefined) => void;
+}
+
+/**
+ * The QR counterpart of `handlePasswordError`, and the same split: a refusal
+ * the endpoint keyed to one of its own query parameters belongs under the
+ * control that caused it, and everything else — a rate limit, a 404, a
+ * genuine 500 — falls through to the one banner this route already has.
+ */
+export function handleQrError(error: unknown, handlers: QrErrorHandlers): void {
+	const classified = classifyApiError(error);
+	if (classified.kind === 'unauthenticated') {
+		handlers.navigateToLogin();
+		return;
+	}
+	if (classified.kind === 'qrRejected') {
+		handlers.setFailure(null);
+		handlers.setQrRejection(classified.reason);
+		return;
+	}
+	handlers.setQrRejection(undefined);
+	handlers.setFailure(classified);
+}
+
+/**
+ * Turns the base64 a QR download arrives as back into a file the browser
+ * saves.
+ *
+ * The bytes are encoded because a server function's return value is
+ * serialised and a `Uint8Array` does not survive that (see
+ * `linkQrDownloadFor` in `server/links.ts`). `doc` is a parameter rather than
+ * the global so the route's test can drive this with a stub instead of a real
+ * click, the same reasoning every other exported helper in this file follows.
+ *
+ * The object URL is revoked immediately: the click has already started the
+ * save, and leaving it alive would pin the whole image in memory for the life
+ * of the document.
+ */
+export function saveQrDownload(
+	download: { base64: string; contentType: string },
+	filename: string,
+	doc: Document,
+): void {
+	const binary = atob(download.base64);
+	const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+	const url = URL.createObjectURL(new Blob([bytes], { type: download.contentType }));
+
+	const anchor = doc.createElement('a');
+	anchor.download = filename;
+	anchor.href = url;
+	anchor.rel = 'noopener';
+	doc.body.appendChild(anchor);
+	anchor.click();
+	doc.body.removeChild(anchor);
+	URL.revokeObjectURL(url);
+}
+
 function RouteComponent(): React.JSX.Element {
 	const { linkId, teamSlug } = Route.useParams();
 	const { me, teamId } = Route.useRouteContext();
@@ -292,6 +356,38 @@ function RouteComponent(): React.JSX.Element {
 	const [passwordRejection, setPasswordRejection] = useState<
 		LinkPasswordReason | 'rejected' | undefined
 	>(undefined);
+	const [qrRejection, setQrRejection] = useState<QrRejectionReason | 'rejected' | undefined>(
+		undefined,
+	);
+
+	// One fetch per link, for the whole life of the card. Every colour and
+	// size change is a local restyle of this document — see `LinkQRCard`.
+	// `staleTime: Infinity` says that out loud: the matrix depends only on the
+	// slug and the hostname, neither of which changes without a navigation
+	// that remounts this route.
+	const qrQuery = useQuery({
+		queryFn: () => linkQrSvgFn({ data: { linkId } }),
+		queryKey: ['link-qr', linkId],
+		staleTime: Number.POSITIVE_INFINITY,
+	});
+
+	const qrDownloadMutation = useMutation({
+		mutationFn: (options: {
+			background: string;
+			foreground: string;
+			format: 'png' | 'svg';
+			size: number;
+		}) => linkQrDownloadFn({ data: { ...options, linkId } }),
+		onError: (error: unknown) => {
+			handleQrError(error, {
+				navigateToLogin: () => {
+					void router.navigate({ to: '/login' });
+				},
+				setFailure,
+				setQrRejection,
+			});
+		},
+	});
 
 	const updateMutation = useMutation({
 		mutationFn: (values: LinkFormValues) =>
@@ -397,6 +493,21 @@ function RouteComponent(): React.JSX.Element {
 					await setPasswordMutation.mutateAsync(password);
 				}}
 				rejection={passwordRejection}
+			/>
+			<LinkQRCard
+				isLoading={qrQuery.isPending}
+				key={linkId}
+				onDismissRejection={() => {
+					setQrRejection(undefined);
+				}}
+				onDownload={async (options) => {
+					const download = await qrDownloadMutation.mutateAsync(options);
+					setQrRejection(undefined);
+					setFailure(null);
+					saveQrDownload(download, `${link.slug}.${options.format}`, document);
+				}}
+				rejection={qrRejection}
+				svg={qrQuery.data}
 			/>
 			<ConfirmDelete
 				label={t('links.delete')}

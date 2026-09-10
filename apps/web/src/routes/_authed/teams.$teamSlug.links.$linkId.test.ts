@@ -6,7 +6,9 @@ import {
 	afterMutation,
 	applyPasswordSuccess,
 	handlePasswordError,
+	handleQrError,
 	loadLink,
+	saveQrDownload,
 	toDateTimeLocal,
 	toPasswordContext,
 } from './teams.$teamSlug.links.$linkId';
@@ -279,5 +281,88 @@ describe('applyPasswordSuccess', () => {
 
 		expect(updater?.(page)).toEqual({ ...page, items: [other, updated] });
 		expect(updater?.(undefined)).toBeUndefined();
+	});
+});
+
+describe('handleQrError', () => {
+	it('sends an expired session to login', () => {
+		const handlers = {
+			navigateToLogin: vi.fn(),
+			setFailure: vi.fn(),
+			setQrRejection: vi.fn(),
+		};
+
+		handleQrError({ status: 401 }, handlers);
+
+		expect(handlers.navigateToLogin).toHaveBeenCalledOnce();
+		expect(handlers.setFailure).not.toHaveBeenCalled();
+	});
+
+	/**
+	 * A QR refusal belongs beside the controls that caused it, never in the
+	 * page banner — the card already renders it under the colour picker. Same
+	 * split `handlePasswordError` makes for a policy rejection.
+	 */
+	it('routes a QR refusal to the card, not the banner', () => {
+		const handlers = {
+			navigateToLogin: vi.fn(),
+			setFailure: vi.fn(),
+			setQrRejection: vi.fn(),
+		};
+
+		handleQrError(
+			{ errors: [{ location: 'query.fg', message: 'x', value: 'low_contrast' }], status: 422 },
+			handlers,
+		);
+
+		expect(handlers.setQrRejection).toHaveBeenCalledWith('low_contrast');
+		expect(handlers.setFailure).toHaveBeenCalledWith(null);
+	});
+
+	it('routes everything else to the page banner', () => {
+		const handlers = {
+			navigateToLogin: vi.fn(),
+			setFailure: vi.fn(),
+			setQrRejection: vi.fn(),
+		};
+
+		handleQrError({ status: 429 }, handlers);
+
+		expect(handlers.setQrRejection).toHaveBeenCalledWith(undefined);
+		expect(handlers.setFailure).toHaveBeenCalledWith({ kind: 'rateLimited' });
+	});
+});
+
+describe('saveQrDownload', () => {
+	/**
+	 * The bytes cross the server-function boundary base64-encoded, so the
+	 * browser has to rebuild them before it can hand the file to the reader.
+	 * Driving it through an injected `Document` is what lets this run without
+	 * a router or a real click.
+	 */
+	it('hands the decoded bytes to the browser under the link’s own name', () => {
+		const anchor = { click: vi.fn(), download: '', href: '', rel: '' };
+		// A real `Document` has far more required members than `saveQrDownload`
+		// ever touches; asserting through `unknown` is what lets this stand-in
+		// implement only the three it calls.
+		// oxlint-disable-next-line typescript/no-unsafe-type-assertion
+		const doc = {
+			body: { appendChild: vi.fn(), removeChild: vi.fn() },
+			createElement: vi.fn().mockReturnValue(anchor),
+		} as unknown as Document;
+		const createObjectURL = vi.fn().mockReturnValue('blob:fake');
+		const revokeObjectURL = vi.fn();
+		// `saveQrDownload` uses nothing else off `URL`, so a two-method stand-in
+		// is the whole surface it needs.
+		vi.stubGlobal('URL', { createObjectURL, revokeObjectURL });
+
+		saveQrDownload({ base64: btoa('<svg/>'), contentType: 'image/svg+xml' }, 'sommerfest.svg', doc);
+
+		expect(anchor.download).toBe('sommerfest.svg');
+		expect(anchor.href).toBe('blob:fake');
+		expect(anchor.click).toHaveBeenCalledOnce();
+		expect(revokeObjectURL).toHaveBeenCalledWith('blob:fake');
+
+		vi.unstubAllGlobals();
 	});
 });
