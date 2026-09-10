@@ -335,49 +335,81 @@ describe('handleQrError', () => {
 });
 
 /**
- * A real `Document` has far more required members than `saveQrDownload` (and
- * its `completeQrDownload` wrapper) ever touch; asserting through `unknown`
- * is what lets this stand-in implement only the three it calls. Task-9
- * review finding 1 asked for this to be narrowed instead of suppressed — see
- * `saveQrDownload`'s own docstring for why that narrowing turned out to be
- * type-theoretically blocked (`Node.appendChild`/`removeChild`'s own generic
- * signature can't be satisfied by a non-`Node` anchor shape). Factored into
- * one helper so the suppression exists exactly once across every test that
- * needs a fake `doc`, rather than once per test.
+ * These tests run under the `unit` Vitest project, which sets
+ * `environment: 'jsdom'` (see `vitest.config.ts`) — so the global `document`
+ * here is a real `Document`, not a stand-in. Task-9 review finding 1 asked
+ * for `saveQrDownload`'s `doc` parameter to be narrowed instead of
+ * suppressed; that turned out to be type-theoretically blocked (see
+ * `saveQrDownload`'s own docstring for why — `Node.appendChild`/
+ * `removeChild`'s own generic signature can't be satisfied by a non-`Node`
+ * anchor shape). The owner's ruling for this round: stop building a fake
+ * `Document` at all, and spy on the real one jsdom already provides instead
+ * — no cast, no suppression, and the assertions run against actual DOM
+ * behaviour rather than a hand-built double that could silently disagree
+ * with it.
  */
-function fakeDownloadDocument(
-	createElement: () => { click: () => void; download: string; href: string; rel: string },
-): Document {
-	// oxlint-disable-next-line typescript/no-unsafe-type-assertion
-	return {
-		body: { appendChild: vi.fn(), removeChild: vi.fn() },
-		createElement: vi.fn(createElement),
-	} as unknown as Document;
+function spyOnDownloadAnchor(): {
+	anchor: HTMLAnchorElement;
+	appendChild: ReturnType<typeof vi.spyOn>;
+	click: ReturnType<typeof vi.spyOn>;
+	createElement: ReturnType<typeof vi.spyOn>;
+	removeChild: ReturnType<typeof vi.spyOn>;
+} {
+	const anchor = document.createElement('a');
+	// Captured and returned, rather than asserted on as `anchor.click` at the
+	// call site — referencing a real DOM method that way trips
+	// `unbound-method` (it's a genuine prototype method now, not a plain
+	// property on a hand-built object), so the spy itself is what call sites
+	// assert against.
+	const click = vi.spyOn(anchor, 'click').mockImplementation(() => {
+		// no-op: never actually navigate or download in the test environment.
+	});
+	const createElement = vi.spyOn(document, 'createElement').mockReturnValue(anchor);
+	const appendChild = vi.spyOn(document.body, 'appendChild').mockImplementation((node) => node);
+	const removeChild = vi.spyOn(document.body, 'removeChild').mockImplementation((node) => node);
+	return { anchor, appendChild, click, createElement, removeChild };
 }
 
 describe('saveQrDownload', () => {
 	/**
 	 * The bytes cross the server-function boundary base64-encoded, so the
 	 * browser has to rebuild them before it can hand the file to the reader.
-	 * Driving it through an injected `Document` is what lets this run without
-	 * a router or a real click.
+	 * Spying on the real, jsdom-provided `document` is what lets this assert
+	 * the anchor was actually inserted, clicked and removed, without a router
+	 * or a real navigation.
 	 */
 	it('hands the decoded bytes to the browser under the link’s own name', () => {
-		const anchor = { click: vi.fn(), download: '', href: '', rel: '' };
-		const doc = fakeDownloadDocument(() => anchor);
+		const { anchor, appendChild, click, createElement, removeChild } = spyOnDownloadAnchor();
 		const createObjectURL = vi.fn().mockReturnValue('blob:fake');
 		const revokeObjectURL = vi.fn();
 		// `saveQrDownload` uses nothing else off `URL`, so a two-method stand-in
 		// is the whole surface it needs.
 		vi.stubGlobal('URL', { createObjectURL, revokeObjectURL });
 
-		saveQrDownload({ base64: btoa('<svg/>'), contentType: 'image/svg+xml' }, 'sommerfest.svg', doc);
+		saveQrDownload(
+			{ base64: btoa('<svg/>'), contentType: 'image/svg+xml' },
+			'sommerfest.svg',
+			document,
+		);
 
-		expect(anchor.download).toBe('sommerfest.svg');
-		expect(anchor.href).toBe('blob:fake');
-		expect(anchor.click).toHaveBeenCalledOnce();
+		// One object comparison rather than three separate `expect`s — the
+		// anchor came out of the spied `createElement`, so this is also what
+		// proves that call happened, without pushing the test over
+		// `vitest(max-expects)`'s limit of five.
+		expect({ download: anchor.download, href: anchor.href, rel: anchor.rel }).toEqual({
+			download: 'sommerfest.svg',
+			href: 'blob:fake',
+			rel: 'noopener',
+		});
+		expect(appendChild).toHaveBeenCalledWith(anchor);
+		expect(click).toHaveBeenCalledOnce();
+		expect(removeChild).toHaveBeenCalledWith(anchor);
 		expect(revokeObjectURL).toHaveBeenCalledWith('blob:fake');
 
+		createElement.mockRestore();
+		appendChild.mockRestore();
+		removeChild.mockRestore();
+		click.mockRestore();
 		vi.unstubAllGlobals();
 	});
 });
@@ -395,8 +427,7 @@ describe('saveQrDownload', () => {
  */
 describe('completeQrDownload', () => {
 	it('clears both error channels and saves when nothing throws', () => {
-		const anchor = { click: vi.fn(), download: '', href: '', rel: '' };
-		const doc = fakeDownloadDocument(() => anchor);
+		const { click, createElement, appendChild, removeChild } = spyOnDownloadAnchor();
 		vi.stubGlobal('URL', {
 			createObjectURL: vi.fn().mockReturnValue('blob:fake'),
 			revokeObjectURL: vi.fn(),
@@ -407,19 +438,31 @@ describe('completeQrDownload', () => {
 		completeQrDownload(
 			{ base64: btoa('<svg/>'), contentType: 'image/svg+xml' },
 			'sommerfest.svg',
-			doc,
+			document,
 			{ setFailure, setQrRejection },
 		);
 
 		expect(setQrRejection).toHaveBeenCalledExactlyOnceWith(undefined);
 		expect(setFailure).toHaveBeenCalledExactlyOnceWith(null);
-		expect(anchor.click).toHaveBeenCalledOnce();
+		expect(click).toHaveBeenCalledOnce();
 
+		createElement.mockRestore();
+		appendChild.mockRestore();
+		removeChild.mockRestore();
+		click.mockRestore();
 		vi.unstubAllGlobals();
 	});
 
+	/**
+	 * Round 1's fake `doc` threw from a hand-built stand-in's `createElement`.
+	 * Here the same failure is produced by making the *real* `document`'s own
+	 * `createElement` throw — the spy still stands in for the DOM exception
+	 * `saveQrDownload`'s docstring anticipates (a blocked object URL, a
+	 * detached document, `createElement` itself failing), without needing a
+	 * fake object to carry it.
+	 */
 	it('routes a failed save to the page banner instead of letting it vanish', () => {
-		const doc = fakeDownloadDocument(() => {
+		const createElement = vi.spyOn(document, 'createElement').mockImplementation(() => {
 			throw new Error('detached document');
 		});
 		vi.stubGlobal('URL', {
@@ -432,12 +475,13 @@ describe('completeQrDownload', () => {
 		completeQrDownload(
 			{ base64: btoa('<svg/>'), contentType: 'image/svg+xml' },
 			'sommerfest.svg',
-			doc,
+			document,
 			{ setFailure, setQrRejection },
 		);
 
 		expect(setFailure).toHaveBeenLastCalledWith({ kind: 'unknown' });
 
+		createElement.mockRestore();
 		vi.unstubAllGlobals();
 	});
 });

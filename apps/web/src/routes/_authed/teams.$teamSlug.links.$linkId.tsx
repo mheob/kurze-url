@@ -317,15 +317,18 @@ export function handleQrError(error: unknown, handlers: QrErrorHandlers): void {
  * the global so the route's test can drive this with a stub instead of a real
  * click, the same reasoning every other exported helper in this file follows.
  *
- * NOTE (task-9 review, finding 1, fix round): this was meant to take a
- * narrowed `DownloadDocument`/`DownloadAnchor` pair instead of the full
- * `Document`, the same way every other injected dependency in this file is
- * narrowed. That narrowing is blocked — see the fix report's escalation for
- * why `Node.appendChild`/`removeChild`'s own generic signature
- * (`<T extends Node>(node: T): T`) makes it type-theoretically impossible for
- * a plain, non-`Node` anchor shape to satisfy both the real `document` and a
- * hand-built test double at once, without an unsafe assertion somewhere. Left
- * as `Document` pending a decision from whoever owns that trade-off.
+ * NOTE (task-9 review, finding 1): this was meant to take a narrowed
+ * `DownloadDocument`/`DownloadAnchor` pair instead of the full `Document`, the
+ * same way every other injected dependency in this file is narrowed. That
+ * narrowing is blocked — `Node.appendChild`/`removeChild`'s own generic
+ * signature (`<T extends Node>(node: T): T`) makes it type-theoretically
+ * impossible for a plain, non-`Node` anchor shape to satisfy both the real
+ * `document` and a hand-built test double at once, without an unsafe
+ * assertion somewhere (see the task-9 fix report's escalation for the full
+ * argument). Settled, not just deferred: `doc` stays `Document`, and the
+ * test drives this with the real jsdom `document` plus `vi.spyOn` rather
+ * than a hand-built double, so no cast or suppression is needed on either
+ * side — see the test file's own comment above `spyOnDownloadAnchor`.
  *
  * The object URL is revoked immediately: the click has already started the
  * save, and leaving it alive would pin the whole image in memory for the life
