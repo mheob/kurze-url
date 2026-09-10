@@ -533,10 +533,21 @@ function RouteComponent(): React.JSX.Element {
 		<>
 			<h1>{t('links.edit')}</h1>
 			{formMessage ? <p role="alert">{formMessage}</p> : null}
+			{/*
+			 * Each card below remounts when the link changes, so each carries the
+			 * link id in its key — but the keys must also differ from *each other*.
+			 * React matches children by key among siblings, and three siblings
+			 * sharing one key is undefined behaviour: the banner above toggling
+			 * between an element and `null` shifts the child list, React mis-maps
+			 * the duplicates, and the form and the password card end up rendered
+			 * twice in the DOM. That is not theoretical — it duplicated the whole
+			 * page on the preview and broke the password e2e spec, which then
+			 * matched two password inputs. Prefix every key here.
+			 */}
 			<LinkForm
 				fieldErrors={fieldErrors}
 				initial={toFormValues(link)}
-				key={linkId}
+				key={`form-${linkId}`}
 				onSubmit={(values) => {
 					updateMutation.mutate(values);
 				}}
@@ -544,7 +555,7 @@ function RouteComponent(): React.JSX.Element {
 			<LinkPasswordCard
 				context={toPasswordContext(link, me.memberships, teamSlug)}
 				hasPassword={hasPassword}
-				key={linkId}
+				key={`password-${linkId}`}
 				onDismissRejection={() => {
 					setPasswordRejection(undefined);
 				}}
@@ -562,7 +573,7 @@ function RouteComponent(): React.JSX.Element {
 			/>
 			<LinkQRCard
 				isLoading={qrQuery.isPending}
-				key={linkId}
+				key={`qr-${linkId}`}
 				onDismissRejection={() => {
 					setQrRejection(undefined);
 				}}
