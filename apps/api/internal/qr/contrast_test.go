@@ -41,7 +41,7 @@ func TestContrastRatioMatchesWCAG(t *testing.T) {
 }
 
 func TestCheckContrastAcceptsAVereinsDarkBlueOnWhite(t *testing.T) {
-	// #003366 on white is roughly 14:1 — the realistic Verein colour the
+	// #003366 on white is roughly 12.61:1 — the realistic Verein colour the
 	// threshold must not refuse.
 	require.NoError(t, qr.CheckContrast(rgb(0x00, 0x33, 0x66), rgb(0xff, 0xff, 0xff)))
 }
