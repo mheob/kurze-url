@@ -116,11 +116,14 @@ func (d Deps) getLinkQR(ctx context.Context, in *LinkQRInput) (*LinkQROutput, er
 	}, nil
 }
 
-// parseQRColor turns one colour parameter into a value, falling back to
-// fallback when the caller sent nothing. The pattern on the field already
-// refuses anything that is not rrggbb, so the error branch is defence in
-// depth rather than the expected path — but it must not become a silent
-// default, which is exactly how the missing-'#' trap would go unnoticed.
+// parseQRColor validates and parses a colour query parameter into a value,
+// falling back to a default when the caller sent nothing. It is the sole
+// validation point for the fg and bg parameters, enforcing their format:
+// rrggbb with or without a leading '#'. The bare form is accepted because a
+// raw '#' in a query string is the fragment delimiter and never reaches the
+// server — Vereine therefore provide their colours without it. A malformed
+// colour returns 422, carrying the invalid_color token in ErrorDetail.Value
+// so the caller can report the reason to the user.
 func parseQRColor(raw, location string, fallback qr.ColorRGBA) (qr.ColorRGBA, error) {
 	if raw == "" {
 		return fallback, nil
