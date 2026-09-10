@@ -102,6 +102,15 @@ type Config struct {
 	DomainVerifyPerDomainRateLimitPerHour int
 	DomainVerifyPerUserRateLimitPerHour   int
 
+	// QRRateLimitPerMin caps GET /v1/links/{id}/qr per user. It is a
+	// consistency measure, not a defence: rendering a QR code is a small
+	// bitmap, not an Argon2id hash, and the endpoint is membership-bound.
+	// Plenty of member-driven reads here carry no limit at all. What sets
+	// this one apart is that its cost scales with a parameter the caller
+	// chooses — a 2048-pixel render is not a 512-pixel render — and that the
+	// size bound caps the peak, not the rate.
+	QRRateLimitPerMin int
+
 	// DomainDNSTarget is what a Verein is told to point their CNAME at. The
 	// default is the generic record Vercel now calls legacy; production
 	// overrides it with the kurze-url-api project's own per-project target,
@@ -231,6 +240,9 @@ func Load() (Config, error) {
 	}
 	if cfg.DomainVerifyPerUserRateLimitPerHour, err = envInt(
 		"RATE_LIMIT_DOMAIN_VERIFY_PER_USER_PER_HOUR", 40); err != nil {
+		return Config{}, err
+	}
+	if cfg.QRRateLimitPerMin, err = envInt("RATE_LIMIT_QR_PER_MIN", 30); err != nil {
 		return Config{}, err
 	}
 
