@@ -1,6 +1,14 @@
 import type { LinkPasswordReason } from './link-password';
 
 /**
+ * The reason tokens `getLinkQR` (apps/api/internal/api/link_qr.go) can send
+ * on a QR refusal. Each one is a Go sentinel's own `Error()` string, or —
+ * for `size_requires_png` — a literal the handler owns; both are wire
+ * contracts pinned by that package's tests, not prose.
+ */
+export type QrRejectionReason = 'invalid_color' | 'low_contrast' | 'size_requires_png';
+
+/**
  * Turns whatever a failed API call throws into something a route or form can
  * act on, without either of them needing to know Huma's wire format.
  *
@@ -23,6 +31,7 @@ export type ApiFailure =
 	| { kind: 'domainHasLinks'; count: number }
 	| { kind: 'slugTaken' }
 	| { kind: 'passwordRejected'; reason: LinkPasswordReason | 'rejected' }
+	| { kind: 'qrRejected'; reason: QrRejectionReason | 'rejected' }
 	| { kind: 'unknown' };
 
 /** The `ErrorDetail` fields this module reads; see `apps/api/openapi.json`. */
@@ -192,6 +201,47 @@ function passwordRejectionOf(error: unknown): (LinkPasswordReason | 'rejected') 
 	return undefined;
 }
 
+/**
+ * Written as a `switch` rather than a `Set` for the same reason
+ * `isKnownLinkPasswordReason` above is: TypeScript narrows a `string` to a
+ * literal union across matching `case`s on its own, so this needs no type
+ * assertion.
+ */
+function isKnownQrRejectionReason(value: string): value is QrRejectionReason {
+	switch (value) {
+		case 'invalid_color':
+		case 'low_contrast':
+		case 'size_requires_png':
+			return true;
+		default:
+			return false;
+	}
+}
+
+/**
+ * `GET /v1/links/{link_id}/qr` is the only operation with `fg`, `bg` or
+ * `size` query parameters, so matching on those three locations cannot
+ * collide with another endpoint's 422. A 422 on any *other* query parameter
+ * returns `undefined` and falls through to `fieldsOf`, so pagination and
+ * filter errors keep the shape their own call sites already read.
+ *
+ * Returns `'rejected'`, not `undefined`, whenever the detail is on one of
+ * those three but carries no value this build can use — a missing `value`, or
+ * a token a newer server knows about and this build does not.
+ */
+const QR_LOCATIONS = new Set(['query.bg', 'query.fg', 'query.size']);
+
+function qrRejectionOf(error: unknown): (QrRejectionReason | 'rejected') | undefined {
+	for (const detail of problemDetailsOf(error)) {
+		if (detail.location === undefined || !QR_LOCATIONS.has(detail.location)) continue;
+		if (typeof detail.value === 'string' && isKnownQrRejectionReason(detail.value)) {
+			return detail.value;
+		}
+		return 'rejected';
+	}
+	return undefined;
+}
+
 export function classifyApiError(error: unknown): ApiFailure {
 	const status = statusOf(error);
 
@@ -211,6 +261,9 @@ export function classifyApiError(error: unknown): ApiFailure {
 	if (status === 400 || status === 422) {
 		const reason = passwordRejectionOf(error);
 		if (reason !== undefined) return { kind: 'passwordRejected', reason };
+
+		const qrReason = qrRejectionOf(error);
+		if (qrReason !== undefined) return { kind: 'qrRejected', reason: qrReason };
 
 		const fields = fieldsOf(error);
 		if (Object.keys(fields).length > 0) return { fields, kind: 'fields' };
