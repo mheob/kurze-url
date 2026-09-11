@@ -474,24 +474,28 @@
 						"type": "string"
 					},
 					"analytics_enabled": {
+						"description": "False when this link's click counting is switched off. The redirect path then records nothing, so an empty document means 'not counted' rather than 'not clicked'.",
 						"type": "boolean"
 					},
 					"breakdowns": {
 						"$ref": "#/components/schemas/LinkStatsBreakdowns"
 					},
 					"from": {
+						"description": "First day included, as YYYY-MM-DD in UTC. This is the window actually used, which may be narrower than the one requested.",
 						"type": "string"
 					},
 					"link_id": {
 						"type": "string"
 					},
 					"series": {
+						"description": "One entry per day of the window, including days with no clicks. At most 90 entries.",
 						"items": {
 							"$ref": "#/components/schemas/StatDay"
 						},
 						"type": ["array", "null"]
 					},
 					"to": {
+						"description": "Last day included, as YYYY-MM-DD in UTC. This is the window actually used, which may be narrower than the one requested.",
 						"type": "string"
 					},
 					"totals": {
@@ -851,6 +855,7 @@
 				"additionalProperties": false,
 				"properties": {
 					"other_clicks": {
+						"description": "Clicks belonging to those further values, so this dimension's reported figures still sum to its true total.",
 						"format": "int64",
 						"type": "integer"
 					},
@@ -859,6 +864,7 @@
 						"type": "integer"
 					},
 					"other_values": {
+						"description": "How many further values exist beyond the ten reported here.",
 						"format": "int64",
 						"type": "integer"
 					},
@@ -880,6 +886,7 @@
 						"type": "integer"
 					},
 					"human_clicks": {
+						"description": "Clicks whose User-Agent was not recognised as a bot. Available here and in totals only — no breakdown can be filtered this way.",
 						"format": "int64",
 						"type": "integer"
 					},
@@ -888,6 +895,7 @@
 						"type": "integer"
 					},
 					"unique_visitors": {
+						"description": "Distinct visitors on this day. Summed over several days this counts a returning person once per day.",
 						"format": "int64",
 						"type": "integer"
 					}
@@ -906,6 +914,7 @@
 						"type": "string"
 					},
 					"human_clicks": {
+						"description": "Clicks whose User-Agent was not recognised as a bot. Available here and in totals only — no breakdown can be filtered this way.",
 						"format": "int64",
 						"type": "integer"
 					},
@@ -914,6 +923,7 @@
 						"type": "integer"
 					},
 					"unique_visitors": {
+						"description": "Distinct visitors on this day. Summed over several days this counts a returning person once per day.",
 						"format": "int64",
 						"type": "integer"
 					}
@@ -1779,6 +1789,7 @@
 		},
 		"/v1/links/{link_id}/stats": {
 			"get": {
+				"description": "Clicks and visitors for one link, day by day, with every rollup dimension broken down.\n\nFour properties of the underlying rollup are worth knowing before reading the numbers.\n\n**`unique_visitors` over several days is the sum of daily uniques.** Deduplication happens per link per day and there is deliberately no identifier that survives a day, so a person who opens the link on three days contributes three unique visitors to the total. The daily figures are exact; only their sum carries this meaning.\n\n**Breakdowns cannot be filtered by bot status.** The rollup stores one row per dimension per day, never a combination, so every breakdown counts all clicks including bots. Only `totals` and `series` carry the human split, and there it is exact.\n\n**Days are UTC days.** A click at 01:30 Central European Summer Time belongs to the previous day's bucket, and no request-time choice can move it.\n\n**`utm_source` is sparse by design.** A click without a campaign parameter writes no row for that dimension, so its breakdown sums to less than the click total; the difference is non-campaign traffic, not lost data. Every other dimension sums to the total.",
 				"operationId": "get-link-stats",
 				"parameters": [
 					{

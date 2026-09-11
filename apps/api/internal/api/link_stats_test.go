@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"testing"
@@ -283,4 +284,30 @@ func TestLinkStatsHidesAnotherTeamsLink(t *testing.T) {
 	rec := f.do(t, f.stranger, http.MethodGet, statsPath(created.ID.String(), ""), nil)
 
 	require.Equal(t, http.StatusNotFound, rec.Code, "body: %s", rec.Body.String())
+}
+
+// TestLinkStatsSchemaInlinesTheDayCounts pins the one piece of Huma behaviour
+// this response depends on. StatCounts is embedded anonymously so its four
+// fields are spliced into the day object; if a future Huma version nested them
+// instead, every client would break silently on a field that moved.
+func TestLinkStatsSchemaInlinesTheDayCounts(t *testing.T) {
+	f := newTenancyFixture(t)
+	pinToday(t, f, "2026-09-11")
+	created := f.createLink(t, "schema", "https://example.org/schema")
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		statsPath(created.ID.String(), ""), nil)
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+
+	var raw struct {
+		Series []map[string]any `json:"series"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &raw))
+	require.NotEmpty(t, raw.Series)
+	for _, key := range []string{
+		"date", "clicks", "unique_visitors", "human_clicks", "human_unique_visitors",
+	} {
+		require.Contains(t, raw.Series[0], key,
+			"a day object carries its counts flat, not nested")
+	}
 }

@@ -437,8 +437,14 @@ func (d Deps) registerLinks(api huma.API) {
 		Method:      http.MethodGet,
 		Path:        "/v1/links/{link_id}/stats",
 		Summary:     "Read a link's statistics",
-		Tags:        []string{"Links"},
-		Security:    []map[string][]string{{"bearerAuth": {}}},
+		Description: "Clicks and visitors for one link, day by day, with every rollup dimension broken down.\n\n" +
+			"Four properties of the underlying rollup are worth knowing before reading the numbers.\n\n" +
+			"**`unique_visitors` over several days is the sum of daily uniques.** Deduplication happens per link per day and there is deliberately no identifier that survives a day, so a person who opens the link on three days contributes three unique visitors to the total. The daily figures are exact; only their sum carries this meaning.\n\n" +
+			"**Breakdowns cannot be filtered by bot status.** The rollup stores one row per dimension per day, never a combination, so every breakdown counts all clicks including bots. Only `totals` and `series` carry the human split, and there it is exact.\n\n" +
+			"**Days are UTC days.** A click at 01:30 Central European Summer Time belongs to the previous day's bucket, and no request-time choice can move it.\n\n" +
+			"**`utm_source` is sparse by design.** A click without a campaign parameter writes no row for that dimension, so its breakdown sums to less than the click total; the difference is non-campaign traffic, not lost data. Every other dimension sums to the total.",
+		Tags:     []string{"Links"},
+		Security: []map[string][]string{{"bearerAuth": {}}},
 	}, d.getLinkStats)
 }
 

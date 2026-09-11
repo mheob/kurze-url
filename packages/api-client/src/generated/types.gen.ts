@@ -234,11 +234,23 @@ export type LinkStats = {
      * A URL to the JSON Schema for this object.
      */
     readonly $schema?: string;
+    /**
+     * False when this link's click counting is switched off. The redirect path then records nothing, so an empty document means 'not counted' rather than 'not clicked'.
+     */
     analytics_enabled: boolean;
     breakdowns: LinkStatsBreakdowns;
+    /**
+     * First day included, as YYYY-MM-DD in UTC. This is the window actually used, which may be narrower than the one requested.
+     */
     from: string;
     link_id: string;
+    /**
+     * One entry per day of the window, including days with no clicks. At most 90 entries.
+     */
     series: Array<StatDay> | null;
+    /**
+     * Last day included, as YYYY-MM-DD in UTC. This is the window actually used, which may be narrower than the one requested.
+     */
     to: string;
     totals: StatCounts;
 };
@@ -365,24 +377,42 @@ export type SetLinkPasswordInputBody = {
 };
 
 export type StatBreakdown = {
+    /**
+     * Clicks belonging to those further values, so this dimension's reported figures still sum to its true total.
+     */
     other_clicks: number;
     other_unique_visitors: number;
+    /**
+     * How many further values exist beyond the ten reported here.
+     */
     other_values: number;
     values: Array<StatValue> | null;
 };
 
 export type StatCounts = {
     clicks: number;
+    /**
+     * Clicks whose User-Agent was not recognised as a bot. Available here and in totals only — no breakdown can be filtered this way.
+     */
     human_clicks: number;
     human_unique_visitors: number;
+    /**
+     * Distinct visitors on this day. Summed over several days this counts a returning person once per day.
+     */
     unique_visitors: number;
 };
 
 export type StatDay = {
     clicks: number;
     date: string;
+    /**
+     * Clicks whose User-Agent was not recognised as a bot. Available here and in totals only — no breakdown can be filtered this way.
+     */
     human_clicks: number;
     human_unique_visitors: number;
+    /**
+     * Distinct visitors on this day. Summed over several days this counts a returning person once per day.
+     */
     unique_visitors: number;
 };
 
@@ -633,11 +663,23 @@ export type LinkWritable = {
 };
 
 export type LinkStatsWritable = {
+    /**
+     * False when this link's click counting is switched off. The redirect path then records nothing, so an empty document means 'not counted' rather than 'not clicked'.
+     */
     analytics_enabled: boolean;
     breakdowns: LinkStatsBreakdowns;
+    /**
+     * First day included, as YYYY-MM-DD in UTC. This is the window actually used, which may be narrower than the one requested.
+     */
     from: string;
     link_id: string;
+    /**
+     * One entry per day of the window, including days with no clicks. At most 90 entries.
+     */
     series: Array<StatDay> | null;
+    /**
+     * Last day included, as YYYY-MM-DD in UTC. This is the window actually used, which may be narrower than the one requested.
+     */
     to: string;
     totals: StatCounts;
 };

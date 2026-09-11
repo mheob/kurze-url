@@ -103,11 +103,11 @@ type LinkStats struct {
 	// From and To are the window that was actually used, which is not always
 	// the one that was asked for: both are clamped into the retention window,
 	// silently, and echoing them here is the only way a caller can see that.
-	From             string              `json:"from"`
-	To               string              `json:"to"`
-	AnalyticsEnabled bool                `json:"analytics_enabled"`
+	From             string              `json:"from" doc:"First day included, as YYYY-MM-DD in UTC. This is the window actually used, which may be narrower than the one requested."`
+	To               string              `json:"to" doc:"Last day included, as YYYY-MM-DD in UTC. This is the window actually used, which may be narrower than the one requested."`
+	AnalyticsEnabled bool                `json:"analytics_enabled" doc:"False when this link's click counting is switched off. The redirect path then records nothing, so an empty document means 'not counted' rather than 'not clicked'."`
 	Totals           StatCounts          `json:"totals"`
-	Series           []StatDay           `json:"series"`
+	Series           []StatDay           `json:"series" doc:"One entry per day of the window, including days with no clicks. At most 90 entries."`
 	Breakdowns       LinkStatsBreakdowns `json:"breakdowns"`
 }
 
@@ -120,8 +120,8 @@ type LinkStats struct {
 // rather than explained.
 type StatCounts struct {
 	Clicks              int64 `json:"clicks"`
-	UniqueVisitors      int64 `json:"unique_visitors"`
-	HumanClicks         int64 `json:"human_clicks"`
+	UniqueVisitors      int64 `json:"unique_visitors" doc:"Distinct visitors on this day. Summed over several days this counts a returning person once per day."`
+	HumanClicks         int64 `json:"human_clicks" doc:"Clicks whose User-Agent was not recognised as a bot. Available here and in totals only — no breakdown can be filtered this way."`
 	HumanUniqueVisitors int64 `json:"human_unique_visitors"`
 }
 
@@ -148,8 +148,8 @@ type StatValue struct {
 // misrepresent a dimension's total.
 type StatBreakdown struct {
 	Values              []StatValue `json:"values"`
-	OtherValues         int64       `json:"other_values"`
-	OtherClicks         int64       `json:"other_clicks"`
+	OtherValues         int64       `json:"other_values" doc:"How many further values exist beyond the ten reported here."`
+	OtherClicks         int64       `json:"other_clicks" doc:"Clicks belonging to those further values, so this dimension's reported figures still sum to its true total."`
 	OtherUniqueVisitors int64       `json:"other_unique_visitors"`
 }
 

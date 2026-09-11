@@ -136,6 +136,18 @@ export const getLinkQr = <ThrowOnError extends boolean = false>(options: Options
 
 /**
  * Read a link's statistics
+ *
+ * Clicks and visitors for one link, day by day, with every rollup dimension broken down.
+ *
+ * Four properties of the underlying rollup are worth knowing before reading the numbers.
+ *
+ * **`unique_visitors` over several days is the sum of daily uniques.** Deduplication happens per link per day and there is deliberately no identifier that survives a day, so a person who opens the link on three days contributes three unique visitors to the total. The daily figures are exact; only their sum carries this meaning.
+ *
+ * **Breakdowns cannot be filtered by bot status.** The rollup stores one row per dimension per day, never a combination, so every breakdown counts all clicks including bots. Only `totals` and `series` carry the human split, and there it is exact.
+ *
+ * **Days are UTC days.** A click at 01:30 Central European Summer Time belongs to the previous day's bucket, and no request-time choice can move it.
+ *
+ * **`utm_source` is sparse by design.** A click without a campaign parameter writes no row for that dimension, so its breakdown sums to less than the click total; the difference is non-campaign traffic, not lost data. Every other dimension sums to the total.
  */
 export const getLinkStats = <ThrowOnError extends boolean = false>(options: Options<GetLinkStatsData, ThrowOnError>): RequestResult<GetLinkStatsResponses, GetLinkStatsErrors, ThrowOnError> => (options.client ?? client).get<GetLinkStatsResponses, GetLinkStatsErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
