@@ -1,10 +1,14 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
+
+	"github.com/mheob/kurze-url/apps/api/internal/authz"
 	"github.com/mheob/kurze-url/apps/api/internal/db"
 )
 
@@ -276,4 +280,74 @@ func buildBreakdowns(rows []db.GetLinkClickBreakdownsRow) LinkStatsBreakdowns {
 	}
 
 	return out
+}
+
+// LinkStatsInput declares its authorization in its type: LinkViewerScope, the
+// same floor as the QR download. Reading statistics changes nothing.
+//
+// Both dates are time.Time with a timeFormat tag, which makes Huma parse them
+// as plain dates and answer a bad one itself — a malformed shape and an
+// impossible date alike (time.Parse rejects 2026-02-31 as "day out of range").
+// The handler therefore does not re-check the format; it checks only the one
+// thing Huma cannot, which is how the two parameters relate to each other.
+type LinkStatsInput struct {
+	authz.LinkViewerScope
+	From time.Time `query:"from" timeFormat:"2006-01-02" doc:"First day to include, as YYYY-MM-DD in UTC. Defaults to 29 days before 'to'. Clamped so the window never starts more than 89 days before today."`
+	To   time.Time `query:"to" timeFormat:"2006-01-02" doc:"Last day to include, as YYYY-MM-DD in UTC. Defaults to today; a later date is treated as today."`
+}
+
+// LinkStatsOutput is the body of GET /v1/links/{link_id}/stats.
+type LinkStatsOutput struct {
+	Body LinkStats
+}
+
+// getLinkStats is GET /v1/links/{link_id}/stats.
+func (d Deps) getLinkStats(ctx context.Context, in *LinkStatsInput) (*LinkStatsOutput, error) {
+	link := in.Link()
+
+	start, end, err := statsWindow(in.From, in.To, d.now())
+	if err != nil {
+		// No ErrorDetail: that typed-value convention carries a value the
+		// caller must act on, and there is nothing here beyond the message.
+		return nil, huma.Error422UnprocessableEntity("from must not be later than to")
+	}
+
+	// Read through the existing query rather than adding one for a single
+	// column. It is already filtered by team_id, which is the filter that
+	// matters — the scope resolved the team, and this re-states it.
+	row, err := d.Queries.GetLinkForAPI(ctx, db.GetLinkForAPIParams{
+		ID: link.ID, TeamID: link.TeamID,
+	})
+	if err != nil {
+		d.Log.Error("load link for stats", "error", err, "link_id", link.ID)
+		return nil, huma.Error500InternalServerError("could not read the statistics")
+	}
+
+	seriesRows, err := d.Queries.GetLinkClickSeries(ctx, db.GetLinkClickSeriesParams{
+		LinkID: link.ID, FromDay: start, ToDay: end,
+	})
+	if err != nil {
+		d.Log.Error("read click series", "error", err, "link_id", link.ID)
+		return nil, huma.Error500InternalServerError("could not read the statistics")
+	}
+
+	breakdownRows, err := d.Queries.GetLinkClickBreakdowns(ctx, db.GetLinkClickBreakdownsParams{
+		LinkID: link.ID, FromDay: start, ToDay: end, TopValues: TopValuesPerDimension,
+	})
+	if err != nil {
+		d.Log.Error("read click breakdowns", "error", err, "link_id", link.ID)
+		return nil, huma.Error500InternalServerError("could not read the statistics")
+	}
+
+	series, totals := buildSeries(seriesRows, start, end)
+
+	return &LinkStatsOutput{Body: LinkStats{
+		LinkID:           link.ID,
+		From:             start.Format(dayLayout),
+		To:               end.Format(dayLayout),
+		AnalyticsEnabled: row.AnalyticsEnabled,
+		Totals:           totals,
+		Series:           series,
+		Breakdowns:       buildBreakdowns(breakdownRows),
+	}}, nil
 }

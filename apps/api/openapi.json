@@ -463,6 +463,92 @@
 				],
 				"type": "object"
 			},
+			"LinkStats": {
+				"additionalProperties": false,
+				"properties": {
+					"$schema": {
+						"description": "A URL to the JSON Schema for this object.",
+						"examples": ["https://example.com/schemas/LinkStats.json"],
+						"format": "uri",
+						"readOnly": true,
+						"type": "string"
+					},
+					"analytics_enabled": {
+						"type": "boolean"
+					},
+					"breakdowns": {
+						"$ref": "#/components/schemas/LinkStatsBreakdowns"
+					},
+					"from": {
+						"type": "string"
+					},
+					"link_id": {
+						"type": "string"
+					},
+					"series": {
+						"items": {
+							"$ref": "#/components/schemas/StatDay"
+						},
+						"type": ["array", "null"]
+					},
+					"to": {
+						"type": "string"
+					},
+					"totals": {
+						"$ref": "#/components/schemas/StatCounts"
+					}
+				},
+				"required": [
+					"link_id",
+					"from",
+					"to",
+					"analytics_enabled",
+					"totals",
+					"series",
+					"breakdowns"
+				],
+				"type": "object"
+			},
+			"LinkStatsBreakdowns": {
+				"additionalProperties": false,
+				"properties": {
+					"bot_status": {
+						"$ref": "#/components/schemas/StatBreakdown"
+					},
+					"browser": {
+						"$ref": "#/components/schemas/StatBreakdown"
+					},
+					"country": {
+						"$ref": "#/components/schemas/StatBreakdown"
+					},
+					"device": {
+						"$ref": "#/components/schemas/StatBreakdown"
+					},
+					"os": {
+						"$ref": "#/components/schemas/StatBreakdown"
+					},
+					"qr_vs_regular": {
+						"$ref": "#/components/schemas/StatBreakdown"
+					},
+					"referrer": {
+						"$ref": "#/components/schemas/StatBreakdown"
+					},
+					"utm_source": {
+						"$ref": "#/components/schemas/StatBreakdown"
+					}
+				},
+				"required": [
+					"browser",
+					"os",
+					"device",
+					"country",
+					"referrer",
+					"utm_source",
+					"bot_status",
+					"qr_vs_regular"
+				],
+				"type": "object"
+			},
 			"MeOutputBody": {
 				"additionalProperties": false,
 				"properties": {
@@ -759,6 +845,98 @@
 					}
 				},
 				"required": ["password"],
+				"type": "object"
+			},
+			"StatBreakdown": {
+				"additionalProperties": false,
+				"properties": {
+					"other_clicks": {
+						"format": "int64",
+						"type": "integer"
+					},
+					"other_unique_visitors": {
+						"format": "int64",
+						"type": "integer"
+					},
+					"other_values": {
+						"format": "int64",
+						"type": "integer"
+					},
+					"values": {
+						"items": {
+							"$ref": "#/components/schemas/StatValue"
+						},
+						"type": ["array", "null"]
+					}
+				},
+				"required": ["values", "other_values", "other_clicks", "other_unique_visitors"],
+				"type": "object"
+			},
+			"StatCounts": {
+				"additionalProperties": false,
+				"properties": {
+					"clicks": {
+						"format": "int64",
+						"type": "integer"
+					},
+					"human_clicks": {
+						"format": "int64",
+						"type": "integer"
+					},
+					"human_unique_visitors": {
+						"format": "int64",
+						"type": "integer"
+					},
+					"unique_visitors": {
+						"format": "int64",
+						"type": "integer"
+					}
+				},
+				"required": ["clicks", "unique_visitors", "human_clicks", "human_unique_visitors"],
+				"type": "object"
+			},
+			"StatDay": {
+				"additionalProperties": false,
+				"properties": {
+					"clicks": {
+						"format": "int64",
+						"type": "integer"
+					},
+					"date": {
+						"type": "string"
+					},
+					"human_clicks": {
+						"format": "int64",
+						"type": "integer"
+					},
+					"human_unique_visitors": {
+						"format": "int64",
+						"type": "integer"
+					},
+					"unique_visitors": {
+						"format": "int64",
+						"type": "integer"
+					}
+				},
+				"required": ["date", "clicks", "unique_visitors", "human_clicks", "human_unique_visitors"],
+				"type": "object"
+			},
+			"StatValue": {
+				"additionalProperties": false,
+				"properties": {
+					"clicks": {
+						"format": "int64",
+						"type": "integer"
+					},
+					"unique_visitors": {
+						"format": "int64",
+						"type": "integer"
+					},
+					"value": {
+						"type": "string"
+					}
+				},
+				"required": ["value", "clicks", "unique_visitors"],
 				"type": "object"
 			},
 			"Tag": {
@@ -1596,6 +1774,74 @@
 					}
 				],
 				"summary": "Download a link's QR code",
+				"tags": ["Links"]
+			}
+		},
+		"/v1/links/{link_id}/stats": {
+			"get": {
+				"operationId": "get-link-stats",
+				"parameters": [
+					{
+						"description": "The link this request operates on.",
+						"in": "path",
+						"name": "link_id",
+						"required": true,
+						"schema": {
+							"description": "The link this request operates on.",
+							"type": "string"
+						}
+					},
+					{
+						"description": "First day to include, as YYYY-MM-DD in UTC. Defaults to 29 days before 'to'. Clamped so the window never starts more than 89 days before today.",
+						"explode": false,
+						"in": "query",
+						"name": "from",
+						"schema": {
+							"description": "First day to include, as YYYY-MM-DD in UTC. Defaults to 29 days before 'to'. Clamped so the window never starts more than 89 days before today.",
+							"format": "date",
+							"type": "string"
+						}
+					},
+					{
+						"description": "Last day to include, as YYYY-MM-DD in UTC. Defaults to today; a later date is treated as today.",
+						"explode": false,
+						"in": "query",
+						"name": "to",
+						"schema": {
+							"description": "Last day to include, as YYYY-MM-DD in UTC. Defaults to today; a later date is treated as today.",
+							"format": "date",
+							"type": "string"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/LinkStats"
+								}
+							}
+						},
+						"description": "OK"
+					},
+					"default": {
+						"content": {
+							"application/problem+json": {
+								"schema": {
+									"$ref": "#/components/schemas/ErrorModel"
+								}
+							}
+						},
+						"description": "Error"
+					}
+				},
+				"security": [
+					{
+						"bearerAuth": []
+					}
+				],
+				"summary": "Read a link's statistics",
 				"tags": ["Links"]
 			}
 		},

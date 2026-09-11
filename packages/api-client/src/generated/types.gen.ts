@@ -229,6 +229,31 @@ export type Link = {
     updated_at: string;
 };
 
+export type LinkStats = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    analytics_enabled: boolean;
+    breakdowns: LinkStatsBreakdowns;
+    from: string;
+    link_id: string;
+    series: Array<StatDay> | null;
+    to: string;
+    totals: StatCounts;
+};
+
+export type LinkStatsBreakdowns = {
+    bot_status: StatBreakdown;
+    browser: StatBreakdown;
+    country: StatBreakdown;
+    device: StatBreakdown;
+    os: StatBreakdown;
+    qr_vs_regular: StatBreakdown;
+    referrer: StatBreakdown;
+    utm_source: StatBreakdown;
+};
+
 export type MeOutputBody = {
     /**
      * A URL to the JSON Schema for this object.
@@ -337,6 +362,34 @@ export type SetLinkPasswordInputBody = {
      * 8 to 128 characters. Must not repeat one character, and must not be derived from the link's short path, its destination, or the Verein's name.
      */
     password: string;
+};
+
+export type StatBreakdown = {
+    other_clicks: number;
+    other_unique_visitors: number;
+    other_values: number;
+    values: Array<StatValue> | null;
+};
+
+export type StatCounts = {
+    clicks: number;
+    human_clicks: number;
+    human_unique_visitors: number;
+    unique_visitors: number;
+};
+
+export type StatDay = {
+    clicks: number;
+    date: string;
+    human_clicks: number;
+    human_unique_visitors: number;
+    unique_visitors: number;
+};
+
+export type StatValue = {
+    clicks: number;
+    unique_visitors: number;
+    value: string;
 };
 
 export type Tag = {
@@ -577,6 +630,16 @@ export type LinkWritable = {
     tags: Array<TagWritable> | null;
     team_id: string;
     updated_at: string;
+};
+
+export type LinkStatsWritable = {
+    analytics_enabled: boolean;
+    breakdowns: LinkStatsBreakdowns;
+    from: string;
+    link_id: string;
+    series: Array<StatDay> | null;
+    to: string;
+    totals: StatCounts;
 };
 
 export type MeOutputBodyWritable = {
@@ -1075,6 +1138,45 @@ export type GetLinkQrResponses = {
 };
 
 export type GetLinkQrResponse = GetLinkQrResponses[keyof GetLinkQrResponses];
+
+export type GetLinkStatsData = {
+    body?: never;
+    path: {
+        /**
+         * The link this request operates on.
+         */
+        link_id: string;
+    };
+    query?: {
+        /**
+         * First day to include, as YYYY-MM-DD in UTC. Defaults to 29 days before 'to'. Clamped so the window never starts more than 89 days before today.
+         */
+        from?: string;
+        /**
+         * Last day to include, as YYYY-MM-DD in UTC. Defaults to today; a later date is treated as today.
+         */
+        to?: string;
+    };
+    url: '/v1/links/{link_id}/stats';
+};
+
+export type GetLinkStatsErrors = {
+    /**
+     * Error
+     */
+    default: ErrorModel;
+};
+
+export type GetLinkStatsError = GetLinkStatsErrors[keyof GetLinkStatsErrors];
+
+export type GetLinkStatsResponses = {
+    /**
+     * OK
+     */
+    200: LinkStats;
+};
+
+export type GetLinkStatsResponse = GetLinkStatsResponses[keyof GetLinkStatsResponses];
 
 export type GetMeData = {
     body?: never;

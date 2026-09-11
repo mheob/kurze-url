@@ -55,6 +55,7 @@ var teamScopedCases = []matrixCase{
 	{"remove-link-password", http.MethodDelete, "/v1/links/{link}/password",
 		nil, authz.RoleEditor},
 	{"get-link-qr", http.MethodGet, "/v1/links/{link}/qr", nil, authz.RoleViewer},
+	{"get-link-stats", http.MethodGet, "/v1/links/{link}/stats", nil, authz.RoleViewer},
 	{"create-folder", http.MethodPost, "/v1/teams/{team}/folders",
 		map[string]string{"name": "Matrix"}, authz.RoleEditor},
 	{"list-folders", http.MethodGet, "/v1/teams/{team}/folders", nil, authz.RoleViewer},

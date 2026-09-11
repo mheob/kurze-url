@@ -431,6 +431,15 @@ func (d Deps) registerLinks(api huma.API) {
 			},
 		},
 	}, d.getLinkQR)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-link-stats",
+		Method:      http.MethodGet,
+		Path:        "/v1/links/{link_id}/stats",
+		Summary:     "Read a link's statistics",
+		Tags:        []string{"Links"},
+		Security:    []map[string][]string{{"bearerAuth": {}}},
+	}, d.getLinkStats)
 }
 
 func (d Deps) createLink(ctx context.Context, in *CreateLinkInput) (*LinkOutput, error) {
