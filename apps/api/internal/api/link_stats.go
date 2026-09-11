@@ -3,6 +3,9 @@ package api
 import (
 	"errors"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/mheob/kurze-url/apps/api/internal/db"
 )
 
 // dayLayout is how every date in this endpoint is written and read: the bucket
@@ -85,4 +88,192 @@ func clampDay(value, low, high time.Time) time.Time {
 		return high
 	}
 	return value
+}
+
+// LinkStats is the whole answer of GET /v1/links/{link_id}/stats: one document
+// per link, rather than one request per dimension. A dashboard would otherwise
+// make nine calls, each repeating the same authorization resolve and the same
+// index scan over the same rows.
+type LinkStats struct {
+	LinkID uuid.UUID `json:"link_id"`
+	// From and To are the window that was actually used, which is not always
+	// the one that was asked for: both are clamped into the retention window,
+	// silently, and echoing them here is the only way a caller can see that.
+	From             string              `json:"from"`
+	To               string              `json:"to"`
+	AnalyticsEnabled bool                `json:"analytics_enabled"`
+	Totals           StatCounts          `json:"totals"`
+	Series           []StatDay           `json:"series"`
+	Breakdowns       LinkStatsBreakdowns `json:"breakdowns"`
+}
+
+// StatCounts is the four numbers every level of this response reports.
+//
+// Both a total and a human figure appear, because either alone misleads. A
+// link in a Verein's newsletter is fetched by every mail-provider link scanner
+// it passes, so the total overstates reach; but the human figure alone cannot
+// be reconciled with any breakdown, and the difference would then be invisible
+// rather than explained.
+type StatCounts struct {
+	Clicks              int64 `json:"clicks"`
+	UniqueVisitors      int64 `json:"unique_visitors"`
+	HumanClicks         int64 `json:"human_clicks"`
+	HumanUniqueVisitors int64 `json:"human_unique_visitors"`
+}
+
+// StatDay is one calendar day, as YYYY-MM-DD in UTC.
+//
+// StatCounts is embedded without a JSON name, so Huma inlines its four fields
+// into this object rather than nesting them (schema.go collects an anonymous
+// field with no explicit JSON name and splices that struct's fields into the
+// parent's, matching encoding/json).
+type StatDay struct {
+	Date string `json:"date"`
+	StatCounts
+}
+
+// StatValue is one value of one dimension.
+type StatValue struct {
+	Value          string `json:"value"`
+	Clicks         int64  `json:"clicks"`
+	UniqueVisitors int64  `json:"unique_visitors"`
+}
+
+// StatBreakdown is one dimension's top values plus what they leave out. The
+// Other* fields are not padding: without them a capped list would silently
+// misrepresent a dimension's total.
+type StatBreakdown struct {
+	Values              []StatValue `json:"values"`
+	OtherValues         int64       `json:"other_values"`
+	OtherClicks         int64       `json:"other_clicks"`
+	OtherUniqueVisitors int64       `json:"other_unique_visitors"`
+}
+
+// LinkStatsBreakdowns names every dimension as its own field rather than
+// keying a map. A map generates as additionalProperties and reaches TypeScript
+// as an index signature, where every access is a possible undefined; named
+// fields reach it as eight typed properties, and "all eight are always
+// present" becomes a property of the type instead of a runtime promise.
+type LinkStatsBreakdowns struct {
+	Browser     StatBreakdown `json:"browser"`
+	OS          StatBreakdown `json:"os"`
+	Device      StatBreakdown `json:"device"`
+	Country     StatBreakdown `json:"country"`
+	Referrer    StatBreakdown `json:"referrer"`
+	UTMSource   StatBreakdown `json:"utm_source"`
+	BotStatus   StatBreakdown `json:"bot_status"`
+	QRVsRegular StatBreakdown `json:"qr_vs_regular"`
+}
+
+// slot returns the field a dimension_type belongs in, or nil for a type this
+// build does not know. Nil is deliberate: a value added to the table's check
+// constraint later should be skipped, not funnelled into a bucket nobody named.
+func (b *LinkStatsBreakdowns) slot(dimensionType string) *StatBreakdown {
+	switch dimensionType {
+	case "browser":
+		return &b.Browser
+	case "os":
+		return &b.OS
+	case "device":
+		return &b.Device
+	case "country":
+		return &b.Country
+	case "referrer":
+		return &b.Referrer
+	case "utm_source":
+		return &b.UTMSource
+	case "bot_status":
+		return &b.BotStatus
+	case "qr_vs_regular":
+		return &b.QRVsRegular
+	default:
+		return nil
+	}
+}
+
+// buildSeries expands the query's sparse rows into one entry per day of the
+// window and sums them into the totals.
+//
+// It returns both because the totals are the series' sum by construction:
+// querying them separately would allow the headline figure and the chart under
+// it to disagree, which is the kind of defect nobody reports and everybody
+// distrusts.
+func buildSeries(
+	rows []db.GetLinkClickSeriesRow, start, end time.Time,
+) ([]StatDay, StatCounts) {
+	// Keyed by the formatted day rather than by time.Time: the date column
+	// arrives as a time.Time whose location and precision are the driver's
+	// business, and two instants that mean the same calendar day must not miss
+	// each other in a map.
+	byDay := make(map[string]StatCounts, len(rows))
+	for _, row := range rows {
+		byDay[row.BucketStart.UTC().Format(dayLayout)] = StatCounts{
+			Clicks:              row.Clicks,
+			UniqueVisitors:      row.UniqueVisitors,
+			HumanClicks:         row.HumanClicks,
+			HumanUniqueVisitors: row.HumanUniqueVisitors,
+		}
+	}
+
+	var totals StatCounts
+	series := make([]StatDay, 0, RetentionDays)
+	for day := start; !day.After(end); day = day.AddDate(0, 0, 1) {
+		key := day.Format(dayLayout)
+		counts := byDay[key]
+
+		totals.Clicks += counts.Clicks
+		totals.UniqueVisitors += counts.UniqueVisitors
+		totals.HumanClicks += counts.HumanClicks
+		totals.HumanUniqueVisitors += counts.HumanUniqueVisitors
+
+		series = append(series, StatDay{Date: key, StatCounts: counts})
+	}
+
+	return series, totals
+}
+
+// buildBreakdowns groups the ranked rows by dimension and turns each
+// dimension's full figures into the remainder its returned values leave out.
+func buildBreakdowns(rows []db.GetLinkClickBreakdownsRow) LinkStatsBreakdowns {
+	var out LinkStatsBreakdowns
+
+	// Every dimension answers, empty ones included, so a client never has to
+	// distinguish "no data" from "field absent". An empty slice rather than
+	// nil, so the field marshals as [] and never as null.
+	for _, slot := range []*StatBreakdown{
+		&out.Browser, &out.OS, &out.Device, &out.Country,
+		&out.Referrer, &out.UTMSource, &out.BotStatus, &out.QRVsRegular,
+	} {
+		slot.Values = []StatValue{}
+	}
+
+	for _, row := range rows {
+		slot := out.slot(row.DimensionType)
+		if slot == nil {
+			continue
+		}
+
+		value := "unknown"
+		if row.DimensionValue != nil {
+			value = *row.DimensionValue
+		}
+		slot.Values = append(slot.Values, StatValue{
+			Value:          value,
+			Clicks:         row.Clicks,
+			UniqueVisitors: row.UniqueVisitors,
+		})
+
+		// Each row repeats its dimension's full figures, so the remainder is
+		// recomputed rather than accumulated — the last row of a dimension
+		// leaves the correct answer behind.
+		slot.OtherValues = row.DimensionValues - int64(len(slot.Values))
+		slot.OtherClicks = row.DimensionClicks
+		slot.OtherUniqueVisitors = row.DimensionUniqueVisitors
+		for _, seen := range slot.Values {
+			slot.OtherClicks -= seen.Clicks
+			slot.OtherUniqueVisitors -= seen.UniqueVisitors
+		}
+	}
+
+	return out
 }
