@@ -54,6 +54,13 @@ func NewRouter(deps Deps) http.Handler {
 	// on every redirect, because root is what dispatches the hostname split
 	// to both surfaces. With() wraps this one route and nothing else.
 	root.With(middleware.Recoverer).Get("/health/deep", deps.HandleDeepHealth)
+	// POST /internal/retention deletes click analytics past the retention
+	// window. It answers on every hostname for the same reason /health/deep
+	// does — it sits above the hostname split — and that is acceptable for
+	// the same reason: the token is the security boundary, not the hostname.
+	// With(Recoverer), not root.Use: middleware on root would run on every
+	// redirect.
+	root.With(middleware.Recoverer).Post("/internal/retention", deps.HandleRetention)
 	root.HandleFunc("/*", func(w http.ResponseWriter, r *http.Request) {
 		if Hostname(r.Host) == apiHost {
 			apiSurface.ServeHTTP(w, r)
