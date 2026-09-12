@@ -1,0 +1,68 @@
+# docs/planning/01-architecture.md promises 90-day automatic deletion of click
+# analytics. This workflow is what keeps that promise: once a day it calls the
+# API's retention endpoint, which deletes every link_click_stats row older than
+# the window the stats endpoint will serve.
+#
+# The heartbeat is the last step and runs only if the delete succeeded, so one
+# signal covers both hazards. A failing delete withholds the ping — and so does
+# a workflow that never runs at all, which is the hazard that makes no other
+# noise: GitHub disables scheduled workflows after 60 days of repository
+# inactivity, and a disabled workflow does not fail, it stops. The nightly
+# backups in kurze-url-backups are watched the same way, for the same reason.
+#
+# Worth knowing when reading the logs: the oldest rollup row dates from
+# 2026-09-02, so until roughly December this job correctly deletes nothing.
+# "deleted: 0" is the expected output, not a symptom.
+name: retention
+
+on:
+  schedule:
+    # Not on the hour: GitHub queues every scheduled job at :00 and runs the
+    # backlog late.
+    - cron: "43 3 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/retention.yml
+
+concurrency:
+  group: retention
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  retention:
+    runs-on: ubuntu-latest
+    steps:
+      # Skipped on pull requests: this calls production, and deleting
+      # production data from an unmerged branch is not a thing a review should
+      # be able to do. On a pull request the job therefore only proves the file
+      # parses, which is what the path filter above is for.
+      - name: Delete expired click analytics
+        if: github.event_name != 'pull_request'
+        env:
+          RETENTION_TOKEN: ${{ secrets.RETENTION_TOKEN }}
+        run: |
+          if [ -z "$RETENTION_TOKEN" ]; then
+            echo "RETENTION_TOKEN is not set" >&2
+            exit 1
+          fi
+          curl --fail --silent --show-error \
+            --request POST \
+            --header "X-Retention-Token: $RETENTION_TOKEN" \
+            https://api.kurze-url.app/internal/retention
+          echo
+
+      # Last, and only on success: see the note at the top of this file.
+      - name: Report to the heartbeat monitor
+        if: github.event_name != 'pull_request'
+        env:
+          RETENTION_HEARTBEAT_URL: ${{ secrets.RETENTION_HEARTBEAT_URL }}
+        run: |
+          if [ -z "$RETENTION_HEARTBEAT_URL" ]; then
+            echo "RETENTION_HEARTBEAT_URL is not set" >&2
+            exit 1
+          fi
+          curl --fail --silent --show-error "$RETENTION_HEARTBEAT_URL"
