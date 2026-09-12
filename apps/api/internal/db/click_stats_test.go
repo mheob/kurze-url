@@ -189,3 +189,83 @@ func TestGetLinkClickBreakdownsExcludesTheTotalDimension(t *testing.T) {
 	require.Len(t, rows, 1)
 	require.Equal(t, "device", rows[0].DimensionType)
 }
+
+// TestDeleteExpiredClickStatsKeepsTheOldestServedDay is the boundary the whole
+// job turns on. The stats endpoint serves bucket_start >= today-89, so the row
+// at exactly the cutoff is the oldest one a caller can still see. Deleting it
+// would make a Verein's statistics vanish from inside a window the API still
+// offers — and unlike deleting too little, that cannot be undone.
+func TestDeleteExpiredClickStatsKeepsTheOldestServedDay(t *testing.T) {
+	f := newLinkFixture(t)
+	pool := testPool(t)
+	link := f.create(t, "retention")
+
+	for _, d := range []string{"2026-06-03", "2026-06-04", "2026-06-05", "2026-09-01"} {
+		seedClick(t, pool, link.ID, d, "total", nil, 1, 1)
+	}
+
+	deleted, err := f.queries.DeleteExpiredClickStats(context.Background(), day(t, "2026-06-05"))
+	require.NoError(t, err)
+	require.EqualValues(t, 2, deleted, "only the two days strictly before the cutoff")
+
+	rows, err := pool.Query(context.Background(),
+		`select bucket_start from link_click_stats where link_id = $1 order by bucket_start`,
+		link.ID)
+	require.NoError(t, err)
+	defer rows.Close()
+
+	var remaining []time.Time
+	for rows.Next() {
+		var bucket time.Time
+		require.NoError(t, rows.Scan(&bucket))
+		remaining = append(remaining, bucket.UTC())
+	}
+	require.NoError(t, rows.Err())
+	require.Equal(t, []time.Time{day(t, "2026-06-05"), day(t, "2026-09-01")}, remaining,
+		"the cutoff day itself survives")
+}
+
+// TestDeleteExpiredClickStatsReportsZeroWithoutErroring pins what this job
+// does every day for its first eighty days in production: nothing is old
+// enough to delete yet. That has to be a zero rather than an error, and the
+// count has to come back, because "0 rows" in a workflow log is the only
+// evidence that separates a working job from one that stopped running.
+func TestDeleteExpiredClickStatsReportsZeroWithoutErroring(t *testing.T) {
+	f := newLinkFixture(t)
+	pool := testPool(t)
+	link := f.create(t, "nothing-old")
+	seedClick(t, pool, link.ID, "2026-09-01", "total", nil, 5, 5)
+
+	deleted, err := f.queries.DeleteExpiredClickStats(context.Background(), day(t, "2026-06-05"))
+
+	require.NoError(t, err)
+	require.EqualValues(t, 0, deleted)
+}
+
+// TestDeleteExpiredClickStatsLeavesTheAuditLogAlone pins the scope decision.
+// No document promises audit_log a retention period, and it is the record of
+// who changed what — the thing one consults precisely when something went
+// wrong months ago. Deleting it has to be its own decision, never a side
+// effect of this job growing a "while we're at it" clause.
+func TestDeleteExpiredClickStatsLeavesTheAuditLogAlone(t *testing.T) {
+	f := newLinkFixture(t)
+	pool := testPool(t)
+	link := f.create(t, "audit-untouched")
+	seedClick(t, pool, link.ID, "2026-01-01", "total", nil, 1, 1)
+
+	var auditID int64
+	require.NoError(t, pool.QueryRow(context.Background(),
+		`insert into audit_log (team_id, actor_user_id, action, entity_type, entity_id, metadata, created_at)
+		 values ($1, $2, 'link.created', 'link', $3, '{}'::jsonb, '2026-01-01T00:00:00Z')
+		 returning id`,
+		f.teamID, f.userID, link.ID).Scan(&auditID))
+
+	deleted, err := f.queries.DeleteExpiredClickStats(context.Background(), day(t, "2026-06-05"))
+	require.NoError(t, err)
+	require.EqualValues(t, 1, deleted)
+
+	var surviving int
+	require.NoError(t, pool.QueryRow(context.Background(),
+		`select count(*) from audit_log where id = $1`, auditID).Scan(&surviving))
+	require.Equal(t, 1, surviving, "audit_log is out of this job's scope, on purpose")
+}

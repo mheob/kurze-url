@@ -91,3 +91,21 @@ select dimension_type, dimension_value, clicks, unique_visitors,
 from ranked
 where value_rank <= sqlc.arg(top_values)::int
 order by dimension_type, value_rank;
+
+-- Retention. docs/planning/01-architecture.md promises 90-day automatic
+-- deletion of click analytics; this statement is what keeps that promise.
+--
+-- :execrows rather than :exec because the row count is the only evidence the
+-- job did anything. For the first eighty days after it ships nothing is old
+-- enough to delete, so "0 rows" is the correct answer — and a job that has
+-- silently stopped running produces exactly the same silence.
+--
+-- The cutoff is a parameter, never a literal. The stats endpoint serves
+-- bucket_start >= today-89, computed from api.RetentionDays; a number written
+-- here as well would be a second definition of one boundary. The two drifting
+-- apart fails silently in both directions: rows the promise says are gone stay
+-- readable, or statistics vanish from inside a window the API still offers.
+
+-- name: DeleteExpiredClickStats :execrows
+delete from link_click_stats
+where bucket_start < sqlc.arg(oldest_kept)::date;
