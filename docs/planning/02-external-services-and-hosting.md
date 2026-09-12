@@ -124,6 +124,8 @@ Decided 2026-09-01: a simple external check that the redirect path (`GET /<slug>
 
 **Built 2026-09-07** as three monitors rather than one: `/health/deep` on the API hostname (token-guarded, checks Postgres and Redis), the flat `/health` on `go.kurze-url.app` (proves DNS, TLS and the process on the redirect surface), and the web project's landing page. Monitoring a real short link end to end was considered and rejected: a cache hit never reaches Postgres, so it would not keep Supabase awake, and at a three-minute interval it would add 480 clicks a day to a real link's statistics.
 
+Added 2026-09-12: a second **heartbeat** monitor, beside the one watching for the absence of a nightly backup. This one watches the analytics retention job (`.github/workflows/retention.yml`), which pings it only after a successful deletion. Both exist for the same reason, and it is not that the jobs are fragile: GitHub disables scheduled workflows after 60 days of repository inactivity, and a disabled workflow does not fail — it stops, silently. A monitor that alerts on a failing run would never fire. One that alerts on a missing run does.
+
 ## Not yet decided / to revisit
 
 - Notification channel for alerts (email vs. a webhook into chat/Discord/etc. — whatever the maintainer team actually watches). Now applies to both the resource-threshold alerts above and Sentry/Better Stack notifications — one channel decision probably wants to cover all three.
