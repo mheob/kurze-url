@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AddTeamMemberData, AddTeamMemberErrors, AddTeamMemberResponses, CreateDomainData, CreateDomainErrors, CreateDomainResponses, CreateFolderData, CreateFolderErrors, CreateFolderResponses, CreateLinkData, CreateLinkErrors, CreateLinkResponses, CreateTagData, CreateTagErrors, CreateTagResponses, CreateTeamData, CreateTeamErrors, CreateTeamResponses, DeleteDomainData, DeleteDomainErrors, DeleteDomainResponses, DeleteFolderData, DeleteFolderErrors, DeleteFolderResponses, DeleteLinkData, DeleteLinkErrors, DeleteLinkResponses, DeleteTagData, DeleteTagErrors, DeleteTagResponses, GetDomainData, GetDomainErrors, GetDomainResponses, GetHealthData, GetHealthErrors, GetHealthResponses, GetLinkData, GetLinkErrors, GetLinkQrData, GetLinkQrErrors, GetLinkQrResponses, GetLinkResponses, GetMeData, GetMeErrors, GetMeResponses, GetTeamData, GetTeamErrors, GetTeamResponses, ListAuditLogData, ListAuditLogErrors, ListAuditLogResponses, ListDomainsData, ListDomainsErrors, ListDomainsResponses, ListFoldersData, ListFoldersErrors, ListFoldersResponses, ListLinksData, ListLinksErrors, ListLinksResponses, ListTagsData, ListTagsErrors, ListTagsResponses, ListTeamMembersData, ListTeamMembersErrors, ListTeamMembersResponses, ListTeamsData, ListTeamsErrors, ListTeamsResponses, RemoveLinkPasswordData, RemoveLinkPasswordErrors, RemoveLinkPasswordResponses, RemoveTeamMemberData, RemoveTeamMemberErrors, RemoveTeamMemberResponses, SetLinkPasswordData, SetLinkPasswordErrors, SetLinkPasswordResponses, UpdateFolderData, UpdateFolderErrors, UpdateFolderResponses, UpdateLinkData, UpdateLinkErrors, UpdateLinkResponses, UpdateTagData, UpdateTagErrors, UpdateTagResponses, UpdateTeamData, UpdateTeamErrors, UpdateTeamMemberData, UpdateTeamMemberErrors, UpdateTeamMemberResponses, UpdateTeamResponses, VerifyDomainData, VerifyDomainErrors, VerifyDomainResponses } from './types.gen';
+import type { AddTeamMemberData, AddTeamMemberErrors, AddTeamMemberResponses, CreateDomainData, CreateDomainErrors, CreateDomainResponses, CreateFolderData, CreateFolderErrors, CreateFolderResponses, CreateLinkData, CreateLinkErrors, CreateLinkResponses, CreateTagData, CreateTagErrors, CreateTagResponses, CreateTeamData, CreateTeamErrors, CreateTeamResponses, DeleteDomainData, DeleteDomainErrors, DeleteDomainResponses, DeleteFolderData, DeleteFolderErrors, DeleteFolderResponses, DeleteLinkData, DeleteLinkErrors, DeleteLinkResponses, DeleteTagData, DeleteTagErrors, DeleteTagResponses, GetDomainData, GetDomainErrors, GetDomainResponses, GetHealthData, GetHealthErrors, GetHealthResponses, GetLinkData, GetLinkErrors, GetLinkQrData, GetLinkQrErrors, GetLinkQrResponses, GetLinkResponses, GetLinkStatsData, GetLinkStatsErrors, GetLinkStatsResponses, GetMeData, GetMeErrors, GetMeResponses, GetTeamData, GetTeamErrors, GetTeamResponses, ListAuditLogData, ListAuditLogErrors, ListAuditLogResponses, ListDomainsData, ListDomainsErrors, ListDomainsResponses, ListFoldersData, ListFoldersErrors, ListFoldersResponses, ListLinksData, ListLinksErrors, ListLinksResponses, ListTagsData, ListTagsErrors, ListTagsResponses, ListTeamMembersData, ListTeamMembersErrors, ListTeamMembersResponses, ListTeamsData, ListTeamsErrors, ListTeamsResponses, RemoveLinkPasswordData, RemoveLinkPasswordErrors, RemoveLinkPasswordResponses, RemoveTeamMemberData, RemoveTeamMemberErrors, RemoveTeamMemberResponses, SetLinkPasswordData, SetLinkPasswordErrors, SetLinkPasswordResponses, UpdateFolderData, UpdateFolderErrors, UpdateFolderResponses, UpdateLinkData, UpdateLinkErrors, UpdateLinkResponses, UpdateTagData, UpdateTagErrors, UpdateTagResponses, UpdateTeamData, UpdateTeamErrors, UpdateTeamMemberData, UpdateTeamMemberErrors, UpdateTeamMemberResponses, UpdateTeamResponses, VerifyDomainData, VerifyDomainErrors, VerifyDomainResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -131,6 +131,27 @@ export const setLinkPassword = <ThrowOnError extends boolean = false>(options: O
 export const getLinkQr = <ThrowOnError extends boolean = false>(options: Options<GetLinkQrData, ThrowOnError>): RequestResult<GetLinkQrResponses, GetLinkQrErrors, ThrowOnError> => (options.client ?? client).get<GetLinkQrResponses, GetLinkQrErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v1/links/{link_id}/qr',
+    ...options
+});
+
+/**
+ * Read a link's statistics
+ *
+ * Clicks and visitors for one link, day by day, with every rollup dimension broken down.
+ *
+ * Four properties of the underlying rollup are worth knowing before reading the numbers.
+ *
+ * **`unique_visitors` over several days is the sum of daily uniques.** Deduplication happens per link per day and there is deliberately no identifier that survives a day, so a person who opens the link on three days contributes three unique visitors to the total. The daily figures are exact; only their sum carries this meaning.
+ *
+ * **Breakdowns cannot be filtered by bot status.** The rollup stores one row per dimension per day, never a combination, so every breakdown counts all clicks including bots. Only `totals` and `series` carry the human split, and there it is exact.
+ *
+ * **Days are UTC days.** A click at 01:30 Central European Summer Time belongs to the previous day's bucket, and no request-time choice can move it.
+ *
+ * **`utm_source` is sparse by design.** A click without a campaign parameter writes no row for that dimension, so its breakdown sums to less than the click total; the difference is non-campaign traffic, not lost data. Every other dimension sums to the total.
+ */
+export const getLinkStats = <ThrowOnError extends boolean = false>(options: Options<GetLinkStatsData, ThrowOnError>): RequestResult<GetLinkStatsResponses, GetLinkStatsErrors, ThrowOnError> => (options.client ?? client).get<GetLinkStatsResponses, GetLinkStatsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v1/links/{link_id}/stats',
     ...options
 });
 

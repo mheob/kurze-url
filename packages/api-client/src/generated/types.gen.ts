@@ -229,6 +229,43 @@ export type Link = {
     updated_at: string;
 };
 
+export type LinkStats = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    /**
+     * False when this link's click counting is switched off. The redirect path then records nothing, so an empty document means 'not counted' rather than 'not clicked'.
+     */
+    analytics_enabled: boolean;
+    breakdowns: LinkStatsBreakdowns;
+    /**
+     * First day included, as YYYY-MM-DD in UTC. This is the window actually used, which may be narrower than the one requested.
+     */
+    from: string;
+    link_id: string;
+    /**
+     * One entry per day of the window, including days with no clicks. At most 90 entries.
+     */
+    series: Array<StatDay> | null;
+    /**
+     * Last day included, as YYYY-MM-DD in UTC. This is the window actually used, which may be narrower than the one requested.
+     */
+    to: string;
+    totals: StatCounts;
+};
+
+export type LinkStatsBreakdowns = {
+    bot_status: StatBreakdown;
+    browser: StatBreakdown;
+    country: StatBreakdown;
+    device: StatBreakdown;
+    os: StatBreakdown;
+    qr_vs_regular: StatBreakdown;
+    referrer: StatBreakdown;
+    utm_source: StatBreakdown;
+};
+
 export type MeOutputBody = {
     /**
      * A URL to the JSON Schema for this object.
@@ -337,6 +374,52 @@ export type SetLinkPasswordInputBody = {
      * 8 to 128 characters. Must not repeat one character, and must not be derived from the link's short path, its destination, or the Verein's name.
      */
     password: string;
+};
+
+export type StatBreakdown = {
+    /**
+     * Clicks belonging to those further values, so this dimension's reported figures still sum to its true total.
+     */
+    other_clicks: number;
+    other_unique_visitors: number;
+    /**
+     * How many further values exist beyond the ten reported here.
+     */
+    other_values: number;
+    values: Array<StatValue> | null;
+};
+
+export type StatCounts = {
+    clicks: number;
+    /**
+     * Clicks whose User-Agent was not recognised as a bot. Available here and in totals only — no breakdown can be filtered this way.
+     */
+    human_clicks: number;
+    human_unique_visitors: number;
+    /**
+     * Distinct visitors on this day. Summed over several days this counts a returning person once per day.
+     */
+    unique_visitors: number;
+};
+
+export type StatDay = {
+    clicks: number;
+    date: string;
+    /**
+     * Clicks whose User-Agent was not recognised as a bot. Available here and in totals only — no breakdown can be filtered this way.
+     */
+    human_clicks: number;
+    human_unique_visitors: number;
+    /**
+     * Distinct visitors on this day. Summed over several days this counts a returning person once per day.
+     */
+    unique_visitors: number;
+};
+
+export type StatValue = {
+    clicks: number;
+    unique_visitors: number;
+    value: string;
 };
 
 export type Tag = {
@@ -577,6 +660,28 @@ export type LinkWritable = {
     tags: Array<TagWritable> | null;
     team_id: string;
     updated_at: string;
+};
+
+export type LinkStatsWritable = {
+    /**
+     * False when this link's click counting is switched off. The redirect path then records nothing, so an empty document means 'not counted' rather than 'not clicked'.
+     */
+    analytics_enabled: boolean;
+    breakdowns: LinkStatsBreakdowns;
+    /**
+     * First day included, as YYYY-MM-DD in UTC. This is the window actually used, which may be narrower than the one requested.
+     */
+    from: string;
+    link_id: string;
+    /**
+     * One entry per day of the window, including days with no clicks. At most 90 entries.
+     */
+    series: Array<StatDay> | null;
+    /**
+     * Last day included, as YYYY-MM-DD in UTC. This is the window actually used, which may be narrower than the one requested.
+     */
+    to: string;
+    totals: StatCounts;
 };
 
 export type MeOutputBodyWritable = {
@@ -1075,6 +1180,45 @@ export type GetLinkQrResponses = {
 };
 
 export type GetLinkQrResponse = GetLinkQrResponses[keyof GetLinkQrResponses];
+
+export type GetLinkStatsData = {
+    body?: never;
+    path: {
+        /**
+         * The link this request operates on.
+         */
+        link_id: string;
+    };
+    query?: {
+        /**
+         * First day to include, as YYYY-MM-DD in UTC. Defaults to 29 days before 'to'. Clamped so the window never starts more than 89 days before today.
+         */
+        from?: string;
+        /**
+         * Last day to include, as YYYY-MM-DD in UTC. Defaults to today; a later date is treated as today.
+         */
+        to?: string;
+    };
+    url: '/v1/links/{link_id}/stats';
+};
+
+export type GetLinkStatsErrors = {
+    /**
+     * Error
+     */
+    default: ErrorModel;
+};
+
+export type GetLinkStatsError = GetLinkStatsErrors[keyof GetLinkStatsErrors];
+
+export type GetLinkStatsResponses = {
+    /**
+     * OK
+     */
+    200: LinkStats;
+};
+
+export type GetLinkStatsResponse = GetLinkStatsResponses[keyof GetLinkStatsResponses];
 
 export type GetMeData = {
     body?: never;
