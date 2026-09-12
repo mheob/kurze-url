@@ -331,13 +331,14 @@ func TestLinkStatsHidesAnotherTeamsLink(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, rec.Code, "body: %s", rec.Body.String())
 }
 
-// TestLinkStatsAnswers404ForALinkDeletedAfterAuthorization drives the race
-// between the authorization scope's resolve and this handler's own read: a
-// link deleted in between must answer 404, like every sibling handler, not
-// the generic 500 an unmapped pgx.ErrNoRows would fall into. Deleting through
-// the API would also remove the scope's own resolve, proving nothing — a
-// direct pool delete is what reproduces the window.
-func TestLinkStatsAnswers404ForALinkDeletedAfterAuthorization(t *testing.T) {
+// TestLinkStatsAnswers404ForADeletedLink proves that a request for a deleted
+// link answers 404 rather than leaking a 500. The deletion is caught by the
+// LinkViewerScope's resolve phase, not by the handler's pgx.ErrNoRows branch:
+// that branch is defence in depth for a race between the scope's check and
+// the handler's read, which this harness cannot stage. The branch is untested
+// but necessary — a row can vanish between two queries in production, and the
+// handler must handle it without crashing.
+func TestLinkStatsAnswers404ForADeletedLink(t *testing.T) {
 	f := newTenancyFixture(t)
 	created := f.createLink(t, "vanishing", "https://example.org/vanishing")
 
