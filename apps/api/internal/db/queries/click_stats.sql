@@ -105,6 +105,14 @@ order by dimension_type, value_rank;
 -- here as well would be a second definition of one boundary. The two drifting
 -- apart fails silently in both directions: rows the promise says are gone stay
 -- readable, or statistics vanish from inside a window the API still offers.
+--
+-- Retention is instance-wide, not per-team. A nightly cron has no team in
+-- scope, and link_click_stats has no team_id column to filter by. A future
+-- contributor might add a join to link and scope this to a team, thinking it
+-- follows golden rule 4. But retention is a time-based promise: the app keeps
+-- 90 days of all analytics, regardless of team. Scoping the delete would make
+-- that promise depend on call timing instead. The guarantee must be
+-- instance-wide.
 
 -- name: DeleteExpiredClickStats :execrows
 delete from link_click_stats
