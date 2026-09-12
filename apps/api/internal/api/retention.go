@@ -8,11 +8,11 @@ import (
 	"time"
 )
 
-// retentionBudget bounds the delete. The workflow calling this has its own
-// timeout, and a statement sweeping a table nobody has pruned in months is
-// exactly the shape that outlives one — better to fail visibly here, where the
-// heartbeat withholds its ping, than to have the caller give up on a statement
-// still running.
+// retentionBudget bounds the statement so a hung delete fails rather than
+// hanging indefinitely. The workflow's own step failing withholds the heartbeat
+// either way. Which of the two timeouts fires first — this one or the
+// platform's function ceiling — depends on the platform's configuration, which
+// this repository does not pin.
 const retentionBudget = 30 * time.Second
 
 type retentionBody struct {

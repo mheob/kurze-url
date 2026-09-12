@@ -18,10 +18,15 @@ import (
 // does not have.
 const dayLayout = "2006-01-02"
 
-// RetentionDays bounds what this endpoint will serve. docs/planning/01-architecture.md
-// promises 90-day automatic deletion of analytics; nothing implements that
-// deletion yet, so this bound is currently the only thing honouring it — the
-// rows are still in the table, they are simply not readable through here.
+// RetentionDays is the one definition of the retention window promised in
+// docs/planning/01-architecture.md. The stats endpoint derives its floor
+// through statsWindow; the retention job derives its deletion cutoff through
+// retentionCutoff. Both read this constant, making them complements: the
+// endpoint serves rows from the floor forward; the job deletes rows before it.
+// Keeping them one constant is not optional — two definitions would drift
+// silently, and the drift shows only as rows the promise says are deleted
+// staying readable, or a Verein's statistics vanishing from a window the API
+// still offers. TestRetentionCutoffIsTheStatsEndpointsFloor holds them together.
 // Inclusive: the floor is today minus 89 days, which makes a 90-day window.
 const RetentionDays = 90
 
