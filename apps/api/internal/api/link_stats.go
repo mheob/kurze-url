@@ -7,6 +7,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/mheob/kurze-url/apps/api/internal/authz"
 	"github.com/mheob/kurze-url/apps/api/internal/db"
@@ -307,6 +308,10 @@ func (d Deps) getLinkStats(ctx context.Context, in *LinkStatsInput) (*LinkStatsO
 
 	start, end, err := statsWindow(in.From, in.To, d.now())
 	if err != nil {
+		if !errors.Is(err, errFromAfterTo) {
+			d.Log.Error("resolve stats window", "error", err, "link_id", link.ID)
+			return nil, huma.Error500InternalServerError("could not read the statistics")
+		}
 		// No ErrorDetail: that typed-value convention carries a value the
 		// caller must act on, and there is nothing here beyond the message.
 		return nil, huma.Error422UnprocessableEntity("from must not be later than to")
@@ -318,6 +323,9 @@ func (d Deps) getLinkStats(ctx context.Context, in *LinkStatsInput) (*LinkStatsO
 	row, err := d.Queries.GetLinkForAPI(ctx, db.GetLinkForAPIParams{
 		ID: link.ID, TeamID: link.TeamID,
 	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, huma.Error404NotFound("link not found")
+	}
 	if err != nil {
 		d.Log.Error("load link for stats", "error", err, "link_id", link.ID)
 		return nil, huma.Error500InternalServerError("could not read the statistics")

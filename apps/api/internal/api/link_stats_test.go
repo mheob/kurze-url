@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"testing"
 	"time"
 
@@ -147,6 +148,50 @@ func TestLinkStatsReportsTheBotSplitAndTheBreakdowns(t *testing.T) {
 	require.Equal(t, "DE", body.Breakdowns["country"].Values[0].Value)
 	require.EqualValues(t, 18, body.Breakdowns["country"].Values[0].Clicks)
 	require.Equal(t, "qr", body.Breakdowns["qr_vs_regular"].Values[0].Value)
+
+	// The bot_status breakdown is the other side of the human/total split:
+	// it must carry both values, and they must sum to the dimension's clicks
+	// — the same 20 the "total" row and body.Totals.Clicks report.
+	botStatus := body.Breakdowns["bot_status"]
+	require.Len(t, botStatus.Values, 2)
+	var humanClicks, botClicks int64
+	for _, value := range botStatus.Values {
+		switch value.Value {
+		case "human":
+			humanClicks = value.Clicks
+		case "bot":
+			botClicks = value.Clicks
+		}
+	}
+	require.EqualValues(t, 8, humanClicks)
+	require.EqualValues(t, 12, botClicks)
+	require.EqualValues(t, 20, humanClicks+botClicks, "the split must sum to the dimension's clicks")
+}
+
+// TestLinkStatsLeavesAnAbsentDimensionEmpty is distinct from the
+// nobody-clicked-yet case: here several dimensions do have rows, and
+// utm_source specifically does not, because no click carried that parameter.
+// Its breakdown must still come back empty, not omitted or defaulted from
+// some other dimension's figures.
+func TestLinkStatsLeavesAnAbsentDimensionEmpty(t *testing.T) {
+	f := newTenancyFixture(t)
+	pinToday(t, f, "2026-09-11")
+	created := f.createLink(t, "no-utm", "https://example.org/no-utm")
+
+	seedStatRow(t, f, created.ID, "2026-09-10", "total", nil, 10, 7)
+	seedStatRow(t, f, created.ID, "2026-09-10", "browser", "firefox", 10, 7)
+	seedStatRow(t, f, created.ID, "2026-09-10", "country", "DE", 10, 7)
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		statsPath(created.ID.String(), ""), nil)
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	body := decode[statsBody](t, rec)
+
+	require.Empty(t, body.Breakdowns["utm_source"].Values,
+		"no click carried a utm_source, so that breakdown must be empty")
+	require.NotEmpty(t, body.Breakdowns["browser"].Values, "browser was seeded and must be populated")
+	require.NotEmpty(t, body.Breakdowns["country"].Values, "country was seeded and must be populated")
 }
 
 // TestLinkStatsTotalsEqualTheSeries pins the guarantee that made the totals a
@@ -286,6 +331,25 @@ func TestLinkStatsHidesAnotherTeamsLink(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, rec.Code, "body: %s", rec.Body.String())
 }
 
+// TestLinkStatsAnswers404ForALinkDeletedAfterAuthorization drives the race
+// between the authorization scope's resolve and this handler's own read: a
+// link deleted in between must answer 404, like every sibling handler, not
+// the generic 500 an unmapped pgx.ErrNoRows would fall into. Deleting through
+// the API would also remove the scope's own resolve, proving nothing — a
+// direct pool delete is what reproduces the window.
+func TestLinkStatsAnswers404ForALinkDeletedAfterAuthorization(t *testing.T) {
+	f := newTenancyFixture(t)
+	created := f.createLink(t, "vanishing", "https://example.org/vanishing")
+
+	_, err := f.pool.Exec(context.Background(), `delete from link where id = $1`, created.ID)
+	require.NoError(t, err)
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		statsPath(created.ID.String(), ""), nil)
+
+	require.Equal(t, http.StatusNotFound, rec.Code, "body: %s", rec.Body.String())
+}
+
 // TestLinkStatsSchemaInlinesTheDayCounts pins the one piece of Huma behaviour
 // this response depends on. StatCounts is embedded anonymously so its four
 // fields are spliced into the day object; if a future Huma version nested them
@@ -309,5 +373,37 @@ func TestLinkStatsSchemaInlinesTheDayCounts(t *testing.T) {
 	} {
 		require.Contains(t, raw.Series[0], key,
 			"a day object carries its counts flat, not nested")
+	}
+}
+
+// TestLinkStatsOpenAPISchemaInlinesTheDayCounts is
+// TestLinkStatsSchemaInlinesTheDayCounts's stronger sibling, asserted against
+// the generated apps/api/openapi.json rather than the runtime response.
+// packages/api-client is generated from that file, not from encoding/json's
+// behaviour, so the two can drift: a future Huma version could nest
+// StatCounts in the *schema* while encoding/json kept inlining it at runtime.
+// The runtime test above would keep passing and the drift check would merely
+// ask for a regeneration — this is what would actually catch a generated
+// TypeScript client declaring a field that never arrives.
+func TestLinkStatsOpenAPISchemaInlinesTheDayCounts(t *testing.T) {
+	raw, err := os.ReadFile("../../openapi.json")
+	require.NoError(t, err, "run `go run ./cmd/openapi` to (re)generate it")
+
+	var doc struct {
+		Components struct {
+			Schemas map[string]struct {
+				Properties map[string]json.RawMessage `json:"properties"`
+			} `json:"schemas"`
+		} `json:"components"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &doc))
+
+	statDay, ok := doc.Components.Schemas["StatDay"]
+	require.True(t, ok, "StatDay must be a named schema in the OpenAPI document")
+	for _, key := range []string{
+		"date", "clicks", "unique_visitors", "human_clicks", "human_unique_visitors",
+	} {
+		require.Contains(t, statDay.Properties, key,
+			"the generated schema must inline StatCounts' fields as direct properties, not nest them")
 	}
 }
