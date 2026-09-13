@@ -70,7 +70,7 @@ function renderList(
 	);
 }
 
-describe('DomainList', () => {
+describe(DomainList, () => {
 	it('shows both DNS records for a pending domain', () => {
 		// A Verein that cannot see what to put in DNS cannot proceed, and this
 		// is the only screen that tells them.
@@ -142,7 +142,7 @@ describe('DomainList', () => {
 	it('does not explain a reason that belongs to a different domain', () => {
 		// `verifyingId` matches neither rendered domain here — the reason must
 		// not be misattributed to one it was never about.
-		const other = domain({ id: 'domain-2', hostname: 'other.verein.test' });
+		const other = domain({ hostname: 'other.verein.test', id: 'domain-2' });
 		renderList([pendingDomain, other], {
 			pendingReason: 'unreachable',
 			verifyingId: 'domain-3',
@@ -177,15 +177,15 @@ describe('DomainList', () => {
 	it('disables Check now while a verify for that domain is in flight', () => {
 		// A second click before the first response lands must not fire a
 		// second, overlapping verify request for the same domain.
-		renderList([pendingDomain], { verifyingId: pendingDomain.id, verifyPending: true });
+		renderList([pendingDomain], { verifyPending: true, verifyingId: pendingDomain.id });
 		expect(screen.getByRole('button', { name: 'Check now' })).toBeDisabled();
 	});
 
 	it('does not disable a different domain while another one is verifying', () => {
 		// `verifyPending` is a single slot, correlated by `verifyingId` — the
 		// same discipline `pendingReason`/`deleteBlockedCount` already follow.
-		const other = domain({ id: 'domain-2', hostname: 'other.verein.test' });
-		renderList([pendingDomain, other], { verifyingId: pendingDomain.id, verifyPending: true });
+		const other = domain({ hostname: 'other.verein.test', id: 'domain-2' });
+		renderList([pendingDomain, other], { verifyPending: true, verifyingId: pendingDomain.id });
 		const buttons = screen.getAllByRole('button', { name: 'Check now' });
 		expect(buttons[0]).toBeDisabled();
 		expect(buttons[1]).toBeEnabled();
@@ -195,7 +195,7 @@ describe('DomainList', () => {
 		// A bare "Delete" repeated on every row is ambiguous to anyone tabbing
 		// through them rather than reading the row visually — the same
 		// reasoning that gave the two DNS copy buttons distinct names.
-		const other = domain({ id: 'domain-2', hostname: 'other.verein.test' });
+		const other = domain({ hostname: 'other.verein.test', id: 'domain-2' });
 		renderList([pendingDomain, other]);
 
 		expect(screen.getByRole('button', { name: 'Delete links.verein.test' })).toBeInTheDocument();
@@ -206,7 +206,7 @@ describe('DomainList', () => {
 		// Two domains rendered, and the *second* row confirmed — a test that
 		// always fires on the first row cannot pass by accident.
 		const onDelete = vi.fn();
-		const other = domain({ id: 'domain-2', hostname: 'other.verein.test' });
+		const other = domain({ hostname: 'other.verein.test', id: 'domain-2' });
 		renderList([pendingDomain, other], { onDelete });
 
 		await userEvent.click(screen.getByRole('button', { name: 'Delete other.verein.test' }));
@@ -242,7 +242,7 @@ describe('DomainList', () => {
 	it('does not attribute a blocking-link count to a domain it was never about', () => {
 		// `deletingId` matches neither rendered domain here — the same
 		// correlation discipline `verifyingId`/`pendingReason` already follow.
-		const other = domain({ id: 'domain-2', hostname: 'other.verein.test' });
+		const other = domain({ hostname: 'other.verein.test', id: 'domain-2' });
 		renderList([pendingDomain, other], { deleteBlockedCount: 3, deletingId: 'domain-3' });
 		expect(screen.queryByText(/still has 3 links/i)).not.toBeInTheDocument();
 	});

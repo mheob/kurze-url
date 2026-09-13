@@ -27,7 +27,7 @@ function renderCard(props: LinkPasswordCardProps): ReturnType<typeof render> {
 	);
 }
 
-describe('LinkPasswordCard', () => {
+describe(LinkPasswordCard, () => {
 	it('offers to protect an unprotected link', () => {
 		renderCard({ context, hasPassword: false, onRemove: vi.fn(), onSet: vi.fn() });
 
@@ -195,6 +195,6 @@ describe('LinkPasswordCard', () => {
 
 		await userEvent.type(screen.getByLabelText('Password'), 'x');
 
-		expect(onDismissRejection).toHaveBeenCalledTimes(1);
+		expect(onDismissRejection).toHaveBeenCalledOnce();
 	});
 });

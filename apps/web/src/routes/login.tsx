@@ -36,8 +36,12 @@ export function LoginForm(): React.JSX.Element {
 					// one of these: `sendMagicLinkFor` deliberately swallows it to keep
 					// this form from becoming an account-enumeration oracle.
 					void sendMagicLink({ data: { email } })
-						.then(() => setStatus('sent'))
-						.catch(() => setStatus('failed'));
+						.then(() => {
+							setStatus('sent');
+						})
+						.catch(() => {
+							setStatus('failed');
+						});
 				}}
 			>
 				<h1>{t('auth.signInTitle')}</h1>
@@ -46,7 +50,9 @@ export function LoginForm(): React.JSX.Element {
 					autoComplete="email"
 					id="email"
 					name="email"
-					onChange={(event) => setEmail(event.target.value)}
+					onChange={(event) => {
+						setEmail(event.target.value);
+					}}
 					required
 					type="email"
 					value={email}

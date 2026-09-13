@@ -20,7 +20,7 @@ function renderWith(hostname: string): ReturnType<typeof render> {
 	);
 }
 
-describe('ShortUrlNotice', () => {
+describe(ShortUrlNotice, () => {
 	it('warns when the shared domain cannot resolve', () => {
 		// SHARED_DOMAIN_HOSTNAME is short.invalid until a real domain is
 		// registered. Showing a copy button for a URL that 404s, with no

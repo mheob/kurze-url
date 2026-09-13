@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { requireTeamId } from './_authed';
 
-const memberships = [{ team_id: 'a', name: 'Verein A', role: 'owner', slug: 'verein-a' }];
+const memberships = [{ name: 'Verein A', role: 'owner', slug: 'verein-a', team_id: 'a' }];
 
 /**
  * Captures whatever `fn` throws instead of asserting inside a try/catch:
@@ -26,7 +26,7 @@ function thrown(fn: () => void): unknown {
 	}
 }
 
-describe('requireTeamId', () => {
+describe(requireTeamId, () => {
 	it('resolves a slug you belong to to that team id', () => {
 		expect(requireTeamId(memberships, 'verein-a')).toBe('a');
 	});

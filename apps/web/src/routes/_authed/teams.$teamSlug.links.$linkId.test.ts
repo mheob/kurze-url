@@ -73,10 +73,12 @@ function redirectTarget(error: unknown): string | undefined {
  * @returns A fetcher matching `loadLink`'s expected shape, which always rejects.
  */
 function rejectingWith(status: number): (options: { data: { linkId: string } }) => Promise<Link> {
-	return () => Promise.reject({ status });
+	return async () => {
+		throw { status };
+	};
 }
 
-describe('loadLink', () => {
+describe(loadLink, () => {
 	it('returns the fetched link when the API call succeeds', async () => {
 		const data = link();
 		const fetchLink = async (): Promise<Link> => data;
@@ -85,7 +87,7 @@ describe('loadLink', () => {
 	});
 
 	it('redirects to /login when the API answers unauthenticated', async () => {
-		const error = await rejected(() => loadLink(rejectingWith(401), 'link-a'));
+		const error = await rejected(async () => loadLink(rejectingWith(401), 'link-a'));
 
 		expect(isRedirect(error)).toBe(true);
 		expect(redirectTarget(error)).toBe('/login');
@@ -101,20 +103,22 @@ describe('loadLink', () => {
 	 * what would catch a regression to a generic error page here.
 	 */
 	it('throws a router not-found, not a generic error, when the API answers not-found', async () => {
-		const error = await rejected(() => loadLink(rejectingWith(404), 'link-a'));
+		const error = await rejected(async () => loadLink(rejectingWith(404), 'link-a'));
 
 		expect(isNotFound(error)).toBe(true);
 	});
 
 	it('rethrows any other failure rather than swallowing it', async () => {
 		const boom = { status: 500 };
-		const fetchLink = (): Promise<Link> => Promise.reject(boom);
+		const fetchLink = async (): Promise<Link> => {
+			throw boom;
+		};
 
 		await expect(loadLink(fetchLink, 'link-a')).rejects.toBe(boom);
 	});
 });
 
-describe('toDateTimeLocal', () => {
+describe(toDateTimeLocal, () => {
 	/**
 	 * Task 10 sent `datetime-local` → ISO on submit but never tested the
 	 * reverse. Slicing the UTC `toISOString()` string directly (rather than
@@ -142,7 +146,7 @@ describe('toDateTimeLocal', () => {
 	});
 });
 
-describe('afterMutation', () => {
+describe(afterMutation, () => {
 	/**
 	 * The loader owns the list's data, the Query cache holds it —
 	 * invalidating only one leaves them disagreeing until the next full
@@ -156,11 +160,11 @@ describe('afterMutation', () => {
 		await afterMutation({ invalidateQueries }, { invalidate }, 'team-a');
 
 		expect(invalidateQueries).toHaveBeenCalledExactlyOnceWith({ queryKey: ['links', 'team-a'] });
-		expect(invalidate).toHaveBeenCalledTimes(1);
+		expect(invalidate).toHaveBeenCalledOnce();
 	});
 });
 
-describe('toPasswordContext', () => {
+describe(toPasswordContext, () => {
 	it('builds the password context from the link and its own membership', () => {
 		const data = link({ destination_url: 'https://example.org/summer', slug: 'sommer' });
 		const memberships = [
@@ -168,7 +172,7 @@ describe('toPasswordContext', () => {
 			{ name: 'SV Grünwald e.V.', slug: 'sv-gruenwald' },
 		];
 
-		expect(toPasswordContext(data, memberships, 'sv-gruenwald')).toEqual({
+		expect(toPasswordContext(data, memberships, 'sv-gruenwald')).toStrictEqual({
 			destinationUrl: 'https://example.org/summer',
 			linkSlug: 'sommer',
 			teamName: 'SV Grünwald e.V.',
@@ -195,7 +199,7 @@ describe('toPasswordContext', () => {
  * generic banner or renders an unrelated failure (rate limited, a genuine
  * 500) as if it were about the password field.
  */
-describe('handlePasswordError', () => {
+describe(handlePasswordError, () => {
 	it('routes a passwordRejected failure into the rejection channel, not the banner', () => {
 		const setFailure = vi.fn();
 		const setPasswordRejection = vi.fn();
@@ -230,7 +234,7 @@ describe('handlePasswordError', () => {
 
 		handlePasswordError(error, { navigateToLogin, setFailure, setPasswordRejection });
 
-		expect(navigateToLogin).toHaveBeenCalledTimes(1);
+		expect(navigateToLogin).toHaveBeenCalledOnce();
 		expect(setFailure).not.toHaveBeenCalled();
 		expect(setPasswordRejection).not.toHaveBeenCalled();
 	});
@@ -243,7 +247,7 @@ describe('handlePasswordError', () => {
  * invalidating instead of writing through, there would be no
  * `invalidateQueries` here for it to call.
  */
-describe('applyPasswordSuccess', () => {
+describe(applyPasswordSuccess, () => {
 	it('clears failure/rejection state and reports the new hasPassword value', () => {
 		const updated = link({ has_password: true });
 		const setFailure = vi.fn();
@@ -295,12 +299,12 @@ describe('applyPasswordSuccess', () => {
 			total_count: 2,
 		};
 
-		expect(updater?.(page)).toEqual({ ...page, items: [other, updated] });
+		expect(updater?.(page)).toStrictEqual({ ...page, items: [other, updated] });
 		expect(updater?.(undefined)).toBeUndefined();
 	});
 });
 
-describe('handleQrError', () => {
+describe(handleQrError, () => {
 	it('sends an expired session to login', () => {
 		const handlers = {
 			navigateToLogin: vi.fn(),
@@ -387,7 +391,7 @@ function spyOnDownloadAnchor(): {
 	return { anchor, appendChild, click, createElement, removeChild };
 }
 
-describe('saveQrDownload', () => {
+describe(saveQrDownload, () => {
 	/**
 	 * The bytes cross the server-function boundary base64-encoded, so the
 	 * browser has to rebuild them before it can hand the file to the reader.
@@ -413,7 +417,7 @@ describe('saveQrDownload', () => {
 		// anchor came out of the spied `createElement`, so this is also what
 		// proves that call happened, without pushing the test over
 		// `vitest(max-expects)`'s limit of five.
-		expect({ download: anchor.download, href: anchor.href, rel: anchor.rel }).toEqual({
+		expect({ download: anchor.download, href: anchor.href, rel: anchor.rel }).toStrictEqual({
 			download: 'sommerfest.svg',
 			href: 'blob:fake',
 			rel: 'noopener',
@@ -442,7 +446,7 @@ describe('saveQrDownload', () => {
  * `completeQrDownload` is the guard: these tests are what prove a failed save
  * now reaches the page's one banner instead.
  */
-describe('completeQrDownload', () => {
+describe(completeQrDownload, () => {
 	it('clears both error channels and saves when nothing throws', () => {
 		const { click, createElement, appendChild, removeChild } = spyOnDownloadAnchor();
 		vi.stubGlobal('URL', {

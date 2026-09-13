@@ -17,11 +17,11 @@ export function createI18n(language: Language): i18n {
 	const instance = createInstance();
 
 	void instance.use(initReactI18next).init({
-		lng: language,
 		fallbackLng: 'en',
-		resources: { de: { translation: de }, en: { translation: en } },
 		interpolation: { escapeValue: false },
+		lng: language,
 		react: { useSuspense: false },
+		resources: { de: { translation: de }, en: { translation: en } },
 	});
 
 	return instance;

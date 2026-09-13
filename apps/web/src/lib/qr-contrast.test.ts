@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { hasEnoughQrContrast, MIN_QR_CONTRAST_RATIO, qrContrastRatio } from './qr-contrast';
 
-describe('qrContrastRatio', () => {
+describe(qrContrastRatio, () => {
 	it('matches WCAG at both extremes', () => {
 		expect(qrContrastRatio('#000000', '#ffffff')).toBeCloseTo(21, 2);
 		expect(qrContrastRatio('#333333', '#333333')).toBeCloseTo(1, 2);
@@ -20,7 +20,7 @@ describe('qrContrastRatio', () => {
 	});
 });
 
-describe('hasEnoughQrContrast', () => {
+describe(hasEnoughQrContrast, () => {
 	/**
 	 * The same two pairs `apps/api/internal/qr/contrast_test.go` pins, so a
 	 * drift between the two implementations shows up as a failing test on

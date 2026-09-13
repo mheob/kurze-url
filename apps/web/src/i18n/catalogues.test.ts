@@ -40,7 +40,7 @@ describe('translation catalogues', () => {
 		// A Set comparison, not a sorted-array one: key order carries no meaning
 		// here, and `Array#sort`/`toSorted` are a mutation footgun / an ES2023
 		// method this project's `lib` target doesn't have, respectively.
-		expect(new Set(keysOf(de))).toEqual(new Set(keysOf(en)));
+		expect(new Set(keysOf(de))).toStrictEqual(new Set(keysOf(en)));
 	});
 
 	it('are not empty', () => {

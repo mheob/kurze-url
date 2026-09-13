@@ -25,7 +25,7 @@ function renderWith(
 	);
 }
 
-describe('ConfirmDelete', () => {
+describe(ConfirmDelete, () => {
 	/**
 	 * Nothing restores a link, and its slug may already be in print on a
 	 * flyer. One misclick must not be enough.

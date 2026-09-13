@@ -183,10 +183,12 @@ function isKnownLinkPasswordReason(value: string): value is LinkPasswordReason {
 		case 'too_common':
 		case 'too_long':
 		case 'too_repetitive':
-		case 'too_short':
+		case 'too_short': {
 			return true;
-		default:
+		}
+		default: {
 			return false;
+		}
 	}
 }
 
@@ -233,10 +235,12 @@ function isKnownQrRejectionReason(value: string): value is QrRejectionReason {
 	switch (value) {
 		case 'invalid_color':
 		case 'low_contrast':
-		case 'size_requires_png':
+		case 'size_requires_png': {
 			return true;
-		default:
+		}
+		default: {
 			return false;
+		}
 	}
 }
 

@@ -59,8 +59,8 @@ export const Route = createFileRoute('/_authed/teams/$teamSlug/links/new')({
 	beforeLoad: ({ context, params }) => ({
 		teamId: requireTeamId(context.me.memberships, params.teamSlug),
 	}),
-	loader: ({ context }) => loadVerifiedDomains(context.queryClient, context.teamId),
 	component: RouteComponent,
+	loader: async ({ context }) => loadVerifiedDomains(context.queryClient, context.teamId),
 });
 
 /**
@@ -147,7 +147,7 @@ function RouteComponent(): React.JSX.Element {
 	const [failure, setFailure] = useState<ApiFailure | null>(null);
 
 	const mutation = useMutation({
-		mutationFn: (values: LinkFormValues) =>
+		mutationFn: async (values: LinkFormValues) =>
 			createLinkFn({ data: { body: toRequestBody(values), teamId } }),
 		onError: (error: unknown) => {
 			const classified = classifyApiError(error);

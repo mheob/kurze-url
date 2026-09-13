@@ -87,7 +87,7 @@ function renderWith(data: PageLink, page = 1): ReturnType<typeof render> {
 	);
 }
 
-describe('LinkList', () => {
+describe(LinkList, () => {
 	/**
 	 * The task brief warns this exact state is easy to get silently wrong: a
 	 * list that renders nothing looks identical to a team with no links,
@@ -100,7 +100,7 @@ describe('LinkList', () => {
 		// `RouterProvider`'s initial match resolves asynchronously (its own
 		// microtask, separate from React's synchronous render), the same
 		// reason `team-switcher.test.tsx` awaits its first query too.
-		expect(await screen.findByText('No links yet.')).toBeInTheDocument();
+		await expect(screen.findByText('No links yet.')).resolves.toBeInTheDocument();
 		expect(screen.queryByRole('list')).not.toBeInTheDocument();
 	});
 
@@ -108,7 +108,7 @@ describe('LinkList', () => {
 		// Finding 2: the empty state read as an actionable prompt ("Create your
 		// first one") with nothing to click. Now it is an actual link.
 		renderWith(pageOf());
-		expect(await screen.findByRole('link', { name: 'Create link' })).toHaveAttribute(
+		await expect(screen.findByRole('link', { name: 'Create link' })).resolves.toHaveAttribute(
 			'href',
 			'/teams/verein-a/links/new',
 		);
@@ -118,7 +118,7 @@ describe('LinkList', () => {
 		// Finding 2, other half: a team that already has links must still be
 		// able to reach the create page, not only a team with none.
 		renderWith(pageOf({ items: [link()], total_count: 1 }));
-		expect(await screen.findByRole('link', { name: 'Create link' })).toHaveAttribute(
+		await expect(screen.findByRole('link', { name: 'Create link' })).resolves.toHaveAttribute(
 			'href',
 			'/teams/verein-a/links/new',
 		);
@@ -155,21 +155,21 @@ describe('LinkList', () => {
 			}),
 		);
 
-		expect(
-			await screen.findByRole('link', { name: 'https://short.invalid/abc123' }),
-		).toBeInTheDocument();
+		await expect(
+			screen.findByRole('link', { name: 'https://short.invalid/abc123' }),
+		).resolves.toBeInTheDocument();
 		expect(screen.getAllByRole('listitem')).toHaveLength(2);
 		expect(screen.getAllByRole('button', { name: 'Copy' })).toHaveLength(2);
 	});
 
 	it('shows the short-domain notice when the links live on an .invalid hostname', async () => {
 		renderWith(pageOf({ items: [link({ hostname: 'short.invalid' })], total_count: 1 }));
-		expect(await screen.findByRole('note')).toBeInTheDocument();
+		await expect(screen.findByRole('note')).resolves.toBeInTheDocument();
 	});
 
 	it('hides the short-domain notice once a real domain is configured', async () => {
 		renderWith(pageOf({ items: [link({ hostname: 'kurze.url' })], total_count: 1 }));
-		expect(await screen.findByRole('heading', { name: 'Your links' })).toBeInTheDocument();
+		await expect(screen.findByRole('heading', { name: 'Your links' })).resolves.toBeInTheDocument();
 		expect(screen.queryByRole('note')).not.toBeInTheDocument();
 	});
 
@@ -192,18 +192,18 @@ describe('LinkList', () => {
 				total_count: 2,
 			}),
 		);
-		expect(await screen.findByRole('note')).toBeInTheDocument();
+		await expect(screen.findByRole('note')).resolves.toBeInTheDocument();
 	});
 
 	it('disables the previous-page control on the first page', async () => {
 		renderWith(pageOf({ items: [link()], page: 1, per_page: 1, total_count: 2 }), 1);
-		expect(await screen.findByRole('link', { name: 'Next page' })).toBeInTheDocument();
+		await expect(screen.findByRole('link', { name: 'Next page' })).resolves.toBeInTheDocument();
 		expect(screen.queryByRole('link', { name: 'Previous page' })).not.toBeInTheDocument();
 	});
 
 	it('disables the next-page control on the last page', async () => {
 		renderWith(pageOf({ items: [link()], page: 2, per_page: 1, total_count: 2 }), 2);
-		expect(await screen.findByRole('link', { name: 'Previous page' })).toBeInTheDocument();
+		await expect(screen.findByRole('link', { name: 'Previous page' })).resolves.toBeInTheDocument();
 		expect(screen.queryByRole('link', { name: 'Next page' })).not.toBeInTheDocument();
 	});
 });

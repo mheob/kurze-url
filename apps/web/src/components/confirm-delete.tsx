@@ -69,7 +69,12 @@ export function ConfirmDelete({
 
 	if (!armed) {
 		return (
-			<Button onClick={() => setArmed(true)} type="button">
+			<Button
+				onClick={() => {
+					setArmed(true);
+				}}
+				type="button"
+			>
 				{label}
 			</Button>
 		);
@@ -81,7 +86,12 @@ export function ConfirmDelete({
 			<Button onClick={onConfirm} type="button">
 				{confirmLabel ?? t('links.deleteConfirm')}
 			</Button>
-			<Button onClick={() => setArmed(false)} type="button">
+			<Button
+				onClick={() => {
+					setArmed(false);
+				}}
+				type="button"
+			>
 				{t('links.cancel')}
 			</Button>
 		</div>

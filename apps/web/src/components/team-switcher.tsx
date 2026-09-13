@@ -40,7 +40,9 @@ export function TeamSwitcher({
 					<li key={membership.team_id}>
 						<Link
 							aria-current={membership.slug === currentTeamSlug ? 'page' : undefined}
-							onClick={() => remember(membership.slug)}
+							onClick={() => {
+								remember(membership.slug);
+							}}
 							params={{ teamSlug: membership.slug }}
 							to="/teams/$teamSlug/links"
 						>

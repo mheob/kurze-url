@@ -80,12 +80,12 @@ function renderShell(props: {
 	);
 }
 
-describe('AuthedShell', () => {
+describe(AuthedShell, () => {
 	it('renders the team switcher, fed from the memberships prop', async () => {
 		// Finding 2: `TeamSwitcher` was built, tested and storied but never
 		// rendered anywhere in the actual app.
 		renderShell({});
-		expect(await screen.findByRole('navigation', { name: 'Teams' })).toBeInTheDocument();
+		await expect(screen.findByRole('navigation', { name: 'Teams' })).resolves.toBeInTheDocument();
 		expect(screen.getByRole('link', { name: 'Verein A' })).toBeInTheDocument();
 		expect(screen.getByRole('link', { name: 'Verein B' })).toBeInTheDocument();
 	});
@@ -96,12 +96,12 @@ describe('AuthedShell', () => {
 		renderShell({ onSignOut });
 
 		await userEvent.click(await screen.findByRole('button', { name: 'Sign out' }));
-		expect(onSignOut).toHaveBeenCalledTimes(1);
+		expect(onSignOut).toHaveBeenCalledOnce();
 	});
 
 	it('disables the sign-out control while a sign-out is already in flight', async () => {
 		renderShell({ signingOut: true });
-		expect(await screen.findByRole('button', { name: 'Sign out' })).toBeDisabled();
+		await expect(screen.findByRole('button', { name: 'Sign out' })).resolves.toBeDisabled();
 	});
 
 	it('offers team creation to a maintainer', async () => {
@@ -110,14 +110,14 @@ describe('AuthedShell', () => {
 		// team. Without this control they would have no way to reach
 		// `/new-team` from inside the app at all.
 		renderShell({ isMaintainer: true });
-		expect(await screen.findByRole('link', { name: 'Create team' })).toBeInTheDocument();
+		await expect(screen.findByRole('link', { name: 'Create team' })).resolves.toBeInTheDocument();
 	});
 
 	it('hides team creation from everyone else', async () => {
 		// `POST /v1/teams` answers a non-maintainer with 403 and the route
 		// itself 404s, so a visible control here would only ever be a dead end.
 		renderShell({ isMaintainer: false });
-		expect(await screen.findByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+		await expect(screen.findByRole('button', { name: 'Sign out' })).resolves.toBeInTheDocument();
 		expect(screen.queryByRole('link', { name: 'Create team' })).not.toBeInTheDocument();
 	});
 
@@ -125,7 +125,7 @@ describe('AuthedShell', () => {
 		// Before this the shell had a team switcher and a sign-out control, so a
 		// second team page was unreachable by clicking.
 		renderShell({});
-		expect(await screen.findByRole('link', { name: 'Links' })).toBeInTheDocument();
+		await expect(screen.findByRole('link', { name: 'Links' })).resolves.toBeInTheDocument();
 		expect(screen.getByRole('link', { name: 'Domains' })).toBeInTheDocument();
 	});
 
@@ -133,7 +133,7 @@ describe('AuthedShell', () => {
 		// Same condition as the team switcher: nothing to navigate between for
 		// a visitor with zero memberships or a stale bookmark.
 		renderShell({ currentTeamSlug: undefined, memberships: [] });
-		expect(await screen.findByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+		await expect(screen.findByRole('button', { name: 'Sign out' })).resolves.toBeInTheDocument();
 		expect(screen.queryByRole('link', { name: 'Links' })).not.toBeInTheDocument();
 		expect(screen.queryByRole('link', { name: 'Domains' })).not.toBeInTheDocument();
 	});
@@ -143,7 +143,7 @@ describe('AuthedShell', () => {
 		// have since left) can still reach this shell — `TeamSwitcher` has
 		// nothing to switch between in that case.
 		renderShell({ currentTeamSlug: undefined, memberships: [] });
-		expect(await screen.findByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+		await expect(screen.findByRole('button', { name: 'Sign out' })).resolves.toBeInTheDocument();
 		expect(screen.queryByRole('navigation', { name: 'Teams' })).not.toBeInTheDocument();
 	});
 });

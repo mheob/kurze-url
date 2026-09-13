@@ -26,7 +26,7 @@ const mocks = vi.hoisted(() => ({
 	createSupabase: vi.fn<(request: Request, headers: Headers) => FakeSupabaseClient>(),
 	// Defaulted so the first test doesn't need its own setup — only the flush
 	// test below overrides this to inspect what was appended.
-	getResponse: vi.fn<() => FakeResponse>(() => ({ headers: { append: () => undefined } })),
+	getResponse: vi.fn<() => FakeResponse>(() => ({ headers: { append: () => {} } })),
 }));
 
 vi.mock('./supabase', () => ({
@@ -165,7 +165,7 @@ describe('listLinksFor', () => {
 
 		await listLinksFor(request, 'team-a', 1);
 
-		expect(appended).toEqual(['set-cookie: sb-access-token=refreshed; Path=/; HttpOnly']);
+		expect(appended).toStrictEqual(['set-cookie: sb-access-token=refreshed; Path=/; HttpOnly']);
 	});
 });
 
@@ -210,7 +210,7 @@ describe('createLinkFor', () => {
 		});
 
 		expect(seenAuth).toBe('Bearer tok');
-		expect(seenBody).toEqual({ destination_url: 'https://example.org/' });
+		expect(seenBody).toStrictEqual({ destination_url: 'https://example.org/' });
 		expect(result.short_url).toBe('https://short.invalid/abc123');
 	});
 
@@ -257,7 +257,7 @@ describe('createLinkFor', () => {
 
 		await createLinkFor(request, 'team-a', { destination_url: 'https://example.org/' });
 
-		expect(appended).toEqual(['set-cookie: sb-access-token=refreshed; Path=/; HttpOnly']);
+		expect(appended).toStrictEqual(['set-cookie: sb-access-token=refreshed; Path=/; HttpOnly']);
 	});
 });
 
@@ -273,7 +273,7 @@ describe('qrBodyBytes', () => {
 	it('reads a Blob body', async () => {
 		const bytes = await qrBodyBytes(new Blob([new Uint8Array([1, 2, 3])]));
 
-		expect(Array.from(bytes)).toEqual([1, 2, 3]);
+		expect([...bytes]).toStrictEqual([1, 2, 3]);
 	});
 
 	it('reads a string body', async () => {

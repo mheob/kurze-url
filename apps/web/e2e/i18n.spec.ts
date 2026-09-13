@@ -43,7 +43,7 @@ async function visibleText(
 	// same host the test actually runs against, or the cookie is scoped to
 	// whatever host `url` names (e.g. `localhost`) and never sent to a CI
 	// preview host.
-	await page.context().addCookies([{ name: 'lang', value: language, url: baseURL }]);
+	await page.context().addCookies([{ name: 'lang', url: baseURL, value: language }]);
 	await page.goto(path);
 
 	const texts = await page.locator('body :visible').allInnerTexts();

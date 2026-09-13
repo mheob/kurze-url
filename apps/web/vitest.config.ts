@@ -1,12 +1,11 @@
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { storybookTest } from '@storybook/addon-vitest/vitest-plugin';
 import react from '@vitejs/plugin-react';
 import { playwright } from '@vitest/browser-playwright';
 import { configDefaults, defineConfig } from 'vitest/config';
 
-const dirname = path.dirname(fileURLToPath(import.meta.url));
+const dirname = import.meta.dirname;
 
 export default defineConfig({
 	plugins: [react()],
@@ -37,9 +36,9 @@ export default defineConfig({
 				// keys to only the project that needs them avoids the merge entirely.
 				extends: true,
 				test: {
-					name: 'unit',
 					environment: 'jsdom',
 					globals: true,
+					name: 'unit',
 					setupFiles: ['./src/test/setup.ts'],
 				},
 			},
@@ -54,8 +53,8 @@ export default defineConfig({
 					browser: {
 						enabled: true,
 						headless: true,
-						provider: playwright({}),
 						instances: [{ browser: 'chromium' }],
+						provider: playwright({}),
 					},
 				},
 			},

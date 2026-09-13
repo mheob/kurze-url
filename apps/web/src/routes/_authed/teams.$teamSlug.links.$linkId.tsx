@@ -179,8 +179,8 @@ export const Route = createFileRoute('/_authed/teams/$teamSlug/links/$linkId')({
 	beforeLoad: ({ context, params }) => ({
 		teamId: requireTeamId(context.me.memberships, params.teamSlug),
 	}),
-	loader: ({ params }) => loadLink(getLinkFn, params.linkId),
 	component: RouteComponent,
+	loader: async ({ params }) => loadLink(getLinkFn, params.linkId),
 });
 
 /**
@@ -449,10 +449,8 @@ function RouteComponent(): React.JSX.Element {
 	const [hasPassword, setHasPassword] = useState(link.has_password);
 	const [passwordRejection, setPasswordRejection] = useState<
 		LinkPasswordReason | 'rejected' | undefined
-	>(undefined);
-	const [qrRejection, setQrRejection] = useState<QrRejectionReason | 'rejected' | undefined>(
-		undefined,
-	);
+	>();
+	const [qrRejection, setQrRejection] = useState<QrRejectionReason | 'rejected' | undefined>();
 
 	// One fetch per link, for the whole life of the card, refetched only when
 	// the matrix itself could differ. The matrix depends on the slug and the
@@ -472,13 +470,13 @@ function RouteComponent(): React.JSX.Element {
 	// Infinity` rests on that same invariant: nothing in the key changes
 	// without a navigation this route already handles.
 	const qrQuery = useQuery({
-		queryFn: () => linkQrSvgFn({ data: { linkId } }),
+		queryFn: async () => linkQrSvgFn({ data: { linkId } }),
 		queryKey: ['link-qr', linkId, link.slug],
 		staleTime: Number.POSITIVE_INFINITY,
 	});
 
 	const qrDownloadMutation = useMutation({
-		mutationFn: (options: {
+		mutationFn: async (options: {
 			background: string;
 			foreground: string;
 			format: 'png' | 'svg';
@@ -496,7 +494,7 @@ function RouteComponent(): React.JSX.Element {
 	});
 
 	const updateMutation = useMutation({
-		mutationFn: (values: LinkFormValues) =>
+		mutationFn: async (values: LinkFormValues) =>
 			updateLinkFn({ data: { body: toUpdateBody(values), linkId } }),
 		onError: (error: unknown) => {
 			const classified = classifyApiError(error);
@@ -515,7 +513,7 @@ function RouteComponent(): React.JSX.Element {
 	});
 
 	const deleteMutation = useMutation({
-		mutationFn: () => deleteLinkFn({ data: { linkId } }),
+		mutationFn: async () => deleteLinkFn({ data: { linkId } }),
 		onError: (error: unknown) => {
 			const classified = classifyApiError(error);
 			if (classified.kind === 'unauthenticated') {
@@ -555,13 +553,13 @@ function RouteComponent(): React.JSX.Element {
 	}
 
 	const setPasswordMutation = useMutation({
-		mutationFn: (password: string) => setLinkPasswordFn({ data: { linkId, password } }),
+		mutationFn: async (password: string) => setLinkPasswordFn({ data: { linkId, password } }),
 		onError: onPasswordError,
 		onSuccess: onPasswordSuccess,
 	});
 
 	const removePasswordMutation = useMutation({
-		mutationFn: () => removeLinkPasswordFn({ data: { linkId } }),
+		mutationFn: async () => removeLinkPasswordFn({ data: { linkId } }),
 		onError: onPasswordError,
 		onSuccess: onPasswordSuccess,
 	});

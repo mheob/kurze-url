@@ -45,7 +45,7 @@ function relatedProjects(alias: string, branch: string): string {
 	]);
 }
 
-describe('apiBaseUrl', () => {
+describe(apiBaseUrl, () => {
 	it('prefers an explicit API_HOST over the related-projects alias', () => {
 		// The Go router serves /v1 on exactly one hostname and treats every other
 		// Host header as a short-link domain, so pointing this app at the wrong
@@ -83,7 +83,7 @@ describe('apiBaseUrl', () => {
 	});
 });
 
-describe('getApiClient', () => {
+describe(getApiClient, () => {
 	it('sends the API project bypass secret when one is configured', async () => {
 		// Without this the call reaches a protected API preview unauthenticated,
 		// Vercel answers 302 to its login page, and the probe reports the API

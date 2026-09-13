@@ -142,7 +142,7 @@ function AuthedLayout(): React.JSX.Element {
 	const [signOutFailed, setSignOutFailed] = useState(false);
 
 	const signOutMutation = useMutation({
-		mutationFn: () => signOut(),
+		mutationFn: async () => signOut(),
 		onError: (error: unknown) => {
 			// Already signed out from the API's point of view — same "nothing
 			// left to undo" reasoning as any other `unauthenticated` classification
@@ -166,7 +166,9 @@ function AuthedLayout(): React.JSX.Element {
 				currentTeamSlug={teamSlug ?? me.memberships[0]?.slug}
 				isMaintainer={me.is_maintainer}
 				memberships={me.memberships}
-				onSignOut={() => signOutMutation.mutate()}
+				onSignOut={() => {
+					signOutMutation.mutate();
+				}}
 				signingOut={signOutMutation.isPending}
 			/>
 			{/* Every authenticated page renders through this one `<Outlet>`, so

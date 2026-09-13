@@ -30,7 +30,7 @@ function renderForm(props: {
 	);
 }
 
-describe('LinkForm', () => {
+describe(LinkForm, () => {
 	it('warns inline when 301 is chosen', async () => {
 		// CLAUDE.md requires this. A cached 301 stops clicks being counted and
 		// stops later destination changes taking effect for anyone who has
@@ -38,7 +38,7 @@ describe('LinkForm', () => {
 		renderForm({ onSubmit: vi.fn() });
 		await userEvent.selectOptions(screen.getByLabelText(/redirect|weiterleitung/i), '301');
 
-		expect(await screen.findByRole('note')).toBeInTheDocument();
+		await expect(screen.findByRole('note')).resolves.toBeInTheDocument();
 	});
 
 	it('does not warn for 302', () => {

@@ -73,33 +73,109 @@ export default defineConfig({
 		{
 			files: ['apps/web/**/*.test.ts', 'apps/web/**/*.test.tsx'],
 			plugins: ['vitest'],
+			rules: {
+				// Both fixes below are applied by `pnpm lint:fix`, and both were
+				// observed breaking this suite on 2026-09-13.
+				//
+				// `prefer-called-with` rewrites `toHaveBeenCalled()` into
+				// `toHaveBeenCalledWith()`, which is not a stricter form of the same
+				// check — it asserts the mock was called with NO arguments. That
+				// compiles and reads almost identically, so only the test run caught
+				// it. Wanting an argument assertion is reasonable; inventing one
+				// silently is not.
+				//
+				// `prefer-import-in-mock` rewrites `vi.mock('./x', factory)` into
+				// `vi.mock(import('./x'), factory)`. That form is real and type-safe,
+				// and that is the problem: it checks the factory against the whole
+				// module, so all sixteen partial mocks here become type errors.
+				// Adopting it is a refactor of what those mocks replace, not a lint
+				// fix.
+				'vitest/prefer-called-with': 'off',
+				'vitest/prefer-import-in-mock': 'off',
+			},
 		},
 		{
-			// The e2e specs are Playwright, not Vitest. The vitest rules reach them
-			// anyway — the shared config turns whole categories on, and a category
-			// is not scoped by the plugin override above — so they are switched off
-			// here by name rather than left to warn about a framework these files
-			// do not use.
+			// The e2e specs are Playwright. They match the shared config's
+			// `**/*.spec.ts` glob, so its vitest rules reach them legitimately by
+			// the glob and wrongly in substance — a naming collision, not a
+			// misconfiguration on either side.
 			//
-			// This is not only noise. `prefer-importing-vitest-globals` carries an
-			// auto-fix, and running `pnpm lint:fix` had it insert
-			// `import { expect, test } from 'vitest'` at the top of all four specs,
-			// which already take `expect` from `@playwright/test` and `test` from
-			// `./fixtures/auth`. The result was duplicate identifiers and a tree
-			// that no longer typechecked.
-			// `plugins` is repeated here for the same reason the react override
-			// above repeats it: overrides matching one file are not deep-merged,
-			// and a `rules` entry only takes effect for a plugin its own override
-			// activates. Without this line the four rules below are silently
-			// dropped and keep warning.
+			// `no-importing-vitest-globals` is repeated from the shared config's own
+			// setting. Overrides are not deep-merged, so activating the plugin here
+			// without restating it would resurrect a rule the shared config
+			// deliberately turns off, and it would then strip the vitest imports out
+			// of files that need them.
 			files: ['apps/web/e2e/**'],
 			plugins: ['vitest'],
 			rules: {
 				'vitest/consistent-test-filename': 'off',
 				'vitest/no-conditional-in-test': 'off',
+				'vitest/no-importing-vitest-globals': 'off',
 				'vitest/prefer-each': 'off',
+				// Its auto-fix inserted `import { expect, test } from 'vitest'` at the
+				// top of all four specs, which already take `expect` from
+				// `@playwright/test` and `test` from `./fixtures/auth`: duplicate
+				// identifiers, and a tree that no longer typechecked.
 				'vitest/prefer-importing-vitest-globals': 'off',
 			},
+		},
+		{
+			// Four auto-fixes that do not survive contact with this code. Scoped to
+			// `unicorn` and `promise` only — activating any further plugin here
+			// would pull its rules into files the shared config had scoped them away
+			// from, which is how an earlier attempt at this block dragged
+			// `react-hooks` into the Playwright fixtures.
+			//
+			// `no-useless-undefined` strips arguments that are required:
+			// `mockResolvedValue(undefined)` became `mockResolvedValue()`, and
+			// `toHaveBeenCalledExactlyOnceWith(undefined)` quietly became an
+			// assertion about no arguments at all.
+			//
+			// `prefer-spread` turned `Array.from(password)` into `[...password]`,
+			// which `no-misused-spread` then reports as an error in its own right —
+			// spreading a string splits code points and breaks complex characters.
+			//
+			// `prefer-dom-node-append` swapped `doc.body.appendChild(anchor)` for
+			// `append`, which returns nothing where `appendChild` returns the node,
+			// leaves the download helper pairing `append` with `removeChild`, and
+			// misses the spy the QR download test asserts through. It typechecks
+			// perfectly.
+			//
+			// `prefer-dom-node-text-content` assumes a DOM node. On a Playwright
+			// `Locator` it swaps two different methods with different return types:
+			// `innerText()` is `string`, `textContent()` is `string | null`.
+			files: ['apps/web/**'],
+			plugins: ['promise', 'unicorn'],
+			rules: {
+				// `always-return` cannot see a `void`. Both `.then()` chains in this
+				// app — `copy-button.tsx` and `login.tsx`, the only two outside tests
+				// — are voided terminal side effects where returning a value would
+				// mean nothing. It started firing only because
+				// `no-confusing-void-expression`'s fix turned their one-expression
+				// arrows into block bodies. If a consuming chain is ever written
+				// here, turn this back on.
+				'promise/always-return': 'off',
+				'unicorn/no-useless-undefined': 'off',
+				'unicorn/prefer-dom-node-append': 'off',
+				'unicorn/prefer-dom-node-text-content': 'off',
+				'unicorn/prefer-spread': 'off',
+			},
+		},
+		{
+			// Scoped to .tsx, matching the jsx-a11y override above: `react` must not
+			// be activated for plain .ts files, or `react-hooks/rules-of-hooks`
+			// reaches `e2e/fixtures/auth.ts`, where Playwright's `use` fixture
+			// parameter reads as a React hook call.
+			//
+			// `jsx-curly-brace-presence` unwrapped `<p>{'marker'}</p>` into
+			// `<p>marker</p>`, which this project's own error-level
+			// `react/jsx-no-literals` then rejects — golden rule 6 forbids a
+			// hardcoded user-facing string, and the expression container was there
+			// to satisfy it. One rule's fixer breaking a rule the project
+			// deliberately set to error.
+			files: ['apps/web/**/*.tsx'],
+			plugins: ['react'],
+			rules: { 'react/jsx-curly-brace-presence': 'off' },
 		},
 	],
 });

@@ -96,7 +96,7 @@ export const Route = createFileRoute('/_authed/teams/$teamSlug/links/')({
 		teamId: requireTeamId(context.me.memberships, params.teamSlug),
 	}),
 	loaderDeps: ({ search }) => ({ page: search.page }),
-	loader: ({ context, deps }) => loadLinks(context.queryClient, context.teamId, deps.page),
+	loader: async ({ context, deps }) => loadLinks(context.queryClient, context.teamId, deps.page),
 	component: RouteComponent,
 	errorComponent: LinksError,
 });

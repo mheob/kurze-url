@@ -41,14 +41,14 @@ import { LinksError } from './teams.$teamSlug.links.index';
 function renderWith(error: unknown): { readonly router: AnyRouter } {
 	const rootRoute = createRootRoute({ component: () => <Outlet /> });
 	const indexRoute = createRoute({
+		component: () => <LinksError error={error} />,
 		getParentRoute: () => rootRoute,
 		path: '/',
-		component: () => <LinksError error={error} />,
 	});
 	const loginRoute = createRoute({
+		component: () => <p>{'login page marker'}</p>,
 		getParentRoute: () => rootRoute,
 		path: '/login',
-		component: () => <p>{'login page marker'}</p>,
 	});
 	const router = createRouter({
 		history: createMemoryHistory({ initialEntries: ['/'] }),
@@ -64,7 +64,7 @@ function renderWith(error: unknown): { readonly router: AnyRouter } {
 	return { router };
 }
 
-describe('LinksError', () => {
+describe(LinksError, () => {
 	/**
 	 * The finding this fixes (Fix round 2): React Query's default
 	 * `refetchOnWindowFocus` (`router.tsx` sets no `defaultOptions`) means a
@@ -81,8 +81,10 @@ describe('LinksError', () => {
 	it('redirects to /login when the failure is unauthenticated', async () => {
 		const { router } = renderWith({ status: 401 });
 
-		expect(await screen.findByText('login page marker')).toBeInTheDocument();
-		await waitFor(() => expect(router.state.location.pathname).toBe('/login'));
+		await expect(screen.findByText('login page marker')).resolves.toBeInTheDocument();
+		await waitFor(() => {
+			expect(router.state.location.pathname).toBe('/login');
+		});
 	});
 
 	/**
@@ -94,7 +96,7 @@ describe('LinksError', () => {
 	it('renders the error alert for a non-401 failure', async () => {
 		renderWith({ status: 500 });
 
-		expect(await screen.findByRole('alert')).toHaveTextContent(
+		await expect(screen.findByRole('alert')).resolves.toHaveTextContent(
 			'Something went wrong. Please try again.',
 		);
 	});

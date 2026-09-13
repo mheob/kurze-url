@@ -13,7 +13,7 @@ import {
 	TEAM_SLUG_PATTERN,
 } from '../../lib/team-slug';
 import { createTeamFn } from '../../server/teams';
-import { type Me } from '../_authed';
+import type { Me } from '../_authed';
 
 /**
  * 404, not 403, and the same reasoning `requireTeamId` gives: a route a
@@ -76,7 +76,7 @@ export function RouteComponent(): React.JSX.Element {
 	const [failure, setFailure] = useState<ApiFailure | null>(null);
 
 	const mutation = useMutation({
-		mutationFn: ({ name, slug }: { name: string; slug: string }) =>
+		mutationFn: async ({ name, slug }: { name: string; slug: string }) =>
 			createTeamFn({ data: { name, slug } }),
 		onError: (error: unknown) => {
 			const classified = classifyApiError(error);
@@ -203,7 +203,9 @@ export function RouteComponent(): React.JSX.Element {
 									id="slug"
 									name={field.name}
 									onBlur={field.handleBlur}
-									onChange={(event) => field.handleChange(event.target.value)}
+									onChange={(event) => {
+										field.handleChange(event.target.value);
+									}}
 									required
 									value={field.state.value}
 								/>

@@ -38,7 +38,7 @@ function eventWithEverything(): ErrorEvent {
 	};
 }
 
-describe('scrubEvent', () => {
+describe(scrubEvent, () => {
 	it('removes the client address, cookies, body and query', () => {
 		const got = scrubEvent(eventWithEverything());
 
@@ -52,7 +52,7 @@ describe('scrubEvent', () => {
 	it('keeps only the user-agent header', () => {
 		const got = scrubEvent(eventWithEverything());
 
-		expect(got.request?.headers).toEqual({ 'user-agent': 'Mozilla/5.0' });
+		expect(got.request?.headers).toStrictEqual({ 'user-agent': 'Mozilla/5.0' });
 	});
 
 	/**
@@ -64,7 +64,7 @@ describe('scrubEvent', () => {
 	it('drops console breadcrumbs and keeps the rest', () => {
 		const got = scrubEvent(eventWithEverything());
 
-		expect(got.breadcrumbs).toEqual([{ category: 'fetch', message: 'GET /v1/me' }]);
+		expect(got.breadcrumbs).toStrictEqual([{ category: 'fetch', message: 'GET /v1/me' }]);
 	});
 });
 
@@ -139,7 +139,7 @@ describe('scrubEvent breadcrumb URLs', () => {
 	});
 });
 
-describe('isReportable', () => {
+describe(isReportable, () => {
 	/**
 	 * The quota trap. This app renders API failures as UI on purpose —
 	 * classifyApiError turns 403, 422 and field errors into copy in two
@@ -167,7 +167,7 @@ describe('isReportable', () => {
 	});
 });
 
-describe('sentryOptions', () => {
+describe(sentryOptions, () => {
 	/**
 	 * `@sentry/core`'s `resolveDataCollectionOptions` falls back to its own
 	 * permissive `DEFAULTS` — not the `sendDefaultPii: false` off-state — for
@@ -181,7 +181,7 @@ describe('sentryOptions', () => {
 
 		// `toEqual` on two `Set`s compares membership, not insertion order —
 		// this pins which fields are set, not the order they are written in.
-		expect(new Set(Object.keys(dataCollection ?? {}))).toEqual(
+		expect(new Set(Object.keys(dataCollection ?? {}))).toStrictEqual(
 			new Set([
 				'cookies',
 				'databaseQueryData',
@@ -195,13 +195,13 @@ describe('sentryOptions', () => {
 				'userInfo',
 			]),
 		);
-		expect(new Set(Object.keys(dataCollection?.httpHeaders ?? {}))).toEqual(
+		expect(new Set(Object.keys(dataCollection?.httpHeaders ?? {}))).toStrictEqual(
 			new Set(['request', 'response']),
 		);
-		expect(new Set(Object.keys(dataCollection?.graphQL ?? {}))).toEqual(
+		expect(new Set(Object.keys(dataCollection?.graphQL ?? {}))).toStrictEqual(
 			new Set(['document', 'variables']),
 		);
-		expect(new Set(Object.keys(dataCollection?.genAI ?? {}))).toEqual(
+		expect(new Set(Object.keys(dataCollection?.genAI ?? {}))).toStrictEqual(
 			new Set(['inputs', 'outputs']),
 		);
 	});
@@ -244,6 +244,6 @@ describe('initSentry', () => {
 		initSentry(false);
 		initSentry(true);
 
-		expect(sentryMocks.init).toHaveBeenCalledTimes(1);
+		expect(sentryMocks.init).toHaveBeenCalledOnce();
 	});
 });

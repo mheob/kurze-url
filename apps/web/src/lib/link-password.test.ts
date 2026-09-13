@@ -9,7 +9,7 @@ const gruenwald = {
 	teamSlug: 'sv-gruenwald',
 };
 
-describe('validateLinkPassword', () => {
+describe(validateLinkPassword, () => {
 	it('accepts an unrelated passphrase', () => {
 		expect(validateLinkPassword('Kartoffelsalat!7', gruenwald)).toBeNull();
 	});

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { suggestTeamSlug } from './team-slug';
 
-describe('suggestTeamSlug', () => {
+describe(suggestTeamSlug, () => {
 	it('transliterates German umlauts rather than dropping them', () => {
 		expect(suggestTeamSlug('Sportverein Grünwald')).toBe('sportverein-gruenwald');
 		expect(suggestTeamSlug('Schützenverein Höchstädt')).toBe('schuetzenverein-hoechstaedt');

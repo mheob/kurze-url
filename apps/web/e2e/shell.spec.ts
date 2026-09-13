@@ -49,8 +49,8 @@ for (const theme of THEMES) {
 			if (!baseURL) throw new Error('baseURL fixture is unset — check playwright.config.ts');
 
 			await context.addCookies([
-				{ name: 'theme', value: theme, url: baseURL },
-				{ name: 'lang', value: language, url: baseURL },
+				{ name: 'theme', url: baseURL, value: theme },
+				{ name: 'lang', url: baseURL, value: language },
 			]);
 			await page.goto('/');
 

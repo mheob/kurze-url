@@ -19,7 +19,7 @@ import { fetchMe, type Me, type Membership } from './_authed';
  * back to this route it becomes an RPC to this app's own server, which is the
  * only thing the browser ever talks to.
  */
-const getHealthStatus = createServerFn({ method: 'GET' }).handler(() => fetchHealth());
+const getHealthStatus = createServerFn({ method: 'GET' }).handler(async () => fetchHealth());
 
 /**
  * Resolves the remembered team slug inside a server function for the same

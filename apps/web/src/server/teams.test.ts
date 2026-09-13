@@ -20,7 +20,7 @@ interface FakeResponse {
 
 const mocks = vi.hoisted(() => ({
 	createSupabase: vi.fn<(request: Request, headers: Headers) => FakeSupabaseClient>(),
-	getResponse: vi.fn<() => FakeResponse>(() => ({ headers: { append: () => undefined } })),
+	getResponse: vi.fn<() => FakeResponse>(() => ({ headers: { append: () => {} } })),
 }));
 
 vi.mock('./supabase', () => ({ createSupabase: mocks.createSupabase }));
@@ -81,7 +81,7 @@ describe('createTeamFor', () => {
 		const team = await createTeamFor(request, 'Verein A', 'verein-a');
 
 		expect(seenAuth).toBe('Bearer tok');
-		expect(seenBody).toEqual({ name: 'Verein A', slug: 'verein-a' });
+		expect(seenBody).toStrictEqual({ name: 'Verein A', slug: 'verein-a' });
 		expect(team.id).toBe('team-1');
 	});
 

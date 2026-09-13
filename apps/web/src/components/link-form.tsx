@@ -80,7 +80,9 @@ export function LinkForm({
 
 	const form = useForm({
 		defaultValues: { ...defaultValues, ...initial },
-		onSubmit: ({ value }) => onSubmit(value),
+		onSubmit: ({ value }) => {
+			onSubmit(value);
+		},
 	});
 
 	// A server error naming a field this form doesn't render (see
@@ -124,7 +126,9 @@ export function LinkForm({
 								id="destination_url"
 								name={field.name}
 								onBlur={field.handleBlur}
-								onChange={(event) => field.handleChange(event.target.value)}
+								onChange={(event) => {
+									field.handleChange(event.target.value);
+								}}
 								required
 								type="url"
 								value={field.state.value}
@@ -155,7 +159,9 @@ export function LinkForm({
 								id="slug"
 								name={field.name}
 								onBlur={field.handleBlur}
-								onChange={(event) => field.handleChange(event.target.value)}
+								onChange={(event) => {
+									field.handleChange(event.target.value);
+								}}
 								placeholder={t('links.slugGenerated')}
 								value={field.state.value}
 							/>
@@ -182,7 +188,9 @@ export function LinkForm({
 								aria-invalid={errorMessage ? true : undefined}
 								id="redirect_type"
 								name={field.name}
-								onChange={(event) => field.handleChange(Number(event.target.value))}
+								onChange={(event) => {
+									field.handleChange(Number(event.target.value));
+								}}
 								value={field.state.value}
 							>
 								<option value={302}>{t('links.redirect302')}</option>
@@ -218,7 +226,9 @@ export function LinkForm({
 								aria-invalid={errorMessage ? true : undefined}
 								id="expires_at"
 								name={field.name}
-								onChange={(event) => field.handleChange(event.target.value)}
+								onChange={(event) => {
+									field.handleChange(event.target.value);
+								}}
 								type="datetime-local"
 								value={field.state.value}
 							/>
@@ -246,7 +256,9 @@ export function LinkForm({
 								checked={field.state.value}
 								id="analytics_enabled"
 								name={field.name}
-								onChange={(event) => field.handleChange(event.target.checked)}
+								onChange={(event) => {
+									field.handleChange(event.target.checked);
+								}}
 								type="checkbox"
 							/>
 							{errorMessage ? (
@@ -280,7 +292,9 @@ export function LinkForm({
 									aria-invalid={errorMessage ? true : undefined}
 									id="domain_id"
 									name={field.name}
-									onChange={(event) => field.handleChange(event.target.value)}
+									onChange={(event) => {
+										field.handleChange(event.target.value);
+									}}
 									value={field.state.value}
 								>
 									<option value="">{t('links.domainShared')}</option>

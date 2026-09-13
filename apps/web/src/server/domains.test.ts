@@ -20,7 +20,7 @@ interface FakeResponse {
 
 const mocks = vi.hoisted(() => ({
 	createSupabase: vi.fn<(request: Request, headers: Headers) => FakeSupabaseClient>(),
-	getResponse: vi.fn<() => FakeResponse>(() => ({ headers: { append: () => undefined } })),
+	getResponse: vi.fn<() => FakeResponse>(() => ({ headers: { append: () => {} } })),
 }));
 
 vi.mock('./supabase', () => ({ createSupabase: mocks.createSupabase }));
@@ -127,7 +127,7 @@ describe('claimDomainFor', () => {
 
 		await claimDomainFor(request, 'team-a', 'links.verein.test');
 
-		expect(seenBody).toEqual({ hostname: 'links.verein.test' });
+		expect(seenBody).toStrictEqual({ hostname: 'links.verein.test' });
 	});
 
 	it('rejects when the API refuses', async () => {

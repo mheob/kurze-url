@@ -14,9 +14,9 @@ import type { SupabaseClient } from '@supabase/supabase-js';
  */
 export const SUPABASE_COOKIE_OPTIONS: CookieOptions = {
 	httpOnly: true,
+	path: '/',
 	sameSite: 'lax',
 	secure: true,
-	path: '/',
 };
 
 // Mirrors the `cookie` package's own `sameSite` mapping (the same package
@@ -122,7 +122,7 @@ export function createSupabase(request: Request, headers: Headers): SupabaseClie
 	}
 
 	return createServerClient(url, key, {
-		cookies: createCookieAdapter(request, headers),
 		cookieOptions: SUPABASE_COOKIE_OPTIONS,
+		cookies: createCookieAdapter(request, headers),
 	});
 }

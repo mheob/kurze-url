@@ -73,7 +73,7 @@ export const listDomainsFn = createServerFn({ method: 'GET' })
 // oxlint-disable-next-line typescript/explicit-function-return-type
 export const domainsQueryOptions = (teamId: string) =>
 	queryOptions({
-		queryFn: () => listDomainsFn({ data: { teamId } }),
+		queryFn: async () => listDomainsFn({ data: { teamId } }),
 		queryKey: ['domains', teamId] as const,
 	});
 

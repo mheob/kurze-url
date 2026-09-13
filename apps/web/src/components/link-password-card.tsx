@@ -194,7 +194,12 @@ export function LinkPasswordCard({
 
 			{hasPassword && !changing ? (
 				<>
-					<Button onClick={() => setChanging(true)} type="button">
+					<Button
+						onClick={() => {
+							setChanging(true);
+						}}
+						type="button"
+					>
 						{t('links.passwordChange')}
 					</Button>
 					<ConfirmDelete

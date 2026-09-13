@@ -37,8 +37,8 @@ export function apiBaseUrl(): string {
 	// Left unset outside production on purpose: this lookup is what pairs a
 	// preview of this app with the matching preview of the API.
 	return withRelatedProject({
-		projectName: 'kurze-url-api',
 		defaultHost: 'http://localhost:8080',
+		projectName: 'kurze-url-api',
 	});
 }
 

@@ -34,7 +34,7 @@ function renderCard(props: Partial<LinkQRCardProps> = {}): ReturnType<typeof ren
 	);
 }
 
-describe('LinkQRCard', () => {
+describe(LinkQRCard, () => {
 	it('shows the preview once the document has arrived', () => {
 		renderCard();
 
@@ -135,9 +135,9 @@ describe('LinkQRCard', () => {
 		// `.mock.calls` afterwards — indexing an array `noUncheckedIndexedAccess`
 		// treats as possibly empty would need an unrelated non-null assertion.
 		let sentSize: number | undefined;
-		const onDownload = vi.fn<LinkQRCardProps['onDownload']>((options) => {
+		const onDownload = vi.fn<LinkQRCardProps['onDownload']>(async (options) => {
 			sentSize = options.size;
-			return Promise.resolve();
+			return;
 		});
 		renderCard({ onDownload });
 

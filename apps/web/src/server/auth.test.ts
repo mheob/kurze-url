@@ -32,7 +32,7 @@ const mocks = vi.hoisted(() => ({
 	signInWithOtp: vi.fn<FakeSupabaseClient['auth']['signInWithOtp']>(),
 	// Defaulted so tests that never touch cookies don't need their own setup —
 	// only the flush test below overrides this to inspect what was appended.
-	getResponse: vi.fn<() => FakeResponse>(() => ({ headers: { append: () => undefined } })),
+	getResponse: vi.fn<() => FakeResponse>(() => ({ headers: { append: () => {} } })),
 }));
 
 vi.mock('./supabase', () => ({
@@ -79,8 +79,8 @@ describe('sendMagicLinkFor', () => {
 		mocks.signInWithOtp.mockResolvedValue({ error: { message: 'Signups not allowed for otp' } });
 		const unknown = await sendMagicLinkFor('unknown@example.test', 'https://app.test');
 
-		expect(unknown).toEqual(known);
-		expect(unknown).toEqual({ sent: true });
+		expect(unknown).toStrictEqual(known);
+		expect(unknown).toStrictEqual({ sent: true });
 	});
 
 	it('holds a fixed latency floor on the fast-fail (unknown-address) path', async () => {
@@ -116,7 +116,7 @@ describe('sendMagicLinkFor', () => {
 
 			await vi.advanceTimersByTimeAsync(1);
 			expect(settled).toBe(true);
-			await expect(pending).resolves.toEqual({ sent: true });
+			await expect(pending).resolves.toStrictEqual({ sent: true });
 		} finally {
 			vi.useRealTimers();
 		}
@@ -141,6 +141,6 @@ describe('sendMagicLinkFor', () => {
 
 		await sendMagicLinkFor('someone@example.test', 'https://app.test');
 
-		expect(appended).toEqual(['set-cookie: sb-pkce-code-verifier=abc; Path=/; HttpOnly']);
+		expect(appended).toStrictEqual(['set-cookie: sb-pkce-code-verifier=abc; Path=/; HttpOnly']);
 	});
 });

@@ -32,8 +32,8 @@ export function suggestTeamSlug(name: string): string {
 	}
 
 	return slug
-		.replace(/[^a-z0-9]+/g, '-')
-		.replace(/^-+|-+$/g, '')
+		.replaceAll(/[^a-z0-9]+/g, '-')
+		.replaceAll(/^-+|-+$/g, '')
 		.slice(0, TEAM_SLUG_MAX_LENGTH)
 		.replace(/-+$/, '');
 }

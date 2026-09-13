@@ -59,7 +59,7 @@ function redirectTarget(error: unknown): string | undefined {
 	return typeof target === 'string' ? target : undefined;
 }
 
-describe('loadLinks', () => {
+describe(loadLinks, () => {
 	it('returns the fetched page when the API call succeeds', async () => {
 		const data = page({ total_count: 1 });
 		const queryClient = fakeQueryClient(async () => data);
@@ -79,9 +79,11 @@ describe('loadLinks', () => {
 	 * this test actually depends on the redirect branch.
 	 */
 	it('redirects to /login when the API answers unauthenticated', async () => {
-		const queryClient = fakeQueryClient(() => Promise.reject({ status: 401 }));
+		const queryClient = fakeQueryClient(async () => {
+			throw { status: 401 };
+		});
 
-		const error = await rejected(() => loadLinks(queryClient, 'team-a', 1));
+		const error = await rejected(async () => loadLinks(queryClient, 'team-a', 1));
 
 		expect(isRedirect(error)).toBe(true);
 		expect(redirectTarget(error)).toBe('/login');
@@ -95,7 +97,9 @@ describe('loadLinks', () => {
 	 */
 	it('rethrows any other failure rather than redirecting', async () => {
 		const boom = { status: 500 };
-		const queryClient = fakeQueryClient(() => Promise.reject(boom));
+		const queryClient = fakeQueryClient(async () => {
+			throw boom;
+		});
 
 		await expect(loadLinks(queryClient, 'team-a', 1)).rejects.toBe(boom);
 	});

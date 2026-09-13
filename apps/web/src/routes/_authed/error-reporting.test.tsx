@@ -44,14 +44,14 @@ const { DomainsError } = await import('./teams.$teamSlug.domains');
 function renderInRouter(element: React.JSX.Element): void {
 	const rootRoute = createRootRoute({ component: () => <Outlet /> });
 	const indexRoute = createRoute({
+		component: () => element,
 		getParentRoute: () => rootRoute,
 		path: '/',
-		component: () => element,
 	});
 	const loginRoute = createRoute({
+		component: () => <p>{'login page marker'}</p>,
 		getParentRoute: () => rootRoute,
 		path: '/login',
-		component: () => <p>{'login page marker'}</p>,
 	});
 	const router = createRouter({
 		history: createMemoryHistory({ initialEntries: ['/'] }),
@@ -66,8 +66,8 @@ function renderInRouter(element: React.JSX.Element): void {
 }
 
 describe.each([
-	{ name: 'LinksError', Component: LinksError },
-	{ name: 'DomainsError', Component: DomainsError },
+	{ Component: LinksError, name: 'LinksError' },
+	{ Component: DomainsError, name: 'DomainsError' },
 ])('$name', ({ Component }) => {
 	beforeEach(() => {
 		sentryMocks.captureException.mockClear();
@@ -78,7 +78,7 @@ describe.each([
 
 		renderInRouter(<Component error={error} />);
 
-		expect(await screen.findByRole('alert')).toBeInTheDocument();
+		await expect(screen.findByRole('alert')).resolves.toBeInTheDocument();
 		expect(sentryMocks.captureException).toHaveBeenCalledWith(error);
 	});
 
@@ -90,7 +90,7 @@ describe.each([
 	it('does not report a failure the app renders on purpose', async () => {
 		renderInRouter(<Component error={{ status: 403 }} />);
 
-		expect(await screen.findByRole('alert')).toBeInTheDocument();
+		await expect(screen.findByRole('alert')).resolves.toBeInTheDocument();
 		expect(sentryMocks.captureException).not.toHaveBeenCalled();
 	});
 });

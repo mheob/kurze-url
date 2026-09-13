@@ -35,9 +35,9 @@ function renderWith(currentTeamSlug: string): ReturnType<typeof render> {
 		component: () => <TeamSwitcher currentTeamSlug={currentTeamSlug} memberships={memberships} />,
 	});
 	const linksRoute = createRoute({
+		component: () => null,
 		getParentRoute: () => rootRoute,
 		path: '/teams/$teamSlug/links',
-		component: () => null,
 	});
 	const router = createRouter({
 		history: createMemoryHistory({ initialEntries: ['/'] }),
@@ -51,15 +51,15 @@ function renderWith(currentTeamSlug: string): ReturnType<typeof render> {
 	);
 }
 
-describe('TeamSwitcher', () => {
+describe(TeamSwitcher, () => {
 	it('labels itself with the switcher name', async () => {
 		renderWith('verein-a');
-		expect(await screen.findByRole('navigation', { name: 'Teams' })).toBeInTheDocument();
+		await expect(screen.findByRole('navigation', { name: 'Teams' })).resolves.toBeInTheDocument();
 	});
 
 	it('marks only the current team as the current page', async () => {
 		renderWith('verein-b');
-		expect(await screen.findByRole('link', { name: 'Verein B' })).toHaveAttribute(
+		await expect(screen.findByRole('link', { name: 'Verein B' })).resolves.toHaveAttribute(
 			'aria-current',
 			'page',
 		);

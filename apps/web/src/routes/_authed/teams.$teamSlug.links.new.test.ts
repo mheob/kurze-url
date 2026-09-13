@@ -46,7 +46,7 @@ function domain(overrides: Partial<Domain> & Pick<Domain, 'id'>): Domain {
  * there's no basename collision to worry about (conventions.md's landmine is
  * specifically a same-basename `.test.ts`/`.test.tsx` pair).
  */
-describe('afterCreate', () => {
+describe(afterCreate, () => {
 	it('invalidates both the links query cache and the router', async () => {
 		const invalidateQueries = vi.fn(async (): Promise<void> => undefined);
 		const invalidate = vi.fn(async (): Promise<void> => undefined);
@@ -54,7 +54,7 @@ describe('afterCreate', () => {
 		await afterCreate({ invalidateQueries }, { invalidate }, 'team-a');
 
 		expect(invalidateQueries).toHaveBeenCalledExactlyOnceWith({ queryKey: ['links', 'team-a'] });
-		expect(invalidate).toHaveBeenCalledTimes(1);
+		expect(invalidate).toHaveBeenCalledOnce();
 	});
 });
 
@@ -66,9 +66,9 @@ describe('afterCreate', () => {
  * re-running the whole suite left every test passing, `LinkForm`'s included
  * — this is the test that closes that gap.
  */
-describe('toRequestBody', () => {
+describe(toRequestBody, () => {
 	it('forwards a chosen domain_id to the request body', () => {
-		expect(toRequestBody({ ...baseValues, domain_id: 'd1' })).toEqual(
+		expect(toRequestBody({ ...baseValues, domain_id: 'd1' })).toStrictEqual(
 			expect.objectContaining({ domain_id: 'd1' }),
 		);
 	});
@@ -76,7 +76,9 @@ describe('toRequestBody', () => {
 	it('maps an unset domain_id to undefined, same as slug and expires_at', () => {
 		// So an unset picker keeps today's behaviour: falling through to the
 		// API's own default, the instance's shared domain.
-		expect(toRequestBody(baseValues)).toEqual(expect.objectContaining({ domain_id: undefined }));
+		expect(toRequestBody(baseValues)).toStrictEqual(
+			expect.objectContaining({ domain_id: undefined }),
+		);
 	});
 });
 
@@ -86,7 +88,7 @@ describe('toRequestBody', () => {
  * created on a hostname that doesn't redirect — falsified here against a
  * mixed-status page rather than left to the component to filter silently.
  */
-describe('loadVerifiedDomains', () => {
+describe(loadVerifiedDomains, () => {
 	it('keeps only verified domains, normalised to id and hostname', async () => {
 		const page: PageDomain = {
 			items: [
@@ -99,7 +101,7 @@ describe('loadVerifiedDomains', () => {
 		};
 		const ensureQueryData = vi.fn(async (): Promise<PageDomain> => page);
 
-		await expect(loadVerifiedDomains({ ensureQueryData }, 'team-a')).resolves.toEqual([
+		await expect(loadVerifiedDomains({ ensureQueryData }, 'team-a')).resolves.toStrictEqual([
 			{ hostname: 'links.verein.test', id: 'd1' },
 		]);
 	});
@@ -110,7 +112,7 @@ describe('loadVerifiedDomains', () => {
 		const page: PageDomain = { items: null, page: 1, per_page: 25, total_count: 0 };
 		const ensureQueryData = vi.fn(async (): Promise<PageDomain> => page);
 
-		await expect(loadVerifiedDomains({ ensureQueryData }, 'team-a')).resolves.toEqual([]);
+		await expect(loadVerifiedDomains({ ensureQueryData }, 'team-a')).resolves.toStrictEqual([]);
 	});
 
 	it('falls back to an empty list rather than blocking the create-link page', async () => {
@@ -121,7 +123,7 @@ describe('loadVerifiedDomains', () => {
 			throw new Error('boom');
 		});
 
-		await expect(loadVerifiedDomains({ ensureQueryData }, 'team-a')).resolves.toEqual([]);
+		await expect(loadVerifiedDomains({ ensureQueryData }, 'team-a')).resolves.toStrictEqual([]);
 	});
 
 	it('logs the swallowed error rather than failing completely silently', async () => {

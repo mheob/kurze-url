@@ -62,7 +62,7 @@ function withSession(accessToken: string | null): void {
 	});
 }
 
-describe('getAccessToken', () => {
+describe(getAccessToken, () => {
 	it('returns the token when a session exists', async () => {
 		withSession('tok');
 		await expect(getAccessToken(...req())).resolves.toBe('tok');
@@ -74,7 +74,7 @@ describe('getAccessToken', () => {
 	});
 });
 
-describe('requireSession', () => {
+describe(requireSession, () => {
 	it('throws UnauthenticatedError rather than returning an empty token', async () => {
 		// The guard must fail closed. Returning '' here would send an
 		// unauthenticated request to the API, which answers 401 — the same
@@ -85,11 +85,11 @@ describe('requireSession', () => {
 
 	it('returns the token when a session exists', async () => {
 		withSession('tok');
-		await expect(requireSession(...req())).resolves.toEqual({ accessToken: 'tok' });
+		await expect(requireSession(...req())).resolves.toStrictEqual({ accessToken: 'tok' });
 	});
 });
 
-describe('flushSessionCookies', () => {
+describe(flushSessionCookies, () => {
 	/**
 	 * The defect this guards against: `createSupabase(request, headers)`
 	 * writes into a `Headers` object nothing else reads. A no-op
@@ -111,7 +111,7 @@ describe('flushSessionCookies', () => {
 
 		flushSessionCookies(adapterHeaders);
 
-		expect(appended).toEqual([
+		expect(appended).toStrictEqual([
 			'set-cookie: sb-access-token=abc; Path=/; HttpOnly',
 			'set-cookie: sb-refresh-token=def; Path=/; HttpOnly',
 		]);
@@ -125,6 +125,6 @@ describe('flushSessionCookies', () => {
 
 		flushSessionCookies(new Headers());
 
-		expect(appended).toEqual([]);
+		expect(appended).toStrictEqual([]);
 	});
 });

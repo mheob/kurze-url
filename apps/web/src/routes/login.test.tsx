@@ -38,13 +38,13 @@ function renderLoginForm(): ReturnType<typeof render> {
 	);
 }
 
-describe('LoginForm', () => {
+describe('loginForm', () => {
 	it('shows the same confirmation whatever the address', async () => {
 		renderLoginForm();
 		await userEvent.type(screen.getByLabelText(/email|e-mail/i), 'a@example.test');
 		await userEvent.click(screen.getByRole('button', { name: /link/i }));
 
-		expect(await screen.findByText(/on its way|unterwegs/i)).toBeInTheDocument();
+		await expect(screen.findByText(/on its way|unterwegs/i)).resolves.toBeInTheDocument();
 	});
 
 	it('puts the form inside a main landmark', () => {
@@ -80,7 +80,7 @@ describe('LoginForm', () => {
 		await userEvent.type(screen.getByLabelText(/email|e-mail/i), 'a@example.test');
 		await userEvent.click(screen.getByRole('button', { name: /link/i }));
 
-		expect(await screen.findByText(/went wrong|schiefgelaufen/i)).toBeInTheDocument();
+		await expect(screen.findByText(/went wrong|schiefgelaufen/i)).resolves.toBeInTheDocument();
 		expect(screen.queryByText(/on its way|unterwegs/i)).not.toBeInTheDocument();
 	});
 
@@ -94,7 +94,9 @@ describe('LoginForm', () => {
 		mocks.sendMagicLink.mockImplementationOnce(
 			async () =>
 				new Promise((resolve) => {
-					resolveSend = () => resolve({ sent: true });
+					resolveSend = () => {
+						resolve({ sent: true });
+					};
 				}),
 		);
 		renderLoginForm();

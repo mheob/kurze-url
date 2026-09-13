@@ -16,7 +16,7 @@ import { createSupabase } from './supabase';
  */
 export const ENUMERATION_TIMING_FLOOR_MS = 1000;
 
-function delay(ms: number): Promise<void> {
+async function delay(ms: number): Promise<void> {
 	return new Promise((resolve) => {
 		setTimeout(resolve, ms);
 	});
@@ -54,7 +54,7 @@ async function sendMagicLinkForImpl(email: string, origin: string): Promise<{ se
 	await Promise.allSettled([
 		supabase.auth.signInWithOtp({
 			email,
-			options: { shouldCreateUser: false, emailRedirectTo: `${origin}/auth/callback` },
+			options: { emailRedirectTo: `${origin}/auth/callback`, shouldCreateUser: false },
 		}),
 		delay(ENUMERATION_TIMING_FLOOR_MS),
 	]);

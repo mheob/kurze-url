@@ -202,7 +202,9 @@ export function DomainList({
 								) : null}
 								<Button
 									disabled={verifyingId === domain.id && verifyPending}
-									onClick={() => onVerify(domain.id)}
+									onClick={() => {
+										onVerify(domain.id);
+									}}
 									type="button"
 								>
 									{t('domains.verify')}
@@ -214,7 +216,9 @@ export function DomainList({
 						) : null}
 						<ConfirmDelete
 							label={t('domains.delete', { hostname: domain.hostname })}
-							onConfirm={() => onDelete(domain.id)}
+							onConfirm={() => {
+								onDelete(domain.id);
+							}}
 							question={t('domains.deleteQuestion', { hostname: domain.hostname })}
 						/>
 					</li>

@@ -78,9 +78,9 @@ export const Route = createFileRoute('/_authed/teams/$teamSlug/domains')({
 	beforeLoad: ({ context, params }) => ({
 		teamId: requireTeamId(context.me.memberships, params.teamSlug),
 	}),
-	loader: ({ context }) => loadDomains(context.queryClient, context.teamId),
 	component: RouteComponent,
 	errorComponent: DomainsError,
+	loader: async ({ context }) => loadDomains(context.queryClient, context.teamId),
 });
 
 /**
@@ -131,7 +131,7 @@ function RouteComponent(): React.JSX.Element {
 	// *different* domain immediately stops attributing the previous result to
 	// the wrong row, rather than waiting for the new response to arrive.
 	const [verifyingId, setVerifyingId] = useState<string | null>(null);
-	const [pendingReason, setPendingReason] = useState<VerifyReason | undefined>(undefined);
+	const [pendingReason, setPendingReason] = useState<VerifyReason | undefined>();
 	// Same one-slot correlation as `verifyingId`/`pendingReason` above: only
 	// one verify call is ever in flight, and `verifyingId` already names which
 	// domain it was for.
@@ -143,7 +143,7 @@ function RouteComponent(): React.JSX.Element {
 	const [deleteFailure, setDeleteFailure] = useState<ApiFailure | null>(null);
 
 	const claimMutation = useMutation({
-		mutationFn: (hostname: string) => claimDomainFn({ data: { hostname, teamId } }),
+		mutationFn: async (hostname: string) => claimDomainFn({ data: { hostname, teamId } }),
 		onError: (error: unknown) => {
 			const classified = classifyApiError(error);
 			// A mutation callback is not a render and not a loader, so it cannot
@@ -162,7 +162,7 @@ function RouteComponent(): React.JSX.Element {
 	});
 
 	const verifyMutation = useMutation({
-		mutationFn: (domainId: string) => verifyDomainFn({ data: { domainId } }),
+		mutationFn: async (domainId: string) => verifyDomainFn({ data: { domainId } }),
 		onError: (error: unknown) => {
 			// A mutation callback is not a render and not a loader, so it cannot
 			// throw a redirect — see the same note on the create-link route.
@@ -207,7 +207,7 @@ function RouteComponent(): React.JSX.Element {
 	});
 
 	const deleteMutation = useMutation({
-		mutationFn: (domainId: string) => deleteDomainFn({ data: { domainId } }),
+		mutationFn: async (domainId: string) => deleteDomainFn({ data: { domainId } }),
 		onError: (error: unknown) => {
 			const classified = classifyApiError(error);
 			if (classified.kind === 'unauthenticated') {
@@ -323,7 +323,9 @@ function RouteComponent(): React.JSX.Element {
 									id="hostname"
 									name={field.name}
 									onBlur={field.handleBlur}
-									onChange={(event) => field.handleChange(event.target.value)}
+									onChange={(event) => {
+										field.handleChange(event.target.value);
+									}}
 									required
 									value={field.state.value}
 								/>

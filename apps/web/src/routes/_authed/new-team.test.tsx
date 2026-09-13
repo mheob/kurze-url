@@ -60,9 +60,11 @@ function thrown(fn: () => void): unknown {
 	}
 }
 
-describe('assertMaintainer', () => {
+describe(assertMaintainer, () => {
 	it('lets a maintainer through', () => {
-		expect(() => assertMaintainer(me(true))).not.toThrow();
+		expect(() => {
+			assertMaintainer(me(true));
+		}).not.toThrow();
 	});
 
 	/**
@@ -73,11 +75,17 @@ describe('assertMaintainer', () => {
 	 * gets copied into a route where the difference does leak something.
 	 */
 	it('throws a not-found, not a generic error, for everyone else', () => {
-		expect(isNotFound(thrown(() => assertMaintainer(me(false))))).toBe(true);
+		expect(
+			isNotFound(
+				thrown(() => {
+					assertMaintainer(me(false));
+				}),
+			),
+		).toBe(true);
 	});
 });
 
-describe('validateSlugField', () => {
+describe(validateSlugField, () => {
 	it('accepts a well-formed slug', () => {
 		expect(validateSlugField('sv-gruenwald', translate)).toBeUndefined();
 	});
@@ -238,7 +246,9 @@ describe('submitting the form', () => {
 
 		await submitForm();
 
-		await waitFor(() => expect(router.state.location.pathname).toBe('/teams/verein-a/links'));
+		await waitFor(() => {
+			expect(router.state.location.pathname).toBe('/teams/verein-a/links');
+		});
 	});
 
 	/**

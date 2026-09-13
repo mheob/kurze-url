@@ -33,7 +33,9 @@ export function LanguageSwitcher() {
 				<Button
 					aria-pressed={i18n.language === language}
 					key={language}
-					onClick={() => choose(language)}
+					onClick={() => {
+						choose(language);
+					}}
 					size="sm"
 					type="button"
 					variant="outline"

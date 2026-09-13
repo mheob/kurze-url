@@ -38,7 +38,9 @@ export function CopyButton({
 				aria-label={label}
 				onClick={() => {
 					setCopied(false);
-					void navigator.clipboard.writeText(value).then(() => setCopied(true));
+					void navigator.clipboard.writeText(value).then(() => {
+						setCopied(true);
+					});
 				}}
 				type="button"
 			>

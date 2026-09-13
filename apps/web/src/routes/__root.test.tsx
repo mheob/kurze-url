@@ -34,7 +34,7 @@ function renderRootErrorPage(error: unknown): ReturnType<typeof render> {
 	);
 }
 
-describe('RootErrorPage', () => {
+describe('rootErrorPage', () => {
 	it('reports the failure it renders', () => {
 		const error = new Error('boom');
 
