@@ -21,4 +21,10 @@ export const generatedFiles = [
 	// in apps/web/components.json. Regenerated wholesale on every `add`; never
 	// hand-edited.
 	'apps/web/src/components/ui/**',
+	// Also `shadcn add` output — `components.json`'s aliases send hooks to
+	// `@/hooks`, and the sidebar component brings this one with it. Named on
+	// its own rather than as `apps/web/src/hooks/**`: there is no hand-written
+	// hook in that directory yet, and a directory glob would exempt the first
+	// one by accident instead of forcing a deliberate choice when it arrives.
+	'apps/web/src/hooks/use-mobile.ts',
 ];

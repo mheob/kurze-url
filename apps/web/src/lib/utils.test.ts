@@ -11,7 +11,7 @@ import { cn } from './utils';
  * concatenating implementation fails silently and only where someone
  * overrides.
  */
-describe('cn', () => {
+describe(cn, () => {
 	it('lets a later conflicting utility win', () => {
 		expect(cn('size-8', 'size-10')).toBe('size-10');
 	});
