@@ -1,3 +1,8 @@
+/* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding of this rule in this
+   file traces to `@kurze-url/api-client`'s generated `PageLink`/`Link` types, whose properties
+   (and `Link.tags`'s nested array) are not marked readonly; that is generated codegen output,
+   never edited by hand. */
+
 import type { PageLink } from '@kurze-url/api-client';
 import { Link } from '@tanstack/react-router';
 import { LockIcon } from 'lucide-react';
@@ -21,6 +26,12 @@ interface LinkListViewProps {
  * it directly with hand-built `PageLink` fixtures instead. This component
  * only ever used the team value for navigation, so it takes the slug rather
  * than the id — unlike its caller, it never feeds an API call.
+ *
+ * @param props - The component's props.
+ * @param props.data - The already-fetched page of links.
+ * @param props.page - The current page number.
+ * @param props.teamSlug - The team's slug, used only for navigation links.
+ * @returns The rendered link list, or an empty-state message.
  */
 export function LinkList({ data, page, teamSlug }: LinkListViewProps): React.JSX.Element {
 	const { t } = useTranslation();

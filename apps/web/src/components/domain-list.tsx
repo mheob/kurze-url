@@ -33,7 +33,12 @@ interface DomainListProps {
  * generated type), not the narrower union this UI actually knows about — an
  * unrecognised value is echoed back rather than silently dropped, so a
  * status this screen doesn't yet handle surfaces instead of disappearing.
+ *
+ * @param t - The translation function.
+ * @param status - The domain's raw `verification_status`, echoed back unchanged when unrecognised.
+ * @returns The label to render for this status.
  */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `Readonly<TFunction>` strips i18next's call signature and produces a real TS2349 "not callable"; that was tried.
 function statusLabel(t: TFunction, status: string): string {
 	switch (status) {
 		case 'pending': {
@@ -65,7 +70,12 @@ function statusLabel(t: TFunction, status: string): string {
  * `never` today, so it only ever runs — echoing the raw value, the same
  * fallback `statusLabel` above uses — if a later reason is added here before
  * its catalogue entry exists.
+ *
+ * @param t - The translation function.
+ * @param reason - The pending-verification reason to label; `''` never actually reaches here.
+ * @returns The label to render for this reason.
  */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `Readonly<TFunction>` strips i18next's call signature and produces a real TS2349 "not callable"; that was tried.
 function reasonLabel(t: TFunction, reason: VerifyReason): string {
 	switch (reason) {
 		case '': {
@@ -113,7 +123,19 @@ function reasonLabel(t: TFunction, reason: VerifyReason): string {
  * delete control has no such restriction — every domain, regardless of
  * status, can be removed; only a domain that still has links refuses (409),
  * which is what `deleteBlockedCount` surfaces.
+ *
+ * @param props - The component's props.
+ * @param props.deleteBlockedCount - The blocking link count, set only for the domain named by `deletingId`.
+ * @param props.deletingId - The id of the domain a delete is in flight for, or null.
+ * @param props.domains - The team's domains, already fetched by the caller.
+ * @param props.onDelete - Deletes the domain with the given id.
+ * @param props.onVerify - Re-checks verification for the domain with the given id.
+ * @param props.pendingReason - Set only for the domain named by `verifyingId`.
+ * @param props.verifyPending - True while the verify call named by `verifyingId` is still in flight.
+ * @param props.verifyingId - The id of the domain a verify check is in flight for, or null.
+ * @returns The rendered domain list section.
  */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `domains` carries `@kurze-url/api-client`'s generated `Domain` type, whose properties are not marked readonly; that is generated codegen output, never edited by hand.
 export function DomainList({
 	deleteBlockedCount,
 	deletingId,
@@ -132,6 +154,7 @@ export function DomainList({
 		<>
 			<h1>{t('domains.heading')}</h1>
 			<ul>
+				{/* oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `domain` is the generated `Domain` type; see the disable above on this component's own `domains` prop. */}
 				{domains.map((domain) => (
 					<li key={domain.id}>
 						<h2>{domain.hostname}</h2>
@@ -178,12 +201,14 @@ export function DomainList({
 										</tr>
 									</tbody>
 								</table>
-								{verifyingId === domain.id && pendingReason ? (
+								{verifyingId === domain.id && pendingReason !== undefined ? (
 									<output>{reasonLabel(t, pendingReason)}</output>
 								) : null}
 								<Button
 									disabled={verifyingId === domain.id && verifyPending}
-									onClick={() => onVerify(domain.id)}
+									onClick={() => {
+										onVerify(domain.id);
+									}}
 									type="button"
 								>
 									{t('domains.verify')}
@@ -195,7 +220,9 @@ export function DomainList({
 						) : null}
 						<ConfirmDelete
 							label={t('domains.delete', { hostname: domain.hostname })}
-							onConfirm={() => onDelete(domain.id)}
+							onConfirm={() => {
+								onDelete(domain.id);
+							}}
 							question={t('domains.deleteQuestion', { hostname: domain.hostname })}
 						/>
 					</li>

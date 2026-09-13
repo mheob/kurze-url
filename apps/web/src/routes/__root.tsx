@@ -1,5 +1,6 @@
 import { TanStackDevtools } from '@tanstack/react-devtools';
 import type { QueryClient } from '@tanstack/react-query';
+import type { ErrorComponentProps } from '@tanstack/react-router';
 import { HeadContent, Scripts, createRootRouteWithContext } from '@tanstack/react-router';
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools';
 import { createServerFn } from '@tanstack/react-start';
@@ -33,6 +34,7 @@ const devtoolsPlugins = [
  * the value lands in the same response as the HTML), and on the client it
  * becomes a regular RPC instead of a crash.
  */
+// oxlint-disable-next-line typescript/require-await -- `createServerFn`'s handler must return a `Promise` whatever its body does; nothing here needs an `await`.
 const getPreferences = createServerFn({ method: 'GET' }).handler(async () => {
 	const cookieHeader = getRequestHeader('cookie');
 	// Only ever the initial guess before a `lang` cookie exists — `readLanguage`
@@ -44,6 +46,7 @@ const getPreferences = createServerFn({ method: 'GET' }).handler(async () => {
 	};
 });
 
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `React.ReactNode` is React's own type; not a declaration this file can edit.
 function RootDocument({ children }: { readonly children: React.ReactNode }) {
 	const { language, theme } = Route.useLoaderData();
 	// A fresh i18n instance per request already (see createI18n's own docstring);
@@ -71,6 +74,8 @@ function RootDocument({ children }: { readonly children: React.ReactNode }) {
  * URL that matches no route, regardless of the request's language, so an
  * unrecognised `/de/...`-flavoured link would otherwise ship English text
  * inside an already-correctly-German `<html lang="de">` shell.
+ *
+ * @returns The rendered not-found page.
  */
 function NotFound() {
 	const { t } = useTranslation();
@@ -78,7 +83,7 @@ function NotFound() {
 	return (
 		<main className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
 			<h1 className="text-3xl font-bold">{t('notFound.heading')}</h1>
-			<p className="text-muted-foreground max-w-prose">{t('notFound.body')}</p>
+			<p className="max-w-prose text-muted-foreground">{t('notFound.body')}</p>
 		</main>
 	);
 }
@@ -94,7 +99,20 @@ function NotFound() {
  * Reported during render rather than in an effect: this component also
  * renders on the server, where effects never run.
  */
-export function RootErrorPage({ error }: { readonly error: Error }) {
+/**
+ * The error is `unknown`, not `Error`, and that is the router's type rather
+ * than a loosening on our side: `ErrorComponentProps` resolves its error
+ * through `ErrorBoundaryTypes`, which defaults to `unknown` because JavaScript
+ * can throw any value at all. Nothing here reads a property off it — the page
+ * shows one generic translated sentence, and `reportUnexpected` has always
+ * taken `unknown` and done its own narrowing.
+ *
+ * @param props - The router's error-boundary props.
+ * @param props.error - Whatever was thrown.
+ * @returns The rendered error page.
+ */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `ErrorComponentProps` is TanStack Router's own type; not a declaration this file can edit.
+export function RootErrorPage({ error }: ErrorComponentProps) {
 	const { t } = useTranslation();
 
 	reportUnexpected(error);
@@ -127,13 +145,12 @@ export function RootErrorPage({ error }: { readonly error: Error }) {
  */
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
 	errorComponent: RootErrorPage,
-	loader: () => getPreferences(),
-	notFoundComponent: NotFound,
 	// `loaderData` is what makes `head` able to see the request's language at
 	// all — it runs before `RootDocument` (and its `I18nextProvider`) exists,
 	// so `documentTitle` reads the catalogue directly instead of going through
 	// `useTranslation`. Axe's `document-title` check (WCAG 2.4.2) needs this
 	// non-empty, and it must still be translated like everything else here.
+	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- TanStack Router's own root route `head` option shape; not a declaration this file can edit.
 	head: ({ loaderData }) => ({
 		links: [
 			{
@@ -154,5 +171,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 			},
 		],
 	}),
+	loader: async () => getPreferences(),
+	notFoundComponent: NotFound,
 	shellComponent: RootDocument,
 });

@@ -13,7 +13,12 @@ const context = {
 	teamSlug: 'sv-gruenwald',
 };
 
-/** Same pattern as `link-form.test.tsx`'s `renderForm`: `useTranslation` needs an `I18nextProvider` in the tree. */
+/**
+ * Same pattern as `link-form.test.tsx`'s `renderForm`: `useTranslation` needs an `I18nextProvider` in the tree.
+ *
+ * @param props - The props to render `LinkPasswordCard` with.
+ * @returns The rendered test utilities from Testing Library's `render`.
+ */
 function renderCard(props: LinkPasswordCardProps): ReturnType<typeof render> {
 	return render(
 		<I18nextProvider i18n={createI18n('en')}>
@@ -22,15 +27,15 @@ function renderCard(props: LinkPasswordCardProps): ReturnType<typeof render> {
 	);
 }
 
-describe('LinkPasswordCard', () => {
+describe(LinkPasswordCard, () => {
 	it('offers to protect an unprotected link', () => {
-		renderCard({ context, hasPassword: false, onRemove: vi.fn(), onSet: vi.fn() });
+		renderCard({ context, hasPassword: false, onRemove: vi.fn<() => void>(), onSet: vi.fn() });
 
 		expect(screen.getByText('This link is not protected.')).toBeInTheDocument();
 	});
 
 	it('reports a protected link and offers removal', () => {
-		renderCard({ context, hasPassword: true, onRemove: vi.fn(), onSet: vi.fn() });
+		renderCard({ context, hasPassword: true, onRemove: vi.fn<() => void>(), onSet: vi.fn() });
 
 		expect(screen.getByText('This link is protected by a password.')).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Remove protection' })).toBeInTheDocument();
@@ -42,7 +47,7 @@ describe('LinkPasswordCard', () => {
 	 * `ConfirmDelete`'s `confirmLabel` override is what keeps this specific.
 	 */
 	it('labels the removal confirmation with password-specific text, not the generic delete text', async () => {
-		renderCard({ context, hasPassword: true, onRemove: vi.fn(), onSet: vi.fn() });
+		renderCard({ context, hasPassword: true, onRemove: vi.fn<() => void>(), onSet: vi.fn() });
 
 		await userEvent.click(screen.getByRole('button', { name: 'Remove protection' }));
 
@@ -52,7 +57,7 @@ describe('LinkPasswordCard', () => {
 
 	it('refuses a context-derived password without calling the server', async () => {
 		const onSet = vi.fn();
-		renderCard({ context, hasPassword: false, onRemove: vi.fn(), onSet });
+		renderCard({ context, hasPassword: false, onRemove: vi.fn<() => void>(), onSet });
 
 		await userEvent.type(screen.getByLabelText('Password'), 'sommerfest2026');
 		await userEvent.click(screen.getByRole('button', { name: 'Protect this link' }));
@@ -67,7 +72,7 @@ describe('LinkPasswordCard', () => {
 
 	it('submits a password that passes the mirrored policy', async () => {
 		const onSet = vi.fn();
-		renderCard({ context, hasPassword: false, onRemove: vi.fn(), onSet });
+		renderCard({ context, hasPassword: false, onRemove: vi.fn<() => void>(), onSet });
 
 		await userEvent.type(screen.getByLabelText('Password'), 'Kartoffelsalat!7');
 		await userEvent.click(screen.getByRole('button', { name: 'Protect this link' }));
@@ -84,7 +89,7 @@ describe('LinkPasswordCard', () => {
 	 */
 	it('closes the editor and clears the field after successfully changing an existing password', async () => {
 		const onSet = vi.fn().mockResolvedValue(undefined);
-		renderCard({ context, hasPassword: true, onRemove: vi.fn(), onSet });
+		renderCard({ context, hasPassword: true, onRemove: vi.fn<() => void>(), onSet });
 
 		await userEvent.click(screen.getByRole('button', { name: 'Change password' }));
 		await userEvent.type(screen.getByLabelText('Password'), 'Kartoffelsalat!7');
@@ -106,7 +111,7 @@ describe('LinkPasswordCard', () => {
 	 */
 	it('keeps the editor open with the typed password after a rejected change', async () => {
 		const onSet = vi.fn().mockRejectedValue(new Error('rejected'));
-		renderCard({ context, hasPassword: true, onRemove: vi.fn(), onSet });
+		renderCard({ context, hasPassword: true, onRemove: vi.fn<() => void>(), onSet });
 
 		await userEvent.click(screen.getByRole('button', { name: 'Change password' }));
 		await userEvent.type(screen.getByLabelText('Password'), 'Kartoffelsalat!7');
@@ -122,7 +127,7 @@ describe('LinkPasswordCard', () => {
 		renderCard({
 			context,
 			hasPassword: false,
-			onRemove: vi.fn(),
+			onRemove: vi.fn<() => void>(),
 			onSet: vi.fn(),
 			rejection: 'too_common',
 		});
@@ -142,7 +147,7 @@ describe('LinkPasswordCard', () => {
 		renderCard({
 			context,
 			hasPassword: false,
-			onRemove: vi.fn(),
+			onRemove: vi.fn<() => void>(),
 			onSet: vi.fn(),
 			rejection: 'rejected',
 		});
@@ -158,7 +163,7 @@ describe('LinkPasswordCard', () => {
 	 */
 	it('cancels out of the change-password editor back to the protected view', async () => {
 		const onSet = vi.fn();
-		renderCard({ context, hasPassword: true, onRemove: vi.fn(), onSet });
+		renderCard({ context, hasPassword: true, onRemove: vi.fn<() => void>(), onSet });
 
 		await userEvent.click(screen.getByRole('button', { name: 'Change password' }));
 		await userEvent.type(screen.getByLabelText('Password'), 'Kartoffelsalat!7');
@@ -178,18 +183,18 @@ describe('LinkPasswordCard', () => {
 	 * parent — the owner of `rejection` — to clear it too.
 	 */
 	it('asks the parent to dismiss a stale API-reported rejection when the reader edits the field', async () => {
-		const onDismissRejection = vi.fn();
+		const onDismissRejection = vi.fn<() => void>();
 		renderCard({
 			context,
 			hasPassword: false,
 			onDismissRejection,
-			onRemove: vi.fn(),
+			onRemove: vi.fn<() => void>(),
 			onSet: vi.fn(),
 			rejection: 'too_common',
 		});
 
 		await userEvent.type(screen.getByLabelText('Password'), 'x');
 
-		expect(onDismissRejection).toHaveBeenCalledTimes(1);
+		expect(onDismissRejection).toHaveBeenCalledOnce();
 	});
 });

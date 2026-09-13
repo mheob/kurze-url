@@ -14,7 +14,7 @@ function renderWith(theme: 'dark' | 'light') {
 	);
 }
 
-describe('ThemeToggle', () => {
+describe(ThemeToggle, () => {
 	// The component toggles a class on `document.documentElement` directly
 	// (see the component's own docstring); jsdom keeps one document per test
 	// file, so a class left over from one test would otherwise leak into the

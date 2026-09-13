@@ -13,7 +13,13 @@ import {
 	TEAM_SLUG_PATTERN,
 } from '../../lib/team-slug';
 import { createTeamFn } from '../../server/teams';
-import { type Me } from '../_authed';
+import type { Me } from '../_authed';
+
+/* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding below is a type this
+   file doesn't own: TanStack Router's own `beforeLoad` option shape, TanStack Form's `onSubmit`/
+   field-validator options and its `field` render prop, React's `FormEvent`/`ChangeEvent` on the
+   `<form>`/`<input>` handlers, or the generated `@kurze-url/api-client` `Team` type `createTeamFn`
+   resolves to. `Readonly<>` is shallow and none of these is a declaration this file can edit. */
 
 /**
  * 404, not 403, and the same reasoning `requireTeamId` gives: a route a
@@ -21,8 +27,11 @@ import { type Me } from '../_authed';
  * not tenant data, so nothing leaks either way — but two guards in one tree
  * answering differently is the kind of inconsistency that later gets copied
  * into a route where it does matter.
+ *
+ * @param me - The signed-in caller, from `GET /v1/me`.
  */
 export function assertMaintainer(me: Me): void {
+	// oxlint-disable-next-line typescript/only-throw-error -- TanStack Router signals navigation by throwing; `notFound()` is its control flow, not an Error.
 	if (!me.is_maintainer) throw notFound();
 }
 
@@ -43,6 +52,10 @@ export const Route = createFileRoute('/_authed/new-team')({
 /**
  * Exported and translate-injected so it can be unit-tested without rendering
  * the form — the same shape `assertMaintainer` above uses for the same reason.
+ *
+ * @param value - The raw field value, trimmed before checking.
+ * @param t - The translation function to render an error key through.
+ * @returns The translated error message, or `undefined` if the value is valid.
  */
 export function validateSlugField(value: string, t: (key: string) => string): string | undefined {
 	const slug = value.trim();
@@ -61,6 +74,8 @@ export function validateSlugField(value: string, t: (key: string) => string): st
  * Exported for the same reason `validateSlugField` above is: the name-to-slug
  * suggestion wiring lives entirely in this component's JSX event handlers, so
  * proving it works means rendering it, not just calling a pure function.
+ *
+ * @returns The rendered new-team form.
  */
 export function RouteComponent(): React.JSX.Element {
 	const { t } = useTranslation();
@@ -68,7 +83,7 @@ export function RouteComponent(): React.JSX.Element {
 	const [failure, setFailure] = useState<ApiFailure | null>(null);
 
 	const mutation = useMutation({
-		mutationFn: ({ name, slug }: { name: string; slug: string }) =>
+		mutationFn: async ({ name, slug }: Readonly<{ name: string; slug: string }>) =>
 			createTeamFn({ data: { name, slug } }),
 		onError: (error: unknown) => {
 			const classified = classifyApiError(error);
@@ -100,12 +115,11 @@ export function RouteComponent(): React.JSX.Element {
 	});
 
 	const nameFieldError = failure?.kind === 'fields' ? failure.fields.name : undefined;
+	// Two flat ternaries joined by `??`, not one nested inside the other: `failure.kind` can only
+	// ever be one of the two at a time, so at most one side ever produces a value.
 	const slugFieldError =
-		failure?.kind === 'slugTaken'
-			? t('teams.slugTaken')
-			: failure?.kind === 'fields'
-				? failure.fields.slug
-				: undefined;
+		(failure?.kind === 'slugTaken' ? t('teams.slugTaken') : undefined) ??
+		(failure?.kind === 'fields' ? failure.fields.slug : undefined);
 	// A field error renders on the field itself; a second generic banner for
 	// the same failure is what the create-link route deliberately avoids. A
 	// taken slug is the same case: it renders once, on the slug field above,
@@ -118,7 +132,7 @@ export function RouteComponent(): React.JSX.Element {
 	return (
 		<>
 			<h1>{t('teams.create')}</h1>
-			{formMessage ? <p role="alert">{formMessage}</p> : null}
+			{formMessage !== null ? <p role="alert">{formMessage}</p> : null}
 			<form
 				onSubmit={(event) => {
 					event.preventDefault();
@@ -142,14 +156,14 @@ export function RouteComponent(): React.JSX.Element {
 							<div>
 								<label htmlFor="name">{t('teams.name')}</label>
 								<input
-									aria-describedby={errorMessage ? errorId : undefined}
-									aria-invalid={errorMessage ? true : undefined}
+									aria-describedby={errorMessage !== undefined ? errorId : undefined}
+									aria-invalid={errorMessage !== undefined ? true : undefined}
 									id="name"
 									name={field.name}
 									onBlur={field.handleBlur}
 									onChange={(event) => {
 										field.handleChange(event.target.value);
-										if (!form.getFieldMeta('slug')?.isTouched) {
+										if (form.getFieldMeta('slug')?.isTouched !== true) {
 											// `dontUpdateMeta` alone is not enough: `setFieldValue`'s own
 											// `validateField` call (run unless `dontValidate` is also set)
 											// marks the field touched as a side effect of validating it,
@@ -165,7 +179,7 @@ export function RouteComponent(): React.JSX.Element {
 									required
 									value={field.state.value}
 								/>
-								{errorMessage ? (
+								{errorMessage !== undefined ? (
 									<p id={errorId} role="alert">
 										{errorMessage}
 									</p>
@@ -190,17 +204,19 @@ export function RouteComponent(): React.JSX.Element {
 							<div>
 								<label htmlFor="slug">{t('teams.slug')}</label>
 								<input
-									aria-describedby={errorMessage ? `${hintId} ${errorId}` : hintId}
-									aria-invalid={errorMessage ? true : undefined}
+									aria-describedby={errorMessage !== undefined ? `${hintId} ${errorId}` : hintId}
+									aria-invalid={errorMessage !== undefined ? true : undefined}
 									id="slug"
 									name={field.name}
 									onBlur={field.handleBlur}
-									onChange={(event) => field.handleChange(event.target.value)}
+									onChange={(event) => {
+										field.handleChange(event.target.value);
+									}}
 									required
 									value={field.state.value}
 								/>
 								<p id={hintId}>{t('teams.slugHint')}</p>
-								{errorMessage ? (
+								{errorMessage !== undefined ? (
 									<p id={errorId} role="alert">
 										{errorMessage}
 									</p>

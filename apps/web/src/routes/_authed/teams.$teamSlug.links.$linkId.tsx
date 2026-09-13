@@ -21,6 +21,15 @@ import {
 } from '../../server/links';
 import { requireTeamId } from '../_authed';
 
+/* oxlint-disable typescript/prefer-readonly-parameter-types -- every parameter this rule flags
+   below is typed by something this file does not own: TanStack Router's own `beforeLoad`/`loader`
+   option shapes, the generated `@kurze-url/api-client` `Link`/`PageLink` types (whose nested arrays
+   are mutable and can't be marked readonly from this side of the codegen boundary), the DOM's own
+   `Document` (mutable by definition — see `saveQrDownload`'s own docstring for why it stays
+   unnarrowed), or `ApiFailure` from `../../lib/api-errors` — out of this lint pass's scope — whose
+   `fields` variant nests a plain, mutable `Record<string, string>`. `Readonly<>` is shallow, so none
+   of these clears without editing a declaration this file does not own. */
+
 /**
  * The one shape `loadLink` below reaches through — a real `getLinkFn`
  * satisfies this structurally, so the loader needs no cast, and
@@ -29,7 +38,7 @@ import { requireTeamId } from '../_authed';
  * `server/links.ts`'s docstrings). Same shape `LinksDataSource` uses in the
  * list route (Task 9) for the identical reason.
  */
-type LinkFetcher = (options: { data: { linkId: string } }) => Promise<Link>;
+type LinkFetcher = (options: Readonly<{ data: Readonly<{ linkId: string }> }>) => Promise<Link>;
 
 /**
  * A non-member of the team never reaches this loader at all — `beforeLoad`'s
@@ -46,13 +55,19 @@ type LinkFetcher = (options: { data: { linkId: string } }) => Promise<Link>;
  * list route: the narrow window where `_authed.tsx`'s own session check
  * passed but the token dies, or is rejected, by the time this route's own
  * fetch runs.
+ *
+ * @param fetchLink - The server function to fetch through; only needs this narrow shape.
+ * @param linkId - The link's id, from the route's own path parameter.
+ * @returns The fetched link.
  */
 export async function loadLink(fetchLink: LinkFetcher, linkId: string): Promise<Link> {
 	try {
 		return await fetchLink({ data: { linkId } });
 	} catch (error) {
 		const classified = classifyApiError(error);
+		// oxlint-disable-next-line typescript/only-throw-error -- TanStack Router signals navigation by throwing; `redirect()` is its control flow, not an Error.
 		if (classified.kind === 'unauthenticated') throw redirect({ to: '/login' });
+		// oxlint-disable-next-line typescript/only-throw-error -- same as above: `notFound()` is the router's own signal, not an Error.
 		if (classified.kind === 'notFound') throw notFound();
 		throw error;
 	}
@@ -73,6 +88,9 @@ export async function loadLink(fetchLink: LinkFetcher, linkId: string): Promise<
  * `null` (no expiry) becomes `''`, not an epoch date — `new Date(null)` is
  * the Unix epoch, and showing that in the input would read as "this link
  * expires January 1970" for a link that never expires at all.
+ *
+ * @param value - The date/time component to zero-pad.
+ * @returns `value`, zero-padded to at least two digits.
  */
 function pad(value: number): string {
 	return String(value).padStart(2, '0');
@@ -102,6 +120,9 @@ export function toDateTimeLocal(expiresAt: string | null): string {
  * scope stops at the create route) — `Link.domain_id` is always a concrete
  * id, never `''`, and `LinkFormValues` requires the field regardless of
  * whether the picker is shown.
+ *
+ * @param link - The fetched link to seed the form from.
+ * @returns The form's initial values.
  */
 function toFormValues(link: Link): LinkFormValues {
 	return {
@@ -122,23 +143,33 @@ function toFormValues(link: Link): LinkFormValues {
  * clear-and-regenerate signal in `UpdateLinkInputBodyWritable`, unlike
  * `folder_id`'s explicit `null`-to-unfile) rather than the create form's
  * "generate one" — inherited from reusing the same `<LinkForm>` unmodified.
+ *
+ * @param values - The form's values, as `LinkForm` hands them back.
+ * @returns The API request body, with empty optional fields mapped to `undefined`.
  */
+/** The two redirect status codes a link can use; see CLAUDE.md's "301 vs 302" note for why 302 is the default. */
+const REDIRECT_PERMANENT = 301;
+const REDIRECT_TEMPORARY = 302;
+
 function toUpdateBody(values: LinkFormValues): UpdateLinkInputBodyWritable {
 	return {
 		analytics_enabled: values.analytics_enabled,
 		destination_url: values.destination_url,
 		expires_at: values.expires_at === '' ? undefined : new Date(values.expires_at).toISOString(),
-		redirect_type: values.redirect_type === 301 ? 301 : 302,
+		redirect_type:
+			values.redirect_type === REDIRECT_PERMANENT ? REDIRECT_PERMANENT : REDIRECT_TEMPORARY,
 		slug: values.slug === '' ? undefined : values.slug,
 	};
 }
 
 /** Same narrow slices as `link.new.tsx`'s `InvalidatableQueryClient`/`InvalidatableRouter` — real instances satisfy these structurally, fakes satisfy them for the test. */
 interface InvalidatableQueryClient {
-	invalidateQueries: (filters: { queryKey: readonly unknown[] }) => Promise<void>;
+	readonly invalidateQueries: (
+		filters: Readonly<{ queryKey: readonly unknown[] }>,
+	) => Promise<void>;
 }
 interface InvalidatableRouter {
-	invalidate: () => Promise<void>;
+	readonly invalidate: () => Promise<void>;
 }
 
 /**
@@ -148,6 +179,10 @@ interface InvalidatableRouter {
  * `link.new.tsx`'s `afterCreate` falsifies for creation. Delete's own
  * "navigate back to the list" step lives in its `onSuccess`, not here, since
  * update has no such step.
+ *
+ * @param queryClient - The query client to invalidate this link's cached list entries on.
+ * @param router - The router to invalidate, so its loaders refetch too.
+ * @param teamId - The team this link belongs to.
  */
 export async function afterMutation(
 	queryClient: InvalidatableQueryClient,
@@ -162,8 +197,8 @@ export const Route = createFileRoute('/_authed/teams/$teamSlug/links/$linkId')({
 	beforeLoad: ({ context, params }) => ({
 		teamId: requireTeamId(context.me.memberships, params.teamSlug),
 	}),
-	loader: ({ params }) => loadLink(getLinkFn, params.linkId),
 	component: RouteComponent,
+	loader: async ({ params }) => loadLink(getLinkFn, params.linkId),
 });
 
 /**
@@ -177,10 +212,15 @@ export const Route = createFileRoute('/_authed/teams/$teamSlug/links/$linkId')({
  * Exported (like `loadLink`/`afterMutation` above) so
  * `teams.$teamSlug.links.$linkId.test.ts` can exercise it with a hand-built
  * `memberships` array, no router or React tree required.
+ *
+ * @param link - The fetched link the password context is built for.
+ * @param memberships - The signed-in caller's own membership list, from `GET /v1/me`.
+ * @param teamSlug - The team slug from the route's path parameter, looked up in `memberships`.
+ * @returns The context `LinkPasswordCard` needs to explain its policy.
  */
 export function toPasswordContext(
 	link: Link,
-	memberships: readonly { name: string; slug: string }[],
+	memberships: readonly Readonly<{ name: string; slug: string }>[],
 	teamSlug: string,
 ): LinkPasswordContext {
 	const membership = memberships.find((candidate) => candidate.slug === teamSlug);
@@ -199,17 +239,17 @@ export function toPasswordContext(
  * satisfy it for the test without constructing one.
  */
 interface CacheWritableQueryClient {
-	setQueriesData: (
-		filters: { exact: boolean; queryKey: readonly unknown[] },
+	readonly setQueriesData: (
+		filters: Readonly<{ exact: boolean; queryKey: readonly unknown[] }>,
 		updater: (old: PageLink | undefined) => PageLink | undefined,
 	) => unknown;
 }
 
 /** Dependencies `handlePasswordError` needs from the component, narrowed to exactly the calls it makes — see `CacheWritableQueryClient` above for why this shape, not the real hooks, is what gets threaded through. */
 interface PasswordErrorHandlers {
-	navigateToLogin: () => void;
-	setFailure: (failure: ApiFailure | null) => void;
-	setPasswordRejection: (reason: LinkPasswordReason | 'rejected' | undefined) => void;
+	readonly navigateToLogin: () => void;
+	readonly setFailure: (failure: ApiFailure | null) => void;
+	readonly setPasswordRejection: (reason: LinkPasswordReason | 'rejected' | undefined) => void;
 }
 
 /**
@@ -226,6 +266,9 @@ interface PasswordErrorHandlers {
  * task-9 review found untested: `teams.$teamSlug.links.$linkId.test.ts` can
  * call this directly with hand-built spies, the same pattern `afterMutation`
  * already uses above.
+ *
+ * @param error - The value caught from a rejected password mutation.
+ * @param handlers - The component callbacks this dispatches to, based on the error's kind.
  */
 export function handlePasswordError(error: unknown, handlers: PasswordErrorHandlers): void {
 	const classified = classifyApiError(error);
@@ -244,12 +287,12 @@ export function handlePasswordError(error: unknown, handlers: PasswordErrorHandl
 
 /** Dependencies `applyPasswordSuccess` needs from the component — see `PasswordErrorHandlers` above for the same reasoning. */
 interface PasswordSuccessHandlers {
-	linkId: string;
-	queryClient: CacheWritableQueryClient;
-	setFailure: (failure: ApiFailure | null) => void;
-	setHasPassword: (hasPassword: boolean) => void;
-	setPasswordRejection: (reason: LinkPasswordReason | 'rejected' | undefined) => void;
-	teamId: string;
+	readonly linkId: string;
+	readonly queryClient: CacheWritableQueryClient;
+	readonly setFailure: (failure: ApiFailure | null) => void;
+	readonly setHasPassword: (hasPassword: boolean) => void;
+	readonly setPasswordRejection: (reason: LinkPasswordReason | 'rejected' | undefined) => void;
+	readonly teamId: string;
 }
 
 /**
@@ -260,6 +303,9 @@ interface PasswordSuccessHandlers {
  * `teams.$teamSlug.domains.tsx`'s verify mutation merges one row into its
  * own cached list instead of invalidating it. `hasPassword` is this same
  * value, tracked locally because it is what this page's own card reads.
+ *
+ * @param updatedLink - The link returned by the password mutation that just succeeded.
+ * @param handlers - The component state and query client this writes the result into.
  */
 export function applyPasswordSuccess(updatedLink: Link, handlers: PasswordSuccessHandlers): void {
 	handlers.setHasPassword(updatedLink.has_password);
@@ -281,9 +327,9 @@ export function applyPasswordSuccess(updatedLink: Link, handlers: PasswordSucces
 
 /** Dependencies `handleQrError` needs from the component — see `PasswordErrorHandlers` above for why the dependencies are a parameter rather than a closure. */
 interface QrErrorHandlers {
-	navigateToLogin: () => void;
-	setFailure: (failure: ApiFailure | null) => void;
-	setQrRejection: (reason: QrRejectionReason | 'rejected' | undefined) => void;
+	readonly navigateToLogin: () => void;
+	readonly setFailure: (failure: ApiFailure | null) => void;
+	readonly setQrRejection: (reason: QrRejectionReason | 'rejected' | undefined) => void;
 }
 
 /**
@@ -291,6 +337,9 @@ interface QrErrorHandlers {
  * the endpoint keyed to one of its own query parameters belongs under the
  * control that caused it, and everything else — a rate limit, a 404, a
  * genuine 500 — falls through to the one banner this route already has.
+ *
+ * @param error - The value caught from a rejected QR download mutation.
+ * @param handlers - The component callbacks this dispatches to, based on the error's kind.
  */
 export function handleQrError(error: unknown, handlers: QrErrorHandlers): void {
 	const classified = classifyApiError(error);
@@ -333,30 +382,46 @@ export function handleQrError(error: unknown, handlers: QrErrorHandlers): void {
  * The object URL is revoked immediately: the click has already started the
  * save, and leaving it alive would pin the whole image in memory for the life
  * of the document.
+ *
+ * @param download - The base64-encoded image bytes and their content type.
+ * @param filename - The name to save the download under.
+ * @param doc - The document to create and click a throwaway download anchor in.
  */
 export function saveQrDownload(
-	download: { base64: string; contentType: string },
+	download: Readonly<{ base64: string; contentType: string }>,
 	filename: string,
 	doc: Document,
 ): void {
 	const binary = atob(download.base64);
-	const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+	const bytes = Uint8Array.from(binary, (character) => character.codePointAt(0) ?? 0);
 	const url = URL.createObjectURL(new Blob([bytes], { type: download.contentType }));
 
 	const anchor = doc.createElement('a');
 	anchor.download = filename;
 	anchor.href = url;
 	anchor.rel = 'noopener';
+	// oxlint-disable-next-line unicorn/prefer-dom-node-append -- `append()` returns nothing where `appendChild()` returns the node, and `teams.$teamSlug.links.$linkId.test.ts`'s `spyOnDownloadAnchor` asserts through a spy on `appendChild` specifically.
 	doc.body.appendChild(anchor);
 	anchor.click();
+	// oxlint-disable-next-line unicorn/prefer-dom-node-remove -- same reason as `appendChild` above: the test spies on `removeChild` by name, and `.remove()` is a different call it would not see.
 	doc.body.removeChild(anchor);
 	URL.revokeObjectURL(url);
 }
 
-/** The two channels `completeQrDownload` can still touch once the mutation has already succeeded — a subset of `QrErrorHandlers`, minus `navigateToLogin`, which a save can never need. */
-interface QrDownloadSuccessHandlers {
-	setFailure: (failure: ApiFailure | null) => void;
-	setQrRejection: (reason: QrRejectionReason | 'rejected' | undefined) => void;
+/**
+ * The two channels `completeQrDownload` can still touch once the mutation has
+ * already succeeded — a subset of `QrErrorHandlers`, minus `navigateToLogin`,
+ * which a save can never need — plus the document it renders a throwaway
+ * download anchor into. `doc` joined this interface (rather than staying its
+ * own parameter) to bring `completeQrDownload` back under `max-params`' limit
+ * of three: `download` and `filename` are the save's own subject, and
+ * everything else it touches is a dependency, so grouping the dependencies is
+ * the split that matches what each parameter *is*, not just a count reduction.
+ */
+interface QrDownloadDeps {
+	readonly doc: Document;
+	readonly setFailure: (failure: ApiFailure | null) => void;
+	readonly setQrRejection: (reason: QrRejectionReason | 'rejected' | undefined) => void;
 }
 
 /**
@@ -378,19 +443,22 @@ interface QrDownloadSuccessHandlers {
  * parameters rather than closing over the component's hooks, for the same
  * reason every other exported helper in this file is: so the route's test can
  * drive the guard directly, without a router or a rendered tree.
+ *
+ * @param download - The base64-encoded image bytes and their content type.
+ * @param filename - The name to save the download under.
+ * @param deps - The document to render the throwaway anchor in, plus the component's error channels, cleared on entry and set if the save throws.
  */
 export function completeQrDownload(
-	download: { base64: string; contentType: string },
+	download: Readonly<{ base64: string; contentType: string }>,
 	filename: string,
-	doc: Document,
-	handlers: QrDownloadSuccessHandlers,
+	deps: QrDownloadDeps,
 ): void {
-	handlers.setQrRejection(undefined);
-	handlers.setFailure(null);
+	deps.setQrRejection(undefined);
+	deps.setFailure(null);
 	try {
-		saveQrDownload(download, filename, doc);
+		saveQrDownload(download, filename, deps.doc);
 	} catch {
-		handlers.setFailure({ kind: 'unknown' });
+		deps.setFailure({ kind: 'unknown' });
 	}
 }
 
@@ -409,10 +477,8 @@ function RouteComponent(): React.JSX.Element {
 	const [hasPassword, setHasPassword] = useState(link.has_password);
 	const [passwordRejection, setPasswordRejection] = useState<
 		LinkPasswordReason | 'rejected' | undefined
-	>(undefined);
-	const [qrRejection, setQrRejection] = useState<QrRejectionReason | 'rejected' | undefined>(
-		undefined,
-	);
+	>();
+	const [qrRejection, setQrRejection] = useState<QrRejectionReason | 'rejected' | undefined>();
 
 	// One fetch per link, for the whole life of the card, refetched only when
 	// the matrix itself could differ. The matrix depends on the slug and the
@@ -432,18 +498,20 @@ function RouteComponent(): React.JSX.Element {
 	// Infinity` rests on that same invariant: nothing in the key changes
 	// without a navigation this route already handles.
 	const qrQuery = useQuery({
-		queryFn: () => linkQrSvgFn({ data: { linkId } }),
+		queryFn: async () => linkQrSvgFn({ data: { linkId } }),
 		queryKey: ['link-qr', linkId, link.slug],
 		staleTime: Number.POSITIVE_INFINITY,
 	});
 
 	const qrDownloadMutation = useMutation({
-		mutationFn: (options: {
-			background: string;
-			foreground: string;
-			format: 'png' | 'svg';
-			size: number;
-		}) => linkQrDownloadFn({ data: { ...options, linkId } }),
+		mutationFn: async (
+			options: Readonly<{
+				background: string;
+				foreground: string;
+				format: 'png' | 'svg';
+				size: number;
+			}>,
+		) => linkQrDownloadFn({ data: { ...options, linkId } }),
 		onError: (error: unknown) => {
 			handleQrError(error, {
 				navigateToLogin: () => {
@@ -456,7 +524,7 @@ function RouteComponent(): React.JSX.Element {
 	});
 
 	const updateMutation = useMutation({
-		mutationFn: (values: LinkFormValues) =>
+		mutationFn: async (values: LinkFormValues) =>
 			updateLinkFn({ data: { body: toUpdateBody(values), linkId } }),
 		onError: (error: unknown) => {
 			const classified = classifyApiError(error);
@@ -475,7 +543,7 @@ function RouteComponent(): React.JSX.Element {
 	});
 
 	const deleteMutation = useMutation({
-		mutationFn: () => deleteLinkFn({ data: { linkId } }),
+		mutationFn: async () => deleteLinkFn({ data: { linkId } }),
 		onError: (error: unknown) => {
 			const classified = classifyApiError(error);
 			if (classified.kind === 'unauthenticated') {
@@ -515,13 +583,13 @@ function RouteComponent(): React.JSX.Element {
 	}
 
 	const setPasswordMutation = useMutation({
-		mutationFn: (password: string) => setLinkPasswordFn({ data: { linkId, password } }),
+		mutationFn: async (password: string) => setLinkPasswordFn({ data: { linkId, password } }),
 		onError: onPasswordError,
 		onSuccess: onPasswordSuccess,
 	});
 
 	const removePasswordMutation = useMutation({
-		mutationFn: () => removeLinkPasswordFn({ data: { linkId } }),
+		mutationFn: async () => removeLinkPasswordFn({ data: { linkId } }),
 		onError: onPasswordError,
 		onSuccess: onPasswordSuccess,
 	});
@@ -532,7 +600,7 @@ function RouteComponent(): React.JSX.Element {
 	return (
 		<>
 			<h1>{t('links.edit')}</h1>
-			{formMessage ? <p role="alert">{formMessage}</p> : null}
+			{formMessage !== null ? <p role="alert">{formMessage}</p> : null}
 			{/*
 			 * Each card below remounts when the link changes, so each carries the
 			 * link id in its key — but the keys must also differ from *each other*.
@@ -579,7 +647,8 @@ function RouteComponent(): React.JSX.Element {
 				}}
 				onDownload={async (options) => {
 					const download = await qrDownloadMutation.mutateAsync(options);
-					completeQrDownload(download, `${link.slug}.${options.format}`, document, {
+					completeQrDownload(download, `${link.slug}.${options.format}`, {
+						doc: document,
 						setFailure,
 						setQrRejection,
 					});

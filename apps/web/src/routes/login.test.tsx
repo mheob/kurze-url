@@ -13,13 +13,15 @@ import { createI18n } from '../i18n';
  * accident of hoisting order.
  */
 const mocks = vi.hoisted(() => ({
-	sendMagicLink: vi.fn<(input: { data: { email: string } }) => Promise<{ sent: true }>>(
-		async () => ({ sent: true }),
-	),
+	sendMagicLink: vi.fn<
+		(input: Readonly<{ data: Readonly<{ email: string }> }>) => Promise<{ sent: true }>
+		// oxlint-disable-next-line typescript/require-await -- stands in for `sendMagicLink`, which returns a `Promise`; nothing here needs an `await`.
+	>(async () => ({ sent: true })),
 }));
 
 vi.mock('../server/auth', () => ({ sendMagicLink: mocks.sendMagicLink }));
 
+// oxlint-disable-next-line node/no-top-level-await -- `vi.mock` above is hoisted; importing the subject module only after it, at module scope, is Vitest's own documented way to get a mocked dependency into an ESM import — the same pattern every other `*.test.ts(x)` in this app that mocks an import uses.
 const { LoginForm } = await import('./login');
 
 /**
@@ -27,6 +29,8 @@ const { LoginForm } = await import('./login');
  * `I18nextProvider` in scope — without one, `t()` has no instance to draw
  * from and renders the raw key. `language-switcher.test.tsx` settled on the
  * same `createI18n` + `I18nextProvider` wrapper for the same reason.
+ *
+ * @returns The render result.
  */
 function renderLoginForm(): ReturnType<typeof render> {
 	return render(
@@ -36,13 +40,13 @@ function renderLoginForm(): ReturnType<typeof render> {
 	);
 }
 
-describe('LoginForm', () => {
+describe('loginForm', () => {
 	it('shows the same confirmation whatever the address', async () => {
 		renderLoginForm();
-		await userEvent.type(screen.getByLabelText(/email|e-mail/i), 'a@example.test');
-		await userEvent.click(screen.getByRole('button', { name: /link/i }));
+		await userEvent.type(screen.getByLabelText(/email|e-mail/iu), 'a@example.test');
+		await userEvent.click(screen.getByRole('button', { name: /link/iu }));
 
-		expect(await screen.findByText(/on its way|unterwegs/i)).toBeInTheDocument();
+		await expect(screen.findByText(/on its way|unterwegs/iu)).resolves.toBeInTheDocument();
 	});
 
 	it('puts the form inside a main landmark', () => {
@@ -53,15 +57,15 @@ describe('LoginForm', () => {
 		// to and the e2e accessibility scan fails the whole page.
 		renderLoginForm();
 		expect(screen.getByRole('main')).toContainElement(
-			screen.getByRole('button', { name: /link/i }),
+			screen.getByRole('button', { name: /link/iu }),
 		);
 	});
 
-	it('labels the field, so it is reachable without a mouse', async () => {
+	it('labels the field, so it is reachable without a mouse', () => {
 		// An input with only a placeholder passes a visual review and fails a
 		// screen reader. Accessibility is a CI gate here, not a preference.
 		renderLoginForm();
-		expect(screen.getByLabelText(/email|e-mail/i)).toBeInTheDocument();
+		expect(screen.getByLabelText(/email|e-mail/iu)).toBeInTheDocument();
 	});
 
 	/**
@@ -75,11 +79,11 @@ describe('LoginForm', () => {
 	it('tells the visitor something went wrong instead of doing nothing', async () => {
 		mocks.sendMagicLink.mockRejectedValueOnce(new Error('boom'));
 		renderLoginForm();
-		await userEvent.type(screen.getByLabelText(/email|e-mail/i), 'a@example.test');
-		await userEvent.click(screen.getByRole('button', { name: /link/i }));
+		await userEvent.type(screen.getByLabelText(/email|e-mail/iu), 'a@example.test');
+		await userEvent.click(screen.getByRole('button', { name: /link/iu }));
 
-		expect(await screen.findByText(/went wrong|schiefgelaufen/i)).toBeInTheDocument();
-		expect(screen.queryByText(/on its way|unterwegs/i)).not.toBeInTheDocument();
+		await expect(screen.findByText(/went wrong|schiefgelaufen/iu)).resolves.toBeInTheDocument();
+		expect(screen.queryByText(/on its way|unterwegs/iu)).not.toBeInTheDocument();
 	});
 
 	/**
@@ -91,19 +95,22 @@ describe('LoginForm', () => {
 		let resolveSend: (() => void) | undefined;
 		mocks.sendMagicLink.mockImplementationOnce(
 			async () =>
+				// oxlint-disable-next-line promise/avoid-new -- a deliberately deferred promise: the test resolves it later, from the `resolveSend` closure, in response to what the UI does while the request is still in flight. There is no async/await equivalent for "resolve this from arbitrary code, later."
 				new Promise((resolve) => {
-					resolveSend = () => resolve({ sent: true });
+					resolveSend = () => {
+						resolve({ sent: true });
+					};
 				}),
 		);
 		renderLoginForm();
-		await userEvent.type(screen.getByLabelText(/email|e-mail/i), 'a@example.test');
-		const button = screen.getByRole('button', { name: /link/i });
+		await userEvent.type(screen.getByLabelText(/email|e-mail/iu), 'a@example.test');
+		const button = screen.getByRole('button', { name: /link/iu });
 		await userEvent.click(button);
 
 		expect(button).toBeDisabled();
 
 		resolveSend?.();
-		await screen.findByText(/on its way|unterwegs/i);
+		await screen.findByText(/on its way|unterwegs/iu);
 		expect(button).not.toBeDisabled();
 	});
 });

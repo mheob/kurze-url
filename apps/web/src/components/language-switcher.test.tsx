@@ -14,7 +14,7 @@ function renderWith(language: 'en' | 'de') {
 	);
 }
 
-describe('LanguageSwitcher', () => {
+describe(LanguageSwitcher, () => {
 	it('labels itself in the active language', () => {
 		renderWith('de');
 		expect(screen.getByRole('group', { name: 'Sprache' })).toBeInTheDocument();

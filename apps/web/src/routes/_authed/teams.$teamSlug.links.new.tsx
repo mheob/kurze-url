@@ -10,12 +10,19 @@ import { domainsQueryOptions } from '../../server/domains';
 import { createLinkFn } from '../../server/links';
 import { requireTeamId } from '../_authed';
 
+/* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding below is typed by
+   something this file doesn't own: TanStack Query's own `domainsQueryOptions` return type,
+   TanStack Router's `beforeLoad`/`loader` option shapes, or the generated `@kurze-url/api-client`
+   `Domain` type (`page.items`'s element type, inferred in the `filter`/`map` callbacks below). */
+
 /**
  * The one method this loader reaches through on `context.queryClient` — same
  * reasoning as `LinksDataSource` in the list route.
  */
 interface DomainsDataSource {
-	ensureQueryData: (options: ReturnType<typeof domainsQueryOptions>) => Promise<PageDomain>;
+	readonly ensureQueryData: (
+		options: ReturnType<typeof domainsQueryOptions>,
+	) => Promise<PageDomain>;
 }
 
 /**
@@ -28,6 +35,10 @@ interface DomainsDataSource {
  * to `/login` the moment they try to submit against a session that is
  * actually gone. Mirrors `listDomainsFor`'s own normalisation of a nil items
  * slice (Huma serialises it as JSON `null`).
+ *
+ * @param queryClient - The query client to fetch through; only needs `ensureQueryData`.
+ * @param teamId - The team's id, already resolved from its slug.
+ * @returns The team's verified domains, or an empty list on any failure.
  */
 export async function loadVerifiedDomains(
 	queryClient: DomainsDataSource,
@@ -55,8 +66,8 @@ export const Route = createFileRoute('/_authed/teams/$teamSlug/links/new')({
 	beforeLoad: ({ context, params }) => ({
 		teamId: requireTeamId(context.me.memberships, params.teamSlug),
 	}),
-	loader: ({ context }) => loadVerifiedDomains(context.queryClient, context.teamId),
 	component: RouteComponent,
+	loader: async ({ context }) => loadVerifiedDomains(context.queryClient, context.teamId),
 });
 
 /**
@@ -79,14 +90,22 @@ export const Route = createFileRoute('/_authed/teams/$teamSlug/links/new')({
  * that this function forwards them (confirmed by deleting the `domain_id`
  * line below and re-running the suite: nothing failed until this file grew
  * its own test for it).
+ *
+ * @param values - The form's values, as `LinkForm` hands them back.
+ * @returns The API request body, with empty optional fields mapped to `undefined`.
  */
+/** The two redirect status codes a link can use; see CLAUDE.md's "301 vs 302" note for why 302 is the default. */
+const REDIRECT_PERMANENT = 301;
+const REDIRECT_TEMPORARY = 302;
+
 export function toRequestBody(values: LinkFormValues): CreateLinkInputBodyWritable {
 	return {
 		analytics_enabled: values.analytics_enabled,
 		destination_url: values.destination_url,
 		domain_id: values.domain_id === '' ? undefined : values.domain_id,
 		expires_at: values.expires_at === '' ? undefined : new Date(values.expires_at).toISOString(),
-		redirect_type: values.redirect_type === 301 ? 301 : 302,
+		redirect_type:
+			values.redirect_type === REDIRECT_PERMANENT ? REDIRECT_PERMANENT : REDIRECT_TEMPORARY,
 		slug: values.slug === '' ? undefined : values.slug,
 	};
 }
@@ -98,10 +117,12 @@ export function toRequestBody(values: LinkFormValues): CreateLinkInputBodyWritab
  * hand-built fake instead of standing up either one for real.
  */
 interface InvalidatableQueryClient {
-	invalidateQueries: (filters: { queryKey: readonly unknown[] }) => Promise<void>;
+	readonly invalidateQueries: (
+		filters: Readonly<{ queryKey: readonly unknown[] }>,
+	) => Promise<void>;
 }
 interface InvalidatableRouter {
-	invalidate: () => Promise<void>;
+	readonly invalidate: () => Promise<void>;
 }
 
 /**
@@ -116,6 +137,10 @@ interface InvalidatableRouter {
  * visitor currently has open (sort order isn't this task's concern), and
  * React Query's `invalidateQueries` already treats a queryKey as a prefix
  * match by default.
+ *
+ * @param queryClient - The query client to invalidate the links cache on.
+ * @param router - The router to invalidate, so its loaders refetch too.
+ * @param teamId - The team whose links were just created into.
  */
 export async function afterCreate(
 	queryClient: InvalidatableQueryClient,
@@ -136,7 +161,7 @@ function RouteComponent(): React.JSX.Element {
 	const [failure, setFailure] = useState<ApiFailure | null>(null);
 
 	const mutation = useMutation({
-		mutationFn: (values: LinkFormValues) =>
+		mutationFn: async (values: LinkFormValues) =>
 			createLinkFn({ data: { body: toRequestBody(values), teamId } }),
 		onError: (error: unknown) => {
 			const classified = classifyApiError(error);
@@ -171,7 +196,7 @@ function RouteComponent(): React.JSX.Element {
 	return (
 		<>
 			<h1>{t('links.create')}</h1>
-			{formMessage ? <p role="alert">{formMessage}</p> : null}
+			{formMessage !== null ? <p role="alert">{formMessage}</p> : null}
 			<LinkForm
 				domains={domains}
 				fieldErrors={fieldErrors}

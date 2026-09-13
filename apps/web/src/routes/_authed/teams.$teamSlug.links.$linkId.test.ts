@@ -1,5 +1,6 @@
 import type { Link, PageLink } from '@kurze-url/api-client';
 import { isNotFound, isRedirect } from '@tanstack/react-router';
+import type { MockInstance } from 'vitest';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -13,6 +14,12 @@ import {
 	toDateTimeLocal,
 	toPasswordContext,
 } from './teams.$teamSlug.links.$linkId';
+
+/* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding below is a type this
+   test file doesn't own: the generated `@kurze-url/api-client` `Link`/`PageLink` types (whose
+   nested arrays are mutable and can't be marked readonly from this side of the codegen boundary),
+   or `Node`'s own generic `appendChild`/`removeChild` signature (`<T extends Node>(node: T): T`),
+   inferred here from the real `document.body` the spies wrap. */
 
 function link(overrides: Partial<Link> = {}): Link {
 	return {
@@ -42,6 +49,9 @@ function link(overrides: Partial<Link> = {}): Link {
  * asserting on a returned value, unconditionally, instead of inside a
  * try/catch — `no-conditional-expect` is error-level, and an `expect` inside
  * `catch` silently skips when nothing throws.
+ *
+ * @param fn - The async operation expected to reject.
+ * @returns The rejection reason, or `undefined` if `fn` resolved instead.
  */
 async function rejected(fn: () => Promise<unknown>): Promise<unknown> {
 	try {
@@ -53,24 +63,42 @@ async function rejected(fn: () => Promise<unknown>): Promise<unknown> {
 }
 
 function redirectTarget(error: unknown): string | undefined {
-	return isRedirect(error) ? error.options.to : undefined;
+	if (!isRedirect(error)) return undefined;
+
+	// Narrowed at runtime rather than asserted: the router types `options.to`
+	// as `any`, so trusting it would put an `any` into a `string | undefined`
+	// and every caller would inherit it.
+	const target: unknown = error.options.to;
+	return typeof target === 'string' ? target : undefined;
 }
 
-/** A fetcher that always rejects with a given status — captures `status`, so unlike an inline `() => Promise.reject({ status: 401 })` it isn't flagged as a closure that captures nothing. */
-function rejectingWith(status: number): (options: { data: { linkId: string } }) => Promise<Link> {
-	return () => Promise.reject({ status });
+/**
+ * A fetcher that always rejects with a given status — captures `status`, so unlike an inline `() => Promise.reject({ status: 401 })` it isn't flagged as a closure that captures nothing.
+ *
+ * @param status - The HTTP status code the rejection carries.
+ * @returns A fetcher matching `loadLink`'s expected shape, which always rejects.
+ */
+function rejectingWith(
+	status: number,
+): (options: Readonly<{ data: Readonly<{ linkId: string }> }>) => Promise<Link> {
+	// oxlint-disable-next-line typescript/require-await -- must return a `Promise` to satisfy `rejectingWith`'s declared `LinkFetcher`-shaped return type; the body never reaches an `await`.
+	return async () => {
+		// oxlint-disable-next-line eslint/no-throw-literal, typescript/only-throw-error -- a deliberate fake API failure standing in for a rejected fetch, not a real error.
+		throw { status };
+	};
 }
 
-describe('loadLink', () => {
+describe(loadLink, () => {
 	it('returns the fetched link when the API call succeeds', async () => {
 		const data = link();
+		// oxlint-disable-next-line typescript/require-await -- must satisfy `loadLink`'s `LinkFetcher` parameter, which returns a `Promise<Link>`; nothing here needs an `await`.
 		const fetchLink = async (): Promise<Link> => data;
 
 		await expect(loadLink(fetchLink, 'link-a')).resolves.toBe(data);
 	});
 
 	it('redirects to /login when the API answers unauthenticated', async () => {
-		const error = await rejected(() => loadLink(rejectingWith(401), 'link-a'));
+		const error = await rejected(async () => loadLink(rejectingWith(401), 'link-a'));
 
 		expect(isRedirect(error)).toBe(true);
 		expect(redirectTarget(error)).toBe('/login');
@@ -86,20 +114,24 @@ describe('loadLink', () => {
 	 * what would catch a regression to a generic error page here.
 	 */
 	it('throws a router not-found, not a generic error, when the API answers not-found', async () => {
-		const error = await rejected(() => loadLink(rejectingWith(404), 'link-a'));
+		const error = await rejected(async () => loadLink(rejectingWith(404), 'link-a'));
 
 		expect(isNotFound(error)).toBe(true);
 	});
 
 	it('rethrows any other failure rather than swallowing it', async () => {
 		const boom = { status: 500 };
-		const fetchLink = (): Promise<Link> => Promise.reject(boom);
+		// oxlint-disable-next-line typescript/require-await -- same reason as the fetcher above: `LinkFetcher` returns a `Promise<Link>`.
+		const fetchLink = async (): Promise<Link> => {
+			// oxlint-disable-next-line typescript/only-throw-error -- `boom` is a deliberate fake API failure standing in for a rejected fetch, not a real error.
+			throw boom;
+		};
 
 		await expect(loadLink(fetchLink, 'link-a')).rejects.toBe(boom);
 	});
 });
 
-describe('toDateTimeLocal', () => {
+describe(toDateTimeLocal, () => {
 	/**
 	 * Task 10 sent `datetime-local` → ISO on submit but never tested the
 	 * reverse. Slicing the UTC `toISOString()` string directly (rather than
@@ -127,7 +159,7 @@ describe('toDateTimeLocal', () => {
 	});
 });
 
-describe('afterMutation', () => {
+describe(afterMutation, () => {
 	/**
 	 * The loader owns the list's data, the Query cache holds it —
 	 * invalidating only one leaves them disagreeing until the next full
@@ -135,17 +167,19 @@ describe('afterMutation', () => {
 	 * for creation. Both update and delete depend on this.
 	 */
 	it('invalidates both the links query cache and the router', async () => {
+		// oxlint-disable-next-line typescript/require-await -- stands in for `InvalidatableQueryClient.invalidateQueries`, which `afterMutation` awaits; the fake has nothing to await itself.
 		const invalidateQueries = vi.fn(async (): Promise<void> => undefined);
+		// oxlint-disable-next-line typescript/require-await -- same reason: stands in for `InvalidatableRouter.invalidate`, which `afterMutation` awaits.
 		const invalidate = vi.fn(async (): Promise<void> => undefined);
 
 		await afterMutation({ invalidateQueries }, { invalidate }, 'team-a');
 
 		expect(invalidateQueries).toHaveBeenCalledExactlyOnceWith({ queryKey: ['links', 'team-a'] });
-		expect(invalidate).toHaveBeenCalledTimes(1);
+		expect(invalidate).toHaveBeenCalledOnce();
 	});
 });
 
-describe('toPasswordContext', () => {
+describe(toPasswordContext, () => {
 	it('builds the password context from the link and its own membership', () => {
 		const data = link({ destination_url: 'https://example.org/summer', slug: 'sommer' });
 		const memberships = [
@@ -153,7 +187,7 @@ describe('toPasswordContext', () => {
 			{ name: 'SV Grünwald e.V.', slug: 'sv-gruenwald' },
 		];
 
-		expect(toPasswordContext(data, memberships, 'sv-gruenwald')).toEqual({
+		expect(toPasswordContext(data, memberships, 'sv-gruenwald')).toStrictEqual({
 			destinationUrl: 'https://example.org/summer',
 			linkSlug: 'sommer',
 			teamName: 'SV Grünwald e.V.',
@@ -180,11 +214,11 @@ describe('toPasswordContext', () => {
  * generic banner or renders an unrelated failure (rate limited, a genuine
  * 500) as if it were about the password field.
  */
-describe('handlePasswordError', () => {
+describe(handlePasswordError, () => {
 	it('routes a passwordRejected failure into the rejection channel, not the banner', () => {
-		const setFailure = vi.fn();
-		const setPasswordRejection = vi.fn();
-		const navigateToLogin = vi.fn();
+		const setFailure = vi.fn((): void => undefined);
+		const setPasswordRejection = vi.fn((): void => undefined);
+		const navigateToLogin = vi.fn((): void => undefined);
 		const error = { errors: [{ location: 'body.password', value: 'too_common' }], status: 422 };
 
 		handlePasswordError(error, { navigateToLogin, setFailure, setPasswordRejection });
@@ -195,9 +229,9 @@ describe('handlePasswordError', () => {
 	});
 
 	it('routes a rate-limited failure into the banner, not the rejection channel', () => {
-		const setFailure = vi.fn();
-		const setPasswordRejection = vi.fn();
-		const navigateToLogin = vi.fn();
+		const setFailure = vi.fn((): void => undefined);
+		const setPasswordRejection = vi.fn((): void => undefined);
+		const navigateToLogin = vi.fn((): void => undefined);
 		const error = { status: 429 };
 
 		handlePasswordError(error, { navigateToLogin, setFailure, setPasswordRejection });
@@ -208,14 +242,14 @@ describe('handlePasswordError', () => {
 	});
 
 	it('navigates to login for an unauthenticated failure, touching neither state', () => {
-		const setFailure = vi.fn();
-		const setPasswordRejection = vi.fn();
-		const navigateToLogin = vi.fn();
+		const setFailure = vi.fn((): void => undefined);
+		const setPasswordRejection = vi.fn((): void => undefined);
+		const navigateToLogin = vi.fn((): void => undefined);
 		const error = { status: 401 };
 
 		handlePasswordError(error, { navigateToLogin, setFailure, setPasswordRejection });
 
-		expect(navigateToLogin).toHaveBeenCalledTimes(1);
+		expect(navigateToLogin).toHaveBeenCalledOnce();
 		expect(setFailure).not.toHaveBeenCalled();
 		expect(setPasswordRejection).not.toHaveBeenCalled();
 	});
@@ -228,12 +262,12 @@ describe('handlePasswordError', () => {
  * invalidating instead of writing through, there would be no
  * `invalidateQueries` here for it to call.
  */
-describe('applyPasswordSuccess', () => {
+describe(applyPasswordSuccess, () => {
 	it('clears failure/rejection state and reports the new hasPassword value', () => {
 		const updated = link({ has_password: true });
-		const setFailure = vi.fn();
-		const setHasPassword = vi.fn();
-		const setPasswordRejection = vi.fn();
+		const setFailure = vi.fn((): void => undefined);
+		const setHasPassword = vi.fn((): void => undefined);
+		const setPasswordRejection = vi.fn((): void => undefined);
 		const setQueriesData = vi.fn();
 
 		applyPasswordSuccess(updated, {
@@ -267,9 +301,9 @@ describe('applyPasswordSuccess', () => {
 		applyPasswordSuccess(updated, {
 			linkId: 'link-a',
 			queryClient: { setQueriesData },
-			setFailure: vi.fn(),
-			setHasPassword: vi.fn(),
-			setPasswordRejection: vi.fn(),
+			setFailure: vi.fn((): void => undefined),
+			setHasPassword: vi.fn((): void => undefined),
+			setPasswordRejection: vi.fn((): void => undefined),
 			teamId: 'team-a',
 		});
 
@@ -280,12 +314,12 @@ describe('applyPasswordSuccess', () => {
 			total_count: 2,
 		};
 
-		expect(updater?.(page)).toEqual({ ...page, items: [other, updated] });
+		expect(updater?.(page)).toStrictEqual({ ...page, items: [other, updated] });
 		expect(updater?.(undefined)).toBeUndefined();
 	});
 });
 
-describe('handleQrError', () => {
+describe(handleQrError, () => {
 	it('sends an expired session to login', () => {
 		const handlers = {
 			navigateToLogin: vi.fn(),
@@ -347,13 +381,16 @@ describe('handleQrError', () => {
  * — no cast, no suppression, and the assertions run against actual DOM
  * behaviour rather than a hand-built double that could silently disagree
  * with it.
+ *
+ * @returns The spied-on anchor and the `document`/anchor method spies, so a test can assert on calls.
  */
 function spyOnDownloadAnchor(): {
 	anchor: HTMLAnchorElement;
-	appendChild: ReturnType<typeof vi.spyOn>;
-	click: ReturnType<typeof vi.spyOn>;
-	createElement: ReturnType<typeof vi.spyOn>;
-	removeChild: ReturnType<typeof vi.spyOn>;
+	appendChild: MockInstance<typeof document.body.appendChild>;
+	click: MockInstance<HTMLAnchorElement['click']>;
+	// oxlint-disable-next-line typescript/no-deprecated -- `createElement`'s overloaded type carries one `@deprecated` signature (`HTMLElementDeprecatedTagNameMap`, e.g. `<marquee>`); this spy only ever calls it with `'a'`, the modern overload, which the rule can't see from a bare type reference.
+	createElement: MockInstance<typeof document.createElement>;
+	removeChild: MockInstance<typeof document.body.removeChild>;
 } {
 	const anchor = document.createElement('a');
 	// Captured and returned, rather than asserted on as `anchor.click` at the
@@ -370,7 +407,7 @@ function spyOnDownloadAnchor(): {
 	return { anchor, appendChild, click, createElement, removeChild };
 }
 
-describe('saveQrDownload', () => {
+describe(saveQrDownload, () => {
 	/**
 	 * The bytes cross the server-function boundary base64-encoded, so the
 	 * browser has to rebuild them before it can hand the file to the reader.
@@ -396,7 +433,7 @@ describe('saveQrDownload', () => {
 		// anchor came out of the spied `createElement`, so this is also what
 		// proves that call happened, without pushing the test over
 		// `vitest(max-expects)`'s limit of five.
-		expect({ download: anchor.download, href: anchor.href, rel: anchor.rel }).toEqual({
+		expect({ download: anchor.download, href: anchor.href, rel: anchor.rel }).toStrictEqual({
 			download: 'sommerfest.svg',
 			href: 'blob:fake',
 			rel: 'noopener',
@@ -425,22 +462,21 @@ describe('saveQrDownload', () => {
  * `completeQrDownload` is the guard: these tests are what prove a failed save
  * now reaches the page's one banner instead.
  */
-describe('completeQrDownload', () => {
+describe(completeQrDownload, () => {
 	it('clears both error channels and saves when nothing throws', () => {
 		const { click, createElement, appendChild, removeChild } = spyOnDownloadAnchor();
 		vi.stubGlobal('URL', {
 			createObjectURL: vi.fn().mockReturnValue('blob:fake'),
 			revokeObjectURL: vi.fn(),
 		});
-		const setFailure = vi.fn();
-		const setQrRejection = vi.fn();
+		const setFailure = vi.fn((): void => undefined);
+		const setQrRejection = vi.fn((): void => undefined);
 
-		completeQrDownload(
-			{ base64: btoa('<svg/>'), contentType: 'image/svg+xml' },
-			'sommerfest.svg',
-			document,
-			{ setFailure, setQrRejection },
-		);
+		completeQrDownload({ base64: btoa('<svg/>'), contentType: 'image/svg+xml' }, 'sommerfest.svg', {
+			doc: document,
+			setFailure,
+			setQrRejection,
+		});
 
 		expect(setQrRejection).toHaveBeenCalledExactlyOnceWith(undefined);
 		expect(setFailure).toHaveBeenCalledExactlyOnceWith(null);
@@ -469,15 +505,14 @@ describe('completeQrDownload', () => {
 			createObjectURL: vi.fn().mockReturnValue('blob:fake'),
 			revokeObjectURL: vi.fn(),
 		});
-		const setFailure = vi.fn();
-		const setQrRejection = vi.fn();
+		const setFailure = vi.fn((): void => undefined);
+		const setQrRejection = vi.fn((): void => undefined);
 
-		completeQrDownload(
-			{ base64: btoa('<svg/>'), contentType: 'image/svg+xml' },
-			'sommerfest.svg',
-			document,
-			{ setFailure, setQrRejection },
-		);
+		completeQrDownload({ base64: btoa('<svg/>'), contentType: 'image/svg+xml' }, 'sommerfest.svg', {
+			doc: document,
+			setFailure,
+			setQrRejection,
+		});
 
 		expect(setFailure).toHaveBeenLastCalledWith({ kind: 'unknown' });
 

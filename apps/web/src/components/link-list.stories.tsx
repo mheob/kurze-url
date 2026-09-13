@@ -1,9 +1,19 @@
+/* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding of this rule in this
+   file traces to `@kurze-url/api-client`'s generated `Link`/`PageLink` types (`Link.tags`'s nested
+   array included), whose properties are not marked readonly; that is generated codegen output,
+   never edited by hand. */
+
 import type { Link as ApiLink, PageLink } from '@kurze-url/api-client';
 import type { Meta, StoryObj } from '@storybook/tanstack-react';
 
 import { LinkList } from './link-list';
 
-/** Mirrors `link-list.test.tsx`'s own fixture — kept local rather than shared, the same reasoning that file's own docstring gives for building fixtures inline. */
+/**
+ * Mirrors `link-list.test.tsx`'s own fixture — kept local rather than shared, the same reasoning that file's own docstring gives for building fixtures inline.
+ *
+ * @param overrides - Partial fields to override on the default link fixture.
+ * @returns The link fixture.
+ */
 function link(overrides: Partial<ApiLink> = {}): ApiLink {
 	return {
 		analytics_enabled: true,

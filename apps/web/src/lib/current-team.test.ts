@@ -7,7 +7,7 @@ const memberships = [
 	{ name: 'Verein B', role: 'editor', slug: 'verein-b', team_id: 'b' },
 ];
 
-describe('resolveCurrentTeam', () => {
+describe(resolveCurrentTeam, () => {
 	it('returns the team named by the cookie', () => {
 		expect(resolveCurrentTeam('team=verein-b', memberships)).toBe('verein-b');
 	});
@@ -32,7 +32,7 @@ describe('resolveCurrentTeam', () => {
 	});
 });
 
-describe('teamCookie', () => {
+describe(teamCookie, () => {
 	it('writes a path-scoped cookie', () => {
 		expect(teamCookie('verein-b')).toContain(`${TEAM_COOKIE}=verein-b`);
 		expect(teamCookie('verein-b')).toContain('Path=/');

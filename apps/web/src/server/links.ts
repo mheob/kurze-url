@@ -18,6 +18,16 @@ import { getRequest } from '@tanstack/react-start/server';
 
 import { authedApiClient, flushSessionCookies, requireSession } from './session';
 
+/* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding of this rule in this
+ * file is one of two things this side of the codebase cannot change: the `request: Request` each
+ * `...For` function takes (`Request` nests a mutable `Headers` through its own `.headers` getter,
+ * and `Readonly<>` is shallow — it does not reach that nested property, unlike a bare `Headers`
+ * parameter, which the check does accept once wrapped), or a generated `@kurze-url/api-client`
+ * body type (`CreateLinkInputBodyWritable`, `UpdateLinkInputBodyWritable`, and the validator/
+ * handler `data` objects wrapping them) whose nested arrays are mutable — codegen output that is
+ * never hand-edited.
+ */
+
 /**
  * Takes `request` as a parameter rather than calling `getRequest()` itself,
  * the same shape `requireSession` uses in `server/session.ts`: that is what
@@ -86,14 +96,21 @@ export const listLinksFor = createServerOnlyFn(
  * `server/auth.ts`.
  */
 export const listLinksFn = createServerFn({ method: 'GET' })
-	.validator((data: { teamId: string; page: number }) => data)
-	.handler(async ({ data }) => listLinksFor(getRequest(), data.teamId, data.page));
+	.validator((data: { readonly teamId: string; readonly page: number }) => data)
+	.handler(
+		async ({ data }: { readonly data: { readonly teamId: string; readonly page: number } }) =>
+			listLinksFor(getRequest(), data.teamId, data.page),
+	);
 
 /**
  * One definition of the key and the fetcher, used by both the route's loader
  * (`ensureQueryData`) and its component (`useSuspenseQuery`). Two
  * definitions drift, and the symptom is a list that updates on navigation
  * but not after a mutation.
+ *
+ * @param teamId - The team whose links to list.
+ * @param page - The 1-based page number.
+ * @returns Query options for `useSuspenseQuery`/`ensureQueryData`, keyed on `['links', teamId, page]`.
  */
 // oxlint's typescript(explicit-function-return-type) is error-level, but
 // `queryOptions`'s own return type (`UseQueryOptions<...> &
@@ -102,11 +119,13 @@ export const listLinksFn = createServerFn({ method: 'GET' })
 // `['links', teamId, page]` tuple type `useSuspenseQuery` needs downstream
 // or fighting a `ReturnType<typeof queryOptions<PageLink>>` annotation that
 // silently widens the key back to `readonly unknown[]` and breaks
-// `pnpm typecheck` two call sites away — confirmed by trying it.
-// oxlint-disable-next-line typescript/explicit-function-return-type
+// `pnpm typecheck` two call sites away — confirmed by trying it. Same reason
+// covers `explicit-module-boundary-types` below: it's the same missing
+// annotation this exported function can't be given either.
+// oxlint-disable-next-line typescript/explicit-function-return-type, typescript/explicit-module-boundary-types
 export const linksQueryOptions = (teamId: string, page: number) =>
 	queryOptions({
-		queryFn: () => listLinksFn({ data: { teamId, page } }),
+		queryFn: async () => listLinksFn({ data: { page, teamId } }),
 		queryKey: ['links', teamId, page] as const,
 	});
 
@@ -189,8 +208,10 @@ export const getLinkFor = createServerOnlyFn(
 
 /** `getRequest()` inline, not inside `getLinkFor`, for the same reason as `listLinksFn`/`createLinkFn`. */
 export const getLinkFn = createServerFn({ method: 'GET' })
-	.validator((data: { linkId: string }) => data)
-	.handler(async ({ data }) => getLinkFor(getRequest(), data.linkId));
+	.validator((data: { readonly linkId: string }) => data)
+	.handler(async ({ data }: { readonly data: { readonly linkId: string } }) =>
+		getLinkFor(getRequest(), data.linkId),
+	);
 
 /**
  * Same `...For`/`...Fn` split and the same reasoning as `createLinkFor`.
@@ -239,8 +260,10 @@ export const deleteLinkFor = createServerOnlyFn(
 );
 
 export const deleteLinkFn = createServerFn({ method: 'POST' })
-	.validator((data: { linkId: string }) => data)
-	.handler(async ({ data }) => deleteLinkFor(getRequest(), data.linkId));
+	.validator((data: { readonly linkId: string }) => data)
+	.handler(async ({ data }: { readonly data: { readonly linkId: string } }) =>
+		deleteLinkFor(getRequest(), data.linkId),
+	);
 
 /**
  * Same `...For`/`...Fn` split and the same reasoning as `updateLinkFor`. Both
@@ -265,8 +288,11 @@ export const setLinkPasswordFor = createServerOnlyFn(
 );
 
 export const setLinkPasswordFn = createServerFn({ method: 'POST' })
-	.validator((data: { linkId: string; password: string }) => data)
-	.handler(async ({ data }) => setLinkPasswordFor(getRequest(), data.linkId, data.password));
+	.validator((data: { readonly linkId: string; readonly password: string }) => data)
+	.handler(
+		async ({ data }: { readonly data: { readonly linkId: string; readonly password: string } }) =>
+			setLinkPasswordFor(getRequest(), data.linkId, data.password),
+	);
 
 export const removeLinkPasswordFor = createServerOnlyFn(
 	async (request: Request, linkId: string): Promise<Link> => {
@@ -284,8 +310,10 @@ export const removeLinkPasswordFor = createServerOnlyFn(
 );
 
 export const removeLinkPasswordFn = createServerFn({ method: 'POST' })
-	.validator((data: { linkId: string }) => data)
-	.handler(async ({ data }) => removeLinkPasswordFor(getRequest(), data.linkId));
+	.validator((data: { readonly linkId: string }) => data)
+	.handler(async ({ data }: { readonly data: { readonly linkId: string } }) =>
+		removeLinkPasswordFor(getRequest(), data.linkId),
+	);
 
 /** What `linkQrDownloadFor` hands back: the image, base64-encoded so it survives the server-function boundary, plus the media type to rebuild a `Blob` with. */
 export interface QrDownload {
@@ -296,11 +324,11 @@ export interface QrDownload {
 /** The colours, format and size one download asks for. */
 export interface QrDownloadOptions {
 	/** `rrggbb`, no leading `#` — a raw `#` in a query string is the fragment delimiter and would never reach the API. */
-	background: string;
-	foreground: string;
-	format: 'png' | 'svg';
+	readonly background: string;
+	readonly foreground: string;
+	readonly format: 'png' | 'svg';
 	/** Pixels. Ignored for SVG, and deliberately not sent then: the API answers 422 for a size on an SVG request. */
-	size: number;
+	readonly size: number;
 }
 
 /**
@@ -314,6 +342,9 @@ export interface QrDownloadOptions {
  * and a regenerated client is free to change that without changing the
  * runtime. Throwing beats defaulting: an empty image is a broken download
  * that reports success.
+ *
+ * @param body - Whatever the generated client's `getParseAs` produced for an `image/*` response.
+ * @returns The image's raw bytes.
  */
 export async function qrBodyBytes(body: unknown): Promise<Uint8Array> {
 	if (body instanceof Blob) return new Uint8Array(await body.arrayBuffer());
@@ -346,8 +377,10 @@ export const linkQrSvgFor = createServerOnlyFn(
 );
 
 export const linkQrSvgFn = createServerFn({ method: 'POST' })
-	.validator((data: { linkId: string }) => data)
-	.handler(async ({ data }) => linkQrSvgFor(getRequest(), data.linkId));
+	.validator((data: { readonly linkId: string }) => data)
+	.handler(async ({ data }: { readonly data: { readonly linkId: string } }) =>
+		linkQrSvgFor(getRequest(), data.linkId),
+	);
 
 /**
  * The second and last request: the actual download, in the chosen format and
@@ -387,8 +420,8 @@ export const linkQrDownloadFor = createServerOnlyFn(
 );
 
 export const linkQrDownloadFn = createServerFn({ method: 'POST' })
-	.validator((data: QrDownloadOptions & { linkId: string }) => data)
-	.handler(async ({ data }) =>
+	.validator((data: QrDownloadOptions & { readonly linkId: string }) => data)
+	.handler(async ({ data }: { readonly data: QrDownloadOptions & { readonly linkId: string } }) =>
 		linkQrDownloadFor(getRequest(), data.linkId, {
 			background: data.background,
 			foreground: data.foreground,

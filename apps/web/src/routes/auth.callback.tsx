@@ -24,7 +24,7 @@ const exchangeCodeForSession = createServerFn({ method: 'GET' }).handler(
 	async (): Promise<{ ok: boolean }> => {
 		const request = getRequest();
 		const code = new URL(request.url).searchParams.get('code');
-		if (!code) return { ok: false };
+		if (code === null || code === '') return { ok: false };
 
 		const headers = new Headers();
 		const supabase = createSupabase(request, headers);
@@ -46,6 +46,7 @@ export const Route = createFileRoute('/auth/callback')({
 		// *why* it failed, keeps this from becoming a second enumeration
 		// oracle alongside `sendMagicLinkFor`'s (reused vs. expired vs. missing
 		// verifier all look the same from here).
+		// oxlint-disable-next-line typescript/only-throw-error -- TanStack Router signals navigation by throwing; `redirect()` is its control flow, not an Error.
 		throw redirect({ to: ok ? '/' : '/login' });
 	},
 });

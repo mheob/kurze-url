@@ -3,6 +3,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { server } from '../test/msw';
 
+/* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding of this rule in this
+ * file is a `Request` parameter (a mock's own, or one msw's resolver destructures as `{ request }`):
+ * `Request` nests a mutable `Headers` through its own `.headers` getter, and `Readonly<>` is
+ * shallow — it does not reach that nested property, unlike a bare `Headers` parameter, which the
+ * check does accept once wrapped (see the mock's `headers` parameter below).
+ */
+
 /**
  * Deliberately not the real `SupabaseClient` shape — only the slice
  * `requireSession` reaches through, via `getAccessToken`. Same narrowing
@@ -23,7 +30,7 @@ interface FakeResponse {
 }
 
 const mocks = vi.hoisted(() => ({
-	createSupabase: vi.fn<(request: Request, headers: Headers) => FakeSupabaseClient>(),
+	createSupabase: vi.fn<(request: Request, headers: Readonly<Headers>) => FakeSupabaseClient>(),
 	// Defaulted so the first test doesn't need its own setup — only the flush
 	// test below overrides this to inspect what was appended.
 	getResponse: vi.fn<() => FakeResponse>(() => ({ headers: { append: () => undefined } })),
@@ -46,6 +53,10 @@ vi.mock('@tanstack/react-start/server', () => ({
  * is what makes it callable here at all; see its docstring in `links.ts`.
  */
 const { createLinkFor, linkQrDownloadFor, linkQrSvgFor, listLinksFor, qrBodyBytes } =
+	/* oxlint-disable-next-line node/no-top-level-await -- this file is a Vitest test entry, never
+	 * `require(esm)`'d by anything; the dynamic import has to run after the `vi.mock` calls above
+	 * register their replacements, which a module-scope `await import` is what expresses.
+	 */
 	await import('./links');
 
 /**
@@ -54,12 +65,18 @@ const { createLinkFor, linkQrDownloadFor, linkQrSvgFor, listLinksFor, qrBodyByte
  * in the real `@supabase/ssr` adapter. Simulated here the same way
  * `auth.test.ts` simulates the PKCE verifier write: synchronously, as a side
  * effect of the mocked `createSupabase` call itself.
+ *
+ * @param accessToken - The token the faked session should report.
  */
 function withSession(accessToken: string): void {
-	mocks.createSupabase.mockImplementation((_request, headers) => {
+	mocks.createSupabase.mockImplementation((_request: Request, headers: Readonly<Headers>) => {
 		headers.append('set-cookie', 'sb-access-token=refreshed; Path=/; HttpOnly');
 		return {
 			auth: {
+				/* oxlint-disable-next-line typescript/require-await -- this mock stands in for
+				 * `createSupabase`'s real `getSession`, which is genuinely async; the body has
+				 * nothing to await, but the return type must stay `Promise<...>` to match.
+				 */
 				getSession: vi.fn(async () => ({
 					data: { session: { access_token: accessToken } },
 					error: null,
@@ -70,316 +87,345 @@ function withSession(accessToken: string): void {
 }
 
 interface FakePage {
-	items: unknown[];
+	items: readonly unknown[];
 	page: number;
 	per_page: number;
 	total_count: number;
 }
 
-function page(overrides: Partial<FakePage> = {}): FakePage {
+function page(overrides: Readonly<Partial<FakePage>> = {}): FakePage {
 	return { items: [], page: 1, per_page: 20, total_count: 0, ...overrides };
+}
+
+/**
+ * Narrows the MSW handler's captured search string, asserting it was actually recorded rather
+ * than defaulting a missing one to `''` with `??` — that default is a conditional, and
+ * `vitest/no-conditional-in-test` (rightly) doesn't want branching inside a test body. Failing
+ * loudly here is also the more honest behaviour: a `null` means the handler never ran, which is
+ * itself the bug a silent `''` fallback would hide.
+ *
+ * @param recorded - The value a test captured from the MSW resolver, or `null` if it never ran.
+ * @returns The recorded search string.
+ */
+function recordedSearch(recorded: string | null): string {
+	expect(recorded).not.toBeNull();
+	if (recorded === null)
+		throw new Error('expected the MSW handler to have recorded a search string');
+	return recorded;
 }
 
 const request = new Request('https://example.test/');
 
-afterEach(() => {
-	vi.unstubAllEnvs();
-});
-
-describe('listLinksFor', () => {
-	it("fetches a page of a team's links from the API", async () => {
-		vi.stubEnv('API_HOST', 'http://api.test');
-		withSession('tok');
-
-		let seenAuth: string | null = null;
-		let seenQuery: string | null = null;
-		server.use(
-			http.get('http://api.test/v1/teams/team-a/links', ({ request: apiRequest }) => {
-				seenAuth = apiRequest.headers.get('authorization');
-				seenQuery = new URL(apiRequest.url).search;
-				return HttpResponse.json(
-					page({
-						items: [
-							{
-								analytics_enabled: true,
-								created_at: '2026-01-01T00:00:00Z',
-								created_by: 'user-1',
-								destination_url: 'https://example.org/',
-								domain_id: 'domain-1',
-								expires_at: null,
-								folder_id: 'folder-1',
-								has_password: false,
-								hostname: 'short.invalid',
-								id: 'link-1',
-								redirect_type: 302,
-								short_url: 'https://short.invalid/abc123',
-								slug: 'abc123',
-								state: 'active',
-								tags: [],
-								team_id: 'team-a',
-								updated_at: '2026-01-01T00:00:00Z',
-							},
-						],
-						total_count: 1,
-					}),
-				);
-			}),
-		);
-
-		const result = await listLinksFor(request, 'team-a', 1);
-
-		expect(seenAuth).toBe('Bearer tok');
-		expect(seenQuery).toBe('?page=1&per_page=20');
-		// This is the property name the plan's own sample code guessed at —
-		// `data.items` — checked against `PageLink` in
-		// `packages/api-client/src/generated/types.gen.ts` and
-		// `apps/api/openapi.json`'s `PageLink` schema. It happens to be
-		// correct, but nullable (`Array<Link> | null`, since Huma serialises a
-		// nil Go slice as JSON `null`), which this assertion pins down too.
-		expect(result.items).toHaveLength(1);
-		expect(result.items?.[0]?.short_url).toBe('https://short.invalid/abc123');
-		expect(result.total_count).toBe(1);
+describe('links', () => {
+	afterEach(() => {
+		vi.unstubAllEnvs();
 	});
 
-	/**
-	 * Finding: `listLinksFor` reads the session via `requireSession`, and that
-	 * read is itself what refreshes an expiring one — writing new cookies
-	 * into the `Headers` object threaded through. Without the
-	 * `flushSessionCookies(headers)` call, those cookies are built and then
-	 * discarded: this test fails on exactly that, because nothing ever
-	 * forwards the cookie the mocked `createSupabase` wrote onto the real
-	 * response. See conventions.md: "Skipping it is invisible until an hour
-	 * after login, in production."
-	 */
-	it('flushes refreshed session cookies onto the real response', async () => {
-		vi.stubEnv('API_HOST', 'http://api.test');
-		withSession('tok');
-		server.use(http.get('http://api.test/v1/teams/team-a/links', () => HttpResponse.json(page())));
+	describe('listLinksFor', () => {
+		it("fetches a page of a team's links from the API", async () => {
+			vi.stubEnv('API_HOST', 'http://api.test');
+			withSession('tok');
 
-		const appended: string[] = [];
-		mocks.getResponse.mockReturnValue({
-			headers: { append: (name, value) => appended.push(`${name}: ${value}`) },
+			let seenAuth: string | null = null;
+			let seenQuery: string | null = null;
+			server.use(
+				http.get('http://api.test/v1/teams/team-a/links', ({ request: apiRequest }) => {
+					seenAuth = apiRequest.headers.get('authorization');
+					seenQuery = new URL(apiRequest.url).search;
+					return HttpResponse.json(
+						page({
+							items: [
+								{
+									analytics_enabled: true,
+									created_at: '2026-01-01T00:00:00Z',
+									created_by: 'user-1',
+									destination_url: 'https://example.org/',
+									domain_id: 'domain-1',
+									expires_at: null,
+									folder_id: 'folder-1',
+									has_password: false,
+									hostname: 'short.invalid',
+									id: 'link-1',
+									redirect_type: 302,
+									short_url: 'https://short.invalid/abc123',
+									slug: 'abc123',
+									state: 'active',
+									tags: [],
+									team_id: 'team-a',
+									updated_at: '2026-01-01T00:00:00Z',
+								},
+							],
+							total_count: 1,
+						}),
+					);
+				}),
+			);
+
+			const result = await listLinksFor(request, 'team-a', 1);
+
+			expect(seenAuth).toBe('Bearer tok');
+			expect(seenQuery).toBe('?page=1&per_page=20');
+			// This is the property name the plan's own sample code guessed at —
+			// `data.items` — checked against `PageLink` in
+			// `packages/api-client/src/generated/types.gen.ts` and
+			// `apps/api/openapi.json`'s `PageLink` schema. It happens to be
+			// correct, but nullable (`Array<Link> | null`, since Huma serialises a
+			// nil Go slice as JSON `null`), which this assertion pins down too.
+			expect(result.items).toHaveLength(1);
+			expect(result.items?.[0]?.short_url).toBe('https://short.invalid/abc123');
+			expect(result.total_count).toBe(1);
 		});
 
-		await listLinksFor(request, 'team-a', 1);
+		/**
+		 * Finding: `listLinksFor` reads the session via `requireSession`, and that
+		 * read is itself what refreshes an expiring one — writing new cookies
+		 * into the `Headers` object threaded through. Without the
+		 * `flushSessionCookies(headers)` call, those cookies are built and then
+		 * discarded: this test fails on exactly that, because nothing ever
+		 * forwards the cookie the mocked `createSupabase` wrote onto the real
+		 * response. See conventions.md: "Skipping it is invisible until an hour
+		 * after login, in production."
+		 */
+		it('flushes refreshed session cookies onto the real response', async () => {
+			vi.stubEnv('API_HOST', 'http://api.test');
+			withSession('tok');
+			server.use(
+				http.get('http://api.test/v1/teams/team-a/links', () => HttpResponse.json(page())),
+			);
 
-		expect(appended).toEqual(['set-cookie: sb-access-token=refreshed; Path=/; HttpOnly']);
-	});
-});
-
-describe('createLinkFor', () => {
-	it('creates a link via the API', async () => {
-		vi.stubEnv('API_HOST', 'http://api.test');
-		withSession('tok');
-
-		let seenAuth: string | null = null;
-		let seenBody: unknown;
-		server.use(
-			http.post('http://api.test/v1/teams/team-a/links', async ({ request: apiRequest }) => {
-				seenAuth = apiRequest.headers.get('authorization');
-				seenBody = await apiRequest.json();
-				return HttpResponse.json(
-					{
-						analytics_enabled: true,
-						created_at: '2026-01-01T00:00:00Z',
-						created_by: 'user-1',
-						destination_url: 'https://example.org/',
-						domain_id: 'domain-1',
-						expires_at: null,
-						folder_id: 'folder-1',
-						has_password: false,
-						hostname: 'short.invalid',
-						id: 'link-1',
-						redirect_type: 302,
-						short_url: 'https://short.invalid/abc123',
-						slug: 'abc123',
-						state: 'active',
-						tags: [],
-						team_id: 'team-a',
-						updated_at: '2026-01-01T00:00:00Z',
+			const appended: string[] = [];
+			mocks.getResponse.mockReturnValue({
+				headers: {
+					append: (name, value) => {
+						appended.push(`${name}: ${value}`);
 					},
-					{ status: 201 },
-				);
-			}),
-		);
+				},
+			});
 
-		const result = await createLinkFor(request, 'team-a', {
-			destination_url: 'https://example.org/',
+			await listLinksFor(request, 'team-a', 1);
+
+			expect(appended).toStrictEqual(['set-cookie: sb-access-token=refreshed; Path=/; HttpOnly']);
+		});
+	});
+
+	describe('createLinkFor', () => {
+		it('creates a link via the API', async () => {
+			vi.stubEnv('API_HOST', 'http://api.test');
+			withSession('tok');
+
+			let seenAuth: string | null = null;
+			let seenBody: unknown;
+			server.use(
+				http.post('http://api.test/v1/teams/team-a/links', async ({ request: apiRequest }) => {
+					seenAuth = apiRequest.headers.get('authorization');
+					seenBody = await apiRequest.json();
+					return HttpResponse.json(
+						{
+							analytics_enabled: true,
+							created_at: '2026-01-01T00:00:00Z',
+							created_by: 'user-1',
+							destination_url: 'https://example.org/',
+							domain_id: 'domain-1',
+							expires_at: null,
+							folder_id: 'folder-1',
+							has_password: false,
+							hostname: 'short.invalid',
+							id: 'link-1',
+							redirect_type: 302,
+							short_url: 'https://short.invalid/abc123',
+							slug: 'abc123',
+							state: 'active',
+							tags: [],
+							team_id: 'team-a',
+							updated_at: '2026-01-01T00:00:00Z',
+						},
+						{ status: 201 },
+					);
+				}),
+			);
+
+			const result = await createLinkFor(request, 'team-a', {
+				destination_url: 'https://example.org/',
+			});
+
+			expect(seenAuth).toBe('Bearer tok');
+			expect(seenBody).toStrictEqual({ destination_url: 'https://example.org/' });
+			expect(result.short_url).toBe('https://short.invalid/abc123');
 		});
 
-		expect(seenAuth).toBe('Bearer tok');
-		expect(seenBody).toEqual({ destination_url: 'https://example.org/' });
-		expect(result.short_url).toBe('https://short.invalid/abc123');
-	});
-
-	/**
-	 * Same finding as `listLinksFor`'s equivalent test: reading the session via
-	 * `requireSession` is itself what refreshes an expiring one, and skipping
-	 * `flushSessionCookies` would silently drop that refresh's cookies — here,
-	 * on every link creation rather than every list fetch.
-	 */
-	it('flushes refreshed session cookies onto the real response', async () => {
-		vi.stubEnv('API_HOST', 'http://api.test');
-		withSession('tok');
-		server.use(
-			http.post('http://api.test/v1/teams/team-a/links', () =>
-				HttpResponse.json(
-					{
-						analytics_enabled: true,
-						created_at: '2026-01-01T00:00:00Z',
-						created_by: 'user-1',
-						destination_url: 'https://example.org/',
-						domain_id: 'domain-1',
-						expires_at: null,
-						folder_id: 'folder-1',
-						has_password: false,
-						hostname: 'short.invalid',
-						id: 'link-1',
-						redirect_type: 302,
-						short_url: 'https://short.invalid/abc123',
-						slug: 'abc123',
-						state: 'active',
-						tags: [],
-						team_id: 'team-a',
-						updated_at: '2026-01-01T00:00:00Z',
-					},
-					{ status: 201 },
+		/**
+		 * Same finding as `listLinksFor`'s equivalent test: reading the session via
+		 * `requireSession` is itself what refreshes an expiring one, and skipping
+		 * `flushSessionCookies` would silently drop that refresh's cookies — here,
+		 * on every link creation rather than every list fetch.
+		 */
+		it('flushes refreshed session cookies onto the real response', async () => {
+			vi.stubEnv('API_HOST', 'http://api.test');
+			withSession('tok');
+			server.use(
+				http.post('http://api.test/v1/teams/team-a/links', () =>
+					HttpResponse.json(
+						{
+							analytics_enabled: true,
+							created_at: '2026-01-01T00:00:00Z',
+							created_by: 'user-1',
+							destination_url: 'https://example.org/',
+							domain_id: 'domain-1',
+							expires_at: null,
+							folder_id: 'folder-1',
+							has_password: false,
+							hostname: 'short.invalid',
+							id: 'link-1',
+							redirect_type: 302,
+							short_url: 'https://short.invalid/abc123',
+							slug: 'abc123',
+							state: 'active',
+							tags: [],
+							team_id: 'team-a',
+							updated_at: '2026-01-01T00:00:00Z',
+						},
+						{ status: 201 },
+					),
 				),
-			),
-		);
+			);
 
-		const appended: string[] = [];
-		mocks.getResponse.mockReturnValue({
-			headers: { append: (name, value) => appended.push(`${name}: ${value}`) },
+			const appended: string[] = [];
+			mocks.getResponse.mockReturnValue({
+				headers: {
+					append: (name, value) => {
+						appended.push(`${name}: ${value}`);
+					},
+				},
+			});
+
+			await createLinkFor(request, 'team-a', { destination_url: 'https://example.org/' });
+
+			expect(appended).toStrictEqual(['set-cookie: sb-access-token=refreshed; Path=/; HttpOnly']);
+		});
+	});
+
+	describe('qrBodyBytes', () => {
+		/**
+		 * The generated client parses by `Content-Type` (`getParseAs` in
+		 * `packages/api-client/src/generated/client/utils.gen.ts` maps anything
+		 * starting with `image/` to `blob`), so a QR response arrives as a
+		 * `Blob`. Narrowing at runtime rather than casting the generated type
+		 * means a regenerated client that types the body differently changes
+		 * nothing here.
+		 */
+		it('reads a Blob body', async () => {
+			const bytes = await qrBodyBytes(new Blob([new Uint8Array([1, 2, 3])]));
+
+			expect([...bytes]).toStrictEqual([1, 2, 3]);
 		});
 
-		await createLinkFor(request, 'team-a', { destination_url: 'https://example.org/' });
+		it('reads a string body', async () => {
+			const bytes = await qrBodyBytes('<svg/>');
 
-		expect(appended).toEqual(['set-cookie: sb-access-token=refreshed; Path=/; HttpOnly']);
-	});
-});
-
-describe('qrBodyBytes', () => {
-	/**
-	 * The generated client parses by `Content-Type` (`getParseAs` in
-	 * `packages/api-client/src/generated/client/utils.gen.ts` maps anything
-	 * starting with `image/` to `blob`), so a QR response arrives as a
-	 * `Blob`. Narrowing at runtime rather than casting the generated type
-	 * means a regenerated client that types the body differently changes
-	 * nothing here.
-	 */
-	it('reads a Blob body', async () => {
-		const bytes = await qrBodyBytes(new Blob([new Uint8Array([1, 2, 3])]));
-
-		expect(Array.from(bytes)).toEqual([1, 2, 3]);
-	});
-
-	it('reads a string body', async () => {
-		const bytes = await qrBodyBytes('<svg/>');
-
-		expect(new TextDecoder().decode(bytes)).toBe('<svg/>');
-	});
-
-	it('refuses anything else rather than shipping an empty image', async () => {
-		await expect(qrBodyBytes({ not: 'an image' })).rejects.toThrow(TypeError);
-	});
-});
-
-describe('linkQrSvgFor', () => {
-	/**
-	 * This is the half of the two-call split that must never grow a colour
-	 * parameter: the card fetches this SVG exactly once and recolours it
-	 * locally for every preview change. If `bg`, `fg` or `size` ever leaked
-	 * into this request, every colour-picker drag would re-hit the API and
-	 * blow through its 30-requests-per-minute limit. Asserting only `format`
-	 * would still pass if that happened — each parameter's absence is
-	 * checked on its own.
-	 */
-	it('asks for the SVG and nothing else', async () => {
-		vi.stubEnv('API_HOST', 'http://api.test');
-		withSession('tok');
-
-		let seenSearch: string | null = null;
-		server.use(
-			http.get('http://api.test/v1/links/link-1/qr', ({ request: apiRequest }) => {
-				seenSearch = new URL(apiRequest.url).search;
-				return new HttpResponse('<svg/>', { headers: { 'content-type': 'image/svg+xml' } });
-			}),
-		);
-
-		const result = await linkQrSvgFor(request, 'link-1');
-
-		const query = new URLSearchParams(seenSearch ?? '');
-		expect(query.get('format')).toBe('svg');
-		expect(query.has('bg')).toBe(false);
-		expect(query.has('fg')).toBe(false);
-		expect(query.has('size')).toBe(false);
-		expect(result).toBe('<svg/>');
-	});
-});
-
-describe('linkQrDownloadFor', () => {
-	/**
-	 * The download is the one call allowed to carry colours — but they must
-	 * arrive bare. A raw `#` in a query string is the fragment delimiter, so
-	 * a leaked `#` would never reach the API at all; the API would silently
-	 * fall back to its default colours instead of the ones the user picked.
-	 */
-	it('sends what it was given, in the bare form', async () => {
-		vi.stubEnv('API_HOST', 'http://api.test');
-		withSession('tok');
-
-		let seenSearch: string | null = null;
-		server.use(
-			http.get('http://api.test/v1/links/link-1/qr', ({ request: apiRequest }) => {
-				seenSearch = new URL(apiRequest.url).search;
-				return new HttpResponse(new Uint8Array([1, 2, 3]), {
-					headers: { 'content-type': 'image/png' },
-				});
-			}),
-		);
-
-		const result = await linkQrDownloadFor(request, 'link-1', {
-			background: 'ffffff',
-			foreground: '000000',
-			format: 'png',
-			size: 256,
+			expect(new TextDecoder().decode(bytes)).toBe('<svg/>');
 		});
 
-		const query = new URLSearchParams(seenSearch ?? '');
-		expect(query.get('bg')).toBe('ffffff');
-		expect(query.get('fg')).toBe('000000');
-		expect(query.get('format')).toBe('png');
-		expect(query.get('size')).toBe('256');
-		expect(result.contentType).toBe('image/png');
+		it('refuses anything else rather than shipping an empty image', async () => {
+			await expect(qrBodyBytes({ not: 'an image' })).rejects.toThrow(TypeError);
+		});
 	});
 
-	/**
-	 * `size` has no meaning for a vector image, and the API answers 422 if one
-	 * is sent alongside `format=svg` — so an SVG download must omit it, not
-	 * send a default.
-	 */
-	it('omits size when downloading as SVG', async () => {
-		vi.stubEnv('API_HOST', 'http://api.test');
-		withSession('tok');
+	describe('linkQrSvgFor', () => {
+		/**
+		 * This is the half of the two-call split that must never grow a colour
+		 * parameter: the card fetches this SVG exactly once and recolours it
+		 * locally for every preview change. If `bg`, `fg` or `size` ever leaked
+		 * into this request, every colour-picker drag would re-hit the API and
+		 * blow through its 30-requests-per-minute limit. Asserting only `format`
+		 * would still pass if that happened — each parameter's absence is
+		 * checked on its own.
+		 */
+		it('asks for the SVG and nothing else', async () => {
+			vi.stubEnv('API_HOST', 'http://api.test');
+			withSession('tok');
 
-		let seenSearch: string | null = null;
-		server.use(
-			http.get('http://api.test/v1/links/link-1/qr', ({ request: apiRequest }) => {
-				seenSearch = new URL(apiRequest.url).search;
-				return new HttpResponse('<svg/>', { headers: { 'content-type': 'image/svg+xml' } });
-			}),
-		);
+			let seenSearch: string | null = null;
+			server.use(
+				http.get('http://api.test/v1/links/link-1/qr', ({ request: apiRequest }) => {
+					seenSearch = new URL(apiRequest.url).search;
+					return new HttpResponse('<svg/>', { headers: { 'content-type': 'image/svg+xml' } });
+				}),
+			);
 
-		await linkQrDownloadFor(request, 'link-1', {
-			background: 'ffffff',
-			foreground: '000000',
-			format: 'svg',
-			size: 256,
+			const result = await linkQrSvgFor(request, 'link-1');
+
+			const query = new URLSearchParams(recordedSearch(seenSearch));
+			expect(query.get('format')).toBe('svg');
+			expect(query.has('bg')).toBe(false);
+			expect(query.has('fg')).toBe(false);
+			expect(query.has('size')).toBe(false);
+			expect(result).toBe('<svg/>');
+		});
+	});
+
+	describe('linkQrDownloadFor', () => {
+		/**
+		 * The download is the one call allowed to carry colours — but they must
+		 * arrive bare. A raw `#` in a query string is the fragment delimiter, so
+		 * a leaked `#` would never reach the API at all; the API would silently
+		 * fall back to its default colours instead of the ones the user picked.
+		 */
+		it('sends what it was given, in the bare form', async () => {
+			vi.stubEnv('API_HOST', 'http://api.test');
+			withSession('tok');
+
+			let seenSearch: string | null = null;
+			server.use(
+				http.get('http://api.test/v1/links/link-1/qr', ({ request: apiRequest }) => {
+					seenSearch = new URL(apiRequest.url).search;
+					return new HttpResponse(new Uint8Array([1, 2, 3]), {
+						headers: { 'content-type': 'image/png' },
+					});
+				}),
+			);
+
+			const result = await linkQrDownloadFor(request, 'link-1', {
+				background: 'ffffff',
+				foreground: '000000',
+				format: 'png',
+				size: 256,
+			});
+
+			const query = new URLSearchParams(recordedSearch(seenSearch));
+			expect(query.get('bg')).toBe('ffffff');
+			expect(query.get('fg')).toBe('000000');
+			expect(query.get('format')).toBe('png');
+			expect(query.get('size')).toBe('256');
+			expect(result.contentType).toBe('image/png');
 		});
 
-		const query = new URLSearchParams(seenSearch ?? '');
-		expect(query.get('format')).toBe('svg');
-		expect(query.has('size')).toBe(false);
+		/**
+		 * `size` has no meaning for a vector image, and the API answers 422 if one
+		 * is sent alongside `format=svg` — so an SVG download must omit it, not
+		 * send a default.
+		 */
+		it('omits size when downloading as SVG', async () => {
+			vi.stubEnv('API_HOST', 'http://api.test');
+			withSession('tok');
+
+			let seenSearch: string | null = null;
+			server.use(
+				http.get('http://api.test/v1/links/link-1/qr', ({ request: apiRequest }) => {
+					seenSearch = new URL(apiRequest.url).search;
+					return new HttpResponse('<svg/>', { headers: { 'content-type': 'image/svg+xml' } });
+				}),
+			);
+
+			await linkQrDownloadFor(request, 'link-1', {
+				background: 'ffffff',
+				foreground: '000000',
+				format: 'svg',
+				size: 256,
+			});
+
+			const query = new URLSearchParams(recordedSearch(seenSearch));
+			expect(query.get('format')).toBe('svg');
+			expect(query.has('size')).toBe(false);
+		});
 	});
 });

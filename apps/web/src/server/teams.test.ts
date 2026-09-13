@@ -3,6 +3,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { server } from '../test/msw';
 
+/* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding of this rule in this
+ * file is a `Request` parameter (a mock's own, or one msw's resolver destructures as `{ request }`):
+ * `Request` nests a mutable `Headers` through its own `.headers` getter, and `Readonly<>` is
+ * shallow — it does not reach that nested property, unlike a bare `Headers` parameter, which the
+ * check does accept once wrapped (see the mock's `headers` parameter below).
+ */
+
 /** Only the slice `requireSession` reaches through. Same narrowing as `links.test.ts`. */
 interface FakeSupabaseClient {
 	auth: {
@@ -19,7 +26,7 @@ interface FakeResponse {
 }
 
 const mocks = vi.hoisted(() => ({
-	createSupabase: vi.fn<(request: Request, headers: Headers) => FakeSupabaseClient>(),
+	createSupabase: vi.fn<(request: Request, headers: Readonly<Headers>) => FakeSupabaseClient>(),
 	getResponse: vi.fn<() => FakeResponse>(() => ({ headers: { append: () => undefined } })),
 }));
 
@@ -31,18 +38,28 @@ vi.mock('@tanstack/react-start/server', () => ({ getResponse: mocks.getResponse 
  * `getRequest()`, which throws "No Start context found" outside a real
  * request — exactly what Vitest is.
  */
+/* oxlint-disable-next-line node/no-top-level-await -- this file is a Vitest test entry, never
+ * `require(esm)`'d by anything; the dynamic import has to run after the `vi.mock` calls above
+ * register their replacements, which a module-scope `await import` is what expresses.
+ */
 const { createTeamFor } = await import('./teams');
 
 /**
  * Reading the session is what refreshes an expiring one, and the refreshed
  * cookies are written into the `headers` argument. Simulated as a synchronous
  * side effect of `createSupabase`, the way `links.test.ts` does it.
+ *
+ * @param accessToken - The token the faked session should report.
  */
 function withSession(accessToken: string): void {
-	mocks.createSupabase.mockImplementation((_request, headers) => {
+	mocks.createSupabase.mockImplementation((_request: Request, headers: Readonly<Headers>) => {
 		headers.append('set-cookie', 'sb-access-token=refreshed; Path=/; HttpOnly');
 		return {
 			auth: {
+				/* oxlint-disable-next-line typescript/require-await -- this mock stands in for
+				 * `createSupabase`'s real `getSession`, which is genuinely async; the body has
+				 * nothing to await, but the return type must stay `Promise<...>` to match.
+				 */
 				getSession: vi.fn(async () => ({
 					data: { session: { access_token: accessToken } },
 					error: null,
@@ -54,11 +71,11 @@ function withSession(accessToken: string): void {
 
 const request = new Request('https://example.test/');
 
-afterEach(() => {
-	vi.unstubAllEnvs();
-});
-
 describe('createTeamFor', () => {
+	afterEach(() => {
+		vi.unstubAllEnvs();
+	});
+
 	it('posts the name to the API as the signed-in caller', async () => {
 		vi.stubEnv('API_HOST', 'http://api.test');
 		withSession('tok');
@@ -79,7 +96,7 @@ describe('createTeamFor', () => {
 		const team = await createTeamFor(request, 'Verein A', 'verein-a');
 
 		expect(seenAuth).toBe('Bearer tok');
-		expect(seenBody).toEqual({ name: 'Verein A', slug: 'verein-a' });
+		expect(seenBody).toStrictEqual({ name: 'Verein A', slug: 'verein-a' });
 		expect(team.id).toBe('team-1');
 	});
 
@@ -121,7 +138,11 @@ describe('createTeamFor', () => {
 
 		const appended: string[] = [];
 		mocks.getResponse.mockReturnValueOnce({
-			headers: { append: (_name, value) => appended.push(value) },
+			headers: {
+				append: (_name, value) => {
+					appended.push(value);
+				},
+			},
 		});
 		server.use(
 			http.post('http://api.test/v1/teams', () =>

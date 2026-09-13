@@ -9,7 +9,8 @@ interface FakeQueryClient {
 	ensureQueryData: (options: unknown) => Promise<PageLink>;
 }
 
-function page(overrides: Partial<PageLink> = {}): PageLink {
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `PageLink` is a generated `@kurze-url/api-client` type; `Readonly<>` is shallow and can't reach its nested `items` array from this side of the codegen boundary.
+function page(overrides: Readonly<Partial<PageLink>> = {}): PageLink {
 	return { items: [], page: 1, per_page: 20, total_count: 0, ...overrides };
 }
 
@@ -26,6 +27,9 @@ function fakeQueryClient(ensureQueryData: FakeQueryClient['ensureQueryData']): F
  * value, unconditionally, is what keeps "did it throw at all" and "what did
  * it throw" both covered. Async counterpart to the same helper in
  * `routes/_authed.test.ts`.
+ *
+ * @param fn - The async operation expected to reject.
+ * @returns The rejection reason, or `undefined` if `fn` resolved instead.
  */
 async function rejected(fn: () => Promise<unknown>): Promise<unknown> {
 	try {
@@ -42,14 +46,24 @@ async function rejected(fn: () => Promise<unknown>): Promise<unknown> {
  * `.options.to` without an unsafe cast, and without tripping
  * `no-conditional-expect` by putting the `expect` call itself inside an
  * `if`.
+ *
+ * @param error - The value caught from a rejected `loadLinks` call.
+ * @returns The redirect's destination, or `undefined` if `error` is not a redirect.
  */
 function redirectTarget(error: unknown): string | undefined {
-	return isRedirect(error) ? error.options.to : undefined;
+	if (!isRedirect(error)) return undefined;
+
+	// Narrowed at runtime rather than asserted: the router types `options.to`
+	// as `any`, so trusting it would put an `any` into a `string | undefined`
+	// and every caller would inherit it.
+	const target: unknown = error.options.to;
+	return typeof target === 'string' ? target : undefined;
 }
 
-describe('loadLinks', () => {
+describe(loadLinks, () => {
 	it('returns the fetched page when the API call succeeds', async () => {
 		const data = page({ total_count: 1 });
+		// oxlint-disable-next-line typescript/require-await -- stands in for `FakeQueryClient.ensureQueryData`, which `loadLinks` awaits; the fake has nothing to await itself.
 		const queryClient = fakeQueryClient(async () => data);
 
 		await expect(loadLinks(queryClient, 'team-a', 1)).resolves.toBe(data);
@@ -67,9 +81,13 @@ describe('loadLinks', () => {
 	 * this test actually depends on the redirect branch.
 	 */
 	it('redirects to /login when the API answers unauthenticated', async () => {
-		const queryClient = fakeQueryClient(() => Promise.reject({ status: 401 }));
+		// oxlint-disable-next-line typescript/require-await -- stands in for `FakeQueryClient.ensureQueryData`, which `loadLinks` awaits; the fake has nothing to await itself.
+		const queryClient = fakeQueryClient(async () => {
+			// oxlint-disable-next-line eslint/no-throw-literal, typescript/only-throw-error -- a deliberate fake API failure standing in for a rejected fetch, not a real error.
+			throw { status: 401 };
+		});
 
-		const error = await rejected(() => loadLinks(queryClient, 'team-a', 1));
+		const error = await rejected(async () => loadLinks(queryClient, 'team-a', 1));
 
 		expect(isRedirect(error)).toBe(true);
 		expect(redirectTarget(error)).toBe('/login');
@@ -83,7 +101,11 @@ describe('loadLinks', () => {
 	 */
 	it('rethrows any other failure rather than redirecting', async () => {
 		const boom = { status: 500 };
-		const queryClient = fakeQueryClient(() => Promise.reject(boom));
+		// oxlint-disable-next-line typescript/require-await -- stands in for `FakeQueryClient.ensureQueryData`, which `loadLinks` awaits; the fake has nothing to await itself.
+		const queryClient = fakeQueryClient(async () => {
+			// oxlint-disable-next-line typescript/only-throw-error -- `boom` is a deliberate fake API failure standing in for a rejected fetch, not a real error.
+			throw boom;
+		});
 
 		await expect(loadLinks(queryClient, 'team-a', 1)).rejects.toBe(boom);
 	});

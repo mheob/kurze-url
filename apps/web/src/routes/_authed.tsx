@@ -27,22 +27,22 @@ import {
 // same deviation note in server/health.ts): an object shape needs an
 // `interface`, a `type` alias is rejected.
 export interface Membership {
-	name: string;
-	role: string;
-	slug: string;
-	team_id: string;
+	readonly name: string;
+	readonly role: string;
+	readonly slug: string;
+	readonly team_id: string;
 }
 
 export interface Me {
-	email: string;
+	readonly email: string;
 	// Mirrors the check `POST /v1/teams` enforces. Nothing in the browser can
 	// derive it — `MAINTAINER_USER_IDS` is deploy-time configuration on the Go
 	// service — so the API reports it and the routes below gate on it rather
 	// than offering team creation to everyone and letting a 403 arrive after
 	// the form is filled in. See `MeOutput` in `apps/api/internal/api/me.go`.
-	is_maintainer: boolean;
-	memberships: Membership[];
-	user_id: string;
+	readonly is_maintainer: boolean;
+	readonly memberships: readonly Membership[];
+	readonly user_id: string;
 }
 
 /**
@@ -97,9 +97,14 @@ export const fetchMe = createServerFn({ method: 'GET' }).handler(async (): Promi
  * "may this caller be here" and "which team is this" — are answered by one
  * lookup in the membership list `_authed`'s `beforeLoad` has already fetched,
  * so nothing here costs a request.
+ *
+ * @param memberships - The signed-in caller's own membership list, from `GET /v1/me`.
+ * @param teamSlug - The team slug from the route's path parameter.
+ * @returns The matching membership's team id.
  */
-export function requireTeamId(memberships: Membership[], teamSlug: string): string {
+export function requireTeamId(memberships: readonly Membership[], teamSlug: string): string {
 	const membership = memberships.find((entry) => entry.slug === teamSlug);
+	// oxlint-disable-next-line typescript/only-throw-error -- TanStack Router signals navigation by throwing; `notFound()` is its control flow, not an Error.
 	if (!membership) throw notFound();
 	return membership.team_id;
 }
@@ -109,6 +114,7 @@ export const Route = createFileRoute('/_authed')({
 		try {
 			return { me: await fetchMe() };
 		} catch (error) {
+			// oxlint-disable-next-line typescript/only-throw-error -- TanStack Router signals navigation by throwing; `redirect()` is its control flow, not an Error.
 			if (isUnauthenticatedError(error)) throw redirect({ to: '/login' });
 			throw error;
 		}
@@ -127,6 +133,8 @@ export const Route = createFileRoute('/_authed')({
  * falling back to the first membership covers the layout rendering above a
  * child that has no `teamSlug` of its own, or none at all (see `AuthedShell`'s
  * own docstring for why `currentTeamSlug` is optional rather than assumed).
+ *
+ * @returns The rendered authenticated shell, wrapping the matched child route.
  */
 function AuthedLayout(): React.JSX.Element {
 	const { me } = Route.useRouteContext();
@@ -136,7 +144,7 @@ function AuthedLayout(): React.JSX.Element {
 	const [signOutFailed, setSignOutFailed] = useState(false);
 
 	const signOutMutation = useMutation({
-		mutationFn: () => signOut(),
+		mutationFn: async () => signOut(),
 		onError: (error: unknown) => {
 			// Already signed out from the API's point of view — same "nothing
 			// left to undo" reasoning as any other `unauthenticated` classification
@@ -160,7 +168,9 @@ function AuthedLayout(): React.JSX.Element {
 				currentTeamSlug={teamSlug ?? me.memberships[0]?.slug}
 				isMaintainer={me.is_maintainer}
 				memberships={me.memberships}
-				onSignOut={() => signOutMutation.mutate()}
+				onSignOut={() => {
+					signOutMutation.mutate();
+				}}
 				signingOut={signOutMutation.isPending}
 			/>
 			{/* Every authenticated page renders through this one `<Outlet>`, so

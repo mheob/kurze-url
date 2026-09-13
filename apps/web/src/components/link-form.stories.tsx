@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/tanstack-react';
 import { fn } from 'storybook/test';
 
-import { LinkForm } from './link-form';
+import { LinkForm, type LinkFormValues } from './link-form';
 
 const meta = {
 	component: LinkForm,
@@ -12,7 +12,7 @@ export default meta;
 
 /** The blank create-a-link state. */
 export const Default: StoryObj<typeof meta> = {
-	args: { onSubmit: fn() },
+	args: { onSubmit: fn<(values: LinkFormValues) => void>() },
 };
 
 /**
@@ -23,7 +23,7 @@ export const Default: StoryObj<typeof meta> = {
 export const WithFieldError: StoryObj<typeof meta> = {
 	args: {
 		fieldErrors: { destination_url: 'The destination must use https://.' },
-		onSubmit: fn(),
+		onSubmit: fn<(values: LinkFormValues) => void>(),
 	},
 };
 
@@ -36,6 +36,6 @@ export const WithFieldError: StoryObj<typeof meta> = {
 export const WithDomainPicker: StoryObj<typeof meta> = {
 	args: {
 		domains: [{ hostname: 'links.verein.test', id: 'd1' }],
-		onSubmit: fn(),
+		onSubmit: fn<(values: LinkFormValues) => void>(),
 	},
 };

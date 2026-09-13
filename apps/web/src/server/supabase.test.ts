@@ -9,7 +9,7 @@ import { createCookieAdapter, createSupabase } from './supabase';
  * adapter passes every test written against a fresh session and then fails
  * an hour later, in production, as a login that silently stops working.
  */
-describe('createSupabase', () => {
+describe(createSupabase, () => {
 	// Task 1 (the Supabase project itself) is dashboard work, gated on the
 	// maintainer, not on this task — so these two vars never reach a real
 	// value in this suite. Stubbed here for the same reason api.test.ts stubs
@@ -25,7 +25,7 @@ describe('createSupabase', () => {
 		vi.unstubAllEnvs();
 	});
 
-	it('reads cookies from the request', async () => {
+	it('reads cookies from the request', () => {
 		const request = new Request('https://example.test/', {
 			headers: { cookie: 'sb-access-token=abc; other=x' },
 		});
@@ -44,13 +44,13 @@ describe('createSupabase', () => {
  * can be called directly, the same way @supabase/ssr calls it during sign-in
  * and refresh.
  */
-describe('createCookieAdapter', () => {
+describe(createCookieAdapter, () => {
 	it('writes cookies onto the response headers', () => {
 		const request = new Request('https://example.test/');
 		const headers = new Headers();
 		const { setAll } = createCookieAdapter(request, headers);
 
-		setAll([{ name: 'sb-x', value: 'y', options: {} }]);
+		setAll([{ name: 'sb-x', options: {}, value: 'y' }]);
 
 		expect(headers.get('set-cookie')).toContain('sb-x=y');
 	});
@@ -69,12 +69,12 @@ describe('createCookieAdapter', () => {
 		setAll([
 			{
 				name: 'sb-x',
+				options: { httpOnly: false, maxAge: 34_560_000, path: '/', sameSite: 'lax' },
 				value: 'y',
-				options: { path: '/', sameSite: 'lax', httpOnly: false, maxAge: 34560000 },
 			},
 		]);
 
-		const cookie = headers.get('set-cookie') ?? '';
+		const cookie = headers.get('set-cookie');
 		expect(cookie).toContain('HttpOnly');
 		expect(cookie).toContain('Secure');
 		expect(cookie).toContain('SameSite=Lax');
@@ -97,9 +97,9 @@ describe('createCookieAdapter', () => {
 		const headers = new Headers();
 		const { setAll } = createCookieAdapter(request, headers);
 
-		setAll([{ name: 'sb-x', value: 'y', options: { sameSite: 'strict' } }]);
+		setAll([{ name: 'sb-x', options: { sameSite: 'strict' }, value: 'y' }]);
 
-		const cookie = headers.get('set-cookie') ?? '';
+		const cookie = headers.get('set-cookie');
 		expect(cookie).toContain('SameSite=Lax');
 		expect(cookie).not.toContain('SameSite=Strict');
 	});

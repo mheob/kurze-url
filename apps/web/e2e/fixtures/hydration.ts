@@ -27,10 +27,16 @@ import { expect, type Locator } from '@playwright/test';
  * name, and the alternative was retrying `fill` + `click` until something
  * stuck, which creates duplicate rows whenever the click did land and only the
  * assertion was slow. This waits for the actual condition instead.
+ *
+ * @param locator - The element to wait for React to take ownership of.
  */
-export async function waitForHydration(locator: Locator): Promise<void> {
+export async function waitForHydration(locator: Readonly<Locator>): Promise<void> {
 	await expect
 		.poll(async () =>
+			/* oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `node` is the
+			 * real DOM element this callback runs against inside the browser, via Playwright's
+			 * `evaluate`; it's a live, mutable DOM node, not a value this file constructs or owns.
+			 */
 			locator.evaluate((node) => Object.keys(node).some((key) => key.startsWith('__reactFiber$'))),
 		)
 		.toBe(true);

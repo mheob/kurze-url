@@ -27,7 +27,8 @@ import { assertMaintainer, RouteComponent, validateSlugField } from './new-team'
  * server call.
  */
 const mocks = vi.hoisted(() => ({
-	createTeamFn: vi.fn<(input: { data: { name: string; slug: string } }) => Promise<Team>>(),
+	createTeamFn:
+		vi.fn<(input: Readonly<{ data: Readonly<{ name: string; slug: string }> }>) => Promise<Team>>(),
 }));
 
 vi.mock('../../server/teams', () => ({ createTeamFn: mocks.createTeamFn }));
@@ -47,6 +48,9 @@ function me(isMaintainer: boolean): Me {
  * Same shape as `_authed.test.ts`'s helper, and for the same reason: vitest's
  * `no-conditional-expect` is error-level, and an assertion inside a `catch`
  * silently does not run when nothing was thrown.
+ *
+ * @param fn - The synchronous operation expected to throw.
+ * @returns Whatever `fn` threw, or `undefined` if it did not throw.
  */
 function thrown(fn: () => void): unknown {
 	try {
@@ -57,9 +61,11 @@ function thrown(fn: () => void): unknown {
 	}
 }
 
-describe('assertMaintainer', () => {
+describe(assertMaintainer, () => {
 	it('lets a maintainer through', () => {
-		expect(() => assertMaintainer(me(true))).not.toThrow();
+		expect(() => {
+			assertMaintainer(me(true));
+		}).not.toThrow();
 	});
 
 	/**
@@ -70,11 +76,17 @@ describe('assertMaintainer', () => {
 	 * gets copied into a route where the difference does leak something.
 	 */
 	it('throws a not-found, not a generic error, for everyone else', () => {
-		expect(isNotFound(thrown(() => assertMaintainer(me(false))))).toBe(true);
+		expect(
+			isNotFound(
+				thrown(() => {
+					assertMaintainer(me(false));
+				}),
+			),
+		).toBe(true);
 	});
 });
 
-describe('validateSlugField', () => {
+describe(validateSlugField, () => {
 	it('accepts a well-formed slug', () => {
 		expect(validateSlugField('sv-gruenwald', translate)).toBeUndefined();
 	});
@@ -129,6 +141,9 @@ describe('validateSlugField', () => {
  * `href` a test could read directly, so proving where it actually lands means
  * letting the navigation finish and then inspecting
  * `router.state.location.pathname`.
+ *
+ * @returns The render result, plus the `router` instance so a test can inspect
+ *   where navigation actually landed.
  */
 function renderNewTeamForm() {
 	const queryClient = new QueryClient();
@@ -232,7 +247,9 @@ describe('submitting the form', () => {
 
 		await submitForm();
 
-		await waitFor(() => expect(router.state.location.pathname).toBe('/teams/verein-a/links'));
+		await waitFor(() => {
+			expect(router.state.location.pathname).toBe('/teams/verein-a/links');
+		});
 	});
 
 	/**

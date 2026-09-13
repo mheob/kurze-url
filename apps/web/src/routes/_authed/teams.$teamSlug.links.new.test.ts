@@ -13,7 +13,13 @@ const baseValues: LinkFormValues = {
 	slug: '',
 };
 
-/** A minimally-filled `Domain`, overridden per test — same shape `domains.test.ts` uses. */
+/**
+ * A minimally-filled `Domain`, overridden per test — same shape `domains.test.ts` uses.
+ *
+ * @param overrides - Fields to override on the base fixture; `id` is required since the base has none.
+ * @returns A fixture `Domain`.
+ */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `Domain` is a generated `@kurze-url/api-client` type; `Readonly<>` is shallow and can't reach its nested `records` object from this side of the codegen boundary.
 function domain(overrides: Partial<Domain> & Pick<Domain, 'id'>): Domain {
 	return {
 		hostname: 'links.verein.test',
@@ -41,15 +47,17 @@ function domain(overrides: Partial<Domain> & Pick<Domain, 'id'>): Domain {
  * there's no basename collision to worry about (conventions.md's landmine is
  * specifically a same-basename `.test.ts`/`.test.tsx` pair).
  */
-describe('afterCreate', () => {
+describe(afterCreate, () => {
 	it('invalidates both the links query cache and the router', async () => {
+		// oxlint-disable-next-line typescript/require-await -- stands in for `InvalidatableQueryClient.invalidateQueries`, which `afterCreate` awaits; the fake has nothing to await itself.
 		const invalidateQueries = vi.fn(async (): Promise<void> => undefined);
+		// oxlint-disable-next-line typescript/require-await -- same reason: stands in for `InvalidatableRouter.invalidate`, which `afterCreate` awaits.
 		const invalidate = vi.fn(async (): Promise<void> => undefined);
 
 		await afterCreate({ invalidateQueries }, { invalidate }, 'team-a');
 
 		expect(invalidateQueries).toHaveBeenCalledExactlyOnceWith({ queryKey: ['links', 'team-a'] });
-		expect(invalidate).toHaveBeenCalledTimes(1);
+		expect(invalidate).toHaveBeenCalledOnce();
 	});
 });
 
@@ -61,9 +69,9 @@ describe('afterCreate', () => {
  * re-running the whole suite left every test passing, `LinkForm`'s included
  * — this is the test that closes that gap.
  */
-describe('toRequestBody', () => {
+describe(toRequestBody, () => {
 	it('forwards a chosen domain_id to the request body', () => {
-		expect(toRequestBody({ ...baseValues, domain_id: 'd1' })).toEqual(
+		expect(toRequestBody({ ...baseValues, domain_id: 'd1' })).toStrictEqual(
 			expect.objectContaining({ domain_id: 'd1' }),
 		);
 	});
@@ -71,7 +79,9 @@ describe('toRequestBody', () => {
 	it('maps an unset domain_id to undefined, same as slug and expires_at', () => {
 		// So an unset picker keeps today's behaviour: falling through to the
 		// API's own default, the instance's shared domain.
-		expect(toRequestBody(baseValues)).toEqual(expect.objectContaining({ domain_id: undefined }));
+		expect(toRequestBody(baseValues)).toStrictEqual(
+			expect.objectContaining({ domain_id: undefined }),
+		);
 	});
 });
 
@@ -81,7 +91,7 @@ describe('toRequestBody', () => {
  * created on a hostname that doesn't redirect — falsified here against a
  * mixed-status page rather than left to the component to filter silently.
  */
-describe('loadVerifiedDomains', () => {
+describe(loadVerifiedDomains, () => {
 	it('keeps only verified domains, normalised to id and hostname', async () => {
 		const page: PageDomain = {
 			items: [
@@ -92,9 +102,10 @@ describe('loadVerifiedDomains', () => {
 			per_page: 25,
 			total_count: 2,
 		};
+		// oxlint-disable-next-line typescript/require-await -- stands in for `DomainsDataSource.ensureQueryData`, which `loadVerifiedDomains` awaits; the fake has nothing to await itself.
 		const ensureQueryData = vi.fn(async (): Promise<PageDomain> => page);
 
-		await expect(loadVerifiedDomains({ ensureQueryData }, 'team-a')).resolves.toEqual([
+		await expect(loadVerifiedDomains({ ensureQueryData }, 'team-a')).resolves.toStrictEqual([
 			{ hostname: 'links.verein.test', id: 'd1' },
 		]);
 	});
@@ -103,20 +114,22 @@ describe('loadVerifiedDomains', () => {
 		// Huma serialises a nil Go slice as JSON `null` — same normalisation
 		// `listDomainsFor`'s own callers already need.
 		const page: PageDomain = { items: null, page: 1, per_page: 25, total_count: 0 };
+		// oxlint-disable-next-line typescript/require-await -- same reason as above: stands in for `DomainsDataSource.ensureQueryData`.
 		const ensureQueryData = vi.fn(async (): Promise<PageDomain> => page);
 
-		await expect(loadVerifiedDomains({ ensureQueryData }, 'team-a')).resolves.toEqual([]);
+		await expect(loadVerifiedDomains({ ensureQueryData }, 'team-a')).resolves.toStrictEqual([]);
 	});
 
 	it('falls back to an empty list rather than blocking the create-link page', async () => {
 		// The picker is an enhancement over the shared hostname the form
 		// already falls back to; a failed domains fetch (an expired session,
 		// a network hiccup) must not take the whole page down with it.
+		// oxlint-disable-next-line typescript/require-await -- same reason as above: stands in for `DomainsDataSource.ensureQueryData`.
 		const ensureQueryData = vi.fn(async (): Promise<PageDomain> => {
 			throw new Error('boom');
 		});
 
-		await expect(loadVerifiedDomains({ ensureQueryData }, 'team-a')).resolves.toEqual([]);
+		await expect(loadVerifiedDomains({ ensureQueryData }, 'team-a')).resolves.toStrictEqual([]);
 	});
 
 	it('logs the swallowed error rather than failing completely silently', async () => {
@@ -125,10 +138,13 @@ describe('loadVerifiedDomains', () => {
 		// domains fetch makes every later link land on the shared hostname
 		// with nothing anywhere to notice it.
 		const error = new Error('boom');
+		// oxlint-disable-next-line typescript/require-await -- same reason as above: stands in for `DomainsDataSource.ensureQueryData`.
 		const ensureQueryData = vi.fn(async (): Promise<PageDomain> => {
 			throw error;
 		});
-		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {
+			// no-op: this test only cares that `console.error` was called with the swallowed error, not what it does with it.
+		});
 
 		await loadVerifiedDomains({ ensureQueryData }, 'team-a');
 

@@ -26,15 +26,18 @@ const memberships: Membership[] = [
  * that needs no such context. A minimal, test-only route tree — just a root
  * that mounts the component and the one path it actually links to — is
  * enough; it doesn't need any of the real app's routes or loaders.
+ *
+ * @param currentTeamSlug - The slug of the team to render as current.
+ * @returns The rendered test utilities from Testing Library's `render`.
  */
 function renderWith(currentTeamSlug: string): ReturnType<typeof render> {
 	const rootRoute = createRootRoute({
 		component: () => <TeamSwitcher currentTeamSlug={currentTeamSlug} memberships={memberships} />,
 	});
 	const linksRoute = createRoute({
+		component: () => null,
 		getParentRoute: () => rootRoute,
 		path: '/teams/$teamSlug/links',
-		component: () => null,
 	});
 	const router = createRouter({
 		history: createMemoryHistory({ initialEntries: ['/'] }),
@@ -48,15 +51,15 @@ function renderWith(currentTeamSlug: string): ReturnType<typeof render> {
 	);
 }
 
-describe('TeamSwitcher', () => {
+describe(TeamSwitcher, () => {
 	it('labels itself with the switcher name', async () => {
 		renderWith('verein-a');
-		expect(await screen.findByRole('navigation', { name: 'Teams' })).toBeInTheDocument();
+		await expect(screen.findByRole('navigation', { name: 'Teams' })).resolves.toBeInTheDocument();
 	});
 
 	it('marks only the current team as the current page', async () => {
 		renderWith('verein-b');
-		expect(await screen.findByRole('link', { name: 'Verein B' })).toHaveAttribute(
+		await expect(screen.findByRole('link', { name: 'Verein B' })).resolves.toHaveAttribute(
 			'aria-current',
 			'page',
 		);

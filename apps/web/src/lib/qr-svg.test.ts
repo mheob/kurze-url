@@ -11,7 +11,7 @@ const svg = [
 	'',
 ].join('\n');
 
-describe('restyleQrSvg', () => {
+describe(restyleQrSvg, () => {
 	/**
 	 * The property the whole preview design rests on: neither colour changes
 	 * the QR matrix, so the browser can recolour a document the API produced
@@ -42,7 +42,7 @@ describe('restyleQrSvg', () => {
 	});
 });
 
-describe('qrSvgDataUrl', () => {
+describe(qrSvgDataUrl, () => {
 	/**
 	 * A data URL in an `<img src>`, not `dangerouslySetInnerHTML`: the
 	 * document comes from our own API, but an `<img>` cannot execute

@@ -49,6 +49,13 @@ interface ConfirmDeleteProps {
  * `useId()` (not a hardcoded id) is what keeps this safe to render more than
  * once on the same page — one `ConfirmDelete` per row in a list view —
  * without two instances colliding on the same id.
+ *
+ * @param props - The component's props.
+ * @param props.confirmLabel - Fully rendered confirm-button string; defaults to "Yes, delete it" when omitted.
+ * @param props.label - Fully rendered label for the initial, arming button.
+ * @param props.onConfirm - Called on the second, confirming click.
+ * @param props.question - Fully rendered question shown once armed.
+ * @returns The rendered control, in its armed or unarmed state.
  */
 export function ConfirmDelete({
 	confirmLabel,
@@ -62,7 +69,12 @@ export function ConfirmDelete({
 
 	if (!armed) {
 		return (
-			<Button onClick={() => setArmed(true)} type="button">
+			<Button
+				onClick={() => {
+					setArmed(true);
+				}}
+				type="button"
+			>
 				{label}
 			</Button>
 		);
@@ -74,7 +86,12 @@ export function ConfirmDelete({
 			<Button onClick={onConfirm} type="button">
 				{confirmLabel ?? t('links.deleteConfirm')}
 			</Button>
-			<Button onClick={() => setArmed(false)} type="button">
+			<Button
+				onClick={() => {
+					setArmed(false);
+				}}
+				type="button"
+			>
 				{t('links.cancel')}
 			</Button>
 		</div>

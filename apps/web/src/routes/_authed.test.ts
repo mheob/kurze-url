@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { requireTeamId } from './_authed';
 
-const memberships = [{ team_id: 'a', name: 'Verein A', role: 'owner', slug: 'verein-a' }];
+const memberships = [{ name: 'Verein A', role: 'owner', slug: 'verein-a', team_id: 'a' }];
 
 /**
  * Captures whatever `fn` throws instead of asserting inside a try/catch:
@@ -13,6 +13,9 @@ const memberships = [{ team_id: 'a', name: 'Verein A', role: 'owner', slug: 'ver
  * would pass for the wrong reason. Asserting on this function's return
  * value, unconditionally, is what keeps the "did it throw at all" question
  * and the "what did it throw" question both covered.
+ *
+ * @param fn - The synchronous operation expected to throw.
+ * @returns Whatever `fn` threw, or `undefined` if it did not throw.
  */
 function thrown(fn: () => void): unknown {
 	try {
@@ -23,7 +26,7 @@ function thrown(fn: () => void): unknown {
 	}
 }
 
-describe('requireTeamId', () => {
+describe(requireTeamId, () => {
 	it('resolves a slug you belong to to that team id', () => {
 		expect(requireTeamId(memberships, 'verein-a')).toBe('a');
 	});
@@ -37,6 +40,12 @@ describe('requireTeamId', () => {
 	 * thrown error, and from nothing thrown at all.
 	 */
 	it('throws a not-found, not a generic error, for a slug you do not belong to', () => {
-		expect(isNotFound(thrown(() => requireTeamId(memberships, 'verein-b')))).toBe(true);
+		expect(
+			isNotFound(
+				thrown(() => {
+					requireTeamId(memberships, 'verein-b');
+				}),
+			),
+		).toBe(true);
 	});
 });

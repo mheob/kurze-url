@@ -1,5 +1,270 @@
 import type { LinkPasswordReason } from './link-password';
 
+/** The `ErrorDetail` fields this module reads; see `apps/api/openapi.json`. */
+interface ProblemDetail {
+	readonly location?: string;
+	readonly message?: string;
+	readonly value?: unknown;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null;
+}
+
+function isProblemDetail(value: unknown): value is ProblemDetail {
+	if (!isRecord(value)) return false;
+	const { location, message } = value;
+	return (
+		(location === undefined || typeof location === 'string') &&
+		(message === undefined || typeof message === 'string')
+	);
+}
+
+function problemDetailsOf(error: unknown): readonly ProblemDetail[] {
+	if (!isRecord(error)) return [];
+	const { errors } = error;
+	// Wrapped, not a bare reference, but still a type predicate: `errors.every(isProblemDetail)`
+	// would narrow `errors` to `ProblemDetail[]` too, but only when the predicate is passed
+	// directly — an arrow that merely calls it loses that narrowing unless it repeats the
+	// predicate's own return type here.
+	if (
+		!Array.isArray(errors) ||
+		!errors.every((entry): entry is ProblemDetail => isProblemDetail(entry))
+	)
+		return [];
+	return errors;
+}
+
+/**
+ * Huma's `location` is prefixed by where the value came from — `body`,
+ * `query`, `path`, or `header` — e.g. `body.destination_url` or
+ * `path.thing-id` (see `huma.ErrorDetail`'s doc comment). A bare prefix with
+ * nothing after it has no field to attach to: Huma emits exactly `"body"`,
+ * with no dot, for a request body that failed to parse as JSON at all
+ * (`validateBody` in `huma.go`) — before any field-level validation ran. That
+ * is a whole-request problem, not a report about a field named "body", and
+ * must not be mistaken for one.
+ *
+ * @param location - An `ErrorDetail.location` value, e.g. `body.destination_url`.
+ * @returns The trailing field name, or `undefined` when `location` has no dot to split on.
+ */
+function fieldNameOf(location: string | undefined): string | undefined {
+	if (location === undefined || !location.includes('.')) return undefined;
+	return location.split('.').pop();
+}
+
+function fieldsOf(error: unknown): Record<string, string> {
+	const fields: Record<string, string> = {};
+
+	for (const detail of problemDetailsOf(error)) {
+		const name = fieldNameOf(detail.location);
+		if (name !== undefined && name !== '' && detail.message !== undefined && detail.message !== '')
+			fields[name] = detail.message;
+	}
+
+	return fields;
+}
+
+/**
+ * `deleteDomain` in apps/api/internal/api/domains.go is the only place a 409
+ * carries a link count, and it sends it as a typed `ErrorDetail` alongside
+ * the free-text `detail`: `Location: "path.domain_id", Value: linkCount` —
+ * see the comment on that call for why that `Location` string was chosen.
+ * Reading the typed value here, rather than parsing it out of `detail`'s
+ * prose, means a reworded message can never silently break this: if the
+ * typed detail ever stops arriving, this returns `undefined`, exactly like a
+ * 409 that never carried one — there is deliberately no regex fallback onto
+ * `detail`, since that would let this exact drift happen quietly again.
+ *
+ * The *verify* endpoint's own unrelated conflict ("another team has already
+ * verified this hostname") carries no `ErrorDetail` at all, so it falls
+ * through to `undefined` here too, never an invented count.
+ *
+ * @param error - Whatever the failed API call threw.
+ * @returns The blocking link count from a `deleteDomain` 409, or `undefined` if it never arrived.
+ */
+function blockingLinkCountOf(error: unknown): number | undefined {
+	for (const detail of problemDetailsOf(error)) {
+		if (detail.location === 'path.domain_id' && typeof detail.value === 'number') {
+			return detail.value;
+		}
+	}
+	return undefined;
+}
+
+/**
+ * `createTeam` answers a taken slug with 409 and a typed detail on the field,
+ * the same convention `deleteDomain`'s blocking-link count uses one level over
+ * (`path.domain_id` there, a body field here). Reading `location` rather than
+ * matching the message means a reworded message cannot silently turn this back
+ * into a generic failure — and there is deliberately no text fallback, since
+ * that is exactly how such drift goes unnoticed.
+ *
+ * This matches any 409 carrying `location === 'body.slug'`, not only one from
+ * `createTeam` — it is just the only caller today. The link-slug conflicts in
+ * `apps/api/internal/api/links.go` (`create link`, `update link`) still
+ * answer with a free-text 409 and no `ErrorDetail`, so they never reach this
+ * function. The moment one of those gains a typed detail here, this function
+ * starts matching it too, and `classifyApiError` reports `slugTaken` for a
+ * link the same way it does for a team — but the create-link and edit-link
+ * banners render `t(\`errors.${failure.kind}\`)` for every kind except
+ * `fields`, and `errors.slugTaken` exists in neither catalogue. Whoever adds
+ * that typed detail to a link-slug 409 needs to also teach those two banners
+ * about `slugTaken`, the way `new-team.tsx` already excludes it from its own.
+ *
+ * @param error - Whatever the failed API call threw.
+ * @returns Whether `error` is a 409 carrying `location === 'body.slug'`.
+ */
+function isSlugConflict(error: unknown): boolean {
+	return problemDetailsOf(error).some((detail) => detail.location === 'body.slug');
+}
+
+/**
+ * The reason tokens `validateLinkPassword` (and the Go policy it mirrors) can
+ * actually produce today, written as a `switch` rather than a `Set` so
+ * narrowing to `LinkPasswordReason` needs no type assertion: TypeScript
+ * narrows a `string` to a literal union across matching `case`s on its own.
+ * `LinkPasswordReason` only constrains this at the type level, so this
+ * predicate is what lets `passwordRejectionOf` tell a token this build
+ * recognizes apart from one it doesn't — the latter maps to `'rejected'`
+ * rather than being passed through as a string with no translation.
+ *
+ * @param value - The password-rejection reason token from a typed `ErrorDetail.value`.
+ * @returns Whether `value` is one of the reason tokens this build recognizes.
+ */
+function isKnownLinkPasswordReason(value: string): value is LinkPasswordReason {
+	switch (value) {
+		case 'derived_from_context':
+		case 'too_common':
+		case 'too_long':
+		case 'too_repetitive':
+		case 'too_short': {
+			return true;
+		}
+		default: {
+			return false;
+		}
+	}
+}
+
+/**
+ * `setLinkPassword` answers a policy violation with 422 and a typed detail on
+ * the field, the same convention `deleteDomain`'s blocking-link count and
+ * `createTeam`'s taken slug already use. The token is the Go sentinel's own
+ * `Error()` string, pinned by `policy_test.go`, so it is a wire contract
+ * rather than prose — reading it here rather than matching the message means
+ * a reworded message cannot silently turn a precise reason into a generic
+ * failure.
+ *
+ * Returns `'rejected'`, not `undefined`, whenever the 422 is on the password
+ * field at all but carries no value this build can use — a missing `Value`,
+ * or a token a newer server knows about and this build doesn't. Only a 422
+ * on a *different* field returns `undefined`, so it still falls through to
+ * `fieldsOf` below rather than being misread as a password rejection.
+ *
+ * @param error - Whatever the failed API call threw.
+ * @returns The password-rejection reason, `'rejected'` for an unrecognized one, or `undefined`
+ * when the 422 isn't on the password field at all.
+ */
+function passwordRejectionOf(error: unknown): (LinkPasswordReason | 'rejected') | undefined {
+	const detail = problemDetailsOf(error).find((entry) => entry.location === 'body.password');
+	if (detail === undefined) return undefined;
+	if (typeof detail.value === 'string' && isKnownLinkPasswordReason(detail.value))
+		return detail.value;
+	return 'rejected';
+}
+
+/**
+ * Written as a `switch` rather than a `Set` for the same reason
+ * `isKnownLinkPasswordReason` above is: TypeScript narrows a `string` to a
+ * literal union across matching `case`s on its own, so this needs no type
+ * assertion.
+ *
+ * @param value - The QR-rejection reason token from a typed `ErrorDetail.value`.
+ * @returns Whether `value` is one of the reason tokens this build recognizes.
+ */
+function isKnownQrRejectionReason(value: string): value is QrRejectionReason {
+	switch (value) {
+		case 'invalid_color':
+		case 'low_contrast':
+		case 'size_requires_png': {
+			return true;
+		}
+		default: {
+			return false;
+		}
+	}
+}
+
+/**
+ * The `ErrorDetail.location` values that identify a QR rejection.
+ * `GET /v1/links/{link_id}/qr` is the only operation with `fg`, `bg` or
+ * `size` query parameters, so matching on these three cannot collide with
+ * another endpoint's 422.
+ */
+const QR_LOCATIONS = new Set(['query.bg', 'query.fg', 'query.size']);
+
+/**
+ * A 422 on any query parameter *other* than the three in `QR_LOCATIONS`
+ * returns `undefined` and falls through to `fieldsOf`, so pagination and
+ * filter errors keep the shape their own call sites already read.
+ *
+ * Returns `'rejected'`, not `undefined`, whenever the detail is on one of
+ * those three but carries no value this build can use — a missing `value`, or
+ * a token a newer server knows about and this build does not.
+ *
+ * @param error - Whatever the failed API call threw.
+ * @returns The QR-rejection reason, `'rejected'` for an unrecognized one, or `undefined`
+ * when the 422 isn't on `fg`, `bg`, or `size`.
+ */
+function qrRejectionOf(error: unknown): (QrRejectionReason | 'rejected') | undefined {
+	const detail = problemDetailsOf(error).find(
+		(entry) => entry.location !== undefined && QR_LOCATIONS.has(entry.location),
+	);
+	if (detail === undefined) return undefined;
+	if (typeof detail.value === 'string' && isKnownQrRejectionReason(detail.value))
+		return detail.value;
+	return 'rejected';
+}
+
+/** RFC 9110 status codes this module branches on, named for the reader checking a case against the spec rather than the wire. */
+const HTTP_UNAUTHORIZED = 401;
+const HTTP_FORBIDDEN = 403;
+const HTTP_NOT_FOUND = 404;
+const HTTP_CONFLICT = 409;
+const HTTP_TOO_MANY_REQUESTS = 429;
+const HTTP_BAD_REQUEST = 400;
+const HTTP_UNPROCESSABLE_CONTENT = 422;
+
+// The API answers 404 for a non-member so it never confirms a team exists;
+// treating 403 differently from 404 here would leak exactly what
+// internal/authz withholds.
+function simpleStatusKind(status: number | undefined): ApiFailure | undefined {
+	if (status === HTTP_UNAUTHORIZED) return { kind: 'unauthenticated' };
+	if (status === HTTP_FORBIDDEN || status === HTTP_NOT_FOUND) return { kind: 'notFound' };
+	if (status === HTTP_TOO_MANY_REQUESTS) return { kind: 'rateLimited' };
+	return undefined;
+}
+
+function conflictKind(error: unknown): ApiFailure | undefined {
+	const count = blockingLinkCountOf(error);
+	if (count !== undefined) return { count, kind: 'domainHasLinks' };
+	if (isSlugConflict(error)) return { kind: 'slugTaken' };
+	return undefined;
+}
+
+function validationKind(error: unknown): ApiFailure | undefined {
+	const reason = passwordRejectionOf(error);
+	if (reason !== undefined) return { kind: 'passwordRejected', reason };
+
+	const qrReason = qrRejectionOf(error);
+	if (qrReason !== undefined) return { kind: 'qrRejected', reason: qrReason };
+
+	const fields = fieldsOf(error);
+	if (Object.keys(fields).length > 0) return { fields, kind: 'fields' };
+	return undefined;
+}
+
 /**
  * The reason tokens `getLinkQR` (apps/api/internal/api/link_qr.go) can send
  * on a QR refusal. Each one is a Go sentinel's own `Error()` string, or —
@@ -34,26 +299,6 @@ export type ApiFailure =
 	| { kind: 'qrRejected'; reason: QrRejectionReason | 'rejected' }
 	| { kind: 'unknown' };
 
-/** The `ErrorDetail` fields this module reads; see `apps/api/openapi.json`. */
-interface ProblemDetail {
-	readonly location?: string;
-	readonly message?: string;
-	readonly value?: unknown;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === 'object' && value !== null;
-}
-
-function isProblemDetail(value: unknown): value is ProblemDetail {
-	if (!isRecord(value)) return false;
-	const { location, message } = value;
-	return (
-		(location === undefined || typeof location === 'string') &&
-		(message === undefined || typeof message === 'string')
-	);
-}
-
 /**
  * Exported for the rare call site that needs the raw HTTP status alongside
  * `ApiFailure`'s kind — `teams.$teamSlug.domains.tsx`'s verify mutation is the
@@ -64,6 +309,9 @@ function isProblemDetail(value: unknown): value is ProblemDetail {
  * split them), so this stays a plain status accessor rather than a new
  * `ApiFailure` kind that would force every other 409-without-detail call site
  * (members, tags, link slugs) to adopt a message that does not fit them.
+ *
+ * @param error - Whatever the failed API call threw.
+ * @returns The HTTP status code, or `undefined` if `error` isn't shaped like one that carries one.
  */
 export function statusOf(error: unknown): number | undefined {
 	if (!isRecord(error)) return undefined;
@@ -71,206 +319,20 @@ export function statusOf(error: unknown): number | undefined {
 	return typeof status === 'number' ? status : undefined;
 }
 
-function problemDetailsOf(error: unknown): readonly ProblemDetail[] {
-	if (!isRecord(error)) return [];
-	const { errors } = error;
-	if (!Array.isArray(errors) || !errors.every(isProblemDetail)) return [];
-	return errors;
-}
-
-/**
- * Huma's `location` is prefixed by where the value came from — `body`,
- * `query`, `path`, or `header` — e.g. `body.destination_url` or
- * `path.thing-id` (see `huma.ErrorDetail`'s doc comment). A bare prefix with
- * nothing after it has no field to attach to: Huma emits exactly `"body"`,
- * with no dot, for a request body that failed to parse as JSON at all
- * (`validateBody` in `huma.go`) — before any field-level validation ran. That
- * is a whole-request problem, not a report about a field named "body", and
- * must not be mistaken for one.
- */
-function fieldNameOf(location: string | undefined): string | undefined {
-	if (!location?.includes('.')) return undefined;
-	return location.split('.').pop();
-}
-
-function fieldsOf(error: unknown): Record<string, string> {
-	const fields: Record<string, string> = {};
-
-	for (const detail of problemDetailsOf(error)) {
-		const name = fieldNameOf(detail.location);
-		if (name && detail.message) fields[name] = detail.message;
-	}
-
-	return fields;
-}
-
-/**
- * `deleteDomain` in apps/api/internal/api/domains.go is the only place a 409
- * carries a link count, and it sends it as a typed `ErrorDetail` alongside
- * the free-text `detail`: `Location: "path.domain_id", Value: linkCount` —
- * see the comment on that call for why that `Location` string was chosen.
- * Reading the typed value here, rather than parsing it out of `detail`'s
- * prose, means a reworded message can never silently break this: if the
- * typed detail ever stops arriving, this returns `undefined`, exactly like a
- * 409 that never carried one — there is deliberately no regex fallback onto
- * `detail`, since that would let this exact drift happen quietly again.
- *
- * The *verify* endpoint's own unrelated conflict ("another team has already
- * verified this hostname") carries no `ErrorDetail` at all, so it falls
- * through to `undefined` here too, never an invented count.
- */
-function blockingLinkCountOf(error: unknown): number | undefined {
-	for (const detail of problemDetailsOf(error)) {
-		if (detail.location === 'path.domain_id' && typeof detail.value === 'number') {
-			return detail.value;
-		}
-	}
-	return undefined;
-}
-
-/**
- * `createTeam` answers a taken slug with 409 and a typed detail on the field,
- * the same convention `deleteDomain`'s blocking-link count uses one level over
- * (`path.domain_id` there, a body field here). Reading `location` rather than
- * matching the message means a reworded message cannot silently turn this back
- * into a generic failure — and there is deliberately no text fallback, since
- * that is exactly how such drift goes unnoticed.
- *
- * This matches any 409 carrying `location === 'body.slug'`, not only one from
- * `createTeam` — it is just the only caller today. The link-slug conflicts in
- * `apps/api/internal/api/links.go` (`create link`, `update link`) still
- * answer with a free-text 409 and no `ErrorDetail`, so they never reach this
- * function. The moment one of those gains a typed detail here, this function
- * starts matching it too, and `classifyApiError` reports `slugTaken` for a
- * link the same way it does for a team — but the create-link and edit-link
- * banners render `t(\`errors.${failure.kind}\`)` for every kind except
- * `fields`, and `errors.slugTaken` exists in neither catalogue. Whoever adds
- * that typed detail to a link-slug 409 needs to also teach those two banners
- * about `slugTaken`, the way `new-team.tsx` already excludes it from its own.
- */
-function isSlugConflict(error: unknown): boolean {
-	return problemDetailsOf(error).some((detail) => detail.location === 'body.slug');
-}
-
-/**
- * The reason tokens `validateLinkPassword` (and the Go policy it mirrors) can
- * actually produce today, written as a `switch` rather than a `Set` so
- * narrowing to `LinkPasswordReason` needs no type assertion: TypeScript
- * narrows a `string` to a literal union across matching `case`s on its own.
- * `LinkPasswordReason` only constrains this at the type level, so this
- * predicate is what lets `passwordRejectionOf` tell a token this build
- * recognizes apart from one it doesn't — the latter maps to `'rejected'`
- * rather than being passed through as a string with no translation.
- */
-function isKnownLinkPasswordReason(value: string): value is LinkPasswordReason {
-	switch (value) {
-		case 'derived_from_context':
-		case 'too_common':
-		case 'too_long':
-		case 'too_repetitive':
-		case 'too_short':
-			return true;
-		default:
-			return false;
-	}
-}
-
-/**
- * `setLinkPassword` answers a policy violation with 422 and a typed detail on
- * the field, the same convention `deleteDomain`'s blocking-link count and
- * `createTeam`'s taken slug already use. The token is the Go sentinel's own
- * `Error()` string, pinned by `policy_test.go`, so it is a wire contract
- * rather than prose — reading it here rather than matching the message means
- * a reworded message cannot silently turn a precise reason into a generic
- * failure.
- *
- * Returns `'rejected'`, not `undefined`, whenever the 422 is on the password
- * field at all but carries no value this build can use — a missing `Value`,
- * or a token a newer server knows about and this build doesn't. Only a 422
- * on a *different* field returns `undefined`, so it still falls through to
- * `fieldsOf` below rather than being misread as a password rejection.
- */
-function passwordRejectionOf(error: unknown): (LinkPasswordReason | 'rejected') | undefined {
-	for (const detail of problemDetailsOf(error)) {
-		if (detail.location !== 'body.password') continue;
-		if (typeof detail.value === 'string' && isKnownLinkPasswordReason(detail.value)) {
-			return detail.value;
-		}
-		return 'rejected';
-	}
-	return undefined;
-}
-
-/**
- * Written as a `switch` rather than a `Set` for the same reason
- * `isKnownLinkPasswordReason` above is: TypeScript narrows a `string` to a
- * literal union across matching `case`s on its own, so this needs no type
- * assertion.
- */
-function isKnownQrRejectionReason(value: string): value is QrRejectionReason {
-	switch (value) {
-		case 'invalid_color':
-		case 'low_contrast':
-		case 'size_requires_png':
-			return true;
-		default:
-			return false;
-	}
-}
-
-/**
- * The `ErrorDetail.location` values that identify a QR rejection.
- * `GET /v1/links/{link_id}/qr` is the only operation with `fg`, `bg` or
- * `size` query parameters, so matching on these three cannot collide with
- * another endpoint's 422.
- */
-const QR_LOCATIONS = new Set(['query.bg', 'query.fg', 'query.size']);
-
-/**
- * A 422 on any query parameter *other* than the three in `QR_LOCATIONS`
- * returns `undefined` and falls through to `fieldsOf`, so pagination and
- * filter errors keep the shape their own call sites already read.
- *
- * Returns `'rejected'`, not `undefined`, whenever the detail is on one of
- * those three but carries no value this build can use — a missing `value`, or
- * a token a newer server knows about and this build does not.
- */
-function qrRejectionOf(error: unknown): (QrRejectionReason | 'rejected') | undefined {
-	for (const detail of problemDetailsOf(error)) {
-		if (detail.location === undefined || !QR_LOCATIONS.has(detail.location)) continue;
-		if (typeof detail.value === 'string' && isKnownQrRejectionReason(detail.value)) {
-			return detail.value;
-		}
-		return 'rejected';
-	}
-	return undefined;
-}
-
 export function classifyApiError(error: unknown): ApiFailure {
 	const status = statusOf(error);
 
-	if (status === 401) return { kind: 'unauthenticated' };
-	// The API answers 404 for a non-member so it never confirms a team
-	// exists; treating 403 differently from 404 here would leak exactly what
-	// internal/authz withholds.
-	if (status === 403 || status === 404) return { kind: 'notFound' };
-	if (status === 429) return { kind: 'rateLimited' };
+	const bySimpleStatus = simpleStatusKind(status);
+	if (bySimpleStatus) return bySimpleStatus;
 
-	if (status === 409) {
-		const count = blockingLinkCountOf(error);
-		if (count !== undefined) return { count, kind: 'domainHasLinks' };
-		if (isSlugConflict(error)) return { kind: 'slugTaken' };
+	if (status === HTTP_CONFLICT) {
+		const kind = conflictKind(error);
+		if (kind) return kind;
 	}
 
-	if (status === 400 || status === 422) {
-		const reason = passwordRejectionOf(error);
-		if (reason !== undefined) return { kind: 'passwordRejected', reason };
-
-		const qrReason = qrRejectionOf(error);
-		if (qrReason !== undefined) return { kind: 'qrRejected', reason: qrReason };
-
-		const fields = fieldsOf(error);
-		if (Object.keys(fields).length > 0) return { fields, kind: 'fields' };
+	if (status === HTTP_BAD_REQUEST || status === HTTP_UNPROCESSABLE_CONTENT) {
+		const kind = validationKind(error);
+		if (kind) return kind;
 	}
 
 	return { kind: 'unknown' };

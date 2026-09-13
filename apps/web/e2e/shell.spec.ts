@@ -7,6 +7,11 @@ import { expect, test } from '@playwright/test';
 
 import { waitForHydration } from './fixtures/hydration';
 
+/* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding of this rule in this
+ * file is Playwright's own fixture argument object, which nests `Page`/`BrowserContext`; both have
+ * many mutating methods (`goto`, `click`, `addCookies`, ...) and neither type is ours to edit.
+ */
+
 const THEMES = ['light', 'dark'] as const;
 const LANGUAGES = ['en', 'de'] as const;
 
@@ -26,13 +31,13 @@ test('keeps the theme across a reload', async ({ page }) => {
 	// server-rendered, so the toggle is clickable before React attaches a
 	// handler to it, and a click in that window does nothing at all. See
 	// `waitForHydration`.
-	const toggle = page.getByRole('button', { name: /dark mode|dunklen Modus/ });
+	const toggle = page.getByRole('button', { name: /dark mode|dunklen Modus/u });
 	await waitForHydration(toggle);
 	await toggle.click();
-	await expect(page.locator('html')).toHaveClass(/dark/);
+	await expect(page.locator('html')).toHaveClass(/dark/u);
 
 	await page.reload();
-	await expect(page.locator('html')).toHaveClass(/dark/);
+	await expect(page.locator('html')).toHaveClass(/dark/u);
 });
 
 for (const theme of THEMES) {
@@ -46,11 +51,12 @@ for (const theme of THEMES) {
 			// it must be the fixture's `baseURL` (the host these tests actually run
 			// against), never a hardcoded `localhost`, or the cookie is scoped to the
 			// wrong host and never sent on CI's `*.vercel.app` preview.
-			if (!baseURL) throw new Error('baseURL fixture is unset — check playwright.config.ts');
+			if (baseURL === undefined)
+				throw new Error('baseURL fixture is unset — check playwright.config.ts');
 
 			await context.addCookies([
-				{ name: 'theme', value: theme, url: baseURL },
-				{ name: 'lang', value: language, url: baseURL },
+				{ name: 'theme', url: baseURL, value: theme },
+				{ name: 'lang', url: baseURL, value: language },
 			]);
 			await page.goto('/');
 

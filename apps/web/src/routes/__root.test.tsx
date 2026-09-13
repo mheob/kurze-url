@@ -3,14 +3,16 @@ import { I18nextProvider } from 'react-i18next';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createI18n } from '../i18n';
+import type * as ObservabilityModule from '../lib/observability';
 
 const mocks = vi.hoisted(() => ({ reportUnexpected: vi.fn() }));
 
 vi.mock('../lib/observability', async (importOriginal) => ({
-	...(await importOriginal<typeof import('../lib/observability')>()),
+	...(await importOriginal<typeof ObservabilityModule>()),
 	reportUnexpected: mocks.reportUnexpected,
 }));
 
+// oxlint-disable-next-line node/no-top-level-await -- `vi.mock` above is hoisted; importing the subject module only after it, at module scope, is Vitest's own documented way to get a mocked dependency into an ESM import — the same pattern every other `*.test.ts(x)` in this app that mocks an import uses.
 const { RootErrorPage } = await import('./__root');
 
 /**
@@ -19,16 +21,22 @@ const { RootErrorPage } = await import('./__root');
  * from and silently renders the raw key instead of either locale's text.
  * `login.test.tsx` settled on the same `createI18n` + `I18nextProvider`
  * wrapper for the same reason.
+ *
+ * @param error - The value passed to `RootErrorPage`'s `error` prop.
+ * @returns The render result.
  */
-function renderRootErrorPage(error: Error): ReturnType<typeof render> {
+function renderRootErrorPage(error: unknown): ReturnType<typeof render> {
 	return render(
 		<I18nextProvider i18n={createI18n('en')}>
-			<RootErrorPage error={error} />
+			{/* `reset` is the router's retry callback, required by
+			    `ErrorComponentProps` and unused by this page — it renders one
+			    generic sentence and offers nothing to retry. */}
+			<RootErrorPage error={error} reset={vi.fn((): void => undefined)} />
 		</I18nextProvider>,
 	);
 }
 
-describe('RootErrorPage', () => {
+describe('rootErrorPage', () => {
 	it('reports the failure it renders', () => {
 		const error = new Error('boom');
 

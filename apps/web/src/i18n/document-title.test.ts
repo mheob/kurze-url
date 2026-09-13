@@ -13,7 +13,7 @@ import en from './locales/en.json';
  * catalogues themselves, not literals, so the title text stays defined in
  * exactly one place.
  */
-describe('documentTitle', () => {
+describe(documentTitle, () => {
 	it('returns the German title for de', () => {
 		expect(documentTitle('de')).toBe(de.pageTitle);
 	});

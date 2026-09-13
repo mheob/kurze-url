@@ -2,21 +2,17 @@ import type { Membership } from '../routes/_authed';
 import { preferenceCookie } from './preferences';
 
 /**
- * The same mechanism `preferences.ts` uses for language and theme, for the
- * same reason: a cookie is readable on the server during rendering, so the
- * redirect happens before the first paint rather than after a round trip.
- * localStorage cannot do that.
- */
-export const TEAM_COOKIE = 'team';
-
-/**
  * A private copy of `preferences.ts`'s own (unexported) `readCookie`, not an
  * import: that one is module-private parsing for `lang`/`theme` alone, and
  * duplicating four lines here keeps this module from reaching into another
  * module's internals for them.
+ *
+ * @param cookieHeader - The request's raw `Cookie` header, if any.
+ * @param name - The cookie name to look up.
+ * @returns The cookie's value, or `undefined` if `cookieHeader` is absent or has no such cookie.
  */
 function readCookie(cookieHeader: string | undefined, name: string): string | undefined {
-	if (!cookieHeader) return undefined;
+	if (cookieHeader === undefined || cookieHeader === '') return undefined;
 
 	for (const part of cookieHeader.split(';')) {
 		const [rawKey, ...rawValue] = part.split('=');
@@ -25,6 +21,14 @@ function readCookie(cookieHeader: string | undefined, name: string): string | un
 
 	return undefined;
 }
+
+/**
+ * The same mechanism `preferences.ts` uses for language and theme, for the
+ * same reason: a cookie is readable on the server during rendering, so the
+ * redirect happens before the first paint rather than after a round trip.
+ * localStorage cannot do that.
+ */
+export const TEAM_COOKIE = 'team';
 
 /**
  * Validated against current memberships, not trusted outright: a cookie
@@ -40,13 +44,22 @@ function readCookie(cookieHeader: string | undefined, name: string): string | un
  * immutable, so it is exactly as stable a cookie value as the UUID was — and a
  * cookie written before the slug existed simply fails the membership check
  * below and falls back, the same path a cookie for a team you have left takes.
+ *
+ * @param cookieHeader - The request's raw `Cookie` header, if any.
+ * @param memberships - The signed-in user's current team memberships.
+ * @returns The remembered team's slug if it is still a valid membership, otherwise the
+ * first membership's slug, or `undefined` if there are none.
  */
 export function resolveCurrentTeam(
 	cookieHeader: string | undefined,
-	memberships: Membership[],
+	memberships: readonly Membership[],
 ): string | undefined {
 	const remembered = readCookie(cookieHeader, TEAM_COOKIE);
-	if (remembered && memberships.some((membership) => membership.slug === remembered)) {
+	if (
+		remembered !== undefined &&
+		remembered !== '' &&
+		memberships.some((membership: Readonly<Membership>) => membership.slug === remembered)
+	) {
 		return remembered;
 	}
 

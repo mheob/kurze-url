@@ -53,6 +53,11 @@ interface SessionCookie {
 	readonly value: string;
 }
 
+// The slug format caps at 40 characters and forbids a trailing hyphen, and these rows are
+// deleted at the end of each test, so 48 bits of entropy is far more than the collision window
+// needs — twelve hex characters, not the full UUID.
+const TEAM_SLUG_RANDOM_HEX_LENGTH = 12;
+
 /**
  * Mints a real session the same way a browser does after following a magic
  * link, without sending an email or driving any UI: the Admin API's
@@ -70,13 +75,30 @@ interface SessionCookie {
  * app itself) expects, by running the identical `onAuthStateChange` ->
  * `applyServerStorage` path production uses instead of hand-reproducing its
  * encoding.
+ *
+ * @param options - The pieces needed to mint the session.
+ * @param options.admin - A Supabase Admin API client, reused here for `generateLink`.
+ * @param options.url - The Supabase project URL, used to derive the session cookies' names.
+ * @param options.serviceRoleKey - Any valid project key; GoTrue accepts it for `verifyOtp` regardless of role.
+ * @param options.email - The address to mint a session for.
+ * @returns The session cookies captured from the `@supabase/ssr` cookie sink.
  */
-async function mintSessionCookies(
-	admin: SupabaseClient,
-	url: string,
-	serviceRoleKey: string,
-	email: string,
-): Promise<SessionCookie[]> {
+/* oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `admin` is
+ * `@supabase/supabase-js`'s own `SupabaseClient`, whose generic type parameters carry nested
+ * non-readonly members; wrapping the destructured parameter in `Readonly<>` doesn't reach them,
+ * and that type isn't ours to edit.
+ */
+async function mintSessionCookies({
+	admin,
+	url,
+	serviceRoleKey,
+	email,
+}: Readonly<{
+	admin: SupabaseClient;
+	url: string;
+	serviceRoleKey: string;
+	email: string;
+}>): Promise<SessionCookie[]> {
 	const captured: SessionCookie[] = [];
 
 	// The service-role key here (where this call conventionally takes the
@@ -87,6 +109,11 @@ async function mintSessionCookies(
 	const cookieClient = createServerClient(url, serviceRoleKey, {
 		cookies: {
 			getAll: () => [],
+			/* oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `cookies`'
+			 * inferred element type carries `@supabase/ssr`'s own `CookieOptions`, which nests a
+			 * non-readonly property from the `cookie` package; that type isn't ours to edit (see
+			 * `apps/web/src/server/supabase.ts`'s `serialize`, which hits the identical cause).
+			 */
 			setAll: (cookies) => {
 				for (const cookie of cookies) {
 					if (cookie.value !== '') captured.push({ name: cookie.name, value: cookie.value });
@@ -128,6 +155,10 @@ async function mintSessionCookies(
  * still delivered there in local development, but it must not be forced on
  * an `http://` CI preview that isn't `localhost`, or the cookie would never
  * be sent at all.
+ *
+ * @param cookies - The session cookies minted by `mintSessionCookies`.
+ * @param baseURL - The app's base URL; its scheme and hostname decide whether `secure` is forced.
+ * @returns Cookie descriptors ready for `context.addCookies`.
  */
 function toBrowserCookies(
 	cookies: readonly SessionCookie[],
@@ -158,32 +189,103 @@ interface Team {
 	readonly slug: string;
 }
 
+/**
+ * Reads and validates the three environment variables authenticated e2e needs, throwing one
+ * combined error naming every missing one — without them these specs would run signed out and
+ * pass against the login page, the same failure the protection-bypass work fixed in September.
+ *
+ * @returns The validated `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` and `E2E_DATABASE_URL`.
+ */
+function requireE2eEnv(): { databaseUrl: string; serviceRoleKey: string; url: string } {
+	const url = process.env.SUPABASE_URL;
+	const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+	const databaseUrl = process.env.E2E_DATABASE_URL;
+	if (
+		url === undefined ||
+		url === '' ||
+		serviceRoleKey === undefined ||
+		serviceRoleKey === '' ||
+		databaseUrl === undefined ||
+		databaseUrl === ''
+	) {
+		const missing: string[] = [];
+		if (url === undefined || url === '') missing.push('SUPABASE_URL');
+		if (serviceRoleKey === undefined || serviceRoleKey === '')
+			missing.push('SUPABASE_SERVICE_ROLE_KEY');
+		if (databaseUrl === undefined || databaseUrl === '') missing.push('E2E_DATABASE_URL');
+		throw new Error(
+			`${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} required for authenticated e2e. ` +
+				'Without them these specs would run signed out and pass against the login page — ' +
+				'the same failure the protection-bypass work fixed in September.',
+		);
+	}
+	return { databaseUrl, serviceRoleKey, url };
+}
+
+/**
+ * Seeds the fixture's throwaway team and its owning membership row directly over Postgres,
+ * bypassing `POST /v1/teams` — that endpoint is restricted to `MAINTAINER_USER_IDS`, a fixed
+ * allowlist a freshly-minted test user can never be on (see this file's top-of-file comment).
+ *
+ * @param db - The e2e database connection, already open.
+ * @param userId - The fixture user who owns the new team.
+ * @returns The seeded team's id, name and slug.
+ */
+/* oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `db` is `node-postgres`'s
+ * own `Client`, whose `query`/`connect`/`end` methods mutate its connection state; that type
+ * isn't ours to edit, and wrapping it in `Readonly<>` was tried and still fails the check.
+ */
+async function seedFixtureTeam(db: PgClient, userId: string): Promise<Team> {
+	// Captured in its own variable, not inlined into the query's parameter
+	// array, so the exact string this run generated can be handed back to
+	// the caller (below) alongside the id — `i18n.spec.ts` needs the literal
+	// value to tell its own crawl "this string is this run's team name, not
+	// hardcoded UI copy" (`teamName` fixture, further down).
+	const teamName = `e2e ${randomUUID()}`;
+	const teamSlug = `e2e-${randomUUID().replaceAll('-', '').slice(0, TEAM_SLUG_RANDOM_HEX_LENGTH)}`;
+	const teamResult = await db.query<{ id: string }>(
+		'insert into team (name, slug) values ($1, $2) returning id',
+		[teamName, teamSlug],
+	);
+	const teamRow = teamResult.rows[0];
+	if (teamRow === undefined) {
+		throw new Error('could not seed the e2e fixture team: insert returned no row');
+	}
+
+	await db.query('insert into team_member (team_id, user_id, role) values ($1, $2, $3)', [
+		teamRow.id,
+		userId,
+		'owner',
+	]);
+
+	return { id: teamRow.id, name: teamName, slug: teamSlug };
+}
+
 export const test = base.extend<{
 	team: Team;
 	teamId: string;
 	teamName: string;
 	teamSlug: string;
 }>({
+	/* oxlint-disable-next-line eslint/max-statements, typescript/prefer-readonly-parameter-types --
+	 * two independent reasons on one line. `max-statements`: Playwright's fixture API gives setup,
+	 * the one `use()` call and teardown exactly one shared closure (not separate hooks),
+	 * specifically so a `finally` can guarantee cleanup however far setup got — `db`, `admin`,
+	 * `userId` and `teamId` all have to be live across that whole span; `requireE2eEnv` and
+	 * `seedFixtureTeam` above already carry the two pieces that don't need to share that span, and
+	 * threading the rest through further functions would be indirection, not simplification, for
+	 * what one fixture is inherently doing. `prefer-readonly-parameter-types`: Playwright's own
+	 * fixture argument type nests `BrowserContext`, whose methods (`addCookies` among them) mutate;
+	 * that type isn't ours to edit, and this fixture calls exactly that method below.
+	 */
 	team: async ({ context, baseURL }, use): Promise<void> => {
-		const url = process.env.SUPABASE_URL;
-		const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-		const databaseUrl = process.env.E2E_DATABASE_URL;
-		if (!url || !serviceRoleKey || !databaseUrl) {
-			const missing: string[] = [];
-			if (!url) missing.push('SUPABASE_URL');
-			if (!serviceRoleKey) missing.push('SUPABASE_SERVICE_ROLE_KEY');
-			if (!databaseUrl) missing.push('E2E_DATABASE_URL');
-			throw new Error(
-				`${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} required for authenticated e2e. ` +
-					'Without them these specs would run signed out and pass against the login page — ' +
-					'the same failure the protection-bypass work fixed in September.',
-			);
-		}
+		const { databaseUrl, serviceRoleKey, url } = requireE2eEnv();
 		// playwright.config.ts always sets `use.baseURL` (to BASE_URL or the
 		// localhost fallback), so this is only ever undefined if that invariant
 		// is broken — worth a loud failure rather than silently addressing
 		// cookies to a wrong host.
-		if (!baseURL) throw new Error('baseURL fixture is unset — check playwright.config.ts');
+		if (baseURL === undefined)
+			throw new Error('baseURL fixture is unset — check playwright.config.ts');
 
 		const admin = createClient(url, serviceRoleKey);
 		const db = new PgClient({ connectionString: databaseUrl });
@@ -191,8 +293,8 @@ export const test = base.extend<{
 
 		const email = `e2e-${randomUUID()}@example.com`;
 
-		let userId: string | undefined;
-		let teamId: string | undefined;
+		let userId: string | undefined = undefined;
+		let teamId: string | undefined = undefined;
 
 		try {
 			const { data: created, error: createUserError } = await admin.auth.admin.createUser({
@@ -207,37 +309,13 @@ export const test = base.extend<{
 			}
 			userId = created.user.id;
 
-			// Captured in its own variable, not inlined into the query's parameter
-			// array, so the exact string this run generated can be handed back to
-			// the caller (below) alongside the id — `i18n.spec.ts` needs the literal
-			// value to tell its own crawl "this string is this run's team name, not
-			// hardcoded UI copy" (`teamName` fixture, further down).
-			const teamName = `e2e ${randomUUID()}`;
-			// Twelve hex characters, not the full UUID: the slug format caps at 40
-			// characters and forbids a trailing hyphen, and these rows are deleted
-			// at the end of each test, so 48 bits of entropy is far more than the
-			// collision window needs.
-			const teamSlug = `e2e-${randomUUID().replaceAll('-', '').slice(0, 12)}`;
-			const teamResult = await db.query<{ id: string }>(
-				'insert into team (name, slug) values ($1, $2) returning id',
-				[teamName, teamSlug],
-			);
-			const teamRow = teamResult.rows[0];
-			if (!teamRow) {
-				throw new Error('could not seed the e2e fixture team: insert returned no row');
-			}
-			teamId = teamRow.id;
+			const team = await seedFixtureTeam(db, userId);
+			teamId = team.id;
 
-			await db.query('insert into team_member (team_id, user_id, role) values ($1, $2, $3)', [
-				teamId,
-				userId,
-				'owner',
-			]);
-
-			const cookies = await mintSessionCookies(admin, url, serviceRoleKey, email);
+			const cookies = await mintSessionCookies({ admin, email, serviceRoleKey, url });
 			await context.addCookies(toBrowserCookies(cookies, baseURL));
 
-			await use({ id: teamId, name: teamName, slug: teamSlug });
+			await use(team);
 		} finally {
 			// Team first, then user: `link.created_by` references `auth.users`
 			// with no `on delete cascade` (deliberately — see the migration's own
@@ -261,16 +339,20 @@ export const test = base.extend<{
 	 * database assertions — it is a real column value, not a URL fragment —
 	 * while `teamSlug` is what every spec now builds `/teams/...` URLs from,
 	 * since that is what the app itself routes on.
+	 *
+	 * @param root0 - The fixtures this one depends on.
+	 * @param root0.team - The provisioned team to read the id from.
+	 * @param use - Playwright's callback, given this fixture's value.
 	 */
-	teamId: async ({ team }, use): Promise<void> => {
+	teamId: async ({ team }: { readonly team: Team }, use): Promise<void> => {
 		await use(team.id);
 	},
 
-	teamName: async ({ team }, use): Promise<void> => {
+	teamName: async ({ team }: { readonly team: Team }, use): Promise<void> => {
 		await use(team.name);
 	},
 
-	teamSlug: async ({ team }, use): Promise<void> => {
+	teamSlug: async ({ team }: { readonly team: Team }, use): Promise<void> => {
 		await use(team.slug);
 	},
 });

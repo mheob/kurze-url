@@ -1,3 +1,7 @@
+/* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding of this rule in this
+   file traces to `@kurze-url/api-client`'s generated `Domain` type, whose properties are not
+   marked readonly; that is generated codegen output, never edited by hand. */
+
 import type { Domain as ApiDomain, VerifyDomainOutputBody } from '@kurze-url/api-client';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -45,6 +49,10 @@ interface RenderOverrides {
  * `DomainList` renders no `<Link>` at all — there is no per-domain detail
  * page to navigate to, only inline `onVerify`/`onDelete` callbacks — so it
  * needs nothing beyond an `I18nextProvider`.
+ *
+ * @param domains - The domains to render.
+ * @param overrides - Optional callback and pending/blocked-state overrides for the render.
+ * @returns The rendered test utilities from Testing Library's `render`.
  */
 function renderList(
 	domains: ApiDomain[],
@@ -56,8 +64,8 @@ function renderList(
 				deleteBlockedCount={overrides.deleteBlockedCount}
 				deletingId={overrides.deletingId ?? null}
 				domains={domains}
-				onDelete={overrides.onDelete ?? vi.fn()}
-				onVerify={vi.fn()}
+				onDelete={overrides.onDelete ?? vi.fn<(domainId: string) => void>()}
+				onVerify={vi.fn<(domainId: string) => void>()}
 				pendingReason={overrides.pendingReason}
 				verifyPending={overrides.verifyPending}
 				verifyingId={overrides.verifyingId ?? null}
@@ -66,7 +74,7 @@ function renderList(
 	);
 }
 
-describe('DomainList', () => {
+describe(DomainList, () => {
 	it('shows both DNS records for a pending domain', () => {
 		// A Verein that cannot see what to put in DNS cannot proceed, and this
 		// is the only screen that tells them.
@@ -101,7 +109,7 @@ describe('DomainList', () => {
 
 	it('hides the records once the domain works', () => {
 		renderList([verifiedDomain]);
-		expect(screen.queryByText(/_kurze-url-challenge/)).not.toBeInTheDocument();
+		expect(screen.queryByText(/_kurze-url-challenge/u)).not.toBeInTheDocument();
 	});
 
 	it('explains which half of verification is missing', () => {
@@ -111,7 +119,7 @@ describe('DomainList', () => {
 		// `pendingReason` to this specific domain — see `DomainList`'s own
 		// docstring for why a single reason slot is enough for this screen.
 		renderList([pendingDomain], { pendingReason: 'unreachable', verifyingId: pendingDomain.id });
-		expect(screen.getByText(/does not reach us yet/i)).toBeInTheDocument();
+		expect(screen.getByText(/does not reach us yet/iu)).toBeInTheDocument();
 	});
 
 	it('explains a missing TXT record', () => {
@@ -124,7 +132,7 @@ describe('DomainList', () => {
 			pendingReason: 'token_missing',
 			verifyingId: pendingDomain.id,
 		});
-		expect(screen.getByText(/txt record is not visible yet/i)).toBeInTheDocument();
+		expect(screen.getByText(/txt record is not visible yet/iu)).toBeInTheDocument();
 	});
 
 	it('explains a TXT record whose value does not match', () => {
@@ -132,18 +140,18 @@ describe('DomainList', () => {
 			pendingReason: 'token_mismatch',
 			verifyingId: pendingDomain.id,
 		});
-		expect(screen.getByText(/its value does not match/i)).toBeInTheDocument();
+		expect(screen.getByText(/its value does not match/iu)).toBeInTheDocument();
 	});
 
 	it('does not explain a reason that belongs to a different domain', () => {
 		// `verifyingId` matches neither rendered domain here — the reason must
 		// not be misattributed to one it was never about.
-		const other = domain({ id: 'domain-2', hostname: 'other.verein.test' });
+		const other = domain({ hostname: 'other.verein.test', id: 'domain-2' });
 		renderList([pendingDomain, other], {
 			pendingReason: 'unreachable',
 			verifyingId: 'domain-3',
 		});
-		expect(screen.queryByText(/does not reach us yet/i)).not.toBeInTheDocument();
+		expect(screen.queryByText(/does not reach us yet/iu)).not.toBeInTheDocument();
 	});
 
 	it('puts the records in a table, not in divs', () => {
@@ -155,13 +163,13 @@ describe('DomainList', () => {
 
 	it('shows the empty state when the team has no domains', () => {
 		renderList([]);
-		expect(screen.getByText(/no domains yet/i)).toBeInTheDocument();
+		expect(screen.getByText(/no domains yet/iu)).toBeInTheDocument();
 	});
 
 	it('shows a status per domain, including a losing claim', () => {
 		const failed = domain({ id: 'domain-3', verification_status: 'failed' });
 		renderList([failed]);
-		expect(screen.getByText(/another team verified this hostname first/i)).toBeInTheDocument();
+		expect(screen.getByText(/another team verified this hostname first/iu)).toBeInTheDocument();
 		expect(screen.queryByRole('button', { name: 'Check now' })).not.toBeInTheDocument();
 	});
 
@@ -173,15 +181,15 @@ describe('DomainList', () => {
 	it('disables Check now while a verify for that domain is in flight', () => {
 		// A second click before the first response lands must not fire a
 		// second, overlapping verify request for the same domain.
-		renderList([pendingDomain], { verifyingId: pendingDomain.id, verifyPending: true });
+		renderList([pendingDomain], { verifyPending: true, verifyingId: pendingDomain.id });
 		expect(screen.getByRole('button', { name: 'Check now' })).toBeDisabled();
 	});
 
 	it('does not disable a different domain while another one is verifying', () => {
 		// `verifyPending` is a single slot, correlated by `verifyingId` — the
 		// same discipline `pendingReason`/`deleteBlockedCount` already follow.
-		const other = domain({ id: 'domain-2', hostname: 'other.verein.test' });
-		renderList([pendingDomain, other], { verifyingId: pendingDomain.id, verifyPending: true });
+		const other = domain({ hostname: 'other.verein.test', id: 'domain-2' });
+		renderList([pendingDomain, other], { verifyPending: true, verifyingId: pendingDomain.id });
 		const buttons = screen.getAllByRole('button', { name: 'Check now' });
 		expect(buttons[0]).toBeDisabled();
 		expect(buttons[1]).toBeEnabled();
@@ -191,7 +199,7 @@ describe('DomainList', () => {
 		// A bare "Delete" repeated on every row is ambiguous to anyone tabbing
 		// through them rather than reading the row visually — the same
 		// reasoning that gave the two DNS copy buttons distinct names.
-		const other = domain({ id: 'domain-2', hostname: 'other.verein.test' });
+		const other = domain({ hostname: 'other.verein.test', id: 'domain-2' });
 		renderList([pendingDomain, other]);
 
 		expect(screen.getByRole('button', { name: 'Delete links.verein.test' })).toBeInTheDocument();
@@ -201,8 +209,8 @@ describe('DomainList', () => {
 	it('calls onDelete with the id of the domain that was actually confirmed', async () => {
 		// Two domains rendered, and the *second* row confirmed — a test that
 		// always fires on the first row cannot pass by accident.
-		const onDelete = vi.fn();
-		const other = domain({ id: 'domain-2', hostname: 'other.verein.test' });
+		const onDelete = vi.fn<(domainId: string) => void>();
+		const other = domain({ hostname: 'other.verein.test', id: 'domain-2' });
 		renderList([pendingDomain, other], { onDelete });
 
 		await userEvent.click(screen.getByRole('button', { name: 'Delete other.verein.test' }));
@@ -214,7 +222,7 @@ describe('DomainList', () => {
 	it('requires confirmation before onDelete fires', async () => {
 		// Nothing restores a deleted domain, and an empty one is gone for good —
 		// one misclick must not be enough.
-		const onDelete = vi.fn();
+		const onDelete = vi.fn<(domainId: string) => void>();
 		renderList([pendingDomain], { onDelete });
 
 		await userEvent.click(screen.getByRole('button', { name: 'Delete links.verein.test' }));
@@ -238,8 +246,8 @@ describe('DomainList', () => {
 	it('does not attribute a blocking-link count to a domain it was never about', () => {
 		// `deletingId` matches neither rendered domain here — the same
 		// correlation discipline `verifyingId`/`pendingReason` already follow.
-		const other = domain({ id: 'domain-2', hostname: 'other.verein.test' });
+		const other = domain({ hostname: 'other.verein.test', id: 'domain-2' });
 		renderList([pendingDomain, other], { deleteBlockedCount: 3, deletingId: 'domain-3' });
-		expect(screen.queryByText(/still has 3 links/i)).not.toBeInTheDocument();
+		expect(screen.queryByText(/still has 3 links/iu)).not.toBeInTheDocument();
 	});
 });

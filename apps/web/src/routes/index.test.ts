@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('./_authed', () => ({ fetchMe: mocks.fetchMe }));
 
+// oxlint-disable-next-line node/no-top-level-await -- `vi.mock` above is hoisted; importing the subject module only after it, at module scope, is Vitest's own documented way to get a mocked dependency into an ESM import — the same pattern every other `*.test.ts(x)` in this app that mocks an import uses.
 const { fetchCurrentUser, resolveHomeOutcome } = await import('./index');
 
 const memberships = [
@@ -43,18 +44,21 @@ describe('fetchCurrentUser', () => {
 	it('returns the session when there is one', async () => {
 		const me: Me = { email: 'a@example.test', is_maintainer: false, memberships, user_id: 'u1' };
 		mocks.fetchMe.mockResolvedValueOnce(me);
-		await expect(fetchCurrentUser()).resolves.toEqual(me);
+		await expect(fetchCurrentUser()).resolves.toStrictEqual(me);
 	});
 });
 
 describe('resolveHomeOutcome', () => {
 	it('shows the marketing shell to a signed-out visitor', () => {
-		expect(resolveHomeOutcome(undefined, undefined)).toEqual({ kind: 'marketing' });
+		expect(resolveHomeOutcome(undefined, undefined)).toStrictEqual({ kind: 'marketing' });
 	});
 
 	it('redirects a signed-in visitor to the resolved team', () => {
 		const me: Me = { email: 'a@example.test', is_maintainer: false, memberships, user_id: 'u1' };
-		expect(resolveHomeOutcome(me, 'verein-a')).toEqual({ kind: 'redirect', teamSlug: 'verein-a' });
+		expect(resolveHomeOutcome(me, 'verein-a')).toStrictEqual({
+			kind: 'redirect',
+			teamSlug: 'verein-a',
+		});
 	});
 
 	/**
@@ -70,7 +74,10 @@ describe('resolveHomeOutcome', () => {
 	 */
 	it('redirects to the remembered team, not necessarily the first membership', () => {
 		const me: Me = { email: 'a@example.test', is_maintainer: false, memberships, user_id: 'u1' };
-		expect(resolveHomeOutcome(me, 'verein-b')).toEqual({ kind: 'redirect', teamSlug: 'verein-b' });
+		expect(resolveHomeOutcome(me, 'verein-b')).toStrictEqual({
+			kind: 'redirect',
+			teamSlug: 'verein-b',
+		});
 	});
 
 	it('shows the no-team outcome for a signed-in visitor with no resolved team', () => {
@@ -80,7 +87,10 @@ describe('resolveHomeOutcome', () => {
 			memberships: [],
 			user_id: 'u1',
 		};
-		expect(resolveHomeOutcome(me, undefined)).toEqual({ isMaintainer: false, kind: 'noTeam' });
+		expect(resolveHomeOutcome(me, undefined)).toStrictEqual({
+			isMaintainer: false,
+			kind: 'noTeam',
+		});
 	});
 
 	/**
@@ -98,7 +108,7 @@ describe('resolveHomeOutcome', () => {
 			memberships: [],
 			user_id: 'u1',
 		};
-		expect(resolveHomeOutcome(maintainer, undefined)).toEqual({
+		expect(resolveHomeOutcome(maintainer, undefined)).toStrictEqual({
 			isMaintainer: true,
 			kind: 'noTeam',
 		});

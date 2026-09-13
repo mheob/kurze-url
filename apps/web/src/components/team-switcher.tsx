@@ -20,8 +20,14 @@ interface TeamSwitcherProps {
  * render-time mutation of `document` rather than the click-time one it
  * actually is (the same reasoning `language-switcher.tsx`'s `choose` is
  * factored out for).
+ *
+ * @param teamSlug - The team's slug to remember; read back on the next request to `/`.
  */
 function remember(teamSlug: string): void {
+	// The Cookie Store API's `set()` is Promise-based; this write has to be
+	// visible to the very next request to `/`, which can follow this click
+	// synchronously, so an awaited alternative could lose the race.
+	// oxlint-disable-next-line unicorn/no-document-cookie
 	document.cookie = teamCookie(teamSlug);
 }
 
@@ -38,7 +44,9 @@ export function TeamSwitcher({
 					<li key={membership.team_id}>
 						<Link
 							aria-current={membership.slug === currentTeamSlug ? 'page' : undefined}
-							onClick={() => remember(membership.slug)}
+							onClick={() => {
+								remember(membership.slug);
+							}}
 							params={{ teamSlug: membership.slug }}
 							to="/teams/$teamSlug/links"
 						>

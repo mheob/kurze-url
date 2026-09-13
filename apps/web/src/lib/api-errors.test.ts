@@ -37,7 +37,7 @@ function problem(
 	return { detail, errors, status, title: 'x' };
 }
 
-describe('classifyApiError', () => {
+describe(classifyApiError, () => {
 	it('maps 401 to unauthenticated', () => {
 		expect(classifyApiError(problem(401))).toStrictEqual({ kind: 'unauthenticated' });
 	});
@@ -187,7 +187,7 @@ describe('classifyApiError', () => {
 				errors: [{ location: 'query.fg', message: 'too close', value: 'low_contrast' }],
 				status: 422,
 			}),
-		).toEqual({ kind: 'qrRejected', reason: 'low_contrast' });
+		).toStrictEqual({ kind: 'qrRejected', reason: 'low_contrast' });
 	});
 
 	it('reads a QR size refusal off query.size', () => {
@@ -196,7 +196,7 @@ describe('classifyApiError', () => {
 				errors: [{ location: 'query.size', message: 'PNG only', value: 'size_requires_png' }],
 				status: 422,
 			}),
-		).toEqual({ kind: 'qrRejected', reason: 'size_requires_png' });
+		).toStrictEqual({ kind: 'qrRejected', reason: 'size_requires_png' });
 	});
 
 	it('falls back to a generic QR rejection for a token this build does not know', () => {
@@ -205,7 +205,7 @@ describe('classifyApiError', () => {
 				errors: [{ location: 'query.fg', message: 'nope', value: 'invented_by_a_newer_server' }],
 				status: 422,
 			}),
-		).toEqual({ kind: 'qrRejected', reason: 'rejected' });
+		).toStrictEqual({ kind: 'qrRejected', reason: 'rejected' });
 	});
 
 	it('leaves a 422 on some other query parameter to the field path', () => {
@@ -214,11 +214,11 @@ describe('classifyApiError', () => {
 				errors: [{ location: 'query.per_page', message: 'too large' }],
 				status: 422,
 			}),
-		).toEqual({ fields: { per_page: 'too large' }, kind: 'fields' });
+		).toStrictEqual({ fields: { per_page: 'too large' }, kind: 'fields' });
 	});
 });
 
-describe('statusOf', () => {
+describe(statusOf, () => {
 	it('reads the numeric status off a thrown problem body', () => {
 		expect(statusOf(problem(409))).toBe(409);
 	});
@@ -243,7 +243,7 @@ describe('a slug conflict', () => {
 					'a team with that slug already exists',
 				),
 			),
-		).toEqual({ kind: 'slugTaken' });
+		).toStrictEqual({ kind: 'slugTaken' });
 	});
 
 	/**
@@ -253,7 +253,7 @@ describe('a slug conflict', () => {
 	 * such call site would start rendering a message about slugs.
 	 */
 	it('does not swallow a conflict that carries no field detail', () => {
-		expect(classifyApiError(problem(409, undefined, 'already verified elsewhere'))).toEqual({
+		expect(classifyApiError(problem(409, undefined, 'already verified elsewhere'))).toStrictEqual({
 			kind: 'unknown',
 		});
 	});
@@ -273,7 +273,7 @@ describe('a slug conflict', () => {
 					'the requested slug conflicts with an existing team',
 				),
 			),
-		).toEqual({ kind: 'unknown' });
+		).toStrictEqual({ kind: 'unknown' });
 	});
 });
 
@@ -287,7 +287,7 @@ describe('a rejected link password', () => {
 			problem(422, [{ location: 'body.password', value: 'derived_from_context' }]),
 		);
 
-		expect(failure).toEqual({ kind: 'passwordRejected', reason: 'derived_from_context' });
+		expect(failure).toStrictEqual({ kind: 'passwordRejected', reason: 'derived_from_context' });
 	});
 
 	it('still classifies other 422s as field errors', () => {
@@ -310,7 +310,7 @@ describe('a rejected link password', () => {
 			problem(422, [{ location: 'body.password', value: 'too_predictable' }]),
 		);
 
-		expect(failure).toEqual({ kind: 'passwordRejected', reason: 'rejected' });
+		expect(failure).toStrictEqual({ kind: 'passwordRejected', reason: 'rejected' });
 	});
 
 	/**
@@ -321,6 +321,6 @@ describe('a rejected link password', () => {
 	it('falls back to a generic reason when the value is missing', () => {
 		const failure = classifyApiError(problem(422, [{ location: 'body.password' }]));
 
-		expect(failure).toEqual({ kind: 'passwordRejected', reason: 'rejected' });
+		expect(failure).toStrictEqual({ kind: 'passwordRejected', reason: 'rejected' });
 	});
 });

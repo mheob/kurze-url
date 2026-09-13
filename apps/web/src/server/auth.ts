@@ -4,6 +4,12 @@ import { getRequest, getRequestUrl } from '@tanstack/react-start/server';
 import { flushSessionCookies } from './session';
 import { createSupabase } from './supabase';
 
+// Stays here, ahead of the exports block below, even though that leaves this
+// one `export const` flagged by import(exports-last): sendMagicLinkForImpl
+// reads it by value, and eslint(no-use-before-define) checks a variable's
+// textual position regardless of the enclosing function's hoisting, so
+// moving this down would trade one lint rule's warning for the other. Every
+// other export in this file moved cleanly.
 /**
  * Floor under `sendMagicLinkFor`'s response time. Defends the same
  * enumeration guarantee as the discarded error below, but for *timing*
@@ -14,9 +20,27 @@ import { createSupabase } from './supabase';
  * belong to a Verein. ~1s comfortably swamps the fast-fail path while
  * staying invisible on a flow that already waits on an email.
  */
+/* oxlint-disable-next-line import/exports-last -- see the comment above this doc block: moving
+ * this to the bottom with the other exports trades this warning for `eslint/no-use-before-define`
+ * on `sendMagicLinkForImpl`'s reference to it, which checks textual position, not hoisting.
+ */
 export const ENUMERATION_TIMING_FLOOR_MS = 1000;
 
-function delay(ms: number): Promise<void> {
+/**
+ * `setTimeout`-backed, deliberately, rather than `node:timers/promises`'s own promise-returning
+ * `setTimeout`: that version was tried, and `auth.test.ts`'s fake-timer tests broke under it —
+ * `vi.useFakeTimers()`/`vi.advanceTimersByTimeAsync` patch the global `setTimeout` this wraps,
+ * not whatever timer primitive Node's own promisified helper uses internally, so the floor this
+ * exists to make testable stopped being controllable by the fake clock at all.
+ *
+ * @param ms - How long to wait.
+ * @returns A promise that resolves after `ms` milliseconds.
+ */
+async function delay(ms: number): Promise<void> {
+	/* oxlint-disable-next-line promise/avoid-new -- promisifying the callback-based global
+	 * `setTimeout` requires `new Promise` here; there is no other way to `await` a timer while
+	 * staying controllable by `vi.useFakeTimers()` (see the doc comment above).
+	 */
 	return new Promise((resolve) => {
 		setTimeout(resolve, ms);
 	});
@@ -37,6 +61,10 @@ function delay(ms: number): Promise<void> {
  * before Supabase knows whether the address exists, so doing this any other
  * way would reopen the timing/shape side-channel the floor and the
  * discarded error below exist to close.
+ *
+ * @param email - The address to send the magic link to; never confirmed to exist or not.
+ * @param origin - This request's origin, used for the redirect URL and the synthetic request Supabase reads cookies from.
+ * @returns `{ sent: true }` unconditionally, whether or not the address is known.
  */
 async function sendMagicLinkForImpl(email: string, origin: string): Promise<{ sent: true }> {
 	const headers = new Headers();
@@ -50,7 +78,7 @@ async function sendMagicLinkForImpl(email: string, origin: string): Promise<{ se
 	await Promise.allSettled([
 		supabase.auth.signInWithOtp({
 			email,
-			options: { shouldCreateUser: false, emailRedirectTo: `${origin}/auth/callback` },
+			options: { emailRedirectTo: `${origin}/auth/callback`, shouldCreateUser: false },
 		}),
 		delay(ENUMERATION_TIMING_FLOOR_MS),
 	]);
@@ -100,8 +128,10 @@ export const sendMagicLinkFor = createServerOnlyFn(sendMagicLinkForImpl);
  * `getPreferences` uses for `getRequestHeader`.
  */
 export const sendMagicLink = createServerFn({ method: 'POST' })
-	.validator((data: { email: string }) => data)
-	.handler(async ({ data }) => sendMagicLinkFor(data.email, getRequestUrl().origin));
+	.validator((data: { readonly email: string }) => data)
+	.handler(async ({ data }: { readonly data: { readonly email: string } }) =>
+		sendMagicLinkFor(data.email, getRequestUrl().origin),
+	);
 
 /**
  * `getRequest()` (not a `request` field on the handler's context — same

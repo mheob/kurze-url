@@ -14,7 +14,7 @@ function renderWith(value: string): ReturnType<typeof render> {
 	);
 }
 
-describe('CopyButton', () => {
+describe(CopyButton, () => {
 	it('copies the given value to the clipboard', async () => {
 		// jsdom itself has no Clipboard implementation at all — `userEvent.setup()`
 		// is what installs a working in-memory stub on `navigator.clipboard`
@@ -45,6 +45,6 @@ describe('CopyButton', () => {
 
 		await user.click(screen.getByRole('button', { name: 'Copy' }));
 
-		expect(await screen.findByText('Copied')).toBe(liveRegion);
+		await expect(screen.findByText('Copied')).resolves.toBe(liveRegion);
 	});
 });

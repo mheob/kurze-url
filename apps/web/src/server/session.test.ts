@@ -35,7 +35,12 @@ interface FakeResponse {
 }
 
 const mocks = vi.hoisted(() => ({
-	createSupabase: vi.fn<(request: Request, headers: Headers) => FakeSupabaseClient>(),
+	/* oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `request` is `Request`,
+	 * which nests a mutable `Headers` through its own `.headers` getter; `Readonly<>` is shallow
+	 * and doesn't reach that nested property, unlike the bare `Headers` parameter beside it, which
+	 * the check accepts once wrapped.
+	 */
+	createSupabase: vi.fn<(request: Request, headers: Readonly<Headers>) => FakeSupabaseClient>(),
 	getResponse: vi.fn<() => FakeResponse>(),
 }));
 
@@ -54,15 +59,19 @@ function req(): [Request, Headers] {
 function withSession(accessToken: string | null): void {
 	mocks.createSupabase.mockReturnValue({
 		auth: {
+			/* oxlint-disable-next-line typescript/require-await -- this mock stands in for
+			 * `createSupabase`'s real `getSession`, which is genuinely async; the body has
+			 * nothing to await, but the return type must stay `Promise<...>` to match.
+			 */
 			getSession: vi.fn(async () => ({
-				data: { session: accessToken ? { access_token: accessToken } : null },
+				data: { session: accessToken !== null ? { access_token: accessToken } : null },
 				error: null,
 			})),
 		},
 	});
 }
 
-describe('getAccessToken', () => {
+describe(getAccessToken, () => {
 	it('returns the token when a session exists', async () => {
 		withSession('tok');
 		await expect(getAccessToken(...req())).resolves.toBe('tok');
@@ -74,7 +83,7 @@ describe('getAccessToken', () => {
 	});
 });
 
-describe('requireSession', () => {
+describe(requireSession, () => {
 	it('throws UnauthenticatedError rather than returning an empty token', async () => {
 		// The guard must fail closed. Returning '' here would send an
 		// unauthenticated request to the API, which answers 401 — the same
@@ -85,11 +94,11 @@ describe('requireSession', () => {
 
 	it('returns the token when a session exists', async () => {
 		withSession('tok');
-		await expect(requireSession(...req())).resolves.toEqual({ accessToken: 'tok' });
+		await expect(requireSession(...req())).resolves.toStrictEqual({ accessToken: 'tok' });
 	});
 });
 
-describe('flushSessionCookies', () => {
+describe(flushSessionCookies, () => {
 	/**
 	 * The defect this guards against: `createSupabase(request, headers)`
 	 * writes into a `Headers` object nothing else reads. A no-op
@@ -102,7 +111,11 @@ describe('flushSessionCookies', () => {
 	it('appends every Set-Cookie the adapter wrote onto the real response', () => {
 		const appended: string[] = [];
 		mocks.getResponse.mockReturnValue({
-			headers: { append: (name, value) => appended.push(`${name}: ${value}`) },
+			headers: {
+				append: (name, value) => {
+					appended.push(`${name}: ${value}`);
+				},
+			},
 		});
 
 		const adapterHeaders = new Headers();
@@ -111,7 +124,7 @@ describe('flushSessionCookies', () => {
 
 		flushSessionCookies(adapterHeaders);
 
-		expect(appended).toEqual([
+		expect(appended).toStrictEqual([
 			'set-cookie: sb-access-token=abc; Path=/; HttpOnly',
 			'set-cookie: sb-refresh-token=def; Path=/; HttpOnly',
 		]);
@@ -120,11 +133,15 @@ describe('flushSessionCookies', () => {
 	it('does nothing to the response when the adapter wrote no cookies', () => {
 		const appended: string[] = [];
 		mocks.getResponse.mockReturnValue({
-			headers: { append: (name, value) => appended.push(`${name}: ${value}`) },
+			headers: {
+				append: (name, value) => {
+					appended.push(`${name}: ${value}`);
+				},
+			},
 		});
 
 		flushSessionCookies(new Headers());
 
-		expect(appended).toEqual([]);
+		expect(appended).toStrictEqual([]);
 	});
 });

@@ -6,19 +6,6 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-/**
- * Auth cookies are not preference cookies. `preferences.ts` writes `lang` and
- * `theme` for the client to read; these must be invisible to JavaScript, which
- * is the whole reason the access token lives here rather than in memory the
- * browser can reach.
- */
-export const SUPABASE_COOKIE_OPTIONS: CookieOptions = {
-	httpOnly: true,
-	sameSite: 'lax',
-	secure: true,
-	path: '/',
-};
-
 // Mirrors the `cookie` package's own `sameSite` mapping (the same package
 // @supabase/ssr's `CookieOptions` type is defined against): `true` and
 // `'strict'` both serialize to `Strict`; only `'none'` serializes to `None`.
@@ -30,17 +17,23 @@ function sameSiteValue(sameSite: NonNullable<CookieOptions['sameSite']>): string
 	return 'Lax';
 }
 
+/* oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `CookieOptions` is
+ * `@supabase/ssr`'s own type (itself derived from the `cookie` package's `SerializeOptions`);
+ * wrapping it in `Readonly<>` was tried and it still fails the deep check on a nested property
+ * that library defines, not this file, and it cannot be edited from this side.
+ */
 function serialize(name: string, value: string, options: CookieOptions): string {
 	const parts = [`${name}=${value}`, `Path=${options.path ?? '/'}`];
 	if (options.maxAge !== undefined) parts.push(`Max-Age=${options.maxAge}`);
-	if (options.httpOnly) parts.push('HttpOnly');
-	if (options.secure) parts.push('Secure');
-	if (options.sameSite) parts.push(`SameSite=${sameSiteValue(options.sameSite)}`);
+	if (options.httpOnly === true) parts.push('HttpOnly');
+	if (options.secure === true) parts.push('Secure');
+	if (options.sameSite !== undefined && options.sameSite !== false)
+		parts.push(`SameSite=${sameSiteValue(options.sameSite)}`);
 	return parts.join('; ');
 }
 
 function parse(cookieHeader: string | null): { name: string; value: string }[] {
-	if (!cookieHeader) return [];
+	if (cookieHeader === null || cookieHeader === '') return [];
 
 	return cookieHeader
 		.split(';')
@@ -50,15 +43,28 @@ function parse(cookieHeader: string | null): { name: string; value: string }[] {
 			const [name, ...rest] = part.split('=');
 			return { name: name?.trim() ?? '', value: rest.join('=') };
 		})
-		.filter((c) => c.name !== '');
+		.filter((c: Readonly<{ name: string; value: string }>) => c.name !== '');
 }
+
+/**
+ * Auth cookies are not preference cookies. `preferences.ts` writes `lang` and
+ * `theme` for the client to read; these must be invisible to JavaScript, which
+ * is the whole reason the access token lives here rather than in memory the
+ * browser can reach.
+ */
+export const SUPABASE_COOKIE_OPTIONS: CookieOptions = {
+	httpOnly: true,
+	path: '/',
+	sameSite: 'lax',
+	secure: true,
+};
 
 /**
  * Pure request/response binding, with no shared state of any kind: the only
  * seam @supabase/ssr needs into cookies, factored out of `createSupabase` so
  * it can be exercised directly in tests instead of through a global.
  *
- * @supabase/ssr's own `SetAllCookies` type allows `setAll` to return
+ * The `SetAllCookies` type @supabase/ssr defines allows `setAll` to return
  * `Promise<void>`, since a custom cookie store (e.g. Next.js's async cookie
  * jar) may need one. This adapter never awaits anything — `headers.append`
  * and `headers.set` are both synchronous — so `setAll` is typed here as
@@ -73,19 +79,37 @@ function parse(cookieHeader: string | null): { name: string; value: string }[] {
  * response that sets one person's session cookie for another — is declared
  * optional here only so tests exercising the cookie half alone can call
  * `setAll` with one argument; @supabase/ssr itself always passes it.
+ *
+ * @param request - The incoming request, read for its `cookie` header.
+ * @param headers - Written into via `set-cookie` and other response headers when `setAll` runs.
+ * @returns A `getAll`/`setAll` pair satisfying @supabase/ssr's cookie adapter shape.
  */
 export function createCookieAdapter(
+	/* oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `Request` nests a
+	 * mutable `Headers` through its own `.headers` getter, and `Readonly<>` is shallow: it does
+	 * not reach that nested property, so `Readonly<Request>` still fails this check (verified —
+	 * unlike a bare `Headers` parameter below, which the check does accept once wrapped).
+	 */
 	request: Request,
-	headers: Headers,
+	headers: Readonly<Headers>,
 ): {
 	getAll: () => { name: string; value: string }[];
 	setAll: (
+		/* oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `options` is
+		 * `@supabase/ssr`'s own `CookieOptions` (see `serialize`'s parameter above); wrapping the
+		 * array or its `options` field in `Readonly<>` does not clear the library's own nested
+		 * non-readonly property, and that type isn't ours to edit.
+		 */
 		cookies: { name: string; value: string; options: CookieOptions }[],
-		responseHeaders?: Record<string, string>,
+		responseHeaders?: Readonly<Record<string, string>>,
 	) => void;
 } {
 	return {
 		getAll: () => parse(request.headers.get('cookie')),
+		/* oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- same
+		 * `CookieOptions` cause as the type literal above; this implementation's inferred
+		 * parameter carries the identical non-readonly nested field.
+		 */
 		setAll: (cookies, responseHeaders) => {
 			for (const { name, value, options } of cookies) {
 				headers.append(
@@ -105,16 +129,35 @@ export function createCookieAdapter(
  * frontend renders on the server, where one process serves many people, and a
  * shared client would leak one person's session into another's request — the
  * same reason `createApiClient` returns a fresh instance.
+ *
+ * @param request - The incoming request, read for its session cookies.
+ * @param headers - Written into when the session is created or refreshed; the caller must flush it.
+ * @returns A Supabase client bound to this request's cookies.
  */
-export function createSupabase(request: Request, headers: Headers): SupabaseClient {
+export function createSupabase(
+	/* oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- same cause as
+	 * `createCookieAdapter`'s `request` parameter above: `Request` nests a mutable `Headers`
+	 * that `Readonly<>`'s shallow wrap can't reach.
+	 */
+	request: Request,
+	headers: Readonly<Headers>,
+): SupabaseClient {
 	const url = process.env.SUPABASE_URL;
 	const key = process.env.SUPABASE_PUBLISHABLE_KEY;
-	if (!url || !key) {
+	if (url === undefined || url === '' || key === undefined || key === '') {
 		throw new Error('SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY are required');
 	}
 
+	/* oxlint-disable-next-line typescript/no-unsafe-return -- `createServerClient`'s own
+	 * `Database`/`SchemaName` generics default to `any`/`any` when neither is inferred from an
+	 * argument (no `Database` schema type exists on this side of the stack), while the
+	 * `SupabaseClient` annotated above defaults `SchemaName` to the literal `"public"` on its
+	 * own — so the two only look like the same type. Passing explicit generics to force a match
+	 * was tried; it moves `createServerClient` to resolve its *other*, deprecated
+	 * get/set/remove overload instead of the getAll/setAll one this file actually implements.
+	 */
 	return createServerClient(url, key, {
-		cookies: createCookieAdapter(request, headers),
 		cookieOptions: SUPABASE_COOKIE_OPTIONS,
+		cookies: createCookieAdapter(request, headers),
 	});
 }

@@ -6,7 +6,7 @@ import { ConfirmDelete } from './confirm-delete';
 const meta = {
 	args: {
 		label: 'Delete',
-		onConfirm: fn(),
+		onConfirm: fn<() => void>(),
 		question: 'Delete this link? Anyone who already has the short URL will get a 404.',
 	},
 	component: ConfirmDelete,
@@ -25,6 +25,7 @@ export const Default: StoryObj<typeof meta> = {};
  * not only the unarmed default above.
  */
 export const Armed: StoryObj<typeof meta> = {
+	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Storybook's own `play` function context type; not this codebase's to mark readonly.
 	play: async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
 		await userEvent.click(canvas.getByRole('button', { name: 'Delete' }));

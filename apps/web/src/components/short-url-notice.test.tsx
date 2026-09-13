@@ -8,6 +8,9 @@ import { ShortUrlNotice } from './short-url-notice';
 /**
  * A component reaching through `useTranslation` needs an `I18nextProvider` in
  * its tree — see `language-switcher.test.tsx`'s own note on the same point.
+ *
+ * @param hostname - The hostname to render `ShortUrlNotice` with.
+ * @returns The rendered test utilities from Testing Library's `render`.
  */
 function renderWith(hostname: string): ReturnType<typeof render> {
 	return render(
@@ -17,7 +20,7 @@ function renderWith(hostname: string): ReturnType<typeof render> {
 	);
 }
 
-describe('ShortUrlNotice', () => {
+describe(ShortUrlNotice, () => {
 	it('warns when the shared domain cannot resolve', () => {
 		// SHARED_DOMAIN_HOSTNAME is short.invalid until a real domain is
 		// registered. Showing a copy button for a URL that 404s, with no

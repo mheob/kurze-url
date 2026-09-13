@@ -1,16 +1,12 @@
+/* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding of this rule in this
+   file is the same `(field) => {...}` render-prop parameter TanStack Form's `form.Field` supplies;
+   reconstructing that type by hand to mark it readonly was tried and reverted after a nested field
+   came out subtly wrong. */
+
 import { useForm } from '@tanstack/react-form';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from './ui/button';
-
-export interface LinkFormValues {
-	analytics_enabled: boolean;
-	destination_url: string;
-	domain_id: string;
-	expires_at: string;
-	redirect_type: number;
-	slug: string;
-}
 
 const defaultValues: LinkFormValues = {
 	analytics_enabled: true,
@@ -28,6 +24,9 @@ const defaultValues: LinkFormValues = {
  * without a fallback it would silently vanish instead of surfacing. See the
  * generic alert rendered below for those.
  */
+/** The redirect status code CLAUDE.md's "301 vs 302" note warns about: cached by browsers, so clicks go uncounted and destination changes stop taking effect. */
+const REDIRECT_PERMANENT = 301;
+
 const KNOWN_FIELD_NAMES: ReadonlySet<string> = new Set([
 	'analytics_enabled',
 	'destination_url',
@@ -42,10 +41,19 @@ interface LinkFormProps {
 	// offer — either way the picker below renders nothing at all, per its own
 	// docstring: a `<select>` with a single, forced option is furniture, not a
 	// choice.
-	readonly domains?: readonly { id: string; hostname: string }[];
+	readonly domains?: readonly Readonly<{ id: string; hostname: string }>[];
 	readonly fieldErrors?: Readonly<Record<string, string>>;
 	readonly initial?: Partial<LinkFormValues>;
 	readonly onSubmit: (values: LinkFormValues) => void;
+}
+
+export interface LinkFormValues {
+	readonly analytics_enabled: boolean;
+	readonly destination_url: string;
+	readonly domain_id: string;
+	readonly expires_at: string;
+	readonly redirect_type: number;
+	readonly slug: string;
 }
 
 /**
@@ -62,6 +70,13 @@ interface LinkFormProps {
  * looked authoritative would be the more dangerous kind of wrong. The one
  * client-side check here is "destination is required", surfaced through
  * `form.Field`'s own `onChange` validator rather than a parallel schema.
+ *
+ * @param props - The component's props.
+ * @param props.domains - The team's verified domains; the domain picker renders nothing when this is empty or undefined.
+ * @param props.fieldErrors - Server-reported field errors, keyed by field name.
+ * @param props.initial - Initial values to seed the form from, for the edit route.
+ * @param props.onSubmit - Called with the form's values on submit.
+ * @returns The rendered form.
  */
 export function LinkForm({
 	domains,
@@ -73,32 +88,38 @@ export function LinkForm({
 
 	const form = useForm({
 		defaultValues: { ...defaultValues, ...initial },
-		onSubmit: ({ value }) => onSubmit(value),
+		onSubmit: ({ value }: { readonly value: LinkFormValues }) => {
+			onSubmit(value);
+		},
 	});
 
 	// A server error naming a field this form doesn't render (see
 	// `KNOWN_FIELD_NAMES` above) — surfaced as a generic alert rather than
 	// nowhere at all.
 	const unhandledFieldErrors = fieldErrors
-		? Object.entries(fieldErrors).filter(([name]) => !KNOWN_FIELD_NAMES.has(name))
+		? Object.entries(fieldErrors).filter(
+				([name]: readonly [string, string]) => !KNOWN_FIELD_NAMES.has(name),
+			)
 		: [];
 
 	return (
 		<form
-			onSubmit={(event) => {
+			onSubmit={(event: Readonly<{ preventDefault: () => void; stopPropagation: () => void }>) => {
 				event.preventDefault();
 				event.stopPropagation();
 				void form.handleSubmit();
 			}}
 		>
 			{unhandledFieldErrors.length > 0 ? (
-				<p role="alert">{unhandledFieldErrors.map(([, message]) => message).join(' ')}</p>
+				<p role="alert">
+					{unhandledFieldErrors.map(([, message]: readonly [string, string]) => message).join(' ')}
+				</p>
 			) : null}
 
 			<form.Field
 				name="destination_url"
 				validators={{
-					onChange: ({ value }) =>
+					onChange: ({ value }: { readonly value: string }) =>
 						value.trim() === '' ? t('links.destinationRequired') : undefined,
 				}}
 			>
@@ -112,17 +133,19 @@ export function LinkForm({
 						<div>
 							<label htmlFor="destination_url">{t('links.destination')}</label>
 							<input
-								aria-describedby={errorMessage ? errorId : undefined}
-								aria-invalid={errorMessage ? true : undefined}
+								aria-describedby={errorMessage !== undefined ? errorId : undefined}
+								aria-invalid={errorMessage !== undefined ? true : undefined}
 								id="destination_url"
 								name={field.name}
 								onBlur={field.handleBlur}
-								onChange={(event) => field.handleChange(event.target.value)}
+								onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
+									field.handleChange(event.target.value);
+								}}
 								required
 								type="url"
 								value={field.state.value}
 							/>
-							{errorMessage ? (
+							{errorMessage !== undefined ? (
 								<p id={errorId} role="alert">
 									{errorMessage}
 								</p>
@@ -143,16 +166,18 @@ export function LinkForm({
 							{/* An empty slug means the API generates one. Said here, because a
 							    blank required-looking field otherwise reads as an oversight. */}
 							<input
-								aria-describedby={errorMessage ? errorId : undefined}
-								aria-invalid={errorMessage ? true : undefined}
+								aria-describedby={errorMessage !== undefined ? errorId : undefined}
+								aria-invalid={errorMessage !== undefined ? true : undefined}
 								id="slug"
 								name={field.name}
 								onBlur={field.handleBlur}
-								onChange={(event) => field.handleChange(event.target.value)}
+								onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
+									field.handleChange(event.target.value);
+								}}
 								placeholder={t('links.slugGenerated')}
 								value={field.state.value}
 							/>
-							{errorMessage ? (
+							{errorMessage !== undefined ? (
 								<p id={errorId} role="alert">
 									{errorMessage}
 								</p>
@@ -171,17 +196,19 @@ export function LinkForm({
 						<div>
 							<label htmlFor="redirect_type">{t('links.redirectType')}</label>
 							<select
-								aria-describedby={errorMessage ? errorId : undefined}
-								aria-invalid={errorMessage ? true : undefined}
+								aria-describedby={errorMessage !== undefined ? errorId : undefined}
+								aria-invalid={errorMessage !== undefined ? true : undefined}
 								id="redirect_type"
 								name={field.name}
-								onChange={(event) => field.handleChange(Number(event.target.value))}
+								onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
+									field.handleChange(Number(event.target.value));
+								}}
 								value={field.state.value}
 							>
 								<option value={302}>{t('links.redirect302')}</option>
 								<option value={301}>{t('links.redirect301')}</option>
 							</select>
-							{errorMessage ? (
+							{errorMessage !== undefined ? (
 								<p id={errorId} role="alert">
 									{errorMessage}
 								</p>
@@ -190,7 +217,7 @@ export function LinkForm({
 							    and stops later destination changes taking effect for anyone who
 							    has already visited — breakage a volunteer cannot diagnose and
 							    cannot undo. It belongs next to the choice, not in a tooltip. */}
-							{field.state.value === 301 ? (
+							{field.state.value === REDIRECT_PERMANENT ? (
 								<p role="note">{t('links.redirect301Warning')}</p>
 							) : null}
 						</div>
@@ -207,15 +234,17 @@ export function LinkForm({
 						<div>
 							<label htmlFor="expires_at">{t('links.expiresAt')}</label>
 							<input
-								aria-describedby={errorMessage ? errorId : undefined}
-								aria-invalid={errorMessage ? true : undefined}
+								aria-describedby={errorMessage !== undefined ? errorId : undefined}
+								aria-invalid={errorMessage !== undefined ? true : undefined}
 								id="expires_at"
 								name={field.name}
-								onChange={(event) => field.handleChange(event.target.value)}
+								onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
+									field.handleChange(event.target.value);
+								}}
 								type="datetime-local"
 								value={field.state.value}
 							/>
-							{errorMessage ? (
+							{errorMessage !== undefined ? (
 								<p id={errorId} role="alert">
 									{errorMessage}
 								</p>
@@ -234,15 +263,17 @@ export function LinkForm({
 						<div>
 							<label htmlFor="analytics_enabled">{t('links.analyticsEnabled')}</label>
 							<input
-								aria-describedby={errorMessage ? errorId : undefined}
-								aria-invalid={errorMessage ? true : undefined}
+								aria-describedby={errorMessage !== undefined ? errorId : undefined}
+								aria-invalid={errorMessage !== undefined ? true : undefined}
 								checked={field.state.value}
 								id="analytics_enabled"
 								name={field.name}
-								onChange={(event) => field.handleChange(event.target.checked)}
+								onChange={(event: Readonly<{ target: Readonly<{ checked: boolean }> }>) => {
+									field.handleChange(event.target.checked);
+								}}
 								type="checkbox"
 							/>
-							{errorMessage ? (
+							{errorMessage !== undefined ? (
 								<p id={errorId} role="alert">
 									{errorMessage}
 								</p>
@@ -269,11 +300,13 @@ export function LinkForm({
 							<div>
 								<label htmlFor="domain_id">{t('links.domain')}</label>
 								<select
-									aria-describedby={errorMessage ? errorId : undefined}
-									aria-invalid={errorMessage ? true : undefined}
+									aria-describedby={errorMessage !== undefined ? errorId : undefined}
+									aria-invalid={errorMessage !== undefined ? true : undefined}
 									id="domain_id"
 									name={field.name}
-									onChange={(event) => field.handleChange(event.target.value)}
+									onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
+										field.handleChange(event.target.value);
+									}}
 									value={field.state.value}
 								>
 									<option value="">{t('links.domainShared')}</option>
@@ -283,7 +316,7 @@ export function LinkForm({
 										</option>
 									))}
 								</select>
-								{errorMessage ? (
+								{errorMessage !== undefined ? (
 									<p id={errorId} role="alert">
 										{errorMessage}
 									</p>

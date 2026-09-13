@@ -11,16 +11,26 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * Half of the no-hardcoded-string rule. This catches a key added to one
  * catalogue and forgotten in the other; it cannot catch a string with no key
  * at all, which is what the rendered-divergence check in Task 11 is for.
+ *
+ * @param value - The catalogue (or nested object within it) to walk.
+ * @param prefix - The dotted key prefix accumulated so far from enclosing objects.
+ * @returns Every leaf key, dotted, e.g. `domains.recordTypeTxt`.
  */
-function keysOf(value: Record<string, unknown>, prefix = ''): string[] {
-	return Object.entries(value).flatMap(([key, child]) =>
+function keysOf(value: Readonly<Record<string, unknown>>, prefix = ''): string[] {
+	return Object.entries(value).flatMap(([key, child]: readonly [string, unknown]) =>
 		isRecord(child) ? keysOf(child, `${prefix}${key}.`) : [`${prefix}${key}`],
 	);
 }
 
-/** Module scope, not inline in the test: it captures nothing from the closure it would sit in. */
-function flatten(value: Record<string, unknown>, prefix = ''): [string, string][] {
-	return Object.entries(value).flatMap(([key, child]) =>
+/**
+ * Module scope, not inline in the test: it captures nothing from the closure it would sit in.
+ *
+ * @param value - The catalogue (or nested object within it) to walk.
+ * @param prefix - The dotted key prefix accumulated so far from enclosing objects.
+ * @returns Every leaf key/value pair, the key dotted the same way `keysOf` produces it.
+ */
+function flatten(value: Readonly<Record<string, unknown>>, prefix = ''): [string, string][] {
+	return Object.entries(value).flatMap(([key, child]: readonly [string, unknown]) =>
 		isRecord(child) ? flatten(child, `${prefix}${key}.`) : [[`${prefix}${key}`, String(child)]],
 	);
 }
@@ -30,7 +40,7 @@ describe('translation catalogues', () => {
 		// A Set comparison, not a sorted-array one: key order carries no meaning
 		// here, and `Array#sort`/`toSorted` are a mutation footgun / an ES2023
 		// method this project's `lib` target doesn't have, respectively.
-		expect(new Set(keysOf(de))).toEqual(new Set(keysOf(en)));
+		expect(new Set(keysOf(de))).toStrictEqual(new Set(keysOf(en)));
 	});
 
 	it('are not empty', () => {
@@ -52,8 +62,10 @@ describe('translation catalogues', () => {
 			'domains.recordTypeCname',
 		]);
 		const english = new Map(flatten(en));
-		for (const [key, german] of flatten(de)) {
-			if (identicalByDesign.has(key)) continue;
+		const toCheck = flatten(de).filter(
+			([key]: readonly [string, string]) => !identicalByDesign.has(key),
+		);
+		for (const [key, german] of toCheck) {
 			expect(german, `${key} is identical in both languages`).not.toBe(english.get(key));
 		}
 	});

@@ -4,11 +4,11 @@ import { describe, expect, it } from 'vitest';
 import { server } from '../test/msw';
 import { fetchHealth } from './health';
 
-describe('fetchHealth', () => {
+describe(fetchHealth, () => {
 	it('reports the API status', async () => {
 		server.use(http.get('http://api.test/v1/health', () => HttpResponse.json({ status: 'ok' })));
 
-		await expect(fetchHealth('http://api.test')).resolves.toEqual({ status: 'ok' });
+		await expect(fetchHealth('http://api.test')).resolves.toStrictEqual({ status: 'ok' });
 	});
 
 	it('reports unreachable rather than throwing', async () => {
@@ -16,6 +16,6 @@ describe('fetchHealth', () => {
 		// because a status probe failed would be worse than the probe's absence.
 		server.use(http.get('http://api.test/v1/health', () => HttpResponse.error()));
 
-		await expect(fetchHealth('http://api.test')).resolves.toEqual({ status: 'unreachable' });
+		await expect(fetchHealth('http://api.test')).resolves.toStrictEqual({ status: 'unreachable' });
 	});
 });

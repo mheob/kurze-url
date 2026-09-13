@@ -13,7 +13,12 @@ import '../src/styles/app.css';
  * be checked in both without duplicating stories. German strings are reliably
  * longer than their English equivalents, which is a common way for a layout to
  * break — being able to flip a whole story set is the point.
+ *
+ * @param Story - The story being decorated.
+ * @param context - The story's Storybook context; carries the active `language`/`theme` globals.
+ * @returns The story wrapped in the i18n provider and theme/background wrapper.
  */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Storybook's own `Decorator` context type; not this codebase's to mark readonly.
 const withPreferences: Decorator = (Story, context) => {
 	const language = context.globals.language === 'de' ? 'de' : 'en';
 	const isDark = context.globals.theme === 'dark';
@@ -21,7 +26,7 @@ const withPreferences: Decorator = (Story, context) => {
 	return (
 		<I18nextProvider i18n={createI18n(language)}>
 			<div className={isDark ? 'dark' : undefined}>
-				<div className="bg-background text-foreground p-6">
+				<div className="bg-background p-6 text-foreground">
 					<Story />
 				</div>
 			</div>

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { suggestTeamSlug } from './team-slug';
 
-describe('suggestTeamSlug', () => {
+describe(suggestTeamSlug, () => {
 	it('transliterates German umlauts rather than dropping them', () => {
 		expect(suggestTeamSlug('Sportverein Grünwald')).toBe('sportverein-gruenwald');
 		expect(suggestTeamSlug('Schützenverein Höchstädt')).toBe('schuetzenverein-hoechstaedt');
@@ -31,7 +31,7 @@ describe('suggestTeamSlug', () => {
 	it('truncates to the 40-character limit without a trailing hyphen', () => {
 		const suggestion = suggestTeamSlug('Verein zur Foerderung des langen Namens im Dorfe');
 		expect(suggestion.length).toBeLessThanOrEqual(40);
-		expect(suggestion).not.toMatch(/-$/);
+		expect(suggestion).not.toMatch(/-$/u);
 	});
 
 	it('returns an empty string when nothing usable is left', () => {

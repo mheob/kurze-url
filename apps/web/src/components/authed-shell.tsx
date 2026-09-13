@@ -38,6 +38,14 @@ interface AuthedShellProps {
  * there is nowhere for either link to point. Before this, the shell had a
  * team switcher and a sign-out control, and a second team page (the domains
  * screen from Task 13) could not be reached by clicking at all.
+ *
+ * @param props - The component's props.
+ * @param props.currentTeamSlug - The resolved current team's slug, or undefined when there is none (e.g. a stale bookmark to a team the visitor has left).
+ * @param props.isMaintainer - Whether to offer team creation.
+ * @param props.memberships - The signed-in visitor's team memberships.
+ * @param props.onSignOut - Called when the sign-out control is clicked.
+ * @param props.signingOut - True while sign-out is in flight; disables the sign-out control.
+ * @returns The rendered header chrome.
  */
 export function AuthedShell({
 	currentTeamSlug,
@@ -49,11 +57,11 @@ export function AuthedShell({
 	const { t } = useTranslation();
 
 	return (
-		<header className="border-border flex items-center justify-between border-b px-6 py-4">
-			{currentTeamSlug && memberships.length > 0 ? (
+		<header className="flex items-center justify-between border-b border-border px-6 py-4">
+			{currentTeamSlug !== undefined && memberships.length > 0 ? (
 				<TeamSwitcher currentTeamSlug={currentTeamSlug} memberships={memberships} />
 			) : null}
-			{currentTeamSlug && memberships.length > 0 ? (
+			{currentTeamSlug !== undefined && memberships.length > 0 ? (
 				<nav aria-label={t('nav.label')}>
 					<ul>
 						<li>

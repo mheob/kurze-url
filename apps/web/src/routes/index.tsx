@@ -19,7 +19,7 @@ import { fetchMe, type Me, type Membership } from './_authed';
  * back to this route it becomes an RPC to this app's own server, which is the
  * only thing the browser ever talks to.
  */
-const getHealthStatus = createServerFn({ method: 'GET' }).handler(() => fetchHealth());
+const getHealthStatus = createServerFn({ method: 'GET' }).handler(async () => fetchHealth());
 
 /**
  * Resolves the remembered team slug inside a server function for the same
@@ -40,7 +40,8 @@ const getHealthStatus = createServerFn({ method: 'GET' }).handler(() => fetchHea
  * what avoids that.
  */
 const getCurrentTeamSlug = createServerFn({ method: 'GET' })
-	.validator((memberships: Membership[]) => memberships)
+	.validator((memberships: readonly Membership[]) => memberships)
+	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `data`'s shape is `createServerFn`'s own handler option type, inferred from the validator above; not a declaration this file can edit.
 	.handler(({ data: memberships }) => resolveCurrentTeam(getRequestHeader('cookie'), memberships));
 
 /**
@@ -56,6 +57,8 @@ const getCurrentTeamSlug = createServerFn({ method: 'GET' })
  * docstring in `server/session.ts` explains. Anything else — an actual
  * failure reading `/v1/me` — is rethrown rather than swallowed: this route
  * only has an opinion about the signed-out case.
+ *
+ * @returns The signed-in caller, or `undefined` if there is no session.
  */
 export async function fetchCurrentUser(): Promise<Me | undefined> {
 	try {
@@ -90,6 +93,10 @@ export type HomeOutcome =
  * plain, three-way decision with no cookie or membership-list logic of its
  * own, and it's what makes a returning visitor land back on the team they
  * last used instead of always the first one in membership order.
+ *
+ * @param me - The signed-in caller, or `undefined` if there is no session.
+ * @param teamSlug - The visitor's remembered team slug, already resolved from their `team` cookie.
+ * @returns The outcome this route renders or redirects for.
  */
 export function resolveHomeOutcome(me: Me | undefined, teamSlug: string | undefined): HomeOutcome {
 	if (!me) return { kind: 'marketing' };
@@ -98,7 +105,7 @@ export function resolveHomeOutcome(me: Me | undefined, teamSlug: string | undefi
 	// the component: this is the one place that already decides what a signed-in
 	// visitor without a team sees, and a maintainer's answer ("create one") is a
 	// different answer, not different chrome around the same one.
-	return teamSlug
+	return teamSlug !== undefined
 		? { kind: 'redirect', teamSlug }
 		: { isMaintainer: me.is_maintainer, kind: 'noTeam' };
 }
@@ -110,6 +117,7 @@ export const Route = createFileRoute('/')({
 		const teamSlug = me ? await getCurrentTeamSlug({ data: me.memberships }) : undefined;
 		const outcome = resolveHomeOutcome(me, teamSlug);
 		if (outcome.kind === 'redirect') {
+			// oxlint-disable-next-line typescript/only-throw-error -- TanStack Router signals navigation by throwing; `redirect()` is its control flow, not an Error.
 			throw redirect({ params: { teamSlug: outcome.teamSlug }, to: '/teams/$teamSlug/links' });
 		}
 		return { outcome, status: health.status };
@@ -122,18 +130,19 @@ function Home() {
 	const { outcome, status } = Route.useLoaderData();
 
 	return (
-		<div className="bg-background text-foreground flex min-h-screen flex-col">
+		<div className="flex min-h-screen flex-col bg-background text-foreground">
 			<SiteHeader theme={theme} />
 			<main className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
 				{outcome.kind === 'noTeam' ? (
 					<>
-						<p className="text-muted-foreground max-w-prose">
+						<p className="max-w-prose text-muted-foreground">
 							{outcome.isMaintainer ? t('teams.noneMaintainer') : t('teams.none')}
 						</p>
 						{/* The bootstrap case: a maintainer signing in to a fresh instance has
 						    no team, so no `_authed` chrome to reach team creation from. Without
 						    this link the first team can only be made with SQL. */}
 						{outcome.isMaintainer ? (
+							// oxlint-disable-next-line react/forbid-component-props -- shadcn/ui's own "link styled as a button" idiom: TanStack Router's `Link` forwards `className` straight to the rendered `<a>`, and `buttonVariants` exists precisely to be applied here.
 							<Link className={buttonVariants({ variant: 'default' })} to="/new-team">
 								{t('teams.create')}
 							</Link>
@@ -142,7 +151,8 @@ function Home() {
 				) : (
 					<>
 						<h1 className="text-3xl font-bold">{t('home.heading')}</h1>
-						<p className="text-muted-foreground max-w-prose">{t('home.body')}</p>
+						<p className="max-w-prose text-muted-foreground">{t('home.body')}</p>
+						{/* oxlint-disable-next-line react/forbid-component-props -- same reason as the maintainer's link above: shadcn/ui's `buttonVariants` idiom, forwarded by TanStack Router's `Link` to the rendered `<a>`. */}
 						<Link className={buttonVariants({ variant: 'default' })} to="/login">
 							{t('actions.signIn')}
 						</Link>

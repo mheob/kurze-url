@@ -4,7 +4,13 @@ import { expect, fn, userEvent, within } from 'storybook/test';
 
 import { DomainList } from './domain-list';
 
-/** Mirrors `domain-list.test.tsx`'s own fixture — kept local for the same reason that file's docstring gives. */
+/**
+ * Mirrors `domain-list.test.tsx`'s own fixture — kept local for the same reason that file's docstring gives.
+ *
+ * @param overrides - Partial fields to override on the default domain fixture.
+ * @returns The domain fixture.
+ */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `ApiDomain` is `@kurze-url/api-client`'s generated `Domain` type, whose properties are not marked readonly; that is generated codegen output, never edited by hand.
 function domain(overrides: Partial<ApiDomain> = {}): ApiDomain {
 	return {
 		hostname: 'links.verein.test',
@@ -27,8 +33,8 @@ const meta = {
 	args: {
 		deleteBlockedCount: undefined,
 		deletingId: null,
-		onDelete: fn(),
-		onVerify: fn(),
+		onDelete: fn<(domainId: string) => void>(),
+		onVerify: fn<(domainId: string) => void>(),
 		pendingReason: undefined,
 		verifyPending: false,
 		verifyingId: null,
@@ -129,6 +135,7 @@ export const Mixed: StoryObj<typeof meta> = {
  */
 export const DeleteArmed: StoryObj<typeof meta> = {
 	args: { domains: [domain()] },
+	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Storybook's own `play` function context type; not this codebase's to mark readonly.
 	play: async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
 		await userEvent.click(canvas.getByRole('button', { name: 'Delete links.verein.test' }));

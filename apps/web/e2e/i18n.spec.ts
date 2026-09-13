@@ -1,7 +1,15 @@
-import { expect, type Locator } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 
 import { test } from './fixtures/auth';
 import { waitForHydration } from './fixtures/hydration';
+
+/* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding of this rule in this
+ * file is one of two things this side of the codebase cannot change: Playwright's own `Page`
+ * (bare, or nested inside the fixture argument object each `test` callback destructures — it has
+ * many mutating methods, `goto`/`fill`/`click` among them), or the `node`/`nodes` parameter of a
+ * `.evaluate`/`.evaluateAll` callback, which is the real, live, mutable DOM running inside the
+ * browser, not a value this file constructs or owns.
+ */
 
 /**
  * The half of the no-hardcoded-string rule that react/jsx-no-literals cannot
@@ -31,19 +39,36 @@ const IDENTICAL_BY_DESIGN = new Set(['kurze.url', 'TXT', 'CNAME']);
  */
 const PATHS = ['/', '/this-page-does-not-exist'] as const;
 
-async function visibleText(
-	page: import('@playwright/test').Page,
-	baseURL: string,
-	language: string,
-	path: string,
-	identicalByDesign: ReadonlySet<string> = IDENTICAL_BY_DESIGN,
-): Promise<string[]> {
+/**
+ * @param options - The page to crawl and the language/path to render it at.
+ * @param options.page - The page to drive.
+ * @param options.baseURL - The fixture's own base URL; a cookie's domain must come from here, not
+ * from wherever `page.goto` later navigates.
+ * @param options.language - The `lang` cookie value to set before navigating.
+ * @param options.path - The path to visit.
+ * @param options.identicalByDesign - Strings expected to render identically in both languages;
+ * excluded from the returned crawl.
+ * @returns Every visible string this render produced, one exclusion pass already applied.
+ */
+async function visibleText({
+	page,
+	baseURL,
+	language,
+	path,
+	identicalByDesign = IDENTICAL_BY_DESIGN,
+}: Readonly<{
+	page: Page;
+	baseURL: string;
+	language: string;
+	path: string;
+	identicalByDesign?: ReadonlySet<string>;
+}>): Promise<string[]> {
 	// Playwright derives a cookie's domain from `url`, not from wherever
 	// `page.goto` later navigates — it has to be the fixture's `baseURL`, the
 	// same host the test actually runs against, or the cookie is scoped to
 	// whatever host `url` names (e.g. `localhost`) and never sent to a CI
 	// preview host.
-	await page.context().addCookies([{ name: 'lang', value: language, url: baseURL }]);
+	await page.context().addCookies([{ name: 'lang', url: baseURL, value: language }]);
 	await page.goto(path);
 
 	const texts = await page.locator('body :visible').allInnerTexts();
@@ -78,10 +103,11 @@ for (const path of PATHS) {
 		// localhost fallback), so this is only ever undefined if that invariant is
 		// broken — worth a loud failure rather than silently falling back to a
 		// wrong host.
-		if (!baseURL) throw new Error('baseURL fixture is unset — check playwright.config.ts');
+		if (baseURL === undefined)
+			throw new Error('baseURL fixture is unset — check playwright.config.ts');
 
-		const english = new Set(await visibleText(page, baseURL, 'en', path));
-		const german = await visibleText(page, baseURL, 'de', path);
+		const english = new Set(await visibleText({ baseURL, language: 'en', page, path }));
+		const german = await visibleText({ baseURL, language: 'de', page, path });
 
 		const untranslated = german.filter((value) => english.has(value));
 
@@ -117,8 +143,11 @@ const I18N_CRAWL_DESTINATION_URL = 'https://example.org/i18n-crawl';
  * a plain text node, since the JSX puts the value before `CopyButton` — gets
  * the bare value instead, so it can be excluded below the same way the
  * hostname next to it is, regardless of whether that gluing keeps holding.
+ *
+ * @param cell - The table cell locator to read the leading text node from.
+ * @returns The cell's own text, with the glued-on `CopyButton` label excluded.
  */
-async function directText(cell: Locator): Promise<string> {
+async function directText(cell: Readonly<Locator>): Promise<string> {
 	return cell.evaluate((node) => node.childNodes[0]?.textContent?.trim() ?? '');
 }
 
@@ -129,7 +158,8 @@ for (const suffix of AUTHENTICATED_PATHS) {
 		teamSlug,
 		teamName,
 	}) => {
-		if (!baseURL) throw new Error('baseURL fixture is unset — check playwright.config.ts');
+		if (baseURL === undefined)
+			throw new Error('baseURL fixture is unset — check playwright.config.ts');
 
 		// Populated only for `links` below, once that link's own destination and
 		// short URL are known — see the long comment above `identicalByDesign`
@@ -154,11 +184,11 @@ for (const suffix of AUTHENTICATED_PATHS) {
 			// without it until 2026-09-07, when it failed in CI on exactly that —
 			// `links.spec.ts`'s own creation passed in the same run because it has
 			// always had the guard.
-			const destination = page.getByLabel(/destination/i);
+			const destination = page.getByLabel(/destination/iu);
 			await waitForHydration(destination);
 			await destination.fill(I18N_CRAWL_DESTINATION_URL);
 
-			await page.getByRole('button', { name: /save/i }).click();
+			await page.getByRole('button', { name: /save/iu }).click();
 			await expect(page.getByText(I18N_CRAWL_DESTINATION_URL)).toBeVisible();
 
 			// `link-list.tsx` renders this same link's `short_url` as the visible
@@ -170,6 +200,11 @@ for (const suffix of AUTHENTICATED_PATHS) {
 			// to get the exact value, and a locator that's supposed to match
 			// exactly one element fails loudly rather than silently if that
 			// assumption ever stops holding.
+			//
+			// `innerText`, not `textContent`: this crawl compares against `visibleText`'s own
+			// `allInnerTexts()`-based read of everything else on the page, so this one link's text
+			// has to be collected the same rendered-and-visible way, not as raw text-node content.
+			// oxlint-disable-next-line unicorn/prefer-dom-node-text-content
 			const shortUrl = await page.locator('a[href^="http"]').innerText();
 			linkStrings.push(I18N_CRAWL_DESTINATION_URL, shortUrl);
 		}
@@ -191,10 +226,10 @@ for (const suffix of AUTHENTICATED_PATHS) {
 
 			// Not decorative: this form is server-rendered too, and `goto` resolves
 			// before React hydrates it — see `waitForHydration`.
-			const hostnameField = page.getByLabel(/hostname/i);
+			const hostnameField = page.getByLabel(/hostname/iu);
 			await waitForHydration(hostnameField);
 			await hostnameField.fill(hostname);
-			await page.getByRole('button', { name: /add domain/i }).click();
+			await page.getByRole('button', { name: /add domain/iu }).click();
 
 			// A level-2 heading, not a plain `getByText`: the hostname also
 			// appears inside the TXT challenge name and the delete button below,
@@ -241,8 +276,10 @@ for (const suffix of AUTHENTICATED_PATHS) {
 		]);
 
 		const path = `/teams/${teamSlug}/${suffix}`;
-		const english = new Set(await visibleText(page, baseURL, 'en', path, identicalByDesign));
-		const german = await visibleText(page, baseURL, 'de', path, identicalByDesign);
+		const english = new Set(
+			await visibleText({ baseURL, identicalByDesign, language: 'en', page, path }),
+		);
+		const german = await visibleText({ baseURL, identicalByDesign, language: 'de', page, path });
 
 		const untranslated = german.filter((value) => english.has(value));
 

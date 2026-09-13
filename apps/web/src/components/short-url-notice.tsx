@@ -10,6 +10,10 @@ import { useTranslation } from 'react-i18next';
  * Every link this UI creates on the shared domain carries a `short_url` that
  * 404s until then; showing a copy button for a link that cannot resolve, with
  * no explanation, is the confusion this notice exists to prevent.
+ *
+ * @param props - The component's props.
+ * @param props.hostname - The link's hostname; the notice renders only when it ends in `.invalid`.
+ * @returns The notice, or null when the hostname is not the placeholder.
  */
 export function ShortUrlNotice({
 	hostname,

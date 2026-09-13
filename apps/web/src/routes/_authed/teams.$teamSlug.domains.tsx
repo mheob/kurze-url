@@ -17,6 +17,13 @@ import {
 } from '../../server/domains';
 import { requireTeamId } from '../_authed';
 
+/* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding below is a type this
+   file doesn't own: TanStack Router's own `beforeLoad`/`loader` option shapes, TanStack Query's own
+   `queryOptions()` return type, TanStack Form's `onSubmit`/field-validator options and its `field`
+   render prop, React's `FormEvent`/`ChangeEvent` on the `<form>`/`<input>` handlers, or the
+   generated `@kurze-url/api-client` `Domain`/`VerifyDomainOutputBody` types. `Readonly<>` is
+   shallow and none of these is a declaration this file can edit. */
+
 type VerifyReason = VerifyDomainOutputBody['reason'];
 
 /**
@@ -36,8 +43,11 @@ type VerifyReason = VerifyDomainOutputBody['reason'];
  */
 type VerifyFailureKind = 'conflict' | 'notFound' | 'rateLimited' | 'unknown';
 
+/** The status `verifyDomain` answers with when another team already verified this hostname. */
+const HTTP_CONFLICT = 409;
+
 function classifyVerifyFailure(error: unknown): VerifyFailureKind {
-	if (statusOf(error) === 409) return 'conflict';
+	if (statusOf(error) === HTTP_CONFLICT) return 'conflict';
 	const { kind } = classifyApiError(error);
 	return kind === 'notFound' || kind === 'rateLimited' ? kind : 'unknown';
 }
@@ -48,7 +58,9 @@ function classifyVerifyFailure(error: unknown): VerifyFailureKind {
  * `QueryClient` satisfies this structurally, so the loader needs no cast.
  */
 interface DomainsDataSource {
-	ensureQueryData: (options: ReturnType<typeof domainsQueryOptions>) => Promise<PageDomain>;
+	readonly ensureQueryData: (
+		options: ReturnType<typeof domainsQueryOptions>,
+	) => Promise<PageDomain>;
 }
 
 /**
@@ -57,6 +69,10 @@ interface DomainsDataSource {
  * `beforeLoad` already redirects) must not fall through to `errorComponent`
  * as dead-end inline text — it sends the visitor back to `/login` instead.
  * Every other error kind is rethrown unchanged.
+ *
+ * @param queryClient - The query client to fetch through; only needs `ensureQueryData`.
+ * @param teamId - The team's id, already resolved from its slug.
+ * @returns The team's domains.
  */
 export async function loadDomains(
 	queryClient: DomainsDataSource,
@@ -65,6 +81,7 @@ export async function loadDomains(
 	try {
 		return await queryClient.ensureQueryData(domainsQueryOptions(teamId));
 	} catch (error) {
+		// oxlint-disable-next-line typescript/only-throw-error -- TanStack Router signals navigation by throwing; `redirect()` is its control flow, not an Error.
 		if (classifyApiError(error).kind === 'unauthenticated') throw redirect({ to: '/login' });
 		throw error;
 	}
@@ -74,9 +91,9 @@ export const Route = createFileRoute('/_authed/teams/$teamSlug/domains')({
 	beforeLoad: ({ context, params }) => ({
 		teamId: requireTeamId(context.me.memberships, params.teamSlug),
 	}),
-	loader: ({ context }) => loadDomains(context.queryClient, context.teamId),
 	component: RouteComponent,
 	errorComponent: DomainsError,
+	loader: async ({ context }) => loadDomains(context.queryClient, context.teamId),
 });
 
 /**
@@ -91,6 +108,10 @@ export const Route = createFileRoute('/_authed/teams/$teamSlug/domains')({
  * without this call a 500 from listing domains never reaches
  * `RootErrorPage` and no event is ever sent. `reportUnexpected` refuses
  * every kind rendered as ordinary UI below.
+ *
+ * @param props - The route's error-boundary props.
+ * @param props.error - Whatever the loader or query threw.
+ * @returns A redirect to `/login` for an expired session, otherwise the failure rendered inline.
  */
 export function DomainsError({ error }: { readonly error: unknown }): React.JSX.Element {
 	const { t } = useTranslation();
@@ -123,7 +144,7 @@ function RouteComponent(): React.JSX.Element {
 	// *different* domain immediately stops attributing the previous result to
 	// the wrong row, rather than waiting for the new response to arrive.
 	const [verifyingId, setVerifyingId] = useState<string | null>(null);
-	const [pendingReason, setPendingReason] = useState<VerifyReason | undefined>(undefined);
+	const [pendingReason, setPendingReason] = useState<VerifyReason | undefined>();
 	// Same one-slot correlation as `verifyingId`/`pendingReason` above: only
 	// one verify call is ever in flight, and `verifyingId` already names which
 	// domain it was for.
@@ -135,7 +156,7 @@ function RouteComponent(): React.JSX.Element {
 	const [deleteFailure, setDeleteFailure] = useState<ApiFailure | null>(null);
 
 	const claimMutation = useMutation({
-		mutationFn: (hostname: string) => claimDomainFn({ data: { hostname, teamId } }),
+		mutationFn: async (hostname: string) => claimDomainFn({ data: { hostname, teamId } }),
 		onError: (error: unknown) => {
 			const classified = classifyApiError(error);
 			// A mutation callback is not a render and not a loader, so it cannot
@@ -154,7 +175,7 @@ function RouteComponent(): React.JSX.Element {
 	});
 
 	const verifyMutation = useMutation({
-		mutationFn: (domainId: string) => verifyDomainFn({ data: { domainId } }),
+		mutationFn: async (domainId: string) => verifyDomainFn({ data: { domainId } }),
 		onError: (error: unknown) => {
 			// A mutation callback is not a render and not a loader, so it cannot
 			// throw a redirect — see the same note on the create-link route.
@@ -199,7 +220,7 @@ function RouteComponent(): React.JSX.Element {
 	});
 
 	const deleteMutation = useMutation({
-		mutationFn: (domainId: string) => deleteDomainFn({ data: { domainId } }),
+		mutationFn: async (domainId: string) => deleteDomainFn({ data: { domainId } }),
 		onError: (error: unknown) => {
 			const classified = classifyApiError(error);
 			if (classified.kind === 'unauthenticated') {
@@ -283,9 +304,9 @@ function RouteComponent(): React.JSX.Element {
 				verifyPending={verifyMutation.isPending}
 				verifyingId={verifyingId}
 			/>
-			{verifyMessage ? <p role="alert">{verifyMessage}</p> : null}
-			{deleteMessage ? <p role="alert">{deleteMessage}</p> : null}
-			{claimMessage ? <p role="alert">{claimMessage}</p> : null}
+			{verifyMessage !== null ? <p role="alert">{verifyMessage}</p> : null}
+			{deleteMessage !== null ? <p role="alert">{deleteMessage}</p> : null}
+			{claimMessage !== null ? <p role="alert">{claimMessage}</p> : null}
 			<form
 				onSubmit={(event) => {
 					event.preventDefault();
@@ -310,17 +331,19 @@ function RouteComponent(): React.JSX.Element {
 							<div>
 								<label htmlFor="hostname">{t('domains.hostname')}</label>
 								<input
-									aria-describedby={errorMessage ? `${hintId} ${errorId}` : hintId}
-									aria-invalid={errorMessage ? true : undefined}
+									aria-describedby={errorMessage !== undefined ? `${hintId} ${errorId}` : hintId}
+									aria-invalid={errorMessage !== undefined ? true : undefined}
 									id="hostname"
 									name={field.name}
 									onBlur={field.handleBlur}
-									onChange={(event) => field.handleChange(event.target.value)}
+									onChange={(event) => {
+										field.handleChange(event.target.value);
+									}}
 									required
 									value={field.state.value}
 								/>
 								<p id={hintId}>{t('domains.hostnameHint')}</p>
-								{errorMessage ? (
+								{errorMessage !== undefined ? (
 									<p id={errorId} role="alert">
 										{errorMessage}
 									</p>

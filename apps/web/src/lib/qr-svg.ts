@@ -11,8 +11,8 @@
  */
 
 interface QrColors {
-	background: string;
-	foreground: string;
+	readonly background: string;
+	readonly foreground: string;
 }
 
 /**
@@ -24,11 +24,22 @@ interface QrColors {
  * silent corruption an image will not report. An unparseable document is
  * returned untouched, so a malformed response renders as a broken image
  * rather than as a plausible wrong one.
+ *
+ * @param svg - The QR code SVG document as returned by the API.
+ * @param colors - The background and foreground fill colours to apply.
+ * @param colors.background - The background fill colour.
+ * @param colors.foreground - The module fill colour.
+ * @returns The recoloured SVG, or `svg` unchanged if it could not be parsed as expected.
  */
 export function restyleQrSvg(svg: string, { background, foreground }: QrColors): string {
 	const parsed = new DOMParser().parseFromString(svg, 'image/svg+xml');
-	if (parsed.querySelector('parsererror') || !parsed.documentElement) return svg;
-	if (parsed.documentElement.nodeName !== 'svg') return svg;
+	// Typed here as the nullable `Element | null` DOMParser can genuinely
+	// produce for a malformed document, rather than trusting lib.dom's
+	// `Document.documentElement: HTMLElement` (which assumes a root element
+	// always exists) — that assumption is what this whole check guards against.
+	const documentElement: Element | null = parsed.documentElement;
+	if (parsed.querySelector('parsererror') || documentElement === null) return svg;
+	if (documentElement.nodeName !== 'svg') return svg;
 
 	const rect = parsed.querySelector('rect');
 	const path = parsed.querySelector('path');
@@ -37,13 +48,16 @@ export function restyleQrSvg(svg: string, { background, foreground }: QrColors):
 	rect.setAttribute('fill', background);
 	path.setAttribute('fill', foreground);
 
-	return new XMLSerializer().serializeToString(parsed.documentElement);
+	return new XMLSerializer().serializeToString(documentElement);
 }
 
 /**
  * An `<img src>` value. Percent-encoded rather than base64 so the payload
  * stays inspectable in devtools and needs no `btoa` round trip — the document
  * is ASCII, since go-qr emits no text nodes at all.
+ *
+ * @param svg - The QR code SVG document to embed.
+ * @returns A percent-encoded `data:image/svg+xml` URL for `svg`.
  */
 export function qrSvgDataUrl(svg: string): string {
 	return `data:image/svg+xml,${encodeURIComponent(svg)}`;

@@ -1,4 +1,4 @@
-import * as Sentry from '@sentry/tanstackstart-react';
+import { captureException, type ErrorEvent, init } from '@sentry/tanstackstart-react';
 
 import { classifyApiError } from './api-errors';
 
@@ -32,11 +32,89 @@ const IP_OR_USER_LIKE_KEYS = ['forwarded', '-ip', 'remote-', 'via', '-user'];
  */
 const BREADCRUMB_URL_KEYS = ['from', 'to', 'url'] as const;
 
-/** Strips the query string off a URL. Shared by `request.url` and every breadcrumb field that carries a URL. */
+/**
+ * Strips the query string off a URL. Shared by `request.url` and every breadcrumb field that carries a URL.
+ *
+ * @param url - The URL (or breadcrumb field value) to strip.
+ * @returns `url` with everything from the first `?` onward removed.
+ */
 function stripQueryString(url: string): string {
 	// `split` on a non-empty separator always yields at least one element;
 	// the `?? url` only satisfies `noUncheckedIndexedAccess`, it is never hit.
 	return url.split('?')[0] ?? url;
+}
+
+/**
+ * Errors already reported. A router error component can render more than
+ * once for one error, and on the server it renders again on the client after
+ * hydration — without this, one failure becomes several events out of the
+ * monthly 5,000.
+ */
+const reported = new WeakSet();
+
+/**
+ * `Sentry.init` is process-global, and `getRouter` runs once per request on
+ * the server — so this guards against re-initialising the client on every
+ * page view.
+ */
+let initialized = false;
+
+/**
+ * Filters out console breadcrumbs — which carry whatever any code logged —
+ * and strips the query string from every URL-shaped breadcrumb field.
+ * Split out of `scrubEvent` only to keep that function's own statement count
+ * down; the in-place mutation contract is the same one documented there.
+ *
+ * @param event - The event being scrubbed, mutated in place.
+ */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `event` is mutated in place, the same documented contract `scrubEvent` itself carries.
+function scrubBreadcrumbs(event: ErrorEvent): void {
+	if (!event.breadcrumbs) return;
+
+	// Console breadcrumbs carry whatever any code logged. Filtered here
+	// rather than by disabling the breadcrumbs integration, so the
+	// guarantee survives an SDK major renaming that integration.
+	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Sentry's `Breadcrumb.data` carries a mutable `{ [key: string]: any }` index signature no wrapper reaches.
+	event.breadcrumbs = event.breadcrumbs.filter((crumb) => crumb.category !== 'console');
+
+	for (const crumb of event.breadcrumbs) {
+		const { data } = crumb;
+		if (data) {
+			for (const key of BREADCRUMB_URL_KEYS) {
+				// `Breadcrumb.data` is typed `{ [key: string]: any }` by the
+				// SDK; the annotation narrows the read to `unknown` so it is
+				// checked below instead of trusted.
+				const value: unknown = data[key];
+				if (typeof value === 'string') data[key] = stripQueryString(value);
+			}
+		}
+	}
+}
+
+/**
+ * Strips cookies, the request body, the query string, and every header
+ * outside `ALLOWED_HEADERS` from `event.request`. Split out of `scrubEvent`
+ * only to keep that function's own statement count down; the in-place
+ * mutation contract is the same one documented there.
+ *
+ * @param event - The event being scrubbed, mutated in place.
+ */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `event` is mutated in place, the same documented contract `scrubEvent` itself carries.
+function scrubRequest(event: ErrorEvent): void {
+	const { request } = event;
+	if (!request) return;
+
+	delete request.cookies;
+	delete request.data;
+	delete request.query_string;
+	if (request.url !== undefined && request.url !== '') request.url = stripQueryString(request.url);
+	if (request.headers) {
+		request.headers = Object.fromEntries(
+			Object.entries(request.headers).filter(([name]: readonly [string, string]) =>
+				ALLOWED_HEADERS.has(name.toLowerCase()),
+			),
+		);
+	}
 }
 
 /**
@@ -49,45 +127,19 @@ function stripQueryString(url: string): string {
  * connection, so Sentry's ingest sees the address regardless. The project
  * setting "Prevent Storing of IP Addresses" is the other switch, and both
  * are required.
+ *
+ * @param event - The event Sentry is about to send, mutated in place.
+ * @returns `event`, with IP address, cookies, request body, query strings, and disallowed
+ * headers removed.
  */
-export function scrubEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
-	// `Sentry.ErrorEvent`'s own `request`/`user`/`breadcrumbs` fields already
-	// carry the shapes read and written below, so no cast is needed to reach
-	// into them.
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `scrubEvent` deletes the IP address from `event` in place; that mutation is its documented contract, not an oversight.
+export function scrubEvent(event: ErrorEvent): ErrorEvent {
+	// `ErrorEvent`'s own `request`/`user`/`breadcrumbs` fields already carry
+	// the shapes read and written by the two helpers below, so no cast is
+	// needed to reach into them.
 	if (event.user) delete event.user.ip_address;
-
-	if (event.breadcrumbs) {
-		// Console breadcrumbs carry whatever any code logged. Filtered here
-		// rather than by disabling the breadcrumbs integration, so the
-		// guarantee survives an SDK major renaming that integration.
-		event.breadcrumbs = event.breadcrumbs.filter((crumb) => crumb.category !== 'console');
-
-		for (const crumb of event.breadcrumbs) {
-			const { data } = crumb;
-			if (!data) continue;
-
-			for (const key of BREADCRUMB_URL_KEYS) {
-				// `Breadcrumb.data` is typed `{ [key: string]: any }` by the
-				// SDK; the annotation narrows the read to `unknown` so it is
-				// checked below instead of trusted.
-				const value: unknown = data[key];
-				if (typeof value === 'string') data[key] = stripQueryString(value);
-			}
-		}
-	}
-
-	const { request } = event;
-	if (request) {
-		delete request.cookies;
-		delete request.data;
-		delete request.query_string;
-		if (request.url) request.url = stripQueryString(request.url);
-		if (request.headers) {
-			request.headers = Object.fromEntries(
-				Object.entries(request.headers).filter(([name]) => ALLOWED_HEADERS.has(name.toLowerCase())),
-			);
-		}
-	}
+	scrubBreadcrumbs(event);
+	scrubRequest(event);
 
 	return event;
 }
@@ -96,18 +148,13 @@ export function scrubEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
  * `classifyApiError` names every failure this app deliberately renders as
  * UI. `unknown` is what is left: a 500, a network failure, a render error —
  * the things nobody chose to handle, and the only things worth an event.
+ *
+ * @param error - Whatever was thrown or caught.
+ * @returns Whether `error` is worth reporting to Sentry.
  */
 export function isReportable(error: unknown): boolean {
 	return classifyApiError(error).kind === 'unknown';
 }
-
-/**
- * Errors already reported. A router error component can render more than
- * once for one error, and on the server it renders again on the client after
- * hydration — without this, one failure becomes several events out of the
- * monthly 5,000.
- */
-const reported = new WeakSet();
 
 export function reportUnexpected(error: unknown): void {
 	if (!isReportable(error)) return;
@@ -117,7 +164,7 @@ export function reportUnexpected(error: unknown): void {
 		reported.add(error);
 	}
 
-	Sentry.captureException(error);
+	captureException(error);
 }
 
 /**
@@ -145,8 +192,14 @@ export function reportUnexpected(error: unknown): void {
  * The deprecated `queryParams` field is the one omission: `urlQueryParams`
  * below already resolves first (`dc.urlQueryParams ?? dc.queryParams ?? …`),
  * so `queryParams` is never consulted.
+ *
+ * @param dsn - The Sentry DSN to send events to.
+ * @returns The options object to pass to `Sentry.init`.
  */
-export function sentryOptions(dsn: string): Parameters<typeof Sentry.init>[0] {
+export function sentryOptions(dsn: string): Parameters<typeof init>[0] {
+	const environment = import.meta.env.VITE_SENTRY_ENVIRONMENT;
+	const release = import.meta.env.VITE_SENTRY_RELEASE;
+
 	return {
 		beforeSend: scrubEvent,
 		dataCollection: {
@@ -185,17 +238,10 @@ export function sentryOptions(dsn: string): Parameters<typeof Sentry.init>[0] {
 		// build time and carry no VITE_ prefix, so the browser bundle cannot
 		// see them. Step 6 defines these two from them instead of asking the
 		// maintainer to duplicate two more variables in the dashboard.
-		environment: import.meta.env.VITE_SENTRY_ENVIRONMENT || 'development',
-		release: import.meta.env.VITE_SENTRY_RELEASE || undefined,
+		environment: environment === undefined || environment === '' ? 'development' : environment,
+		release: release === undefined || release === '' ? undefined : release,
 	};
 }
-
-/**
- * `Sentry.init` is process-global, and `getRouter` runs once per request on
- * the server — so this guards against re-initialising the client on every
- * page view.
- */
-let initialized = false;
 
 /**
  * Called from `getRouter`, which is the one place that exists in both
@@ -205,13 +251,15 @@ let initialized = false;
  * node command line. With tracing off, plain `Sentry.init` is enough for
  * error capture, which is all this project asked for. If auto-instrumentation
  * is ever wanted, that constraint is what has to be solved first.
+ *
+ * @param isServer - Whether this call runs in the server bundle; tags the event's `serverName`.
  */
 export function initSentry(isServer: boolean): void {
 	if (initialized) return;
 
 	const dsn = import.meta.env.VITE_SENTRY_DSN;
-	if (!dsn) return;
+	if (dsn === undefined || dsn === '') return;
 
 	initialized = true;
-	Sentry.init({ ...sentryOptions(dsn), serverName: isServer ? 'web-ssr' : undefined });
+	init({ ...sentryOptions(dsn), serverName: isServer ? 'web-ssr' : undefined });
 }

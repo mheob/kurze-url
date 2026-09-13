@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { readLanguage, readTheme, themeClassName } from './preferences';
 
-describe('readLanguage', () => {
+describe(readLanguage, () => {
 	it('reads the language from a cookie header', () => {
 		expect(readLanguage('lang=de')).toBe('de');
 	});
@@ -46,7 +46,7 @@ describe('readLanguage', () => {
 	});
 
 	it('defaults to English for a missing or empty Accept-Language', () => {
-		expect(readLanguage(undefined, undefined)).toBe('en');
+		expect(readLanguage(undefined)).toBe('en');
 		expect(readLanguage(undefined, '')).toBe('en');
 	});
 
@@ -64,7 +64,7 @@ describe('readLanguage', () => {
 	});
 });
 
-describe('readTheme', () => {
+describe(readTheme, () => {
 	it('reads the theme from a cookie header', () => {
 		expect(readTheme('theme=dark')).toBe('dark');
 	});
@@ -75,7 +75,7 @@ describe('readTheme', () => {
 	});
 });
 
-describe('themeClassName', () => {
+describe(themeClassName, () => {
 	it('maps dark to the dark class', () => {
 		expect(themeClassName('dark')).toBe('dark');
 	});

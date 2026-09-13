@@ -11,36 +11,6 @@ import { createApiClient, type GetAccessToken } from '@kurze-url/api-client';
 import { withRelatedProject } from '@vercel/related-projects';
 
 /**
- * The only place createApiClient is called. The browser never reaches the Go
- * API: every call runs here, on the server, which is what removes the CORS
- * question entirely and lets Plan 6 keep the access token in an httpOnly
- * cookie the browser cannot read.
- *
- * withRelatedProject resolves the API URL per deployment, so a preview of this
- * app talks to the matching preview of the API rather than to production.
- */
-export function apiBaseUrl(): string {
-	// API_HOST wins outright instead of being withRelatedProject's `defaultHost`,
-	// which is consulted only when the lookup finds nothing. The Go router matches
-	// its own hostname exactly (`API_HOSTNAME`) and treats every other Host header
-	// as a short-link domain, so these two settings have to name the same host.
-	// When production moved onto its custom domain, related-projects kept
-	// resolving the API project's `*.vercel.app` alias: every `/v1` call arrived
-	// at the redirect surface, was read as a slug, and 404'd. Nothing raised — the
-	// health probe simply reported the API unreachable while it was healthy. An
-	// explicit host is the one setting Vercel cannot change out from under this.
-	const explicitHost = process.env.API_HOST;
-	if (explicitHost) return explicitHost;
-
-	// Left unset outside production on purpose: this lookup is what pairs a
-	// preview of this app with the matching preview of the API.
-	return withRelatedProject({
-		projectName: 'kurze-url-api',
-		defaultHost: 'http://localhost:8080',
-	});
-}
-
-/**
  * Headers this deployment has to send for the API to answer it at all, as
  * opposed to anything the API's own contract asks for.
  *
@@ -60,10 +30,44 @@ export function apiBaseUrl(): string {
  * Deliberately not named VERCEL_AUTOMATION_BYPASS_SECRET: Vercel injects that
  * name into this project's own deployments with this project's own secret,
  * which unlocks the web app, not the API.
+ *
+ * @returns The bypass header when `API_PROTECTION_BYPASS_SECRET` is set, otherwise an empty object.
  */
 function platformHeaders(): Record<string, string> {
 	const bypass = process.env.API_PROTECTION_BYPASS_SECRET;
-	return bypass ? { 'x-vercel-protection-bypass': bypass } : {};
+	return bypass !== undefined && bypass !== '' ? { 'x-vercel-protection-bypass': bypass } : {};
+}
+
+/**
+ * The only place createApiClient is called. The browser never reaches the Go
+ * API: every call runs here, on the server, which is what removes the CORS
+ * question entirely and lets Plan 6 keep the access token in an httpOnly
+ * cookie the browser cannot read.
+ *
+ * withRelatedProject resolves the API URL per deployment, so a preview of this
+ * app talks to the matching preview of the API rather than to production.
+ *
+ * @returns The API's base URL: `API_HOST` in production, else the paired preview (or localhost) from `withRelatedProject`.
+ */
+export function apiBaseUrl(): string {
+	// API_HOST wins outright instead of being withRelatedProject's `defaultHost`,
+	// which is consulted only when the lookup finds nothing. The Go router matches
+	// its own hostname exactly (`API_HOSTNAME`) and treats every other Host header
+	// as a short-link domain, so these two settings have to name the same host.
+	// When production moved onto its custom domain, related-projects kept
+	// resolving the API project's `*.vercel.app` alias: every `/v1` call arrived
+	// at the redirect surface, was read as a slug, and 404'd. Nothing raised — the
+	// health probe simply reported the API unreachable while it was healthy. An
+	// explicit host is the one setting Vercel cannot change out from under this.
+	const explicitHost = process.env.API_HOST;
+	if (explicitHost !== undefined && explicitHost !== '') return explicitHost;
+
+	// Left unset outside production on purpose: this lookup is what pairs a
+	// preview of this app with the matching preview of the API.
+	return withRelatedProject({
+		defaultHost: 'http://localhost:8080',
+		projectName: 'kurze-url-api',
+	});
 }
 
 // oxlint's typescript(explicit-function-return-type) is error-level and the

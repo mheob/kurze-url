@@ -13,9 +13,12 @@ import { LinkForm, type LinkFormValues } from './link-form';
  * regexes below (`/redirect|weiterleitung/i`, `/destination|ziel/i`) already
  * match either language, and no test in this file asserts on German copy
  * specifically.
+ *
+ * @param props - The props to render `LinkForm` with.
+ * @returns The rendered test utilities from Testing Library's `render`.
  */
 function renderForm(props: {
-	readonly domains?: readonly { id: string; hostname: string }[];
+	readonly domains?: readonly Readonly<{ id: string; hostname: string }>[];
 	readonly fieldErrors?: Readonly<Record<string, string>>;
 	readonly initial?: Partial<LinkFormValues>;
 	readonly onSubmit: (values: LinkFormValues) => void;
@@ -27,34 +30,42 @@ function renderForm(props: {
 	);
 }
 
-describe('LinkForm', () => {
+describe(LinkForm, () => {
 	it('warns inline when 301 is chosen', async () => {
 		// CLAUDE.md requires this. A cached 301 stops clicks being counted and
 		// stops later destination changes taking effect for anyone who has
 		// visited once — breakage a user cannot diagnose and cannot undo.
-		renderForm({ onSubmit: vi.fn() });
-		await userEvent.selectOptions(screen.getByLabelText(/redirect|weiterleitung/i), '301');
+		renderForm({ onSubmit: vi.fn<(values: LinkFormValues) => void>() });
+		await userEvent.selectOptions(screen.getByLabelText(/redirect|weiterleitung/iu), '301');
 
-		expect(await screen.findByRole('note')).toBeInTheDocument();
+		await expect(screen.findByRole('note')).resolves.toBeInTheDocument();
 	});
 
 	it('does not warn for 302', () => {
-		renderForm({ onSubmit: vi.fn() });
+		renderForm({ onSubmit: vi.fn<(values: LinkFormValues) => void>() });
 		expect(screen.queryByRole('note')).not.toBeInTheDocument();
 	});
 
 	it('shows a server field error on the field it belongs to', () => {
-		renderForm({ fieldErrors: { destination_url: 'must be https' }, onSubmit: vi.fn() });
-		expect(screen.getByLabelText(/destination|ziel/i)).toHaveAccessibleDescription(/must be https/);
+		renderForm({
+			fieldErrors: { destination_url: 'must be https' },
+			onSubmit: vi.fn<(values: LinkFormValues) => void>(),
+		});
+		expect(screen.getByLabelText(/destination|ziel/iu)).toHaveAccessibleDescription(
+			/must be https/u,
+		);
 	});
 
 	it('shows a server field error for expires_at', () => {
 		// Finding 1: this field previously had no `aria-describedby`/error `<p>`
 		// wiring at all, so a rejection naming it (a past expiry, say) rendered
 		// nothing — no field message, no banner, a silent failure.
-		renderForm({ fieldErrors: { expires_at: 'must be in the future' }, onSubmit: vi.fn() });
-		expect(screen.getByLabelText(/expires|läuft ab/i)).toHaveAccessibleDescription(
-			/must be in the future/,
+		renderForm({
+			fieldErrors: { expires_at: 'must be in the future' },
+			onSubmit: vi.fn<(values: LinkFormValues) => void>(),
+		});
+		expect(screen.getByLabelText(/expires|läuft ab/iu)).toHaveAccessibleDescription(
+			/must be in the future/u,
 		);
 	});
 
@@ -63,33 +74,42 @@ describe('LinkForm', () => {
 		// description, not that the field failed validation — `aria-invalid` is
 		// what a screen reader announces unprompted, without the visitor having
 		// to go hunting for the description text.
-		renderForm({ fieldErrors: { destination_url: 'must be https' }, onSubmit: vi.fn() });
-		expect(screen.getByLabelText(/destination|ziel/i)).toHaveAttribute('aria-invalid', 'true');
+		renderForm({
+			fieldErrors: { destination_url: 'must be https' },
+			onSubmit: vi.fn<(values: LinkFormValues) => void>(),
+		});
+		expect(screen.getByLabelText(/destination|ziel/iu)).toHaveAttribute('aria-invalid', 'true');
 	});
 
 	it('does not mark a field invalid when it has no error', () => {
-		renderForm({ onSubmit: vi.fn() });
-		expect(screen.getByLabelText(/destination|ziel/i)).not.toHaveAttribute('aria-invalid');
+		renderForm({ onSubmit: vi.fn<(values: LinkFormValues) => void>() });
+		expect(screen.getByLabelText(/destination|ziel/iu)).not.toHaveAttribute('aria-invalid');
 	});
 
 	it('announces a field-level server error as an alert', () => {
 		// Minor 11, other half: the error `<p>` had no `role="alert"`, so a
 		// screen reader only reached it by hunting, the same gap
 		// `aria-invalid` closes for the field itself.
-		renderForm({ fieldErrors: { destination_url: 'must be https' }, onSubmit: vi.fn() });
+		renderForm({
+			fieldErrors: { destination_url: 'must be https' },
+			onSubmit: vi.fn<(values: LinkFormValues) => void>(),
+		});
 		expect(screen.getByRole('alert')).toHaveTextContent('must be https');
 	});
 
 	it('shows a server field error for a field the form has no input for', () => {
 		// A field the API might add later, or any name this form doesn't render
 		// a specific input for — must still surface, not vanish.
-		renderForm({ fieldErrors: { some_future_field: 'not allowed' }, onSubmit: vi.fn() });
+		renderForm({
+			fieldErrors: { some_future_field: 'not allowed' },
+			onSubmit: vi.fn<(values: LinkFormValues) => void>(),
+		});
 		expect(screen.getByRole('alert')).toHaveTextContent('not allowed');
 	});
 
 	it('shows the slug placeholder saying one will be generated', () => {
-		renderForm({ onSubmit: vi.fn() });
-		expect(screen.getByLabelText(/short path|kurzpfad/i)).toHaveAttribute(
+		renderForm({ onSubmit: vi.fn<(values: LinkFormValues) => void>() });
+		expect(screen.getByLabelText(/short path|kurzpfad/iu)).toHaveAttribute(
 			'placeholder',
 			'Leave empty and one will be generated',
 		);
@@ -99,26 +119,26 @@ describe('LinkForm', () => {
 		// The API has accepted an explicit domain_id since plan 3; the form
 		// never asked, so every link landed on the shared hostname. A verified
 		// domain with no way to put a link on it is not a feature.
-		const onSubmit = vi.fn();
+		const onSubmit = vi.fn<(values: LinkFormValues) => void>();
 		renderForm({ domains: [{ hostname: 'links.verein.test', id: 'd1' }], onSubmit });
 
-		await userEvent.selectOptions(screen.getByLabelText(/domain/i), 'd1');
-		await userEvent.type(screen.getByLabelText(/destination/i), 'https://example.org/');
-		await userEvent.click(screen.getByRole('button', { name: /save/i }));
+		await userEvent.selectOptions(screen.getByLabelText(/domain/iu), 'd1');
+		await userEvent.type(screen.getByLabelText(/destination/iu), 'https://example.org/');
+		await userEvent.click(screen.getByRole('button', { name: /save/iu }));
 
 		expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ domain_id: 'd1' }));
 	});
 
 	it('omits the picker when there is nothing to pick', () => {
 		// A select with one option is furniture.
-		renderForm({ domains: [], onSubmit: vi.fn() });
-		expect(screen.queryByLabelText(/domain/i)).not.toBeInTheDocument();
+		renderForm({ domains: [], onSubmit: vi.fn<(values: LinkFormValues) => void>() });
+		expect(screen.queryByLabelText(/domain/iu)).not.toBeInTheDocument();
 	});
 
 	it('omits the picker when no domains prop is passed at all', () => {
 		// The edit route (Task 11) and any other caller that doesn't yet know
 		// about domains must keep getting today's furniture-free form.
-		renderForm({ onSubmit: vi.fn() });
-		expect(screen.queryByLabelText(/domain/i)).not.toBeInTheDocument();
+		renderForm({ onSubmit: vi.fn<(values: LinkFormValues) => void>() });
+		expect(screen.queryByLabelText(/domain/iu)).not.toBeInTheDocument();
 	});
 });

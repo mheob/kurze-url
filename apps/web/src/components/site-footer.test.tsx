@@ -13,7 +13,7 @@ function renderFooter(apiStatus: string): void {
 	);
 }
 
-describe('SiteFooter', () => {
+describe(SiteFooter, () => {
 	it('exposes the API status as data, not only as prose', () => {
 		// `e2e/global-setup.ts` reads this attribute to decide whether the
 		// deployment is wired to a real API before running a single spec. The
@@ -32,6 +32,6 @@ describe('SiteFooter', () => {
 		// translated.
 		renderFooter('ok');
 
-		expect(screen.getByText(/ok/i)).toBeInTheDocument();
+		expect(screen.getByText(/ok/iu)).toBeInTheDocument();
 	});
 });

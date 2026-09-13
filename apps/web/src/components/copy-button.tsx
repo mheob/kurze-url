@@ -16,6 +16,11 @@ import { Button } from './ui/button';
  * either way, since sighted users can already tell the buttons apart by
  * position, but `aria-label` gives anyone tabbing through them a distinct
  * name per button instead of two indistinguishable "Copy" controls.
+ *
+ * @param props - The component's props.
+ * @param props.label - Optional accessible-name override, for a caller rendering more than one `CopyButton` in the same row.
+ * @param props.value - The text copied to the clipboard on click.
+ * @returns The rendered copy button and its live-region confirmation.
  */
 export function CopyButton({
 	label,
@@ -33,7 +38,13 @@ export function CopyButton({
 				aria-label={label}
 				onClick={() => {
 					setCopied(false);
-					void navigator.clipboard.writeText(value).then(() => setCopied(true));
+					// Deliberately fire-and-forget: the leading `void` marks the clipboard write as discarded, but
+					// an onClick handler cannot itself be awaited by React, so `.then()` is how a synchronous handler
+					// schedules work after the write completes.
+					// oxlint-disable-next-line promise/prefer-await-to-then, promise/always-return -- neither rule can see the `void` above that says the promise is deliberately discarded.
+					void navigator.clipboard.writeText(value).then(() => {
+						setCopied(true);
+					});
 				}}
 				type="button"
 			>

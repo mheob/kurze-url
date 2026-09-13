@@ -13,6 +13,13 @@ import { getRequest } from '@tanstack/react-start/server';
 
 import { authedApiClient, flushSessionCookies, requireSession } from './session';
 
+/* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding of this rule in this
+ * file is the same `request: Request` parameter each `...For` function takes: `Request` nests a
+ * mutable `Headers` through its own `.headers` getter, and `Readonly<>` is shallow — it does not
+ * reach that nested property, unlike a bare `Headers` parameter, which the check does accept once
+ * wrapped.
+ */
+
 /**
  * Same `...For`/`...Fn` split as `server/links.ts`, for the same reason:
  * `listDomainsFn`'s `createServerFn` can't be called directly under Vitest
@@ -53,24 +60,31 @@ export const listDomainsFor = createServerOnlyFn(
 
 /** `getRequest()` inline, not inside `listDomainsFor`, for the same reason as `listLinksFn`. */
 export const listDomainsFn = createServerFn({ method: 'GET' })
-	.validator((data: { teamId: string }) => data)
-	.handler(async ({ data }) => listDomainsFor(getRequest(), data.teamId));
+	.validator((data: { readonly teamId: string }) => data)
+	.handler(async ({ data }: { readonly data: { readonly teamId: string } }) =>
+		listDomainsFor(getRequest(), data.teamId),
+	);
 
 /**
  * One definition of the key and the fetcher, used by both a route's loader
  * (`ensureQueryData`) and its component (`useSuspenseQuery`), the same reason
  * `linksQueryOptions` exists. Two definitions drift, and the symptom is a
  * domain list that updates on navigation but not after a claim or delete.
+ *
+ * @param teamId - The team whose domains to list.
+ * @returns Query options for `useSuspenseQuery`/`ensureQueryData`, keyed on `['domains', teamId]`.
  */
 // oxlint's typescript(explicit-function-return-type) is error-level, but
 // `queryOptions`'s own return type can't be written out by hand without
 // losing the specific `['domains', teamId]` tuple type `useSuspenseQuery`
 // needs downstream — same reasoning as `linksQueryOptions`, confirmed by
-// trying it there.
-// oxlint-disable-next-line typescript/explicit-function-return-type
+// trying it there. Same reason covers `explicit-module-boundary-types`
+// below: it's the same missing annotation this exported function can't be
+// given either.
+// oxlint-disable-next-line typescript/explicit-function-return-type, typescript/explicit-module-boundary-types
 export const domainsQueryOptions = (teamId: string) =>
 	queryOptions({
-		queryFn: () => listDomainsFn({ data: { teamId } }),
+		queryFn: async () => listDomainsFn({ data: { teamId } }),
 		queryKey: ['domains', teamId] as const,
 	});
 
@@ -100,8 +114,11 @@ export const claimDomainFor = createServerOnlyFn(
 );
 
 export const claimDomainFn = createServerFn({ method: 'POST' })
-	.validator((data: { hostname: string; teamId: string }) => data)
-	.handler(async ({ data }) => claimDomainFor(getRequest(), data.teamId, data.hostname));
+	.validator((data: { readonly hostname: string; readonly teamId: string }) => data)
+	.handler(
+		async ({ data }: { readonly data: { readonly hostname: string; readonly teamId: string } }) =>
+			claimDomainFor(getRequest(), data.teamId, data.hostname),
+	);
 
 /**
  * Same `...For`/`...Fn` split. Returns the full `VerifyDomainOutputBody`,
@@ -134,8 +151,10 @@ export const verifyDomainFor = createServerOnlyFn(
 );
 
 export const verifyDomainFn = createServerFn({ method: 'POST' })
-	.validator((data: { domainId: string }) => data)
-	.handler(async ({ data }) => verifyDomainFor(getRequest(), data.domainId));
+	.validator((data: { readonly domainId: string }) => data)
+	.handler(async ({ data }: { readonly data: { readonly domainId: string } }) =>
+		verifyDomainFor(getRequest(), data.domainId),
+	);
 
 /**
  * Same `...For`/`...Fn` split. Returns `void`, not the domain: nothing
@@ -157,5 +176,7 @@ export const deleteDomainFor = createServerOnlyFn(
 );
 
 export const deleteDomainFn = createServerFn({ method: 'POST' })
-	.validator((data: { domainId: string }) => data)
-	.handler(async ({ data }) => deleteDomainFor(getRequest(), data.domainId));
+	.validator((data: { readonly domainId: string }) => data)
+	.handler(async ({ data }: { readonly data: { readonly domainId: string } }) =>
+		deleteDomainFor(getRequest(), data.domainId),
+	);
