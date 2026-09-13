@@ -112,3 +112,17 @@ export function qrContrastRatio(a: string, b: string): number {
 export function hasEnoughQrContrast(foreground: string, background: string): boolean {
 	return qrContrastRatio(foreground, background) >= MIN_QR_CONTRAST_RATIO;
 }
+
+/**
+ * Whether `raw` is a six-digit hex colour, with or without a leading `#` — the
+ * same `HEX_COLOR` pattern `channels` above already enforces, exported so a
+ * free-text colour field can refuse a malformed value before it ever reaches
+ * the contrast check (which otherwise fails closed on it anyway, just under
+ * the wrong message).
+ *
+ * @param raw - The colour string to check.
+ * @returns Whether `raw` is a valid six-digit hex colour.
+ */
+export function isValidQrColor(raw: string): boolean {
+	return HEX_COLOR.test(raw);
+}

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { I18nextProvider } from 'react-i18next';
 import { describe, expect, it, vi } from 'vitest';
@@ -89,16 +89,17 @@ describe(LinkQRCard, () => {
 	 * this component ever makes, and it happens on the download control
 	 * alone.
 	 */
-	it('recolours the preview without asking for a new document', () => {
+	it('recolours the preview without asking for a new document', async () => {
 		const onDownload = vi.fn().mockResolvedValue(undefined);
 		renderCard({ onDownload });
 
 		const before = screen.getByRole('img').getAttribute('src');
-		// `fireEvent.change`, not `userEvent.type`: `<input type="color">` is
-		// not an editable text field, so `userEvent.clear` throws on it and
-		// typing into it does nothing. The change event is what a real colour
-		// picker dispatches anyway.
-		fireEvent.change(screen.getByLabelText('Code colour'), { target: { value: '#003366' } });
+		// A genuine text field now (Task 8 moved it off `<input type="color">`
+		// onto `InputGroup`), so a normal type replaces the default digits —
+		// `userEvent.clear` and `.type` work exactly as they would on any other
+		// text input.
+		await userEvent.clear(screen.getByLabelText('Code colour'));
+		await userEvent.type(screen.getByLabelText('Code colour'), '003366');
 
 		const after = screen.getByRole('img').getAttribute('src');
 		expect(after).not.toBe(before);
@@ -110,10 +111,29 @@ describe(LinkQRCard, () => {
 		const onDownload = vi.fn().mockResolvedValue(undefined);
 		renderCard({ onDownload });
 
-		fireEvent.change(screen.getByLabelText('Code colour'), { target: { value: '#ffd700' } });
+		await userEvent.clear(screen.getByLabelText('Code colour'));
+		await userEvent.type(screen.getByLabelText('Code colour'), 'ffd700');
 		await userEvent.click(screen.getByRole('button', { name: 'Download' }));
 
 		expect(screen.getByRole('alert')).toHaveTextContent('too close together');
+		expect(onDownload).not.toHaveBeenCalled();
+	});
+
+	/**
+	 * The free-text field the colour inputs became can hold something a
+	 * `<input type="color">` swatch never could — the format check this adds
+	 * (`isValidQrColor`, checked before the contrast ratio) is what turns that
+	 * into `qrInvalidColor` rather than a misleading `qrLowContrast`.
+	 */
+	it('refuses a malformed hex colour before it asks for a download', async () => {
+		const onDownload = vi.fn().mockResolvedValue(undefined);
+		renderCard({ onDownload });
+
+		await userEvent.clear(screen.getByLabelText('Code colour'));
+		await userEvent.type(screen.getByLabelText('Code colour'), 'zzzzzz');
+		await userEvent.click(screen.getByRole('button', { name: 'Download' }));
+
+		expect(screen.getByRole('alert')).toHaveTextContent('six hex digits');
 		expect(onDownload).not.toHaveBeenCalled();
 	});
 

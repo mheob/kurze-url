@@ -2,9 +2,13 @@ import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { QrRejectionReason } from '../lib/api-errors';
-import { hasEnoughQrContrast } from '../lib/qr-contrast';
+import { hasEnoughQrContrast, isValidQrColor } from '../lib/qr-contrast';
 import { qrSvgDataUrl, restyleQrSvg } from '../lib/qr-svg';
 import { Button } from './ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { Field, FieldDescription, FieldError, FieldLabel } from './ui/field';
+import { Input } from './ui/input';
+import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupText } from './ui/input-group';
 
 /**
  * Every reason the mirrored rule or the API's typed 422 can carry, mapped to
@@ -36,9 +40,9 @@ const MAX_SIZE = 2048;
 const MAX_PREVIEW_PIXELS = 240;
 
 /**
- * The API takes `rrggbb`: a raw `#` in a query string is the fragment delimiter and never reaches the server. `<input type="color">` produces the `#` form, so it is stripped on the way out.
+ * The API takes `rrggbb`: a raw `#` in a query string is the fragment delimiter and never reaches the server. The field's own leading-`#` addon is only ever shown, never typed, but the value is normalised on the way in too, so a pasted `#003366` and a typed `003366` end up in state the same way.
  *
- * @param color - The colour string, possibly still carrying the leading `#` an `<input type="color">` produces.
+ * @param color - The colour string, possibly still carrying a leading `#`.
  * @returns The colour with any leading `#` stripped.
  */
 function bare(color: string): string {
@@ -129,6 +133,15 @@ export function LinkQRCard({
 	}
 
 	async function handleDownload(): Promise<void> {
+		// Format first, contrast second: `hasEnoughQrContrast` already fails
+		// closed on an unparseable colour (a ratio of `1`, always below the
+		// threshold), so without this ordering a malformed hex value would
+		// surface as `qrLowContrast` instead of the more specific
+		// `qrInvalidColor` the free-text field now makes reachable.
+		if (!isValidQrColor(foreground) || !isValidQrColor(background)) {
+			setLocalReason('invalid_color');
+			return;
+		}
 		if (!hasEnoughQrContrast(foreground, background)) {
 			setLocalReason('low_contrast');
 			return;
@@ -153,96 +166,115 @@ export function LinkQRCard({
 	const preview = svg !== undefined ? restyleQrSvg(svg, { background, foreground }) : undefined;
 
 	return (
-		<section>
-			<h2>{t('links.qrHeading')}</h2>
-			<p>{t('links.qrExplainer')}</p>
+		<Card>
+			<CardHeader>
+				{/* `CardTitle` hardcodes a `<div>` — see the same note on
+				    `link-password-card.tsx`'s `CardTitle`: a real nested `<h2>`
+				    keeps this in the page's heading structure without fighting
+				    `jsx-a11y/prefer-tag-over-role`, and without editing `ui/card.tsx`. */}
+				<CardTitle>
+					<h2>{t('links.qrHeading')}</h2>
+				</CardTitle>
+				<CardDescription>{t('links.qrExplainer')}</CardDescription>
+			</CardHeader>
+			<CardContent>
+				{preview !== undefined ? (
+					<img
+						alt={t('links.qrPreviewAlt')}
+						height={previewSize}
+						src={qrSvgDataUrl(preview)}
+						width={previewSize}
+					/>
+				) : (
+					<p>{t(isLoading ? 'links.qrPreviewLoading' : 'links.qrPreviewUnavailable')}</p>
+				)}
 
-			{preview !== undefined ? (
-				<img
-					alt={t('links.qrPreviewAlt')}
-					height={previewSize}
-					src={qrSvgDataUrl(preview)}
-					width={previewSize}
-				/>
-			) : (
-				<p>{t(isLoading ? 'links.qrPreviewLoading' : 'links.qrPreviewUnavailable')}</p>
-			)}
-
-			<div>
-				<label htmlFor={formatId}>{t('links.qrFormat')}</label>
-				<select
-					id={formatId}
-					onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
-						setFormat(event.target.value === 'png' ? 'png' : 'svg');
-						changed();
-					}}
-					value={format}
-				>
-					<option value="svg">{t('links.qrFormatSvg')}</option>
-					<option value="png">{t('links.qrFormatPng')}</option>
-				</select>
-			</div>
-
-			<div>
-				<label htmlFor={foregroundId}>{t('links.qrForeground')}</label>
-				<input
-					id={foregroundId}
-					onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
-						setForeground(event.target.value);
-						changed();
-					}}
-					type="color"
-					value={foreground}
-				/>
-			</div>
-
-			<div>
-				<label htmlFor={backgroundId}>{t('links.qrBackground')}</label>
-				<input
-					id={backgroundId}
-					onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
-						setBackground(event.target.value);
-						changed();
-					}}
-					type="color"
-					value={background}
-				/>
-			</div>
-
-			{format === 'png' ? (
-				<div>
-					<label htmlFor={sizeId}>{t('links.qrSize')}</label>
-					<input
-						aria-describedby={sizeHintId}
-						id={sizeId}
-						max={MAX_SIZE}
-						min={MIN_SIZE}
+				{/* Not converted to the design system's `Select`: see the same note
+				    on `redirect_type` in `link-form.tsx` — a popup listbox would stop
+				    `userEvent.selectOptions` from working below and would change how
+				    the control is actually operated. */}
+				<Field>
+					<FieldLabel htmlFor={formatId}>{t('links.qrFormat')}</FieldLabel>
+					<select
+						id={formatId}
 						onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
-							setSize(Number(event.target.value));
+							setFormat(event.target.value === 'png' ? 'png' : 'svg');
 							changed();
 						}}
-						type="number"
-						value={size}
-					/>
-					<p id={sizeHintId}>{t('links.qrSizeHint')}</p>
-				</div>
-			) : null}
+						value={format}
+					>
+						<option value="svg">{t('links.qrFormatSvg')}</option>
+						<option value="png">{t('links.qrFormatPng')}</option>
+					</select>
+				</Field>
 
-			{message !== undefined ? (
-				<p id={errorId} role="alert">
-					{message}
-				</p>
-			) : null}
+				<Field>
+					<FieldLabel htmlFor={foregroundId}>{t('links.qrForeground')}</FieldLabel>
+					<InputGroup>
+						<InputGroupAddon>
+							<InputGroupText>{t('links.qrColorPrefix')}</InputGroupText>
+						</InputGroupAddon>
+						<InputGroupInput
+							id={foregroundId}
+							maxLength={6}
+							onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
+								setForeground(`#${bare(event.target.value)}`);
+								changed();
+							}}
+							value={bare(foreground)}
+						/>
+					</InputGroup>
+				</Field>
 
-			<Button
-				aria-describedby={message !== undefined ? errorId : undefined}
-				onClick={() => {
-					void handleDownload();
-				}}
-				type="button"
-			>
-				{t('links.qrDownload')}
-			</Button>
-		</section>
+				<Field>
+					<FieldLabel htmlFor={backgroundId}>{t('links.qrBackground')}</FieldLabel>
+					<InputGroup>
+						<InputGroupAddon>
+							<InputGroupText>{t('links.qrColorPrefix')}</InputGroupText>
+						</InputGroupAddon>
+						<InputGroupInput
+							id={backgroundId}
+							maxLength={6}
+							onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
+								setBackground(`#${bare(event.target.value)}`);
+								changed();
+							}}
+							value={bare(background)}
+						/>
+					</InputGroup>
+				</Field>
+
+				{format === 'png' ? (
+					<Field>
+						<FieldLabel htmlFor={sizeId}>{t('links.qrSize')}</FieldLabel>
+						<Input
+							aria-describedby={sizeHintId}
+							id={sizeId}
+							max={MAX_SIZE}
+							min={MIN_SIZE}
+							onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
+								setSize(Number(event.target.value));
+								changed();
+							}}
+							type="number"
+							value={size}
+						/>
+						<FieldDescription id={sizeHintId}>{t('links.qrSizeHint')}</FieldDescription>
+					</Field>
+				) : null}
+
+				{message === undefined ? null : <FieldError id={errorId}>{message}</FieldError>}
+
+				<Button
+					aria-describedby={message !== undefined ? errorId : undefined}
+					onClick={() => {
+						void handleDownload();
+					}}
+					type="button"
+				>
+					{t('links.qrDownload')}
+				</Button>
+			</CardContent>
+		</Card>
 	);
 }

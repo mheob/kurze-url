@@ -8,6 +8,9 @@ import {
 } from '../lib/link-password';
 import { ConfirmDelete } from './confirm-delete';
 import { Button } from './ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { Field, FieldError, FieldLabel } from './ui/field';
+import { Input } from './ui/input';
 
 /**
  * Maps every reason `validateLinkPassword` (Task 7) or the API's typed 422
@@ -59,9 +62,10 @@ export interface LinkPasswordCardProps {
  * state would read as "the password is empty", which is why this renders
  * beside `<LinkForm>` instead.
  *
- * "Card" is a role, not a component this app has a primitive for — plain
- * `<form>`/`<label>`/`<input>` plus `Button`, the same shape `link-form.tsx`
- * uses, including its `errorId`/`aria-describedby`/`aria-invalid` wiring.
+ * Wrapped in the design system's `Card`, with the password field itself built
+ * from `Field`/`FieldLabel`/`FieldError` plus `Button` — the same idiom
+ * `link-form.tsx` uses, including its `errorId`/`aria-describedby`/
+ * `aria-invalid` wiring.
  *
  * `validateLinkPassword` runs first, client-side, against `context` — the
  * same policy the API enforces — so a password derived from this link, its
@@ -156,9 +160,9 @@ export function LinkPasswordCard({
 	// wrapped in its own try/catch, so the promise cannot reject.
 	const passwordInput = (
 		<form onSubmit={(event: Readonly<{ preventDefault: () => void }>) => void handleSubmit(event)}>
-			<div>
-				<label htmlFor={inputId}>{t('links.passwordLabel')}</label>
-				<input
+			<Field data-invalid={message !== undefined}>
+				<FieldLabel htmlFor={inputId}>{t('links.passwordLabel')}</FieldLabel>
+				<Input
 					aria-describedby={message !== undefined ? errorId : undefined}
 					aria-invalid={message !== undefined ? true : undefined}
 					autoComplete="new-password"
@@ -171,12 +175,8 @@ export function LinkPasswordCard({
 					type="password"
 					value={password}
 				/>
-				{message !== undefined ? (
-					<p id={errorId} role="alert">
-						{message}
-					</p>
-				) : null}
-			</div>
+				{message === undefined ? null : <FieldError id={errorId}>{message}</FieldError>}
+			</Field>
 			<Button type="submit">{submitLabel}</Button>
 			{showCancel ? (
 				<Button onClick={handleCancel} type="button">
@@ -187,31 +187,44 @@ export function LinkPasswordCard({
 	);
 
 	return (
-		<section>
-			<h2>{t('links.passwordHeading')}</h2>
-			<p>{t('links.passwordExplainer')}</p>
-			<p>{t(hasPassword ? 'links.passwordProtected' : 'links.passwordUnprotected')}</p>
+		<Card>
+			<CardHeader>
+				{/* `CardTitle` hardcodes a `<div>` — it has no `render`/`asChild` prop
+				    to hand it a real heading tag, and `role="heading"` on a `<div>`
+				    is exactly what `jsx-a11y/prefer-tag-over-role` refuses. Nesting a
+				    real `<h2>` keeps the section in the page's heading structure
+				    without either problem: Tailwind's preflight resets a heading's
+				    font-size/weight to `inherit`, so `CardTitle`'s own classes still
+				    style it, unchanged from before this section was a `Card`. */}
+				<CardTitle>
+					<h2>{t('links.passwordHeading')}</h2>
+				</CardTitle>
+				<CardDescription>{t('links.passwordExplainer')}</CardDescription>
+			</CardHeader>
+			<CardContent>
+				<p>{t(hasPassword ? 'links.passwordProtected' : 'links.passwordUnprotected')}</p>
 
-			{hasPassword && !changing ? (
-				<>
-					<Button
-						onClick={() => {
-							setChanging(true);
-						}}
-						type="button"
-					>
-						{t('links.passwordChange')}
-					</Button>
-					<ConfirmDelete
-						confirmLabel={t('links.passwordRemoveConfirm')}
-						label={t('links.passwordRemove')}
-						onConfirm={onRemove}
-						question={t('links.passwordRemoveQuestion')}
-					/>
-				</>
-			) : (
-				passwordInput
-			)}
-		</section>
+				{hasPassword && !changing ? (
+					<>
+						<Button
+							onClick={() => {
+								setChanging(true);
+							}}
+							type="button"
+						>
+							{t('links.passwordChange')}
+						</Button>
+						<ConfirmDelete
+							confirmLabel={t('links.passwordRemoveConfirm')}
+							label={t('links.passwordRemove')}
+							onConfirm={onRemove}
+							question={t('links.passwordRemoveQuestion')}
+						/>
+					</>
+				) : (
+					passwordInput
+				)}
+			</CardContent>
+		</Card>
 	);
 }

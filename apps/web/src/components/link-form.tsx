@@ -7,6 +7,9 @@ import { useForm } from '@tanstack/react-form';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from './ui/button';
+import { Checkbox } from './ui/checkbox';
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from './ui/field';
+import { Input } from './ui/input';
 
 const defaultValues: LinkFormValues = {
 	analytics_enabled: true,
@@ -111,221 +114,218 @@ export function LinkForm({
 			}}
 		>
 			{unhandledFieldErrors.length > 0 ? (
-				<p role="alert">
+				<FieldError>
 					{unhandledFieldErrors.map(([, message]: readonly [string, string]) => message).join(' ')}
-				</p>
+				</FieldError>
 			) : null}
 
-			<form.Field
-				name="destination_url"
-				validators={{
-					onChange: ({ value }: { readonly value: string }) =>
-						value.trim() === '' ? t('links.destinationRequired') : undefined,
-				}}
-			>
-				{(field) => {
-					const errorId = 'destination_url-error';
-					const errorMessage =
-						fieldErrors?.destination_url ??
-						(field.state.meta.isTouched ? field.state.meta.errors[0] : undefined);
-
-					return (
-						<div>
-							<label htmlFor="destination_url">{t('links.destination')}</label>
-							<input
-								aria-describedby={errorMessage !== undefined ? errorId : undefined}
-								aria-invalid={errorMessage !== undefined ? true : undefined}
-								id="destination_url"
-								name={field.name}
-								onBlur={field.handleBlur}
-								onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
-									field.handleChange(event.target.value);
-								}}
-								required
-								type="url"
-								value={field.state.value}
-							/>
-							{errorMessage !== undefined ? (
-								<p id={errorId} role="alert">
-									{errorMessage}
-								</p>
-							) : null}
-						</div>
-					);
-				}}
-			</form.Field>
-
-			<form.Field name="slug">
-				{(field) => {
-					const errorId = 'slug-error';
-					const errorMessage = fieldErrors?.slug;
-
-					return (
-						<div>
-							<label htmlFor="slug">{t('links.slug')}</label>
-							{/* An empty slug means the API generates one. Said here, because a
-							    blank required-looking field otherwise reads as an oversight. */}
-							<input
-								aria-describedby={errorMessage !== undefined ? errorId : undefined}
-								aria-invalid={errorMessage !== undefined ? true : undefined}
-								id="slug"
-								name={field.name}
-								onBlur={field.handleBlur}
-								onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
-									field.handleChange(event.target.value);
-								}}
-								placeholder={t('links.slugGenerated')}
-								value={field.state.value}
-							/>
-							{errorMessage !== undefined ? (
-								<p id={errorId} role="alert">
-									{errorMessage}
-								</p>
-							) : null}
-						</div>
-					);
-				}}
-			</form.Field>
-
-			<form.Field name="redirect_type">
-				{(field) => {
-					const errorId = 'redirect_type-error';
-					const errorMessage = fieldErrors?.redirect_type;
-
-					return (
-						<div>
-							<label htmlFor="redirect_type">{t('links.redirectType')}</label>
-							<select
-								aria-describedby={errorMessage !== undefined ? errorId : undefined}
-								aria-invalid={errorMessage !== undefined ? true : undefined}
-								id="redirect_type"
-								name={field.name}
-								onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
-									field.handleChange(Number(event.target.value));
-								}}
-								value={field.state.value}
-							>
-								<option value={302}>{t('links.redirect302')}</option>
-								<option value={301}>{t('links.redirect301')}</option>
-							</select>
-							{errorMessage !== undefined ? (
-								<p id={errorId} role="alert">
-									{errorMessage}
-								</p>
-							) : null}
-							{/* CLAUDE.md requires this. A cached 301 stops clicks being counted
-							    and stops later destination changes taking effect for anyone who
-							    has already visited — breakage a volunteer cannot diagnose and
-							    cannot undo. It belongs next to the choice, not in a tooltip. */}
-							{field.state.value === REDIRECT_PERMANENT ? (
-								<p role="note">{t('links.redirect301Warning')}</p>
-							) : null}
-						</div>
-					);
-				}}
-			</form.Field>
-
-			<form.Field name="expires_at">
-				{(field) => {
-					const errorId = 'expires_at-error';
-					const errorMessage = fieldErrors?.expires_at;
-
-					return (
-						<div>
-							<label htmlFor="expires_at">{t('links.expiresAt')}</label>
-							<input
-								aria-describedby={errorMessage !== undefined ? errorId : undefined}
-								aria-invalid={errorMessage !== undefined ? true : undefined}
-								id="expires_at"
-								name={field.name}
-								onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
-									field.handleChange(event.target.value);
-								}}
-								type="datetime-local"
-								value={field.state.value}
-							/>
-							{errorMessage !== undefined ? (
-								<p id={errorId} role="alert">
-									{errorMessage}
-								</p>
-							) : null}
-						</div>
-					);
-				}}
-			</form.Field>
-
-			<form.Field name="analytics_enabled">
-				{(field) => {
-					const errorId = 'analytics_enabled-error';
-					const errorMessage = fieldErrors?.analytics_enabled;
-
-					return (
-						<div>
-							<label htmlFor="analytics_enabled">{t('links.analyticsEnabled')}</label>
-							<input
-								aria-describedby={errorMessage !== undefined ? errorId : undefined}
-								aria-invalid={errorMessage !== undefined ? true : undefined}
-								checked={field.state.value}
-								id="analytics_enabled"
-								name={field.name}
-								onChange={(event: Readonly<{ target: Readonly<{ checked: boolean }> }>) => {
-									field.handleChange(event.target.checked);
-								}}
-								type="checkbox"
-							/>
-							{errorMessage !== undefined ? (
-								<p id={errorId} role="alert">
-									{errorMessage}
-								</p>
-							) : null}
-						</div>
-					);
-				}}
-			</form.Field>
-
-			{/* Furniture check: a select offering only the shared domain is no
-			    choice at all, so this renders nothing unless the team has at
-			    least one verified domain to pick instead. The empty-valued
-			    option is the shared instance hostname — `toRequestBody` in the
-			    create route maps `''` back to `undefined`, exactly as it already
-			    does for `slug`/`expires_at`, so leaving this untouched keeps
-			    today's behaviour. */}
-			{domains && domains.length > 0 ? (
-				<form.Field name="domain_id">
+			<FieldGroup>
+				<form.Field
+					name="destination_url"
+					validators={{
+						onChange: ({ value }: { readonly value: string }) =>
+							value.trim() === '' ? t('links.destinationRequired') : undefined,
+					}}
+				>
 					{(field) => {
-						const errorId = 'domain_id-error';
-						const errorMessage = fieldErrors?.domain_id;
+						const errorId = 'destination_url-error';
+						const errorMessage =
+							fieldErrors?.destination_url ??
+							(field.state.meta.isTouched ? field.state.meta.errors[0] : undefined);
 
 						return (
-							<div>
-								<label htmlFor="domain_id">{t('links.domain')}</label>
+							<Field data-invalid={errorMessage !== undefined}>
+								<FieldLabel htmlFor={field.name}>{t('links.destination')}</FieldLabel>
+								<Input
+									aria-describedby={errorMessage !== undefined ? errorId : undefined}
+									aria-invalid={errorMessage !== undefined ? true : undefined}
+									id={field.name}
+									name={field.name}
+									onBlur={field.handleBlur}
+									onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
+										field.handleChange(event.target.value);
+									}}
+									required
+									type="url"
+									value={field.state.value}
+								/>
+								{errorMessage === undefined ? null : (
+									<FieldError id={errorId}>{errorMessage}</FieldError>
+								)}
+							</Field>
+						);
+					}}
+				</form.Field>
+
+				<form.Field name="slug">
+					{(field) => {
+						const errorId = 'slug-error';
+						const errorMessage = fieldErrors?.slug;
+
+						return (
+							<Field data-invalid={errorMessage !== undefined}>
+								<FieldLabel htmlFor={field.name}>{t('links.slug')}</FieldLabel>
+								{/* An empty slug means the API generates one. Said here, because a
+								    blank required-looking field otherwise reads as an oversight. */}
+								<Input
+									aria-describedby={errorMessage !== undefined ? errorId : undefined}
+									aria-invalid={errorMessage !== undefined ? true : undefined}
+									id={field.name}
+									name={field.name}
+									onBlur={field.handleBlur}
+									onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
+										field.handleChange(event.target.value);
+									}}
+									placeholder={t('links.slugGenerated')}
+									value={field.state.value}
+								/>
+								{errorMessage === undefined ? null : (
+									<FieldError id={errorId}>{errorMessage}</FieldError>
+								)}
+							</Field>
+						);
+					}}
+				</form.Field>
+
+				{/* Not converted to the design system's `Select`: that control is a
+				    custom popup listbox rather than a native `<select>`, and swapping
+				    it in would change how this field is actually operated (and would
+				    stop `userEvent.selectOptions` from working in the tests below) —
+				    the opposite of this task's "behaviour does not change" rule.
+				    `Field`/`FieldLabel`/`FieldError` still apply around the native
+				    control. */}
+				<form.Field name="redirect_type">
+					{(field) => {
+						const errorId = 'redirect_type-error';
+						const errorMessage = fieldErrors?.redirect_type;
+
+						return (
+							<Field data-invalid={errorMessage !== undefined}>
+								<FieldLabel htmlFor={field.name}>{t('links.redirectType')}</FieldLabel>
 								<select
 									aria-describedby={errorMessage !== undefined ? errorId : undefined}
 									aria-invalid={errorMessage !== undefined ? true : undefined}
-									id="domain_id"
+									id={field.name}
+									name={field.name}
+									onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
+										field.handleChange(Number(event.target.value));
+									}}
+									value={field.state.value}
+								>
+									<option value={302}>{t('links.redirect302')}</option>
+									<option value={301}>{t('links.redirect301')}</option>
+								</select>
+								{errorMessage === undefined ? null : (
+									<FieldError id={errorId}>{errorMessage}</FieldError>
+								)}
+								{/* CLAUDE.md requires this. A cached 301 stops clicks being counted
+								    and stops later destination changes taking effect for anyone who
+								    has already visited — breakage a volunteer cannot diagnose and
+								    cannot undo. It belongs next to the choice, not in a tooltip. */}
+								{field.state.value === REDIRECT_PERMANENT ? (
+									<FieldDescription role="note">{t('links.redirect301Warning')}</FieldDescription>
+								) : null}
+							</Field>
+						);
+					}}
+				</form.Field>
+
+				<form.Field name="expires_at">
+					{(field) => {
+						const errorId = 'expires_at-error';
+						const errorMessage = fieldErrors?.expires_at;
+
+						return (
+							<Field data-invalid={errorMessage !== undefined}>
+								<FieldLabel htmlFor={field.name}>{t('links.expiresAt')}</FieldLabel>
+								<Input
+									aria-describedby={errorMessage !== undefined ? errorId : undefined}
+									aria-invalid={errorMessage !== undefined ? true : undefined}
+									id={field.name}
 									name={field.name}
 									onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
 										field.handleChange(event.target.value);
 									}}
+									type="datetime-local"
 									value={field.state.value}
-								>
-									<option value="">{t('links.domainShared')}</option>
-									{domains.map((domain) => (
-										<option key={domain.id} value={domain.id}>
-											{domain.hostname}
-										</option>
-									))}
-								</select>
-								{errorMessage !== undefined ? (
-									<p id={errorId} role="alert">
-										{errorMessage}
-									</p>
-								) : null}
-							</div>
+								/>
+								{errorMessage === undefined ? null : (
+									<FieldError id={errorId}>{errorMessage}</FieldError>
+								)}
+							</Field>
 						);
 					}}
 				</form.Field>
-			) : null}
+
+				<form.Field name="analytics_enabled">
+					{(field) => {
+						const errorId = 'analytics_enabled-error';
+						const errorMessage = fieldErrors?.analytics_enabled;
+
+						return (
+							<Field data-invalid={errorMessage !== undefined} orientation="horizontal">
+								<Checkbox
+									aria-describedby={errorMessage !== undefined ? errorId : undefined}
+									aria-invalid={errorMessage !== undefined ? true : undefined}
+									checked={field.state.value}
+									id={field.name}
+									name={field.name}
+									onCheckedChange={(checked: boolean) => {
+										field.handleChange(checked);
+									}}
+								/>
+								<FieldLabel htmlFor={field.name}>{t('links.analyticsEnabled')}</FieldLabel>
+								{errorMessage === undefined ? null : (
+									<FieldError id={errorId}>{errorMessage}</FieldError>
+								)}
+							</Field>
+						);
+					}}
+				</form.Field>
+
+				{/* Furniture check: a select offering only the shared domain is no
+				    choice at all, so this renders nothing unless the team has at
+				    least one verified domain to pick instead. The empty-valued
+				    option is the shared instance hostname — `toRequestBody` in the
+				    create route maps `''` back to `undefined`, exactly as it already
+				    does for `slug`/`expires_at`, so leaving this untouched keeps
+				    today's behaviour. Kept as a native `<select>` for the same reason
+				    `redirect_type` above is. */}
+				{domains && domains.length > 0 ? (
+					<form.Field name="domain_id">
+						{(field) => {
+							const errorId = 'domain_id-error';
+							const errorMessage = fieldErrors?.domain_id;
+
+							return (
+								<Field data-invalid={errorMessage !== undefined}>
+									<FieldLabel htmlFor={field.name}>{t('links.domain')}</FieldLabel>
+									<select
+										aria-describedby={errorMessage !== undefined ? errorId : undefined}
+										aria-invalid={errorMessage !== undefined ? true : undefined}
+										id={field.name}
+										name={field.name}
+										onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
+											field.handleChange(event.target.value);
+										}}
+										value={field.state.value}
+									>
+										<option value="">{t('links.domainShared')}</option>
+										{domains.map((domain) => (
+											<option key={domain.id} value={domain.id}>
+												{domain.hostname}
+											</option>
+										))}
+									</select>
+									{errorMessage === undefined ? null : (
+										<FieldError id={errorId}>{errorMessage}</FieldError>
+									)}
+								</Field>
+							);
+						}}
+					</form.Field>
+				) : null}
+			</FieldGroup>
 
 			<Button type="submit">{t('links.save')}</Button>
 		</form>

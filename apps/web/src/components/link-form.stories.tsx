@@ -39,3 +39,11 @@ export const WithDomainPicker: StoryObj<typeof meta> = {
 		onSubmit: fn<(values: LinkFormValues) => void>(),
 	},
 };
+
+// The theme toolbar global defaults to `light`, and `test:storybook` runs every
+// story at its defaults — so without this story the dark palette is never
+// checked by anything, only viewable by hand.
+export const Dark: StoryObj<typeof meta> = {
+	args: { ...Default.args },
+	globals: { theme: 'dark' },
+};

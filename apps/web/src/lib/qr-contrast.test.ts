@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { hasEnoughQrContrast, MIN_QR_CONTRAST_RATIO, qrContrastRatio } from './qr-contrast';
+import {
+	hasEnoughQrContrast,
+	isValidQrColor,
+	MIN_QR_CONTRAST_RATIO,
+	qrContrastRatio,
+} from './qr-contrast';
 
 describe(qrContrastRatio, () => {
 	it('matches WCAG at both extremes', () => {
@@ -42,5 +47,18 @@ describe(hasEnoughQrContrast, () => {
 
 	it('exposes the threshold it enforces', () => {
 		expect(MIN_QR_CONTRAST_RATIO).toBe(4.5);
+	});
+});
+
+describe(isValidQrColor, () => {
+	it('accepts six hex digits, with or without the leading hash', () => {
+		expect(isValidQrColor('#003366')).toBe(true);
+		expect(isValidQrColor('003366')).toBe(true);
+	});
+
+	it('refuses anything that is not six hex digits', () => {
+		expect(isValidQrColor('#fff')).toBe(false);
+		expect(isValidQrColor('zzzzzz')).toBe(false);
+		expect(isValidQrColor('')).toBe(false);
 	});
 });
