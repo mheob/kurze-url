@@ -107,7 +107,6 @@
 		"qrFormatPng": "PNG — Bild in fester Größe, am besten für Bildschirme",
 		"qrForeground": "Farbe des Codes",
 		"qrBackground": "Hintergrundfarbe",
-		"qrColorPrefix": "#",
 		"qrSize": "Größe in Pixeln",
 		"qrSizeHint": "Gilt für das PNG. Ausgegeben wird die größte ganze Größe, die hineinpasst — das Ergebnis kann also etwas kleiner ausfallen.",
 		"qrPreviewAlt": "Vorschau des QR-Codes dieses Links",

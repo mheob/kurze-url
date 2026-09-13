@@ -10,6 +10,7 @@ import { Button } from './ui/button';
 import { Checkbox } from './ui/checkbox';
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from './ui/field';
 import { Input } from './ui/input';
+import { NativeSelect, NativeSelectOption } from './ui/native-select';
 
 const defaultValues: LinkFormValues = {
 	analytics_enabled: true,
@@ -192,8 +193,8 @@ export function LinkForm({
 				    it in would change how this field is actually operated (and would
 				    stop `userEvent.selectOptions` from working in the tests below) —
 				    the opposite of this task's "behaviour does not change" rule.
-				    `Field`/`FieldLabel`/`FieldError` still apply around the native
-				    control. */}
+				    `NativeSelect` is the design system's styling on a real `<select>`,
+				    so it keeps both the behaviour and the shared look. */}
 				<form.Field name="redirect_type">
 					{(field) => {
 						const errorId = 'redirect_type-error';
@@ -202,7 +203,7 @@ export function LinkForm({
 						return (
 							<Field data-invalid={errorMessage !== undefined}>
 								<FieldLabel htmlFor={field.name}>{t('links.redirectType')}</FieldLabel>
-								<select
+								<NativeSelect
 									aria-describedby={errorMessage !== undefined ? errorId : undefined}
 									aria-invalid={errorMessage !== undefined ? true : undefined}
 									id={field.name}
@@ -212,9 +213,9 @@ export function LinkForm({
 									}}
 									value={field.state.value}
 								>
-									<option value={302}>{t('links.redirect302')}</option>
-									<option value={301}>{t('links.redirect301')}</option>
-								</select>
+									<NativeSelectOption value={302}>{t('links.redirect302')}</NativeSelectOption>
+									<NativeSelectOption value={301}>{t('links.redirect301')}</NativeSelectOption>
+								</NativeSelect>
 								{errorMessage === undefined ? null : (
 									<FieldError id={errorId}>{errorMessage}</FieldError>
 								)}
@@ -289,8 +290,8 @@ export function LinkForm({
 				    option is the shared instance hostname — `toRequestBody` in the
 				    create route maps `''` back to `undefined`, exactly as it already
 				    does for `slug`/`expires_at`, so leaving this untouched keeps
-				    today's behaviour. Kept as a native `<select>` for the same reason
-				    `redirect_type` above is. */}
+				    today's behaviour. Kept as a native `<select>` (via `NativeSelect`)
+				    for the same reason `redirect_type` above is. */}
 				{domains && domains.length > 0 ? (
 					<form.Field name="domain_id">
 						{(field) => {
@@ -300,7 +301,7 @@ export function LinkForm({
 							return (
 								<Field data-invalid={errorMessage !== undefined}>
 									<FieldLabel htmlFor={field.name}>{t('links.domain')}</FieldLabel>
-									<select
+									<NativeSelect
 										aria-describedby={errorMessage !== undefined ? errorId : undefined}
 										aria-invalid={errorMessage !== undefined ? true : undefined}
 										id={field.name}
@@ -310,13 +311,13 @@ export function LinkForm({
 										}}
 										value={field.state.value}
 									>
-										<option value="">{t('links.domainShared')}</option>
+										<NativeSelectOption value="">{t('links.domainShared')}</NativeSelectOption>
 										{domains.map((domain) => (
-											<option key={domain.id} value={domain.id}>
+											<NativeSelectOption key={domain.id} value={domain.id}>
 												{domain.hostname}
-											</option>
+											</NativeSelectOption>
 										))}
-									</select>
+									</NativeSelect>
 									{errorMessage === undefined ? null : (
 										<FieldError id={errorId}>{errorMessage}</FieldError>
 									)}

@@ -60,10 +60,6 @@ describe('translation catalogues', () => {
 			'brand',
 			'domains.recordTypeTxt',
 			'domains.recordTypeCname',
-			// The hex-colour fields' leading-`#` addon: a syntax marker, not
-			// prose, the same reasoning `recordTypeTxt`/`recordTypeCname` above
-			// already give.
-			'links.qrColorPrefix',
 		]);
 		const english = new Map(flatten(en));
 		const toCheck = flatten(de).filter(
