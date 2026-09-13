@@ -93,7 +93,13 @@
 	--destructive: oklch(0.577 0.245 27.325);
 	--border: oklch(0.922 0 0);
 	--input: oklch(0.922 0 0);
-	--ring: oklch(0.708 0 0);
+	/* The preset's neutral ring, oklch(0.708 0 0), measured at 2.593:1 against
+	 * this background — short of the 3:1 that WCAG 1.4.11 requires, and the
+	 * Sera style's underline-only inputs make the ring the primary affordance
+	 * on every form, not a secondary one. This is --chart-3 (also this mode's
+	 * --sidebar-primary), which measures 6.441:1 here. See
+	 * docs/superpowers/plans/2026-09-13-design-system-contrast.md. */
+	--ring: oklch(0.511 0.262 276.966);
 	--chart-1: oklch(0.785 0.115 274.713);
 	--chart-2: oklch(0.585 0.233 277.117);
 	--chart-3: oklch(0.511 0.262 276.966);
@@ -127,7 +133,14 @@
 	--destructive: oklch(0.704 0.191 22.216);
 	--border: oklch(1 0 0 / 10%);
 	--input: oklch(1 0 0 / 15%);
-	--ring: oklch(0.556 0 0);
+	/* Kept in the same indigo hue family as the light-mode ring above, for the
+	 * same reason — the underline-only inputs make the ring load-bearing —
+	 * even though the preset's neutral oklch(0.556 0 0) already cleared 3:1
+	 * here (4.183:1). This is --chart-2 (also this mode's --sidebar-primary),
+	 * which measures 4.324:1. Not --chart-5 (= this mode's --primary): that
+	 * would only reach 1.962:1 against this near-black background. See
+	 * docs/superpowers/plans/2026-09-13-design-system-contrast.md. */
+	--ring: oklch(0.585 0.233 277.117);
 	--chart-1: oklch(0.785 0.115 274.713);
 	--chart-2: oklch(0.585 0.233 277.117);
 	--chart-3: oklch(0.511 0.262 276.966);
