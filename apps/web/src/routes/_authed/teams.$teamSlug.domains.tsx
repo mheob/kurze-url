@@ -7,6 +7,8 @@ import { useTranslation } from 'react-i18next';
 
 import { DomainList } from '../../components/domain-list';
 import { Button } from '../../components/ui/button';
+import { Field, FieldDescription, FieldError, FieldLabel } from '../../components/ui/field';
+import { Input } from '../../components/ui/input';
 import { classifyApiError, statusOf, type ApiFailure } from '../../lib/api-errors';
 import { reportUnexpected } from '../../lib/observability';
 import {
@@ -328,12 +330,12 @@ function RouteComponent(): React.JSX.Element {
 							fieldError ?? (field.state.meta.isTouched ? field.state.meta.errors[0] : undefined);
 
 						return (
-							<div>
-								<label htmlFor="hostname">{t('domains.hostname')}</label>
-								<input
+							<Field data-invalid={errorMessage !== undefined}>
+								<FieldLabel htmlFor={field.name}>{t('domains.hostname')}</FieldLabel>
+								<Input
 									aria-describedby={errorMessage !== undefined ? `${hintId} ${errorId}` : hintId}
 									aria-invalid={errorMessage !== undefined ? true : undefined}
-									id="hostname"
+									id={field.name}
 									name={field.name}
 									onBlur={field.handleBlur}
 									onChange={(event) => {
@@ -342,13 +344,11 @@ function RouteComponent(): React.JSX.Element {
 									required
 									value={field.state.value}
 								/>
-								<p id={hintId}>{t('domains.hostnameHint')}</p>
-								{errorMessage !== undefined ? (
-									<p id={errorId} role="alert">
-										{errorMessage}
-									</p>
-								) : null}
-							</div>
+								<FieldDescription id={hintId}>{t('domains.hostnameHint')}</FieldDescription>
+								{errorMessage === undefined ? null : (
+									<FieldError id={errorId}>{errorMessage}</FieldError>
+								)}
+							</Field>
 						);
 					}}
 				</form.Field>
