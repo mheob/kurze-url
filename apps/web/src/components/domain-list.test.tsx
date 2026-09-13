@@ -119,6 +119,29 @@ describe(DomainList, () => {
 		expect(screen.getByRole('button', { name: 'Copy the CNAME record value' })).toBeInTheDocument();
 	});
 
+	it('names each pending domain hostname in its DNS heading', () => {
+		// A team onboarding several domains at once (CLAUDE.md: "one person
+		// legitimately onboards several domains at once") sees two otherwise
+		// identical "Create these two DNS records" blocks — a screen-reader
+		// user navigating by heading list cannot tell them apart unless the
+		// hostname is part of the heading itself.
+		const other = domain({ hostname: 'other.verein.test', id: 'domain-2' });
+		renderList([pendingDomain, other]);
+
+		expect(
+			screen.getByRole('heading', {
+				level: 2,
+				name: 'Create these two DNS records for links.verein.test',
+			}),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole('heading', {
+				level: 2,
+				name: 'Create these two DNS records for other.verein.test',
+			}),
+		).toBeInTheDocument();
+	});
+
 	it('hides the records once the domain works', () => {
 		renderList([verifiedDomain]);
 		expect(screen.queryByText(/_kurze-url-challenge/u)).not.toBeInTheDocument();

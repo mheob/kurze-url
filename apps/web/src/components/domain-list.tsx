@@ -191,6 +191,7 @@ export function DomainList({
 					<TableRow>
 						<TableHead>{t('domains.hostname')}</TableHead>
 						<TableHead>{t('domains.status')}</TableHead>
+						<TableHead>{t('domains.columnActions')}</TableHead>
 					</TableRow>
 				</TableHeader>
 				<TableBody>
@@ -201,8 +202,14 @@ export function DomainList({
 						return (
 							<Fragment key={domain.id}>
 								<TableRow>
+									<TableCell>{domain.hostname}</TableCell>
 									<TableCell>
-										{domain.hostname}
+										<Badge variant={variant}>
+											{icon}
+											{statusLabel(t, domain.verification_status)}
+										</Badge>
+									</TableCell>
+									<TableCell>
 										{deletingId === domain.id && deleteBlockedCount !== undefined ? (
 											<output>
 												{t('domains.deleteBlockedByLinks', { count: deleteBlockedCount })}
@@ -216,17 +223,11 @@ export function DomainList({
 											question={t('domains.deleteQuestion', { hostname: domain.hostname })}
 										/>
 									</TableCell>
-									<TableCell>
-										<Badge variant={variant}>
-											{icon}
-											{statusLabel(t, domain.verification_status)}
-										</Badge>
-									</TableCell>
 								</TableRow>
 								{domain.verification_status === 'pending' ? (
 									<TableRow>
-										<TableCell colSpan={2}>
-											<h2>{t('domains.recordsHeading')}</h2>
+										<TableCell colSpan={3}>
+											<h2>{t('domains.recordsHeadingFor', { hostname: domain.hostname })}</h2>
 											<Table>
 												<TableHeader>
 													<TableRow>
