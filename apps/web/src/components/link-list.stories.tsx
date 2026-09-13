@@ -91,3 +91,11 @@ export const NoShortDomainConfigured: StoryObj<typeof meta> = {
 		teamSlug: 'verein-a',
 	},
 };
+
+// The theme toolbar global defaults to `light`, and `test:storybook` runs every
+// story at its defaults — so without this story the dark palette is never
+// checked by anything, only viewable by hand.
+export const Dark: StoryObj<typeof meta> = {
+	args: { ...Populated.args },
+	globals: { theme: 'dark' },
+};

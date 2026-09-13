@@ -54,6 +54,9 @@
 	},
 	"links": {
 		"heading": "Deine Links",
+		"columnShortUrl": "Kurzlink",
+		"columnDestination": "Ziel",
+		"columnActions": "Aktionen",
 		"copy": "Kopieren",
 		"copied": "Kopiert",
 		"empty": "Noch keine Links.",

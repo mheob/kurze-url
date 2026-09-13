@@ -106,7 +106,7 @@ describe(LinkList, () => {
 		// microtask, separate from React's synchronous render), the same
 		// reason `team-switcher.test.tsx` awaits its first query too.
 		await expect(screen.findByText('No links yet.')).resolves.toBeInTheDocument();
-		expect(screen.queryByRole('list')).not.toBeInTheDocument();
+		expect(screen.queryByRole('table')).not.toBeInTheDocument();
 	});
 
 	it('offers a link to create the first link when the team has none', async () => {
@@ -163,8 +163,28 @@ describe(LinkList, () => {
 		await expect(
 			screen.findByRole('link', { name: 'https://short.invalid/abc123' }),
 		).resolves.toBeInTheDocument();
-		expect(screen.getAllByRole('listitem')).toHaveLength(2);
+		// One header row plus one per link.
+		expect(screen.getAllByRole('row')).toHaveLength(3);
 		expect(screen.getAllByRole('button', { name: 'Copy' })).toHaveLength(2);
+	});
+
+	it('renders one row per link', async () => {
+		renderWith(pageOf({ items: [link(), link({ id: 'link-2', slug: 'def456' })], total_count: 2 }));
+
+		// `findAllBy*`, not `getAllBy*`, for the first assertion — same reason as
+		// every other test in this file: `RouterProvider`'s initial match
+		// resolves asynchronously. One header row plus one per link.
+		await expect(screen.findAllByRole('row')).resolves.toHaveLength(3);
+		expect(screen.getByRole('columnheader', { name: 'Short link' })).toBeInTheDocument();
+	});
+
+	it('marks a password-protected link', async () => {
+		renderWith(pageOf({ items: [link({ has_password: true })], total_count: 1 }));
+
+		// The badge carries text, not only an icon and a colour: colour alone may
+		// never be the sole carrier of meaning (WCAG 1.4.1), and the icon is
+		// aria-hidden.
+		await expect(screen.findByText('Password protected')).resolves.toBeInTheDocument();
 	});
 
 	it('shows the short-domain notice when the links live on an .invalid hostname', async () => {

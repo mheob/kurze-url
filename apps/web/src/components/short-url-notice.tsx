@@ -1,3 +1,4 @@
+import { TriangleAlertIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 /**
@@ -23,5 +24,13 @@ export function ShortUrlNotice({
 	const { t } = useTranslation();
 	if (!hostname.endsWith('.invalid')) return null;
 
-	return <p role="note">{t('links.noShortDomain')}</p>;
+	return (
+		<p
+			className="flex items-center gap-2 border border-destructive/50 bg-destructive/10 p-3 text-sm text-foreground"
+			role="note"
+		>
+			<TriangleAlertIcon aria-hidden />
+			{t('links.noShortDomain')}
+		</p>
+	);
 }

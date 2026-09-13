@@ -54,6 +54,9 @@
 	},
 	"links": {
 		"heading": "Your links",
+		"columnShortUrl": "Short link",
+		"columnDestination": "Destination",
+		"columnActions": "Actions",
 		"copy": "Copy",
 		"copied": "Copied",
 		"empty": "No links yet.",
