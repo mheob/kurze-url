@@ -129,6 +129,19 @@ type Config struct {
 	// the uptime monitor alerts on the 404.
 	HealthCheckToken string
 
+	// RetentionToken guards POST /internal/retention, the daily analytics
+	// deletion. Empty disables the endpoint outright — it then answers 404
+	// for every caller. Fail closed, for a sharper reason than
+	// HealthCheckToken's: a forgotten variable there publishes dependency
+	// status, while a forgotten variable here would leave a delete endpoint
+	// open to whoever guesses the path.
+	//
+	// Deliberately not HealthCheckToken. That value sits in Better Stack's
+	// monitor configuration and in this repository's GitHub secrets, and
+	// everything it authorizes is a read. One leaked string should not also
+	// be able to destroy every Verein's statistics.
+	RetentionToken string
+
 	// SentryDSN empty disables error reporting entirely. Errors are still
 	// logged; they just do not outlive Vercel's log retention.
 	SentryDSN string
@@ -249,6 +262,7 @@ func Load() (Config, error) {
 	cfg.DomainDNSTarget = env("DOMAIN_DNS_TARGET", "cname.vercel-dns.com")
 
 	cfg.HealthCheckToken = os.Getenv("HEALTH_CHECK_TOKEN")
+	cfg.RetentionToken = os.Getenv("RETENTION_TOKEN")
 
 	cfg.SentryDSN = os.Getenv("SENTRY_DSN")
 	cfg.Environment = env("VERCEL_ENV", "development")
