@@ -29,11 +29,11 @@ async function createLink(page: Page, teamSlug: string, destinationUrl: string):
 	// form reaches well before React wires it up, and a value typed in that
 	// window never reaches React's state — the form then submits empty. See
 	// `waitForHydration`.
-	const destination = page.getByLabel(/destination/i);
+	const destination = page.getByLabel(/destination/iu);
 	await waitForHydration(destination);
 
 	await destination.fill(destinationUrl);
-	await page.getByRole('button', { name: /save/i }).click();
+	await page.getByRole('button', { name: /save/iu }).click();
 
 	// The create route navigates back to the list on success, so waiting for
 	// the destination to appear also confirms that redirect happened.
@@ -78,21 +78,21 @@ test('protects a link with a password and removes it again', async ({ page, team
 
 	// A fresh team's list holds exactly this one row, so `edit` resolves
 	// without scoping it to the row's own text.
-	await page.getByRole('link', { name: /edit/i }).click();
+	await page.getByRole('link', { name: /edit/iu }).click();
 
-	const password = page.getByLabel(/password/i);
+	const password = page.getByLabel(/password/iu);
 	await waitForHydration(password);
 	await password.fill('Kartoffelsalat!7');
-	await page.getByRole('button', { name: /protect this link/i }).click();
+	await page.getByRole('button', { name: /protect this link/iu }).click();
 
 	await expect(page.getByText('This link is protected by a password.')).toBeVisible();
 
 	await page.goto(`/teams/${teamSlug}/links`);
 	await expect(page.getByText('Password protected')).toBeVisible();
 
-	await page.getByRole('link', { name: /edit/i }).click();
-	await page.getByRole('button', { name: /remove protection/i }).click();
-	await page.getByRole('button', { name: /yes, remove it/i }).click();
+	await page.getByRole('link', { name: /edit/iu }).click();
+	await page.getByRole('button', { name: /remove protection/iu }).click();
+	await page.getByRole('button', { name: /yes, remove it/iu }).click();
 
 	await expect(page.getByText('This link is not protected.')).toBeVisible();
 
@@ -110,15 +110,15 @@ test('protects a link with a password and removes it again', async ({ page, team
 test('downloads a link’s QR code', async ({ page, teamSlug }) => {
 	await createLink(page, teamSlug, `https://example.org/qr-${Date.now()}`);
 
-	await page.getByRole('link', { name: /edit/i }).click();
+	await page.getByRole('link', { name: /edit/iu }).click();
 
-	const preview = page.getByRole('img', { name: /preview of this link/i });
+	const preview = page.getByRole('img', { name: /preview of this link/iu });
 	await expect(preview).toBeVisible();
 
 	const download = page.waitForEvent('download');
-	await page.getByRole('button', { name: /^download$/i }).click();
+	await page.getByRole('button', { name: /^download$/iu }).click();
 
-	expect((await download).suggestedFilename()).toMatch(/\.svg$/);
+	expect((await download).suggestedFilename()).toMatch(/\.svg$/u);
 });
 
 test('sends a signed-out visitor to login', async ({ browser, teamSlug }, testInfo) => {
@@ -141,7 +141,7 @@ test('sends a signed-out visitor to login', async ({ browser, teamSlug }, testIn
 	const page = await context.newPage();
 	await page.goto(`/teams/${teamSlug}/links`);
 
-	await expect(page).toHaveURL(/\/login$/);
+	await expect(page).toHaveURL(/\/login$/u);
 
 	await context.close();
 });

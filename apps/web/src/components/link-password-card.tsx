@@ -118,7 +118,7 @@ export function LinkPasswordCard({
 	 *
 	 * @param event - The form's submit event; prevented immediately so the mirrored policy check runs before any network call.
 	 */
-	async function handleSubmit(event: React.FormEvent<HTMLFormElement>): Promise<void> {
+	async function handleSubmit(event: Readonly<{ preventDefault: () => void }>): Promise<void> {
 		event.preventDefault();
 		const violation = validateLinkPassword(password, context);
 		setLocalReason(violation);
@@ -155,7 +155,7 @@ export function LinkPasswordCard({
 	// asks for. Nothing is lost by it — the only await inside is already
 	// wrapped in its own try/catch, so the promise cannot reject.
 	const passwordInput = (
-		<form onSubmit={(event) => void handleSubmit(event)}>
+		<form onSubmit={(event: Readonly<{ preventDefault: () => void }>) => void handleSubmit(event)}>
 			<div>
 				<label htmlFor={inputId}>{t('links.passwordLabel')}</label>
 				<input
@@ -163,7 +163,7 @@ export function LinkPasswordCard({
 					aria-invalid={message ? true : undefined}
 					autoComplete="new-password"
 					id={inputId}
-					onChange={(event) => {
+					onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
 						setPassword(event.target.value);
 						setLocalReason(null);
 						onDismissRejection?.();

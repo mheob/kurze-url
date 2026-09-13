@@ -76,7 +76,7 @@ export function RouteComponent(): React.JSX.Element {
 	const [failure, setFailure] = useState<ApiFailure | null>(null);
 
 	const mutation = useMutation({
-		mutationFn: async ({ name, slug }: { name: string; slug: string }) =>
+		mutationFn: async ({ name, slug }: Readonly<{ name: string; slug: string }>) =>
 			createTeamFn({ data: { name, slug } }),
 		onError: (error: unknown) => {
 			const classified = classifyApiError(error);

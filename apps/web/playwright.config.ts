@@ -35,11 +35,11 @@ if (new URL(baseURL).hostname.endsWith('.vercel.app') && !bypassSecret) {
 }
 
 export default defineConfig({
-	testDir: './e2e',
 	// Runs before any spec and stops the suite when the deployment's paired API
 	// preview was never built — see the file's own docstring for why that state
 	// is invisible from inside a test.
 	globalSetup: './e2e/global-setup.ts',
+	testDir: './e2e',
 	use: {
 		baseURL,
 		// Only on failure, and only kept for one: a passing run writes nothing,

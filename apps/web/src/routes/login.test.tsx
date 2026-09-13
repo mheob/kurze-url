@@ -13,9 +13,9 @@ import { createI18n } from '../i18n';
  * accident of hoisting order.
  */
 const mocks = vi.hoisted(() => ({
-	sendMagicLink: vi.fn<(input: { data: { email: string } }) => Promise<{ sent: true }>>(
-		async () => ({ sent: true }),
-	),
+	sendMagicLink: vi.fn<
+		(input: Readonly<{ data: Readonly<{ email: string }> }>) => Promise<{ sent: true }>
+	>(async () => ({ sent: true })),
 }));
 
 vi.mock('../server/auth', () => ({ sendMagicLink: mocks.sendMagicLink }));
@@ -41,10 +41,10 @@ function renderLoginForm(): ReturnType<typeof render> {
 describe('loginForm', () => {
 	it('shows the same confirmation whatever the address', async () => {
 		renderLoginForm();
-		await userEvent.type(screen.getByLabelText(/email|e-mail/i), 'a@example.test');
-		await userEvent.click(screen.getByRole('button', { name: /link/i }));
+		await userEvent.type(screen.getByLabelText(/email|e-mail/iu), 'a@example.test');
+		await userEvent.click(screen.getByRole('button', { name: /link/iu }));
 
-		await expect(screen.findByText(/on its way|unterwegs/i)).resolves.toBeInTheDocument();
+		await expect(screen.findByText(/on its way|unterwegs/iu)).resolves.toBeInTheDocument();
 	});
 
 	it('puts the form inside a main landmark', () => {
@@ -55,15 +55,15 @@ describe('loginForm', () => {
 		// to and the e2e accessibility scan fails the whole page.
 		renderLoginForm();
 		expect(screen.getByRole('main')).toContainElement(
-			screen.getByRole('button', { name: /link/i }),
+			screen.getByRole('button', { name: /link/iu }),
 		);
 	});
 
-	it('labels the field, so it is reachable without a mouse', async () => {
+	it('labels the field, so it is reachable without a mouse', () => {
 		// An input with only a placeholder passes a visual review and fails a
 		// screen reader. Accessibility is a CI gate here, not a preference.
 		renderLoginForm();
-		expect(screen.getByLabelText(/email|e-mail/i)).toBeInTheDocument();
+		expect(screen.getByLabelText(/email|e-mail/iu)).toBeInTheDocument();
 	});
 
 	/**
@@ -77,11 +77,11 @@ describe('loginForm', () => {
 	it('tells the visitor something went wrong instead of doing nothing', async () => {
 		mocks.sendMagicLink.mockRejectedValueOnce(new Error('boom'));
 		renderLoginForm();
-		await userEvent.type(screen.getByLabelText(/email|e-mail/i), 'a@example.test');
-		await userEvent.click(screen.getByRole('button', { name: /link/i }));
+		await userEvent.type(screen.getByLabelText(/email|e-mail/iu), 'a@example.test');
+		await userEvent.click(screen.getByRole('button', { name: /link/iu }));
 
-		await expect(screen.findByText(/went wrong|schiefgelaufen/i)).resolves.toBeInTheDocument();
-		expect(screen.queryByText(/on its way|unterwegs/i)).not.toBeInTheDocument();
+		await expect(screen.findByText(/went wrong|schiefgelaufen/iu)).resolves.toBeInTheDocument();
+		expect(screen.queryByText(/on its way|unterwegs/iu)).not.toBeInTheDocument();
 	});
 
 	/**
@@ -100,14 +100,14 @@ describe('loginForm', () => {
 				}),
 		);
 		renderLoginForm();
-		await userEvent.type(screen.getByLabelText(/email|e-mail/i), 'a@example.test');
-		const button = screen.getByRole('button', { name: /link/i });
+		await userEvent.type(screen.getByLabelText(/email|e-mail/iu), 'a@example.test');
+		const button = screen.getByRole('button', { name: /link/iu });
 		await userEvent.click(button);
 
 		expect(button).toBeDisabled();
 
 		resolveSend?.();
-		await screen.findByText(/on its way|unterwegs/i);
+		await screen.findByText(/on its way|unterwegs/iu);
 		expect(button).not.toBeDisabled();
 	});
 });

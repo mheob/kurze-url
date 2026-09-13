@@ -15,7 +15,9 @@ import { requireTeamId } from '../_authed';
  * reasoning as `LinksDataSource` in the list route.
  */
 interface DomainsDataSource {
-	ensureQueryData: (options: ReturnType<typeof domainsQueryOptions>) => Promise<PageDomain>;
+	readonly ensureQueryData: (
+		options: ReturnType<typeof domainsQueryOptions>,
+	) => Promise<PageDomain>;
 }
 
 /**
@@ -105,10 +107,12 @@ export function toRequestBody(values: LinkFormValues): CreateLinkInputBodyWritab
  * hand-built fake instead of standing up either one for real.
  */
 interface InvalidatableQueryClient {
-	invalidateQueries: (filters: { queryKey: readonly unknown[] }) => Promise<void>;
+	readonly invalidateQueries: (
+		filters: Readonly<{ queryKey: readonly unknown[] }>,
+	) => Promise<void>;
 }
 interface InvalidatableRouter {
-	invalidate: () => Promise<void>;
+	readonly invalidate: () => Promise<void>;
 }
 
 /**

@@ -12,7 +12,7 @@
 /** WCAG's floor for normal text, not its looser 3:1 for graphics. A QR module is smaller than a glyph and is read by a phone camera, not an eye. */
 export const MIN_QR_CONTRAST_RATIO = 4.5;
 
-const HEX_COLOR = /^#?[0-9a-f]{6}$/i;
+const HEX_COLOR = /^#?[0-9a-f]{6}$/iu;
 
 /**
  * Returns the three sRGB channels as 0–255, or `null` for anything that is not `rrggbb`.
@@ -53,7 +53,7 @@ function linearizeChannel(value: number): number {
  * @param rgb.2 - The blue channel.
  * @returns The relative luminance.
  */
-function relativeLuminance([r, g, b]: [number, number, number]): number {
+function relativeLuminance([r, g, b]: readonly [number, number, number]): number {
 	return 0.2126 * linearizeChannel(r) + 0.7152 * linearizeChannel(g) + 0.0722 * linearizeChannel(b);
 }
 

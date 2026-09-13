@@ -32,6 +32,6 @@ describe(SiteFooter, () => {
 		// translated.
 		renderFooter('ok');
 
-		expect(screen.getByText(/ok/i)).toBeInTheDocument();
+		expect(screen.getByText(/ok/iu)).toBeInTheDocument();
 	});
 });

@@ -31,7 +31,7 @@ describe(suggestTeamSlug, () => {
 	it('truncates to the 40-character limit without a trailing hyphen', () => {
 		const suggestion = suggestTeamSlug('Verein zur Foerderung des langen Namens im Dorfe');
 		expect(suggestion.length).toBeLessThanOrEqual(40);
-		expect(suggestion).not.toMatch(/-$/);
+		expect(suggestion).not.toMatch(/-$/u);
 	});
 
 	it('returns an empty string when nothing usable is left', () => {

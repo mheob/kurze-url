@@ -93,7 +93,9 @@ export function scrubEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
 		if (request.url) request.url = stripQueryString(request.url);
 		if (request.headers) {
 			request.headers = Object.fromEntries(
-				Object.entries(request.headers).filter(([name]) => ALLOWED_HEADERS.has(name.toLowerCase())),
+				Object.entries(request.headers).filter(([name]: readonly [string, string]) =>
+					ALLOWED_HEADERS.has(name.toLowerCase()),
+				),
 			);
 		}
 	}

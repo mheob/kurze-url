@@ -41,7 +41,7 @@ export default async function assertPairedApiIsReal(): Promise<void> {
 
 	try {
 		const response = await context.get('/');
-		const apiStatus = /data-api-status="([^"]*)"/.exec(await response.text())?.[1];
+		const apiStatus = /data-api-status="([^"]*)"/u.exec(await response.text())?.[1];
 
 		if (apiStatus !== 'ok') {
 			throw new Error(

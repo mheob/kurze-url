@@ -86,8 +86,11 @@ export const listLinksFor = createServerOnlyFn(
  * `server/auth.ts`.
  */
 export const listLinksFn = createServerFn({ method: 'GET' })
-	.validator((data: { teamId: string; page: number }) => data)
-	.handler(async ({ data }) => listLinksFor(getRequest(), data.teamId, data.page));
+	.validator((data: { readonly teamId: string; readonly page: number }) => data)
+	.handler(
+		async ({ data }: { readonly data: { readonly teamId: string; readonly page: number } }) =>
+			listLinksFor(getRequest(), data.teamId, data.page),
+	);
 
 /**
  * One definition of the key and the fetcher, used by both the route's loader
@@ -193,8 +196,10 @@ export const getLinkFor = createServerOnlyFn(
 
 /** `getRequest()` inline, not inside `getLinkFor`, for the same reason as `listLinksFn`/`createLinkFn`. */
 export const getLinkFn = createServerFn({ method: 'GET' })
-	.validator((data: { linkId: string }) => data)
-	.handler(async ({ data }) => getLinkFor(getRequest(), data.linkId));
+	.validator((data: { readonly linkId: string }) => data)
+	.handler(async ({ data }: { readonly data: { readonly linkId: string } }) =>
+		getLinkFor(getRequest(), data.linkId),
+	);
 
 /**
  * Same `...For`/`...Fn` split and the same reasoning as `createLinkFor`.
@@ -243,8 +248,10 @@ export const deleteLinkFor = createServerOnlyFn(
 );
 
 export const deleteLinkFn = createServerFn({ method: 'POST' })
-	.validator((data: { linkId: string }) => data)
-	.handler(async ({ data }) => deleteLinkFor(getRequest(), data.linkId));
+	.validator((data: { readonly linkId: string }) => data)
+	.handler(async ({ data }: { readonly data: { readonly linkId: string } }) =>
+		deleteLinkFor(getRequest(), data.linkId),
+	);
 
 /**
  * Same `...For`/`...Fn` split and the same reasoning as `updateLinkFor`. Both
@@ -269,8 +276,11 @@ export const setLinkPasswordFor = createServerOnlyFn(
 );
 
 export const setLinkPasswordFn = createServerFn({ method: 'POST' })
-	.validator((data: { linkId: string; password: string }) => data)
-	.handler(async ({ data }) => setLinkPasswordFor(getRequest(), data.linkId, data.password));
+	.validator((data: { readonly linkId: string; readonly password: string }) => data)
+	.handler(
+		async ({ data }: { readonly data: { readonly linkId: string; readonly password: string } }) =>
+			setLinkPasswordFor(getRequest(), data.linkId, data.password),
+	);
 
 export const removeLinkPasswordFor = createServerOnlyFn(
 	async (request: Request, linkId: string): Promise<Link> => {
@@ -288,8 +298,10 @@ export const removeLinkPasswordFor = createServerOnlyFn(
 );
 
 export const removeLinkPasswordFn = createServerFn({ method: 'POST' })
-	.validator((data: { linkId: string }) => data)
-	.handler(async ({ data }) => removeLinkPasswordFor(getRequest(), data.linkId));
+	.validator((data: { readonly linkId: string }) => data)
+	.handler(async ({ data }: { readonly data: { readonly linkId: string } }) =>
+		removeLinkPasswordFor(getRequest(), data.linkId),
+	);
 
 /** What `linkQrDownloadFor` hands back: the image, base64-encoded so it survives the server-function boundary, plus the media type to rebuild a `Blob` with. */
 export interface QrDownload {
@@ -300,11 +312,11 @@ export interface QrDownload {
 /** The colours, format and size one download asks for. */
 export interface QrDownloadOptions {
 	/** `rrggbb`, no leading `#` — a raw `#` in a query string is the fragment delimiter and would never reach the API. */
-	background: string;
-	foreground: string;
-	format: 'png' | 'svg';
+	readonly background: string;
+	readonly foreground: string;
+	readonly format: 'png' | 'svg';
 	/** Pixels. Ignored for SVG, and deliberately not sent then: the API answers 422 for a size on an SVG request. */
-	size: number;
+	readonly size: number;
 }
 
 /**
@@ -353,8 +365,10 @@ export const linkQrSvgFor = createServerOnlyFn(
 );
 
 export const linkQrSvgFn = createServerFn({ method: 'POST' })
-	.validator((data: { linkId: string }) => data)
-	.handler(async ({ data }) => linkQrSvgFor(getRequest(), data.linkId));
+	.validator((data: { readonly linkId: string }) => data)
+	.handler(async ({ data }: { readonly data: { readonly linkId: string } }) =>
+		linkQrSvgFor(getRequest(), data.linkId),
+	);
 
 /**
  * The second and last request: the actual download, in the chosen format and
@@ -394,8 +408,8 @@ export const linkQrDownloadFor = createServerOnlyFn(
 );
 
 export const linkQrDownloadFn = createServerFn({ method: 'POST' })
-	.validator((data: QrDownloadOptions & { linkId: string }) => data)
-	.handler(async ({ data }) =>
+	.validator((data: QrDownloadOptions & { readonly linkId: string }) => data)
+	.handler(async ({ data }: { readonly data: QrDownloadOptions & { readonly linkId: string } }) =>
 		linkQrDownloadFor(getRequest(), data.linkId, {
 			background: data.background,
 			foreground: data.foreground,

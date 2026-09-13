@@ -13,8 +13,8 @@ import { describe, expect, it, vi } from 'vitest';
 interface FakeSupabaseClient {
 	auth: {
 		signInWithOtp: (options: {
-			email: string;
-			options: { shouldCreateUser: boolean; emailRedirectTo: string };
+			readonly email: string;
+			readonly options: { readonly shouldCreateUser: boolean; readonly emailRedirectTo: string };
 		}) => Promise<{ error: { message: string } | null }>;
 	};
 }
@@ -29,10 +29,10 @@ interface FakeResponse {
 }
 
 const mocks = vi.hoisted(() => ({
-	signInWithOtp: vi.fn<FakeSupabaseClient['auth']['signInWithOtp']>(),
 	// Defaulted so tests that never touch cookies don't need their own setup —
 	// only the flush test below overrides this to inspect what was appended.
 	getResponse: vi.fn<() => FakeResponse>(() => ({ headers: { append: () => {} } })),
+	signInWithOtp: vi.fn<FakeSupabaseClient['auth']['signInWithOtp']>(),
 }));
 
 vi.mock('./supabase', () => ({
@@ -99,7 +99,7 @@ describe('sendMagicLinkFor', () => {
 
 			let settled = false;
 			const pending = sendMagicLinkFor('unknown@example.test', 'https://app.test').then(
-				(result) => {
+				(result: Readonly<{ sent: true }>) => {
 					settled = true;
 					return result;
 				},

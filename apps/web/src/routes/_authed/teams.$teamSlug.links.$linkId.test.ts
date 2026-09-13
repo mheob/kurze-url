@@ -72,7 +72,9 @@ function redirectTarget(error: unknown): string | undefined {
  * @param status - The HTTP status code the rejection carries.
  * @returns A fetcher matching `loadLink`'s expected shape, which always rejects.
  */
-function rejectingWith(status: number): (options: { data: { linkId: string } }) => Promise<Link> {
+function rejectingWith(
+	status: number,
+): (options: Readonly<{ data: Readonly<{ linkId: string }> }>) => Promise<Link> {
 	return async () => {
 		throw { status };
 	};

@@ -29,7 +29,7 @@ import { requireTeamId } from '../_authed';
  * `server/links.ts`'s docstrings). Same shape `LinksDataSource` uses in the
  * list route (Task 9) for the identical reason.
  */
-type LinkFetcher = (options: { data: { linkId: string } }) => Promise<Link>;
+type LinkFetcher = (options: Readonly<{ data: Readonly<{ linkId: string }> }>) => Promise<Link>;
 
 /**
  * A non-member of the team never reaches this loader at all — `beforeLoad`'s
@@ -148,10 +148,12 @@ function toUpdateBody(values: LinkFormValues): UpdateLinkInputBodyWritable {
 
 /** Same narrow slices as `link.new.tsx`'s `InvalidatableQueryClient`/`InvalidatableRouter` — real instances satisfy these structurally, fakes satisfy them for the test. */
 interface InvalidatableQueryClient {
-	invalidateQueries: (filters: { queryKey: readonly unknown[] }) => Promise<void>;
+	readonly invalidateQueries: (
+		filters: Readonly<{ queryKey: readonly unknown[] }>,
+	) => Promise<void>;
 }
 interface InvalidatableRouter {
-	invalidate: () => Promise<void>;
+	readonly invalidate: () => Promise<void>;
 }
 
 /**
@@ -202,7 +204,7 @@ export const Route = createFileRoute('/_authed/teams/$teamSlug/links/$linkId')({
  */
 export function toPasswordContext(
 	link: Link,
-	memberships: readonly { name: string; slug: string }[],
+	memberships: readonly Readonly<{ name: string; slug: string }>[],
 	teamSlug: string,
 ): LinkPasswordContext {
 	const membership = memberships.find((candidate) => candidate.slug === teamSlug);
@@ -221,17 +223,17 @@ export function toPasswordContext(
  * satisfy it for the test without constructing one.
  */
 interface CacheWritableQueryClient {
-	setQueriesData: (
-		filters: { exact: boolean; queryKey: readonly unknown[] },
+	readonly setQueriesData: (
+		filters: Readonly<{ exact: boolean; queryKey: readonly unknown[] }>,
 		updater: (old: PageLink | undefined) => PageLink | undefined,
 	) => unknown;
 }
 
 /** Dependencies `handlePasswordError` needs from the component, narrowed to exactly the calls it makes — see `CacheWritableQueryClient` above for why this shape, not the real hooks, is what gets threaded through. */
 interface PasswordErrorHandlers {
-	navigateToLogin: () => void;
-	setFailure: (failure: ApiFailure | null) => void;
-	setPasswordRejection: (reason: LinkPasswordReason | 'rejected' | undefined) => void;
+	readonly navigateToLogin: () => void;
+	readonly setFailure: (failure: ApiFailure | null) => void;
+	readonly setPasswordRejection: (reason: LinkPasswordReason | 'rejected' | undefined) => void;
 }
 
 /**
@@ -269,12 +271,12 @@ export function handlePasswordError(error: unknown, handlers: PasswordErrorHandl
 
 /** Dependencies `applyPasswordSuccess` needs from the component — see `PasswordErrorHandlers` above for the same reasoning. */
 interface PasswordSuccessHandlers {
-	linkId: string;
-	queryClient: CacheWritableQueryClient;
-	setFailure: (failure: ApiFailure | null) => void;
-	setHasPassword: (hasPassword: boolean) => void;
-	setPasswordRejection: (reason: LinkPasswordReason | 'rejected' | undefined) => void;
-	teamId: string;
+	readonly linkId: string;
+	readonly queryClient: CacheWritableQueryClient;
+	readonly setFailure: (failure: ApiFailure | null) => void;
+	readonly setHasPassword: (hasPassword: boolean) => void;
+	readonly setPasswordRejection: (reason: LinkPasswordReason | 'rejected' | undefined) => void;
+	readonly teamId: string;
 }
 
 /**
@@ -309,9 +311,9 @@ export function applyPasswordSuccess(updatedLink: Link, handlers: PasswordSucces
 
 /** Dependencies `handleQrError` needs from the component — see `PasswordErrorHandlers` above for why the dependencies are a parameter rather than a closure. */
 interface QrErrorHandlers {
-	navigateToLogin: () => void;
-	setFailure: (failure: ApiFailure | null) => void;
-	setQrRejection: (reason: QrRejectionReason | 'rejected' | undefined) => void;
+	readonly navigateToLogin: () => void;
+	readonly setFailure: (failure: ApiFailure | null) => void;
+	readonly setQrRejection: (reason: QrRejectionReason | 'rejected' | undefined) => void;
 }
 
 /**
@@ -370,7 +372,7 @@ export function handleQrError(error: unknown, handlers: QrErrorHandlers): void {
  * @param doc - The document to create and click a throwaway download anchor in.
  */
 export function saveQrDownload(
-	download: { base64: string; contentType: string },
+	download: Readonly<{ base64: string; contentType: string }>,
 	filename: string,
 	doc: Document,
 ): void {
@@ -390,8 +392,8 @@ export function saveQrDownload(
 
 /** The two channels `completeQrDownload` can still touch once the mutation has already succeeded — a subset of `QrErrorHandlers`, minus `navigateToLogin`, which a save can never need. */
 interface QrDownloadSuccessHandlers {
-	setFailure: (failure: ApiFailure | null) => void;
-	setQrRejection: (reason: QrRejectionReason | 'rejected' | undefined) => void;
+	readonly setFailure: (failure: ApiFailure | null) => void;
+	readonly setQrRejection: (reason: QrRejectionReason | 'rejected' | undefined) => void;
 }
 
 /**
@@ -420,7 +422,7 @@ interface QrDownloadSuccessHandlers {
  * @param handlers - The component's error channels, cleared on entry and set if the save throws.
  */
 export function completeQrDownload(
-	download: { base64: string; contentType: string },
+	download: Readonly<{ base64: string; contentType: string }>,
 	filename: string,
 	doc: Document,
 	handlers: QrDownloadSuccessHandlers,
@@ -476,12 +478,14 @@ function RouteComponent(): React.JSX.Element {
 	});
 
 	const qrDownloadMutation = useMutation({
-		mutationFn: async (options: {
-			background: string;
-			foreground: string;
-			format: 'png' | 'svg';
-			size: number;
-		}) => linkQrDownloadFn({ data: { ...options, linkId } }),
+		mutationFn: async (
+			options: Readonly<{
+				background: string;
+				foreground: string;
+				format: 'png' | 'svg';
+				size: number;
+			}>,
+		) => linkQrDownloadFn({ data: { ...options, linkId } }),
 		onError: (error: unknown) => {
 			handleQrError(error, {
 				navigateToLogin: () => {

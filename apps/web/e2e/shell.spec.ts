@@ -26,13 +26,13 @@ test('keeps the theme across a reload', async ({ page }) => {
 	// server-rendered, so the toggle is clickable before React attaches a
 	// handler to it, and a click in that window does nothing at all. See
 	// `waitForHydration`.
-	const toggle = page.getByRole('button', { name: /dark mode|dunklen Modus/ });
+	const toggle = page.getByRole('button', { name: /dark mode|dunklen Modus/u });
 	await waitForHydration(toggle);
 	await toggle.click();
-	await expect(page.locator('html')).toHaveClass(/dark/);
+	await expect(page.locator('html')).toHaveClass(/dark/u);
 
 	await page.reload();
-	await expect(page.locator('html')).toHaveClass(/dark/);
+	await expect(page.locator('html')).toHaveClass(/dark/u);
 });
 
 for (const theme of THEMES) {

@@ -30,7 +30,7 @@ import { expect, type Locator } from '@playwright/test';
  *
  * @param locator - The element to wait for React to take ownership of.
  */
-export async function waitForHydration(locator: Locator): Promise<void> {
+export async function waitForHydration(locator: Readonly<Locator>): Promise<void> {
 	await expect
 		.poll(async () =>
 			locator.evaluate((node) => Object.keys(node).some((key) => key.startsWith('__reactFiber$'))),

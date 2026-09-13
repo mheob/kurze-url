@@ -11,8 +11,8 @@
  */
 
 interface QrColors {
-	background: string;
-	foreground: string;
+	readonly background: string;
+	readonly foreground: string;
 }
 
 /**

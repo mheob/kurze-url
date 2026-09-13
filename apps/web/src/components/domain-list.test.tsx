@@ -105,7 +105,7 @@ describe(DomainList, () => {
 
 	it('hides the records once the domain works', () => {
 		renderList([verifiedDomain]);
-		expect(screen.queryByText(/_kurze-url-challenge/)).not.toBeInTheDocument();
+		expect(screen.queryByText(/_kurze-url-challenge/u)).not.toBeInTheDocument();
 	});
 
 	it('explains which half of verification is missing', () => {
@@ -115,7 +115,7 @@ describe(DomainList, () => {
 		// `pendingReason` to this specific domain — see `DomainList`'s own
 		// docstring for why a single reason slot is enough for this screen.
 		renderList([pendingDomain], { pendingReason: 'unreachable', verifyingId: pendingDomain.id });
-		expect(screen.getByText(/does not reach us yet/i)).toBeInTheDocument();
+		expect(screen.getByText(/does not reach us yet/iu)).toBeInTheDocument();
 	});
 
 	it('explains a missing TXT record', () => {
@@ -128,7 +128,7 @@ describe(DomainList, () => {
 			pendingReason: 'token_missing',
 			verifyingId: pendingDomain.id,
 		});
-		expect(screen.getByText(/txt record is not visible yet/i)).toBeInTheDocument();
+		expect(screen.getByText(/txt record is not visible yet/iu)).toBeInTheDocument();
 	});
 
 	it('explains a TXT record whose value does not match', () => {
@@ -136,7 +136,7 @@ describe(DomainList, () => {
 			pendingReason: 'token_mismatch',
 			verifyingId: pendingDomain.id,
 		});
-		expect(screen.getByText(/its value does not match/i)).toBeInTheDocument();
+		expect(screen.getByText(/its value does not match/iu)).toBeInTheDocument();
 	});
 
 	it('does not explain a reason that belongs to a different domain', () => {
@@ -147,7 +147,7 @@ describe(DomainList, () => {
 			pendingReason: 'unreachable',
 			verifyingId: 'domain-3',
 		});
-		expect(screen.queryByText(/does not reach us yet/i)).not.toBeInTheDocument();
+		expect(screen.queryByText(/does not reach us yet/iu)).not.toBeInTheDocument();
 	});
 
 	it('puts the records in a table, not in divs', () => {
@@ -159,13 +159,13 @@ describe(DomainList, () => {
 
 	it('shows the empty state when the team has no domains', () => {
 		renderList([]);
-		expect(screen.getByText(/no domains yet/i)).toBeInTheDocument();
+		expect(screen.getByText(/no domains yet/iu)).toBeInTheDocument();
 	});
 
 	it('shows a status per domain, including a losing claim', () => {
 		const failed = domain({ id: 'domain-3', verification_status: 'failed' });
 		renderList([failed]);
-		expect(screen.getByText(/another team verified this hostname first/i)).toBeInTheDocument();
+		expect(screen.getByText(/another team verified this hostname first/iu)).toBeInTheDocument();
 		expect(screen.queryByRole('button', { name: 'Check now' })).not.toBeInTheDocument();
 	});
 
@@ -244,6 +244,6 @@ describe(DomainList, () => {
 		// correlation discipline `verifyingId`/`pendingReason` already follow.
 		const other = domain({ hostname: 'other.verein.test', id: 'domain-2' });
 		renderList([pendingDomain, other], { deleteBlockedCount: 3, deletingId: 'domain-3' });
-		expect(screen.queryByText(/still has 3 links/i)).not.toBeInTheDocument();
+		expect(screen.queryByText(/still has 3 links/iu)).not.toBeInTheDocument();
 	});
 });

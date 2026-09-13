@@ -27,7 +27,8 @@ import { assertMaintainer, RouteComponent, validateSlugField } from './new-team'
  * server call.
  */
 const mocks = vi.hoisted(() => ({
-	createTeamFn: vi.fn<(input: { data: { name: string; slug: string } }) => Promise<Team>>(),
+	createTeamFn:
+		vi.fn<(input: Readonly<{ data: Readonly<{ name: string; slug: string }> }>) => Promise<Team>>(),
 }));
 
 vi.mock('../../server/teams', () => ({ createTeamFn: mocks.createTeamFn }));

@@ -1,4 +1,5 @@
 import type { ErrorEvent } from '@sentry/tanstackstart-react';
+import type * as SentryTanstackStart from '@sentry/tanstackstart-react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { isReportable, scrubEvent, sentryOptions } from './observability';
@@ -6,7 +7,7 @@ import { isReportable, scrubEvent, sentryOptions } from './observability';
 const sentryMocks = vi.hoisted(() => ({ init: vi.fn() }));
 
 vi.mock('@sentry/tanstackstart-react', async (importOriginal) => ({
-	...(await importOriginal<typeof import('@sentry/tanstackstart-react')>()),
+	...(await importOriginal<typeof SentryTanstackStart>()),
 	init: sentryMocks.init,
 }));
 

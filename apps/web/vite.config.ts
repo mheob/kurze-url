@@ -38,6 +38,17 @@ const sentryPlugins = process.env.SENTRY_AUTH_TOKEN
 	: [];
 
 const config = defineConfig({
+	// Vercel sets VERCEL_ENV and VERCEL_GIT_COMMIT_SHA on the build, without
+	// the VITE_ prefix Vite needs to expose a value to the browser bundle.
+	// Defining them here keeps the release identical to the API's — one bad
+	// deployment stays correlatable across both Sentry projects — without
+	// two more variables to set by hand and keep in step.
+	define: {
+		'import.meta.env.VITE_SENTRY_ENVIRONMENT': JSON.stringify(
+			process.env.VERCEL_ENV ?? 'development',
+		),
+		'import.meta.env.VITE_SENTRY_RELEASE': JSON.stringify(process.env.VERCEL_GIT_COMMIT_SHA ?? ''),
+	},
 	// `tanstackStart` alone emits a plain Vite build: `dist/client` plus a
 	// `dist/server/server.js` that nothing knows how to run. Nitro turns that
 	// server bundle into whatever the host expects — on Vercel, a serverless
@@ -58,17 +69,6 @@ const config = defineConfig({
 		// Last, as Sentry's own setup guide requires.
 		...sentryPlugins,
 	],
-	// Vercel sets VERCEL_ENV and VERCEL_GIT_COMMIT_SHA on the build, without
-	// the VITE_ prefix Vite needs to expose a value to the browser bundle.
-	// Defining them here keeps the release identical to the API's — one bad
-	// deployment stays correlatable across both Sentry projects — without
-	// two more variables to set by hand and keep in step.
-	define: {
-		'import.meta.env.VITE_SENTRY_ENVIRONMENT': JSON.stringify(
-			process.env.VERCEL_ENV ?? 'development',
-		),
-		'import.meta.env.VITE_SENTRY_RELEASE': JSON.stringify(process.env.VERCEL_GIT_COMMIT_SHA ?? ''),
-	},
 	resolve: { tsconfigPaths: true },
 });
 

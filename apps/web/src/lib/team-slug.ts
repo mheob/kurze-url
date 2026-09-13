@@ -13,27 +13,27 @@
  * the form treats it as a suggestion, not a value it may submit unchecked.
  */
 const TRANSLITERATIONS: readonly (readonly [RegExp, string])[] = [
-	[/ä/g, 'ae'],
-	[/ö/g, 'oe'],
-	[/ü/g, 'ue'],
-	[/ß/g, 'ss'],
-	[/&/g, '-und-'],
+	[/ä/gu, 'ae'],
+	[/ö/gu, 'oe'],
+	[/ü/gu, 'ue'],
+	[/ß/gu, 'ss'],
+	[/&/gu, '-und-'],
 ];
 
-export const TEAM_SLUG_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
+export const TEAM_SLUG_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/u;
 export const TEAM_SLUG_MIN_LENGTH = 3;
 export const TEAM_SLUG_MAX_LENGTH = 40;
 
 export function suggestTeamSlug(name: string): string {
-	let slug = name.toLowerCase().replace(/\s+e\.?\s*v\.?\s*$/, '');
+	let slug = name.toLowerCase().replace(/\s+e\.?\s*v\.?\s*$/u, '');
 
 	for (const [pattern, replacement] of TRANSLITERATIONS) {
 		slug = slug.replace(pattern, replacement);
 	}
 
 	return slug
-		.replaceAll(/[^a-z0-9]+/g, '-')
-		.replaceAll(/^-+|-+$/g, '')
+		.replaceAll(/[^a-z0-9]+/gu, '-')
+		.replaceAll(/^-+|-+$/gu, '')
 		.slice(0, TEAM_SLUG_MAX_LENGTH)
-		.replace(/-+$/, '');
+		.replace(/-+$/u, '');
 }

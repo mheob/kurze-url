@@ -75,7 +75,7 @@ describe(LinkQRCard, () => {
 	 * this component ever makes, and it happens on the download control
 	 * alone.
 	 */
-	it('recolours the preview without asking for a new document', async () => {
+	it('recolours the preview without asking for a new document', () => {
 		const onDownload = vi.fn().mockResolvedValue(undefined);
 		renderCard({ onDownload });
 

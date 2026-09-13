@@ -22,7 +22,7 @@ import { requireTeamId } from '../_authed';
  * silenced.
  */
 interface LinksDataSource {
-	ensureQueryData: (options: ReturnType<typeof linksQueryOptions>) => Promise<PageLink>;
+	readonly ensureQueryData: (options: ReturnType<typeof linksQueryOptions>) => Promise<PageLink>;
 }
 
 /**
@@ -65,6 +65,7 @@ export async function loadLinks(
 	}
 }
 
+// oxlint-disable-next-line sort-keys
 export const Route = createFileRoute('/_authed/teams/$teamSlug/links/')({
 	// Pagination lives in the URL — the same reasoning that put the team slug
 	// in the path — so the back button works and a page can be sent to a

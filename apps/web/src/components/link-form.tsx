@@ -4,12 +4,12 @@ import { useTranslation } from 'react-i18next';
 import { Button } from './ui/button';
 
 export interface LinkFormValues {
-	analytics_enabled: boolean;
-	destination_url: string;
-	domain_id: string;
-	expires_at: string;
-	redirect_type: number;
-	slug: string;
+	readonly analytics_enabled: boolean;
+	readonly destination_url: string;
+	readonly domain_id: string;
+	readonly expires_at: string;
+	readonly redirect_type: number;
+	readonly slug: string;
 }
 
 const defaultValues: LinkFormValues = {
@@ -42,7 +42,7 @@ interface LinkFormProps {
 	// offer — either way the picker below renders nothing at all, per its own
 	// docstring: a `<select>` with a single, forced option is furniture, not a
 	// choice.
-	readonly domains?: readonly { id: string; hostname: string }[];
+	readonly domains?: readonly Readonly<{ id: string; hostname: string }>[];
 	readonly fieldErrors?: Readonly<Record<string, string>>;
 	readonly initial?: Partial<LinkFormValues>;
 	readonly onSubmit: (values: LinkFormValues) => void;
@@ -80,7 +80,7 @@ export function LinkForm({
 
 	const form = useForm({
 		defaultValues: { ...defaultValues, ...initial },
-		onSubmit: ({ value }) => {
+		onSubmit: ({ value }: { readonly value: LinkFormValues }) => {
 			onSubmit(value);
 		},
 	});
@@ -89,25 +89,29 @@ export function LinkForm({
 	// `KNOWN_FIELD_NAMES` above) — surfaced as a generic alert rather than
 	// nowhere at all.
 	const unhandledFieldErrors = fieldErrors
-		? Object.entries(fieldErrors).filter(([name]) => !KNOWN_FIELD_NAMES.has(name))
+		? Object.entries(fieldErrors).filter(
+				([name]: readonly [string, string]) => !KNOWN_FIELD_NAMES.has(name),
+			)
 		: [];
 
 	return (
 		<form
-			onSubmit={(event) => {
+			onSubmit={(event: Readonly<{ preventDefault: () => void; stopPropagation: () => void }>) => {
 				event.preventDefault();
 				event.stopPropagation();
 				void form.handleSubmit();
 			}}
 		>
 			{unhandledFieldErrors.length > 0 ? (
-				<p role="alert">{unhandledFieldErrors.map(([, message]) => message).join(' ')}</p>
+				<p role="alert">
+					{unhandledFieldErrors.map(([, message]: readonly [string, string]) => message).join(' ')}
+				</p>
 			) : null}
 
 			<form.Field
 				name="destination_url"
 				validators={{
-					onChange: ({ value }) =>
+					onChange: ({ value }: { readonly value: string }) =>
 						value.trim() === '' ? t('links.destinationRequired') : undefined,
 				}}
 			>
@@ -126,7 +130,7 @@ export function LinkForm({
 								id="destination_url"
 								name={field.name}
 								onBlur={field.handleBlur}
-								onChange={(event) => {
+								onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
 									field.handleChange(event.target.value);
 								}}
 								required
@@ -159,7 +163,7 @@ export function LinkForm({
 								id="slug"
 								name={field.name}
 								onBlur={field.handleBlur}
-								onChange={(event) => {
+								onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
 									field.handleChange(event.target.value);
 								}}
 								placeholder={t('links.slugGenerated')}
@@ -188,7 +192,7 @@ export function LinkForm({
 								aria-invalid={errorMessage ? true : undefined}
 								id="redirect_type"
 								name={field.name}
-								onChange={(event) => {
+								onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
 									field.handleChange(Number(event.target.value));
 								}}
 								value={field.state.value}
@@ -226,7 +230,7 @@ export function LinkForm({
 								aria-invalid={errorMessage ? true : undefined}
 								id="expires_at"
 								name={field.name}
-								onChange={(event) => {
+								onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
 									field.handleChange(event.target.value);
 								}}
 								type="datetime-local"
@@ -256,7 +260,7 @@ export function LinkForm({
 								checked={field.state.value}
 								id="analytics_enabled"
 								name={field.name}
-								onChange={(event) => {
+								onChange={(event: Readonly<{ target: Readonly<{ checked: boolean }> }>) => {
 									field.handleChange(event.target.checked);
 								}}
 								type="checkbox"
@@ -292,7 +296,7 @@ export function LinkForm({
 									aria-invalid={errorMessage ? true : undefined}
 									id="domain_id"
 									name={field.name}
-									onChange={(event) => {
+									onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
 										field.handleChange(event.target.value);
 									}}
 									value={field.state.value}

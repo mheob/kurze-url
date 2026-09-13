@@ -1,3 +1,4 @@
+import type * as SentryModule from '@sentry/tanstackstart-react';
 import {
 	createMemoryHistory,
 	createRootRoute,
@@ -20,7 +21,7 @@ const sentryMocks = vi.hoisted(() => ({ captureException: vi.fn() }));
  * for Sentry, not about whether a function was called.
  */
 vi.mock('@sentry/tanstackstart-react', async (importOriginal) => ({
-	...(await importOriginal<typeof import('@sentry/tanstackstart-react')>()),
+	...(await importOriginal<typeof SentryModule>()),
 	captureException: sentryMocks.captureException,
 }));
 
@@ -41,7 +42,7 @@ const { DomainsError } = await import('./teams.$teamSlug.domains');
  *
  * @param element - The error component under test, already given its `error` prop.
  */
-function renderInRouter(element: React.JSX.Element): void {
+function renderInRouter(element: Readonly<React.JSX.Element>): void {
 	const rootRoute = createRootRoute({ component: () => <Outlet /> });
 	const indexRoute = createRoute({
 		component: () => element,
@@ -65,7 +66,7 @@ function renderInRouter(element: React.JSX.Element): void {
 	);
 }
 
-describe.each([
+describe.each<Readonly<{ Component: typeof DomainsError | typeof LinksError; name: string }>>([
 	{ Component: LinksError, name: 'LinksError' },
 	{ Component: DomainsError, name: 'DomainsError' },
 ])('$name', ({ Component }) => {

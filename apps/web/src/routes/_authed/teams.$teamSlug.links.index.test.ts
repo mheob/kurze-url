@@ -9,7 +9,7 @@ interface FakeQueryClient {
 	ensureQueryData: (options: unknown) => Promise<PageLink>;
 }
 
-function page(overrides: Partial<PageLink> = {}): PageLink {
+function page(overrides: Readonly<Partial<PageLink>> = {}): PageLink {
 	return { items: [], page: 1, per_page: 20, total_count: 0, ...overrides };
 }
 

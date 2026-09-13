@@ -19,10 +19,10 @@ export type LinkPasswordReason =
 	| 'too_short';
 
 export interface LinkPasswordContext {
-	destinationUrl: string;
-	linkSlug: string;
-	teamName: string;
-	teamSlug: string;
+	readonly destinationUrl: string;
+	readonly linkSlug: string;
+	readonly teamName: string;
+	readonly teamSlug: string;
 }
 
 export const MIN_LINK_PASSWORD_LENGTH = 8;

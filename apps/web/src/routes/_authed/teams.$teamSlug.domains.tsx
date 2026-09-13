@@ -48,7 +48,9 @@ function classifyVerifyFailure(error: unknown): VerifyFailureKind {
  * `QueryClient` satisfies this structurally, so the loader needs no cast.
  */
 interface DomainsDataSource {
-	ensureQueryData: (options: ReturnType<typeof domainsQueryOptions>) => Promise<PageDomain>;
+	readonly ensureQueryData: (
+		options: ReturnType<typeof domainsQueryOptions>,
+	) => Promise<PageDomain>;
 }
 
 /**

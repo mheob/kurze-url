@@ -46,7 +46,6 @@ export default defineConfig({
 				extends: true,
 				plugins: [storybookTest({ configDir: path.join(dirname, '.storybook') })],
 				test: {
-					name: 'storybook',
 					// A real browser, not jsdom: this is what makes `a11y: { test: 'error' }`
 					// in .storybook/preview.tsx actually fail a run (Finding 2) — jsdom has
 					// no rendering engine for axe to inspect.
@@ -56,6 +55,7 @@ export default defineConfig({
 						instances: [{ browser: 'chromium' }],
 						provider: playwright({}),
 					},
+					name: 'storybook',
 				},
 			},
 		],

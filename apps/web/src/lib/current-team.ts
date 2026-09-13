@@ -52,10 +52,13 @@ function readCookie(cookieHeader: string | undefined, name: string): string | un
  */
 export function resolveCurrentTeam(
 	cookieHeader: string | undefined,
-	memberships: Membership[],
+	memberships: readonly Membership[],
 ): string | undefined {
 	const remembered = readCookie(cookieHeader, TEAM_COOKIE);
-	if (remembered && memberships.some((membership) => membership.slug === remembered)) {
+	if (
+		remembered &&
+		memberships.some((membership: Readonly<Membership>) => membership.slug === remembered)
+	) {
 		return remembered;
 	}
 

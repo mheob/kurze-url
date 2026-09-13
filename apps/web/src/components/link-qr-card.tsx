@@ -13,10 +13,10 @@ export interface LinkQRCardProps {
 	readonly onDismissRejection?: () => void;
 	/** Resolves when the download has been handed to the browser, rejects on failure. Colours are sent as bare `rrggbb`. */
 	readonly onDownload: (options: {
-		background: string;
-		foreground: string;
-		format: QrFormat;
-		size: number;
+		readonly background: string;
+		readonly foreground: string;
+		readonly format: QrFormat;
+		readonly size: number;
 	}) => Promise<void>;
 	/** A reason the API returned that the mirrored contrast rule did not predict. */
 	readonly rejection?: QrRejectionReason | 'rejected';
@@ -172,7 +172,7 @@ export function LinkQRCard({
 				<label htmlFor={formatId}>{t('links.qrFormat')}</label>
 				<select
 					id={formatId}
-					onChange={(event) => {
+					onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
 						setFormat(event.target.value === 'png' ? 'png' : 'svg');
 						changed();
 					}}
@@ -187,7 +187,7 @@ export function LinkQRCard({
 				<label htmlFor={foregroundId}>{t('links.qrForeground')}</label>
 				<input
 					id={foregroundId}
-					onChange={(event) => {
+					onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
 						setForeground(event.target.value);
 						changed();
 					}}
@@ -200,7 +200,7 @@ export function LinkQRCard({
 				<label htmlFor={backgroundId}>{t('links.qrBackground')}</label>
 				<input
 					id={backgroundId}
-					onChange={(event) => {
+					onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
 						setBackground(event.target.value);
 						changed();
 					}}
@@ -217,7 +217,7 @@ export function LinkQRCard({
 						id={sizeId}
 						max={MAX_SIZE}
 						min={MIN_SIZE}
-						onChange={(event) => {
+						onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
 							setSize(Number(event.target.value));
 							changed();
 						}}

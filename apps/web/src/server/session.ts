@@ -152,7 +152,7 @@ export function authedApiClient(accessToken: string): ReturnType<typeof getApiCl
  * with the identical `[import-protection]` error `sendMagicLinkFor`'s
  * docstring describes, reported against this line; wrapped, it passes.
  */
-export const flushSessionCookies = createServerOnlyFn((headers: Headers): void => {
+export const flushSessionCookies = createServerOnlyFn((headers: Readonly<Headers>): void => {
 	const response = getResponse();
 	for (const cookie of headers.getSetCookie()) {
 		response.headers.append('set-cookie', cookie);

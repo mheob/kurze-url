@@ -1,4 +1,4 @@
-import { expect, type Locator } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 
 import { test } from './fixtures/auth';
 import { waitForHydration } from './fixtures/hydration';
@@ -32,7 +32,7 @@ const IDENTICAL_BY_DESIGN = new Set(['kurze.url', 'TXT', 'CNAME']);
 const PATHS = ['/', '/this-page-does-not-exist'] as const;
 
 async function visibleText(
-	page: import('@playwright/test').Page,
+	page: Page,
 	baseURL: string,
 	language: string,
 	path: string,
@@ -121,7 +121,7 @@ const I18N_CRAWL_DESTINATION_URL = 'https://example.org/i18n-crawl';
  * @param cell - The table cell locator to read the leading text node from.
  * @returns The cell's own text, with the glued-on `CopyButton` label excluded.
  */
-async function directText(cell: Locator): Promise<string> {
+async function directText(cell: Readonly<Locator>): Promise<string> {
 	return cell.evaluate((node) => node.childNodes[0]?.textContent?.trim() ?? '');
 }
 
@@ -157,11 +157,11 @@ for (const suffix of AUTHENTICATED_PATHS) {
 			// without it until 2026-09-07, when it failed in CI on exactly that —
 			// `links.spec.ts`'s own creation passed in the same run because it has
 			// always had the guard.
-			const destination = page.getByLabel(/destination/i);
+			const destination = page.getByLabel(/destination/iu);
 			await waitForHydration(destination);
 			await destination.fill(I18N_CRAWL_DESTINATION_URL);
 
-			await page.getByRole('button', { name: /save/i }).click();
+			await page.getByRole('button', { name: /save/iu }).click();
 			await expect(page.getByText(I18N_CRAWL_DESTINATION_URL)).toBeVisible();
 
 			// `link-list.tsx` renders this same link's `short_url` as the visible
@@ -194,10 +194,10 @@ for (const suffix of AUTHENTICATED_PATHS) {
 
 			// Not decorative: this form is server-rendered too, and `goto` resolves
 			// before React hydrates it — see `waitForHydration`.
-			const hostnameField = page.getByLabel(/hostname/i);
+			const hostnameField = page.getByLabel(/hostname/iu);
 			await waitForHydration(hostnameField);
 			await hostnameField.fill(hostname);
-			await page.getByRole('button', { name: /add domain/i }).click();
+			await page.getByRole('button', { name: /add domain/iu }).click();
 
 			// A level-2 heading, not a plain `getByText`: the hostname also
 			// appears inside the TXT challenge name and the delete button below,

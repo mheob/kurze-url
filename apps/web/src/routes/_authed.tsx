@@ -27,22 +27,22 @@ import {
 // same deviation note in server/health.ts): an object shape needs an
 // `interface`, a `type` alias is rejected.
 export interface Membership {
-	name: string;
-	role: string;
-	slug: string;
-	team_id: string;
+	readonly name: string;
+	readonly role: string;
+	readonly slug: string;
+	readonly team_id: string;
 }
 
 export interface Me {
-	email: string;
+	readonly email: string;
 	// Mirrors the check `POST /v1/teams` enforces. Nothing in the browser can
 	// derive it — `MAINTAINER_USER_IDS` is deploy-time configuration on the Go
 	// service — so the API reports it and the routes below gate on it rather
 	// than offering team creation to everyone and letting a 403 arrive after
 	// the form is filled in. See `MeOutput` in `apps/api/internal/api/me.go`.
-	is_maintainer: boolean;
-	memberships: Membership[];
-	user_id: string;
+	readonly is_maintainer: boolean;
+	readonly memberships: readonly Membership[];
+	readonly user_id: string;
 }
 
 /**
@@ -102,7 +102,7 @@ export const fetchMe = createServerFn({ method: 'GET' }).handler(async (): Promi
  * @param teamSlug - The team slug from the route's path parameter.
  * @returns The matching membership's team id.
  */
-export function requireTeamId(memberships: Membership[], teamSlug: string): string {
+export function requireTeamId(memberships: readonly Membership[], teamSlug: string): string {
 	const membership = memberships.find((entry) => entry.slug === teamSlug);
 	if (!membership) throw notFound();
 	return membership.team_id;

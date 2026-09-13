@@ -37,5 +37,7 @@ export const createTeamFor = createServerOnlyFn(
 );
 
 export const createTeamFn = createServerFn({ method: 'POST' })
-	.validator((data: { name: string; slug: string }) => data)
-	.handler(async ({ data }) => createTeamFor(getRequest(), data.name, data.slug));
+	.validator((data: { readonly name: string; readonly slug: string }) => data)
+	.handler(async ({ data }: { readonly data: { readonly name: string; readonly slug: string } }) =>
+		createTeamFor(getRequest(), data.name, data.slug),
+	);

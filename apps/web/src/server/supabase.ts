@@ -50,7 +50,7 @@ function parse(cookieHeader: string | null): { name: string; value: string }[] {
 			const [name, ...rest] = part.split('=');
 			return { name: name?.trim() ?? '', value: rest.join('=') };
 		})
-		.filter((c) => c.name !== '');
+		.filter((c: Readonly<{ name: string; value: string }>) => c.name !== '');
 }
 
 /**
@@ -85,7 +85,7 @@ export function createCookieAdapter(
 	getAll: () => { name: string; value: string }[];
 	setAll: (
 		cookies: { name: string; value: string; options: CookieOptions }[],
-		responseHeaders?: Record<string, string>,
+		responseHeaders?: Readonly<Record<string, string>>,
 	) => void;
 } {
 	return {

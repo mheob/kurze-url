@@ -104,8 +104,10 @@ export const sendMagicLinkFor = createServerOnlyFn(sendMagicLinkForImpl);
  * `getPreferences` uses for `getRequestHeader`.
  */
 export const sendMagicLink = createServerFn({ method: 'POST' })
-	.validator((data: { email: string }) => data)
-	.handler(async ({ data }) => sendMagicLinkFor(data.email, getRequestUrl().origin));
+	.validator((data: { readonly email: string }) => data)
+	.handler(async ({ data }: { readonly data: { readonly email: string } }) =>
+		sendMagicLinkFor(data.email, getRequestUrl().origin),
+	);
 
 /**
  * `getRequest()` (not a `request` field on the handler's context — same

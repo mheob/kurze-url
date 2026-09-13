@@ -276,15 +276,15 @@ export const test = base.extend<{
 	 * @param root0.team - The provisioned team to read the id from.
 	 * @param use - Playwright's callback, given this fixture's value.
 	 */
-	teamId: async ({ team }, use): Promise<void> => {
+	teamId: async ({ team }: { readonly team: Team }, use): Promise<void> => {
 		await use(team.id);
 	},
 
-	teamName: async ({ team }, use): Promise<void> => {
+	teamName: async ({ team }: { readonly team: Team }, use): Promise<void> => {
 		await use(team.name);
 	},
 
-	teamSlug: async ({ team }, use): Promise<void> => {
+	teamSlug: async ({ team }: { readonly team: Team }, use): Promise<void> => {
 		await use(team.slug);
 	},
 });

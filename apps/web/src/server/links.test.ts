@@ -72,13 +72,13 @@ function withSession(accessToken: string): void {
 }
 
 interface FakePage {
-	items: unknown[];
+	items: readonly unknown[];
 	page: number;
 	per_page: number;
 	total_count: number;
 }
 
-function page(overrides: Partial<FakePage> = {}): FakePage {
+function page(overrides: Readonly<Partial<FakePage>> = {}): FakePage {
 	return { items: [], page: 1, per_page: 20, total_count: 0, ...overrides };
 }
 

@@ -3,11 +3,12 @@ import { I18nextProvider } from 'react-i18next';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createI18n } from '../i18n';
+import type * as ObservabilityModule from '../lib/observability';
 
 const mocks = vi.hoisted(() => ({ reportUnexpected: vi.fn() }));
 
 vi.mock('../lib/observability', async (importOriginal) => ({
-	...(await importOriginal<typeof import('../lib/observability')>()),
+	...(await importOriginal<typeof ObservabilityModule>()),
 	reportUnexpected: mocks.reportUnexpected,
 }));
 

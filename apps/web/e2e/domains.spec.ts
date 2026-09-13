@@ -39,12 +39,12 @@ async function claimDomain(page: Page, teamSlug: string): Promise<string> {
 	// form reaches well before React wires it up, and a value typed in that
 	// window never reaches React's state — the form then submits empty. See
 	// `waitForHydration`.
-	const hostname = page.getByLabel(/hostname/i);
+	const hostname = page.getByLabel(/hostname/iu);
 	await waitForHydration(hostname);
 
 	const claimed = `links-${Date.now()}.e2e.test`;
 	await hostname.fill(claimed);
-	await page.getByRole('button', { name: /add domain/i }).click();
+	await page.getByRole('button', { name: /add domain/iu }).click();
 
 	// `getByText` matches substrings, and the claimed hostname also appears
 	// inside the TXT challenge name and inside the "Delete <hostname>"
@@ -74,8 +74,8 @@ test('says which half of verification is missing', async ({ page, teamSlug }) =>
 	// rendered back) is connected, which is the part that actually breaks.
 	await claimDomain(page, teamSlug);
 
-	await page.getByRole('button', { name: /check now/i }).click();
-	await expect(page.getByText(/TXT record is not visible yet/i)).toBeVisible();
+	await page.getByRole('button', { name: /check now/iu }).click();
+	await expect(page.getByText(/TXT record is not visible yet/iu)).toBeVisible();
 });
 
 test('has no accessibility violations on the domains screen', async ({ page, teamSlug }) => {

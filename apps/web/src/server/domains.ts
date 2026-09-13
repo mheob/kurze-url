@@ -53,8 +53,10 @@ export const listDomainsFor = createServerOnlyFn(
 
 /** `getRequest()` inline, not inside `listDomainsFor`, for the same reason as `listLinksFn`. */
 export const listDomainsFn = createServerFn({ method: 'GET' })
-	.validator((data: { teamId: string }) => data)
-	.handler(async ({ data }) => listDomainsFor(getRequest(), data.teamId));
+	.validator((data: { readonly teamId: string }) => data)
+	.handler(async ({ data }: { readonly data: { readonly teamId: string } }) =>
+		listDomainsFor(getRequest(), data.teamId),
+	);
 
 /**
  * One definition of the key and the fetcher, used by both a route's loader
@@ -103,8 +105,11 @@ export const claimDomainFor = createServerOnlyFn(
 );
 
 export const claimDomainFn = createServerFn({ method: 'POST' })
-	.validator((data: { hostname: string; teamId: string }) => data)
-	.handler(async ({ data }) => claimDomainFor(getRequest(), data.teamId, data.hostname));
+	.validator((data: { readonly hostname: string; readonly teamId: string }) => data)
+	.handler(
+		async ({ data }: { readonly data: { readonly hostname: string; readonly teamId: string } }) =>
+			claimDomainFor(getRequest(), data.teamId, data.hostname),
+	);
 
 /**
  * Same `...For`/`...Fn` split. Returns the full `VerifyDomainOutputBody`,
@@ -137,8 +142,10 @@ export const verifyDomainFor = createServerOnlyFn(
 );
 
 export const verifyDomainFn = createServerFn({ method: 'POST' })
-	.validator((data: { domainId: string }) => data)
-	.handler(async ({ data }) => verifyDomainFor(getRequest(), data.domainId));
+	.validator((data: { readonly domainId: string }) => data)
+	.handler(async ({ data }: { readonly data: { readonly domainId: string } }) =>
+		verifyDomainFor(getRequest(), data.domainId),
+	);
 
 /**
  * Same `...For`/`...Fn` split. Returns `void`, not the domain: nothing
@@ -160,5 +167,7 @@ export const deleteDomainFor = createServerOnlyFn(
 );
 
 export const deleteDomainFn = createServerFn({ method: 'POST' })
-	.validator((data: { domainId: string }) => data)
-	.handler(async ({ data }) => deleteDomainFor(getRequest(), data.domainId));
+	.validator((data: { readonly domainId: string }) => data)
+	.handler(async ({ data }: { readonly data: { readonly domainId: string } }) =>
+		deleteDomainFor(getRequest(), data.domainId),
+	);

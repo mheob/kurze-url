@@ -25,7 +25,7 @@ describe(createSupabase, () => {
 		vi.unstubAllEnvs();
 	});
 
-	it('reads cookies from the request', async () => {
+	it('reads cookies from the request', () => {
 		const request = new Request('https://example.test/', {
 			headers: { cookie: 'sb-access-token=abc; other=x' },
 		});

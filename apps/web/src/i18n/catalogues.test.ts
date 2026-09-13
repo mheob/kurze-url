@@ -16,8 +16,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * @param prefix - The dotted key prefix accumulated so far from enclosing objects.
  * @returns Every leaf key, dotted, e.g. `domains.recordTypeTxt`.
  */
-function keysOf(value: Record<string, unknown>, prefix = ''): string[] {
-	return Object.entries(value).flatMap(([key, child]) =>
+function keysOf(value: Readonly<Record<string, unknown>>, prefix = ''): string[] {
+	return Object.entries(value).flatMap(([key, child]: readonly [string, unknown]) =>
 		isRecord(child) ? keysOf(child, `${prefix}${key}.`) : [`${prefix}${key}`],
 	);
 }
@@ -29,8 +29,8 @@ function keysOf(value: Record<string, unknown>, prefix = ''): string[] {
  * @param prefix - The dotted key prefix accumulated so far from enclosing objects.
  * @returns Every leaf key/value pair, the key dotted the same way `keysOf` produces it.
  */
-function flatten(value: Record<string, unknown>, prefix = ''): [string, string][] {
-	return Object.entries(value).flatMap(([key, child]) =>
+function flatten(value: Readonly<Record<string, unknown>>, prefix = ''): [string, string][] {
+	return Object.entries(value).flatMap(([key, child]: readonly [string, unknown]) =>
 		isRecord(child) ? flatten(child, `${prefix}${key}.`) : [[`${prefix}${key}`, String(child)]],
 	);
 }

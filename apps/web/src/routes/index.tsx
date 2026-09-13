@@ -40,7 +40,7 @@ const getHealthStatus = createServerFn({ method: 'GET' }).handler(async () => fe
  * what avoids that.
  */
 const getCurrentTeamSlug = createServerFn({ method: 'GET' })
-	.validator((memberships: Membership[]) => memberships)
+	.validator((memberships: readonly Membership[]) => memberships)
 	.handler(({ data: memberships }) => resolveCurrentTeam(getRequestHeader('cookie'), memberships));
 
 /**

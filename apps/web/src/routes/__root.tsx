@@ -142,8 +142,6 @@ export function RootErrorPage({ error }: ErrorComponentProps) {
  */
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
 	errorComponent: RootErrorPage,
-	loader: async () => getPreferences(),
-	notFoundComponent: NotFound,
 	// `loaderData` is what makes `head` able to see the request's language at
 	// all — it runs before `RootDocument` (and its `I18nextProvider`) exists,
 	// so `documentTitle` reads the catalogue directly instead of going through
@@ -169,5 +167,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 			},
 		],
 	}),
+	loader: async () => getPreferences(),
+	notFoundComponent: NotFound,
 	shellComponent: RootDocument,
 });
