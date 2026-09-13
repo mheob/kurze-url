@@ -152,7 +152,7 @@ Tables: `team`, `team_member`, `domain`, `folder`, `tag`, `link`, `link_tag`, `l
 4. `apps/api`: chi + Huma skeleton, JWKS auth middleware, health route. Deploy to Vercel early to shake out the Go Framework Preset.
 5. **The redirect path first** (`GET /{slug}` + Redis cache + async click recording) — it's the architectural spine; build it before CRUD.
 6. Link CRUD via Huma → generate the OpenAPI spec → generate `packages/api-client`.
-7. `apps/web`: TanStack Start, `shadcn init -b radix`, i18n scaffolding **before** the first real page, dark/light mode from the first component.
+7. `apps/web`: TanStack Start, `shadcn init --preset b39ODpImW -b base`, i18n scaffolding **before** the first real page, dark/light mode from the first component.
 8. CI workflows, then Sentry + Better Stack.
 
 ---
@@ -184,7 +184,7 @@ In `docs/planning/`. Detailed reasoning, alternatives considered, and rejected o
 | --- | --- |
 | `01-architecture.md` | System overview, redirect data flow, 301/302, security-by-design, analytics/privacy, CLI auth |
 | `02-external-services-and-hosting.md` | Supabase/Upstash/Vercel free-tier limits, Safe Browsing, custom domains, Resend, alert thresholds, Sentry, Better Stack |
-| `03-frontend.md` | TanStack, Radix-vs-Base-UI reasoning, Tremor, i18n, accessibility, Storybook, testing strategy |
+| `03-frontend.md` | TanStack, primitive-layer reasoning (Radix, then Base UI), shadcn `chart` on Recharts, self-hosted fonts, i18n, accessibility, Storybook, testing strategy |
 | `04-backend-architecture.md` | Vercel Go preset, chi, Huma vs. oapi-codegen, sqlc vs. GORM, migrations, rate limiting |
 | `05-database-schema.md` | Full schema, analytics rollup design, Redis dedup, audit log, RLS reasoning, indexes |
 | `06-api-design.md` | Versioning, auth, pagination, filtering, full endpoint list, team invitations |
