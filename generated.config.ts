@@ -17,4 +17,8 @@ export const generatedFiles = [
 	// Written by TanStack Router (`tsr generate` and the Vite plugin) from the
 	// files under apps/web/src/routes/. Its own header says not to edit it.
 	'apps/web/src/routeTree.gen.ts',
+	// Written by `shadcn add`, from the primitive layer (`base-sera`) recorded
+	// in apps/web/components.json. Regenerated wholesale on every `add`; never
+	// hand-edited.
+	'apps/web/src/components/ui/**',
 ];
