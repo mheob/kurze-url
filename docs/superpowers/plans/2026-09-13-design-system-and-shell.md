@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- **Preset:** `pnpm dlx shadcn@latest init --preset b39ODpImW` — `base-sera`, Base Color Neutral, Theme Indigo, Chart Color Indigo, Geist / Geist, Lucide, Radius None, Menu Default / Solid, Menu Accent Subtle.
+- **Preset:** `pnpm dlx shadcn@latest init --preset b39ODpImW -b base` — `base-sera`, Base Color Neutral, Theme Indigo, Chart Color Indigo, Geist / Geist, Lucide, Radius None, Menu Default / Solid, Menu Accent Subtle. **`-b base` is not optional and `--preset` does not carry it.** The CLI's `-b, --base <base>` selects the primitive library (`base`, `radix`, `aria`) independently of the preset, and its default is `radix`. Omitting it writes `"style": "radix-sera"` into `components.json` and keeps `radix-ui` — which looks right at a glance, because the Sera style, the Indigo palette and the fonts all land correctly either way. Corrected 2026-09-13 after exactly that happened on the first run.
 - **Accessibility is WCAG 2.1 AA**, checked at two levels: Storybook's a11y addon per story (`a11y: { test: 'error' }` in `.storybook/preview.tsx` — it fails the run) and `@axe-core/playwright` per page.
 - **No hardcoded user-facing string.** Every new or changed string gets a key in **both** `apps/web/src/i18n/locales/en.json` and `de.json`. `react/jsx-no-literals` is error-level and will catch a miss.
 - **Files under `apps/web/src/components/ui/` are `shadcn add` output and are never hand-edited**, import style included. They use `@/…` paths; the rest of the codebase uses relative imports. That is accepted.
@@ -158,11 +158,21 @@ body {
 
 - [ ] **Step 2: Run init**
 
-Run: `cd apps/web && pnpm dlx shadcn@latest init --preset b39ODpImW`
+Run: `cd apps/web && pnpm dlx shadcn@latest init --preset b39ODpImW -b base`
+
+`-b base` is load-bearing — see Global Constraints. Without it the CLI defaults to `radix` and everything else still looks correct.
 
 When it offers to overwrite `src/lib/utils.ts`, **decline**. The existing one-line re-export stays (Task 1 proved it correct), and accepting would add `clsx` and `tailwind-merge` as dependencies for no gain.
 
-Expected afterwards: `components.json` has `"style": "base-sera"`, `src/styles/app.css` has fresh `:root` / `.dark` token blocks, and `src/components/ui/button.tsx` is the Base UI variant importing from `@base-ui-components/react` rather than `radix-ui`.
+**Verify all three before going further** — this is the checkpoint the first run walked past:
+
+1. `components.json` contains `"style": "base-sera"`, not `radix-sera`.
+2. `src/components/ui/button.tsx` imports its `Slot` from Base UI, not from `radix-ui`.
+3. `grep -rn "radix" apps/web/package.json` finds nothing.
+
+If any of the three is wrong, re-run with `--force` rather than editing `components.json` by hand: the file records what generated the components, and a hand-edited value would claim a primitive layer the components do not actually use.
+
+`--radius` is whatever this command writes. The spec records it as `0`, measured from the web preview; if the CLI writes something else, **keep the CLI's value and report the difference** — the preset is the authoritative record and the spec's transcription is not, so the spec gets amended rather than the token hand-edited.
 
 - [ ] **Step 3: Restore the four non-shadcn rules**
 
@@ -364,6 +374,8 @@ cd apps/web && pnpm dlx shadcn@latest add button input label field select textar
 ```
 
 `sidebar` also pulls `sheet`, `tooltip`, `separator` and `skeleton`; accept those.
+
+`add` takes **no** `-b/--base` flag — unlike `init`, it reads the primitive layer out of `components.json`. Verified against `shadcn@latest add --help`. So this step is only as correct as Task 2's verification checkpoint: confirm `components.json` says `"style": "base-sera"` before running it, or nineteen components arrive on the wrong primitive at once.
 
 **Not** added, deliberately: `chart` (arrives with the analytics spec), `data-table` (arrives with list filtering), `calendar` and `date-picker` (the expiry field stays a native `<input type="datetime-local">`).
 
