@@ -75,6 +75,18 @@ function renderList(
 }
 
 describe(DomainList, () => {
+	it.each([
+		['pending', 'Waiting for DNS'],
+		['verified', 'Working'],
+		['failed', 'Another team verified this hostname first'],
+	] as const)('states %s in words, not only in colour', (status, label) => {
+		// WCAG 1.4.1: colour is never the only carrier of meaning. The badge's icon
+		// is aria-hidden, so the text is what every reader actually gets.
+		renderList([domain({ verification_status: status })]);
+
+		expect(screen.getByText(label)).toBeInTheDocument();
+	});
+
 	it('shows both DNS records for a pending domain', () => {
 		// A Verein that cannot see what to put in DNS cannot proceed, and this
 		// is the only screen that tells them.
