@@ -1,11 +1,13 @@
-import { Link } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 
+import type { Theme } from '../lib/preferences';
 import type { Membership } from '../routes/_authed';
-import { TeamSwitcher } from './team-switcher';
-import { Button } from './ui/button';
+import { AppSidebar } from './app-sidebar';
+import { Separator } from './ui/separator';
+import { SidebarInset, SidebarProvider, SidebarTrigger } from './ui/sidebar';
 
 interface AuthedShellProps {
+	readonly children: React.ReactNode;
 	readonly currentTeamSlug: string | undefined;
 	// Whether to offer team creation at all. `/` covers the maintainer who has
 	// no team yet; this covers the one who does, and who would otherwise have
@@ -14,75 +16,69 @@ interface AuthedShellProps {
 	readonly memberships: readonly Membership[];
 	readonly onSignOut: () => void;
 	readonly signingOut: boolean;
+	// `AppSidebar`'s footer needs this for its `ThemeToggle`; see that
+	// component's own docstring for why it arrives as a prop rather than a
+	// `usePreferences()` call inside either component.
+	readonly theme: Theme;
 }
 
 /**
- * The chrome every authenticated page shares. `TeamSwitcher` was built,
- * tested and storied in an earlier task but never rendered anywhere — same
- * for `auth.signOut`, which had no caller at all (Finding 2). Presentational
- * and prop-driven, the same idiom as `LinkList`/`LinkForm`: `_authed.tsx`'s
- * route component owns the router/mutation wiring (resolving the current team
- * slug from the URL, calling the `signOut` server function) and passes plain
- * data and a callback in here, so this can be rendered and tested without a
- * `QueryClient`, a router, or a real session.
+ * The chrome every authenticated page shares: a real sidebar (`AppSidebar`)
+ * plus the slim top bar that hosts its trigger, wrapping `children` — the
+ * page content each route renders through `SidebarInset`. Presentational and
+ * prop-driven, the same idiom as `LinkList`/`LinkForm`: `_authed.tsx`'s route
+ * component owns the router/mutation wiring (resolving the current team slug
+ * from the URL, calling the `signOut` server function, reading `theme` off
+ * `usePreferences()`) and passes plain data, a callback and the matched child
+ * route in here, so this can be rendered and tested without a `QueryClient`,
+ * a router, or a real session.
  *
- * `currentTeamSlug` is optional, not read off `memberships[0]` in here: a
- * signed-in visitor with zero memberships can still reach this shell (e.g.
- * `/`'s `noTeam` outcome never enters `_authed` at all, but a stale bookmark
- * to a team the visitor has since left 404s deeper in the tree, past this
- * shell) and `TeamSwitcher` has nothing to switch between in that case.
- *
- * The Links/Domains `<nav>` (Task 14) shares `TeamSwitcher`'s exact guard —
- * `currentTeamSlug && memberships.length > 0` — for the same reason: with no
- * resolved team, or a `memberships` list that doesn't actually contain it,
- * there is nowhere for either link to point. Before this, the shell had a
- * team switcher and a sign-out control, and a second team page (the domains
- * screen from Task 13) could not be reached by clicking at all.
+ * `children` exists because `SidebarInset` — the sidebar's own content
+ * column — has to wrap the page content for the layout to work; before this
+ * task, `AuthedShell` only ever rendered its own header and `_authed.tsx`
+ * rendered `<Outlet>` as a sibling.
  *
  * @param props - The component's props.
+ * @param props.children - The matched child route's content, rendered inside `SidebarInset`.
  * @param props.currentTeamSlug - The resolved current team's slug, or undefined when there is none (e.g. a stale bookmark to a team the visitor has left).
  * @param props.isMaintainer - Whether to offer team creation.
  * @param props.memberships - The signed-in visitor's team memberships.
  * @param props.onSignOut - Called when the sign-out control is clicked.
  * @param props.signingOut - True while sign-out is in flight; disables the sign-out control.
- * @returns The rendered header chrome.
+ * @param props.theme - The current theme preference; passed straight through to `AppSidebar`.
+ * @returns The rendered authenticated shell.
  */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `React.ReactNode` is React's own type; not a declaration this file can edit.
 export function AuthedShell({
+	children,
 	currentTeamSlug,
 	isMaintainer,
 	memberships,
 	onSignOut,
 	signingOut,
+	theme,
 }: AuthedShellProps): React.JSX.Element {
 	const { t } = useTranslation();
 
 	return (
-		<header className="flex items-center justify-between border-b border-border px-6 py-4">
-			{currentTeamSlug !== undefined && memberships.length > 0 ? (
-				<TeamSwitcher currentTeamSlug={currentTeamSlug} memberships={memberships} />
-			) : null}
-			{currentTeamSlug !== undefined && memberships.length > 0 ? (
-				<nav aria-label={t('nav.label')}>
-					<ul>
-						<li>
-							<Link params={{ teamSlug: currentTeamSlug }} to="/teams/$teamSlug/links">
-								{t('nav.links')}
-							</Link>
-						</li>
-						<li>
-							<Link params={{ teamSlug: currentTeamSlug }} to="/teams/$teamSlug/domains">
-								{t('nav.domains')}
-							</Link>
-						</li>
-					</ul>
-				</nav>
-			) : null}
-			<div className="flex items-center gap-2">
-				{isMaintainer ? <Link to="/new-team">{t('teams.create')}</Link> : null}
-				<Button disabled={signingOut} onClick={onSignOut} type="button" variant="outline">
-					{t('auth.signOut')}
-				</Button>
-			</div>
-		</header>
+		<SidebarProvider>
+			<AppSidebar
+				currentTeamSlug={currentTeamSlug}
+				isMaintainer={isMaintainer}
+				memberships={memberships}
+				onSignOut={onSignOut}
+				signingOut={signingOut}
+				theme={theme}
+			/>
+			<SidebarInset>
+				<header className="flex h-12 items-center gap-2 border-b px-4">
+					<SidebarTrigger aria-label={t('nav.toggleSidebar')} />
+					{/* oxlint-disable-next-line react/forbid-component-props -- `Separator` (components/ui/separator.tsx) forwards `className` straight to its underlying element; this is how every caller sizes and orients it, the same as `orientation` below. */}
+					<Separator className="h-4" orientation="vertical" />
+					<span className="font-semibold">{t('brand')}</span>
+				</header>
+				{children}
+			</SidebarInset>
+		</SidebarProvider>
 	);
 }

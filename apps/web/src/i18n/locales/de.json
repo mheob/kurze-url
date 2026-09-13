@@ -35,7 +35,8 @@
 	"nav": {
 		"label": "Bereiche",
 		"links": "Kurzlinks",
-		"domains": "Eigene Domains"
+		"domains": "Eigene Domains",
+		"toggleSidebar": "Navigation ein- und ausblenden"
 	},
 	"teams": {
 		"create": "Verein anlegen",

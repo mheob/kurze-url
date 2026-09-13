@@ -35,7 +35,8 @@
 	"nav": {
 		"label": "Sections",
 		"links": "Links",
-		"domains": "Domains"
+		"domains": "Domains",
+		"toggleSidebar": "Toggle the navigation"
 	},
 	"teams": {
 		"create": "Create team",

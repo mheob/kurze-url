@@ -15,6 +15,7 @@ import { useTranslation } from 'react-i18next';
 
 import { AuthedShell } from '../components/authed-shell';
 import { classifyApiError } from '../lib/api-errors';
+import { usePreferences } from '../lib/use-preferences';
 import { signOut } from '../server/auth';
 import {
 	authedApiClient,
@@ -141,6 +142,7 @@ function AuthedLayout(): React.JSX.Element {
 	const { t } = useTranslation();
 	const router = useRouter();
 	const { teamSlug } = useParams({ strict: false });
+	const { theme } = usePreferences();
 	const [signOutFailed, setSignOutFailed] = useState(false);
 
 	const signOutMutation = useMutation({
@@ -163,16 +165,16 @@ function AuthedLayout(): React.JSX.Element {
 	});
 
 	return (
-		<>
-			<AuthedShell
-				currentTeamSlug={teamSlug ?? me.memberships[0]?.slug}
-				isMaintainer={me.is_maintainer}
-				memberships={me.memberships}
-				onSignOut={() => {
-					signOutMutation.mutate();
-				}}
-				signingOut={signOutMutation.isPending}
-			/>
+		<AuthedShell
+			currentTeamSlug={teamSlug ?? me.memberships[0]?.slug}
+			isMaintainer={me.is_maintainer}
+			memberships={me.memberships}
+			onSignOut={() => {
+				signOutMutation.mutate();
+			}}
+			signingOut={signOutMutation.isPending}
+			theme={theme}
+		>
 			{/* Every authenticated page renders through this one `<Outlet>`, so
 			    the `<main>` belongs here rather than in each child route: axe's
 			    `landmark-one-main` wants exactly one per document, and a per-page
@@ -185,6 +187,6 @@ function AuthedLayout(): React.JSX.Element {
 				{signOutFailed ? <p role="alert">{t('errors.unknown')}</p> : null}
 				<Outlet />
 			</main>
-		</>
+		</AuthedShell>
 	);
 }

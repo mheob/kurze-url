@@ -3,6 +3,12 @@ import { useTranslation } from 'react-i18next';
 
 import { teamCookie } from '../lib/current-team';
 import type { Membership } from '../routes/_authed';
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from './ui/dropdown-menu';
 
 interface TeamSwitcherProps {
 	readonly currentTeamSlug: string;
@@ -36,25 +42,38 @@ export function TeamSwitcher({
 	memberships,
 }: TeamSwitcherProps): React.JSX.Element {
 	const { t } = useTranslation();
+	const currentTeam = memberships.find((membership) => membership.slug === currentTeamSlug);
 
 	return (
-		<nav aria-label={t('teams.switcherLabel')}>
-			<ul>
-				{memberships.map((membership) => (
-					<li key={membership.team_id}>
-						<Link
+		// A `<fieldset>` carries the implicit ARIA role "group" natively, the same
+		// idiom `language-switcher.tsx` uses for the same reason: a real semantic
+		// element satisfies both the a11y preference for one over a bolted-on
+		// `role` attribute and the test's `getByRole('group')` query. The trigger's
+		// own accessible name is the current team's name, not this label — the two
+		// serve different questions ("which control switches teams" vs. "which team
+		// is current").
+		<fieldset aria-label={t('teams.switcherLabel')}>
+			<DropdownMenu>
+				{/* oxlint-disable-next-line react/forbid-component-props -- `DropdownMenuTrigger` (components/ui/dropdown-menu.tsx) forwards `className` straight to the rendered `<button>`; this is how every caller styles it. */}
+				<DropdownMenuTrigger className="flex w-full items-center justify-between gap-2 truncate rounded-none border border-transparent px-3 py-2 text-left text-sm font-medium hover:bg-sidebar-accent hover:text-sidebar-accent-foreground">
+					<span className="truncate">{currentTeam?.name}</span>
+				</DropdownMenuTrigger>
+				<DropdownMenuContent>
+					{memberships.map((membership) => (
+						<DropdownMenuItem
 							aria-current={membership.slug === currentTeamSlug ? 'page' : undefined}
+							key={membership.team_id}
 							onClick={() => {
 								remember(membership.slug);
 							}}
-							params={{ teamSlug: membership.slug }}
-							to="/teams/$teamSlug/links"
+							// oxlint-disable-next-line react-perf/jsx-no-jsx-as-prop -- Base UI's `render`-prop composition idiom (`useRender`'s "Migrating from Radix UI" guide): this is the element `DropdownMenuItem` clones and merges its own props onto. A stable reference would need a `useMemo` around a two-line static element per row of a short team list.
+							render={<Link params={{ teamSlug: membership.slug }} to="/teams/$teamSlug/links" />}
 						>
 							{membership.name}
-						</Link>
-					</li>
-				))}
-			</ul>
-		</nav>
+						</DropdownMenuItem>
+					))}
+				</DropdownMenuContent>
+			</DropdownMenu>
+		</fieldset>
 	);
 }

@@ -9,6 +9,14 @@ const dirname = import.meta.dirname;
 
 export default defineConfig({
 	plugins: [react()],
+	// Mirrors `vite.config.ts`: several of Task 4's generated `components/ui/*`
+	// files (`sidebar.tsx` among them) import each other via the `@/*` alias,
+	// not a relative path. Nothing reached one of those files from a unit test
+	// before this task started rendering `AppSidebar` through the real route
+	// tree, so the gap was invisible until now — without this, `@/components/
+	// ui/separator` and friends fail to resolve under Vitest even though the
+	// same alias resolves fine in the actual app build.
+	resolve: { tsconfigPaths: true },
 	test: {
 		// Vitest's own default `exclude` doesn't know about `e2e/`, and its default
 		// `include` pattern matches `*.spec.ts` — the same suffix Playwright specs use

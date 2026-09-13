@@ -7,7 +7,7 @@ import {
 } from '@tanstack/react-router';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { I18nextProvider } from 'react-i18next';
+import { I18nextProvider, useTranslation } from 'react-i18next';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createI18n } from '../i18n';
@@ -20,9 +20,23 @@ const memberships: Membership[] = [
 ];
 
 /**
- * `AuthedShell` renders `TeamSwitcher`, which needs a router in context for
- * the same reason `team-switcher.test.tsx` gives for its own minimal,
- * test-only route tree.
+ * Stands in for a matched child route's own content. Renders an existing
+ * catalogue string via `t()` rather than a literal — `react/jsx-no-literals`
+ * is error-level project-wide, test files included — chosen for being unused
+ * elsewhere in `AuthedShell`'s own rendered tree, so the assertion below
+ * cannot match the wrong element.
+ *
+ * @returns A single paragraph, standing in for page content.
+ */
+function PageContent(): React.JSX.Element {
+	const { t } = useTranslation();
+	return <p>{t('footer.tagline')}</p>;
+}
+
+/**
+ * `AuthedShell` renders `AppSidebar`, which renders `TeamSwitcher` — both
+ * need a router in context for the same reason `team-switcher.test.tsx`
+ * gives for its own minimal, test-only route tree.
  *
  * @param props - Partial overrides merged onto this fixture's own defaults before rendering `AuthedShell`.
  * @returns The rendered test utilities from Testing Library's `render`.
@@ -33,6 +47,7 @@ function renderShell(props: {
 	readonly memberships?: readonly Membership[];
 	readonly onSignOut?: () => void;
 	readonly signingOut?: boolean;
+	readonly theme?: 'dark' | 'light';
 }): ReturnType<typeof render> {
 	const {
 		currentTeamSlug = 'verein-a',
@@ -40,6 +55,7 @@ function renderShell(props: {
 		memberships: membershipsProp = memberships,
 		onSignOut = vi.fn<() => void>(),
 		signingOut = false,
+		theme = 'light',
 	} = props;
 
 	const rootRoute = createRootRoute({
@@ -50,7 +66,10 @@ function renderShell(props: {
 				memberships={membershipsProp}
 				onSignOut={onSignOut}
 				signingOut={signingOut}
-			/>
+				theme={theme}
+			>
+				<PageContent />
+			</AuthedShell>
 		),
 	});
 	const linksRoute = createRoute({
@@ -83,11 +102,13 @@ function renderShell(props: {
 describe(AuthedShell, () => {
 	it('renders the team switcher, fed from the memberships prop', async () => {
 		// Finding 2: `TeamSwitcher` was built, tested and storied but never
-		// rendered anywhere in the actual app.
+		// rendered anywhere in the actual app. The trigger shows the current
+		// team's name; opening it is what proves both memberships fed the list,
+		// not just the current one.
 		renderShell({});
-		await expect(screen.findByRole('navigation', { name: 'Teams' })).resolves.toBeInTheDocument();
-		expect(screen.getByRole('link', { name: 'Verein A' })).toBeInTheDocument();
-		expect(screen.getByRole('link', { name: 'Verein B' })).toBeInTheDocument();
+		await userEvent.click(await screen.findByRole('button', { name: 'Verein A' }));
+		await expect(screen.findByRole('menuitem', { name: 'Verein A' })).resolves.toBeInTheDocument();
+		expect(screen.getByRole('menuitem', { name: 'Verein B' })).toBeInTheDocument();
 	});
 
 	it('offers a sign-out control that calls the caller-supplied handler', async () => {
@@ -144,6 +165,23 @@ describe(AuthedShell, () => {
 		// nothing to switch between in that case.
 		renderShell({ currentTeamSlug: undefined, memberships: [] });
 		await expect(screen.findByRole('button', { name: 'Sign out' })).resolves.toBeInTheDocument();
-		expect(screen.queryByRole('navigation', { name: 'Teams' })).not.toBeInTheDocument();
+		expect(screen.queryByRole('group', { name: 'Teams' })).not.toBeInTheDocument();
+	});
+
+	it('renders the matched child route inside the sidebar inset', async () => {
+		// `SidebarInset` has to wrap the page content for the layout to work —
+		// before this task, `AuthedShell` rendered only its own header and
+		// `_authed.tsx` rendered `<Outlet>` as a sibling.
+		renderShell({});
+		await expect(
+			screen.findByText('An open-source project for associations.'),
+		).resolves.toBeInTheDocument();
+	});
+
+	it('labels the sidebar trigger for screen readers', async () => {
+		renderShell({});
+		await expect(
+			screen.findByRole('button', { name: 'Toggle the navigation' }),
+		).resolves.toBeInTheDocument();
 	});
 });
