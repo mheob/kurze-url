@@ -57,7 +57,7 @@ export function AuthedShell({
 	const { t } = useTranslation();
 
 	return (
-		<header className="border-border flex items-center justify-between border-b px-6 py-4">
+		<header className="flex items-center justify-between border-b border-border px-6 py-4">
 			{currentTeamSlug !== undefined && memberships.length > 0 ? (
 				<TeamSwitcher currentTeamSlug={currentTeamSlug} memberships={memberships} />
 			) : null}

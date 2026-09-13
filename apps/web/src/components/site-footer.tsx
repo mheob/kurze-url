@@ -10,7 +10,7 @@ export function SiteFooter({ apiStatus }: { readonly apiStatus: string }) {
 
 	return (
 		<footer
-			className="border-border text-muted-foreground flex flex-col gap-1 border-t px-6 py-4 text-sm"
+			className="flex flex-col gap-1 border-t border-border px-6 py-4 text-sm text-muted-foreground"
 			// Machine-readable twin of the sentence below, and the only signal the
 			// e2e suite has that the deployment it is about to test is wired to a
 			// real API. `e2e/global-setup.ts` refuses to run when this is anything

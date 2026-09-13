@@ -83,7 +83,7 @@ function NotFound() {
 	return (
 		<main className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
 			<h1 className="text-3xl font-bold">{t('notFound.heading')}</h1>
-			<p className="text-muted-foreground max-w-prose">{t('notFound.body')}</p>
+			<p className="max-w-prose text-muted-foreground">{t('notFound.body')}</p>
 		</main>
 	);
 }

@@ -9,16 +9,21 @@ import { defineConfig } from 'oxlint';
 import { generatedFiles } from './generated.config.ts';
 
 // better-tailwindcss resolves its `tailwindcss` install and CSS entry point relative to a
-// `cwd` it defaults to the process cwd (the repo root, which has no `tailwindcss` package of
-// its own — it lives in apps/web's node_modules).
+// `cwd` it defaults to the process cwd — the repo root, which has no `tailwindcss` package
+// of its own, because it is a dependency of apps/web and pnpm only symlinks declared ones.
 //
-// Both options are repeated on every rule below, and still have to be: oxlint's top-level
-// `settings` only forwards its own known plugin keys, so a `better-tailwindcss` entry there
-// is silently dropped. `@mheob/oxlint-config` v4 passes them that way — which is why its
-// rule severities are kept but its options are overridden here. Relying on the shared
-// config alone makes oxlint print "Tailwind CSS is not installed. Disabling rule
-// better-tailwindcss/…" eight times and lint every class name as if the plugin were absent;
-// with the options restored, a bogus class is an error again.
+// These options have to be set on THIS config's own top-level `settings`, and repeating
+// them here rather than relying on `tailwindcssConfig()`'s own `settings` is the whole
+// point: oxlint merges `rules` out of an extended config but NOT `settings`. So
+// `@mheob/oxlint-config` v4, which passes them exactly that way, gets its eight rule
+// severities honoured and its settings silently dropped — oxlint then prints "Tailwind CSS
+// is not installed. Disabling rule better-tailwindcss/…" eight times and lints no class
+// name at all. Proven by probe: identical options in a top-level `settings` block activate
+// the plugin, the same block inside an `extends` entry does not.
+//
+// The warnings are the only symptom, and they are easy to read past — every one of these
+// eight rules was off for the project's whole life until 2026-09-13 because of it. If they
+// come back, this block stopped being applied.
 const tailwindPluginOptions = { cwd: 'apps/web', entryPoint: 'src/styles/app.css' };
 
 // `dark` is applied to `<html>` as a plain toggle class (see Task 6's root route) so that
@@ -278,4 +283,23 @@ export default defineConfig({
 			},
 		},
 	],
+	rules: {
+		// oxfmt owns line layout, and this rule is a second formatter that works
+		// *inside* class strings — the two cannot both win. With the rule's
+		// `printWidth` aligned to oxfmt's 100 and `preferSingleLine` on, 11 of its
+		// 19 findings go away and the remaining 8 are all in `ui/button.tsx`, whose
+		// shadcn variant strings genuinely exceed 100 columns. Applying its fix
+		// there rewrites the string into a wrapped template literal, and the very
+		// next `pnpm format` collapses it back onto one line — verified by running
+		// exactly that sequence. Since `pnpm format` runs in the Lefthook pre-commit
+		// hook, oxfmt always has the last word, so leaving the rule on would fail
+		// every commit over a wrap nothing is allowed to keep.
+		//
+		// The other seven better-tailwindcss rules stay on. `enforce-consistent-
+		// class-order` in particular now agrees with oxfmt, because oxfmt.config.ts
+		// points `sortTailwindcss` at the same `app.css` this file's `entryPoint`
+		// names — that agreement is what makes keeping it worthwhile.
+		'better-tailwindcss/enforce-consistent-line-wrapping': 'off',
+	},
+	settings: { 'better-tailwindcss': tailwindPluginOptions },
 });
