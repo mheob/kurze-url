@@ -104,7 +104,7 @@ export function resolveHomeOutcome(me: Me | undefined, teamSlug: string | undefi
 	// the component: this is the one place that already decides what a signed-in
 	// visitor without a team sees, and a maintainer's answer ("create one") is a
 	// different answer, not different chrome around the same one.
-	return teamSlug
+	return teamSlug !== undefined
 		? { kind: 'redirect', teamSlug }
 		: { isMaintainer: me.is_maintainer, kind: 'noTeam' };
 }

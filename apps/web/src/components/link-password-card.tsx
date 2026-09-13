@@ -159,8 +159,8 @@ export function LinkPasswordCard({
 			<div>
 				<label htmlFor={inputId}>{t('links.passwordLabel')}</label>
 				<input
-					aria-describedby={message ? errorId : undefined}
-					aria-invalid={message ? true : undefined}
+					aria-describedby={message !== undefined ? errorId : undefined}
+					aria-invalid={message !== undefined ? true : undefined}
 					autoComplete="new-password"
 					id={inputId}
 					onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
@@ -171,7 +171,7 @@ export function LinkPasswordCard({
 					type="password"
 					value={password}
 				/>
-				{message ? (
+				{message !== undefined ? (
 					<p id={errorId} role="alert">
 						{message}
 					</p>

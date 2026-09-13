@@ -150,14 +150,14 @@ export function LinkQRCard({
 
 	const previewSize =
 		format === 'png' ? Math.min(requestedSize, MAX_PREVIEW_PIXELS) : MAX_PREVIEW_PIXELS;
-	const preview = svg ? restyleQrSvg(svg, { background, foreground }) : undefined;
+	const preview = svg !== undefined ? restyleQrSvg(svg, { background, foreground }) : undefined;
 
 	return (
 		<section>
 			<h2>{t('links.qrHeading')}</h2>
 			<p>{t('links.qrExplainer')}</p>
 
-			{preview ? (
+			{preview !== undefined ? (
 				<img
 					alt={t('links.qrPreviewAlt')}
 					height={previewSize}
@@ -228,14 +228,14 @@ export function LinkQRCard({
 				</div>
 			) : null}
 
-			{message ? (
+			{message !== undefined ? (
 				<p id={errorId} role="alert">
 					{message}
 				</p>
 			) : null}
 
 			<Button
-				aria-describedby={message ? errorId : undefined}
+				aria-describedby={message !== undefined ? errorId : undefined}
 				onClick={() => {
 					void handleDownload();
 				}}

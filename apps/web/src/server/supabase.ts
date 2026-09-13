@@ -33,14 +33,15 @@ function sameSiteValue(sameSite: NonNullable<CookieOptions['sameSite']>): string
 function serialize(name: string, value: string, options: CookieOptions): string {
 	const parts = [`${name}=${value}`, `Path=${options.path ?? '/'}`];
 	if (options.maxAge !== undefined) parts.push(`Max-Age=${options.maxAge}`);
-	if (options.httpOnly) parts.push('HttpOnly');
-	if (options.secure) parts.push('Secure');
-	if (options.sameSite) parts.push(`SameSite=${sameSiteValue(options.sameSite)}`);
+	if (options.httpOnly === true) parts.push('HttpOnly');
+	if (options.secure === true) parts.push('Secure');
+	if (options.sameSite !== undefined && options.sameSite !== false)
+		parts.push(`SameSite=${sameSiteValue(options.sameSite)}`);
 	return parts.join('; ');
 }
 
 function parse(cookieHeader: string | null): { name: string; value: string }[] {
-	if (!cookieHeader) return [];
+	if (cookieHeader === null || cookieHeader === '') return [];
 
 	return cookieHeader
 		.split(';')
@@ -117,7 +118,7 @@ export function createCookieAdapter(
 export function createSupabase(request: Request, headers: Headers): SupabaseClient {
 	const url = process.env.SUPABASE_URL;
 	const key = process.env.SUPABASE_PUBLISHABLE_KEY;
-	if (!url || !key) {
+	if (url === undefined || url === '' || key === undefined || key === '') {
 		throw new Error('SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY are required');
 	}
 

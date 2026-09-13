@@ -32,7 +32,7 @@ export function apiBaseUrl(): string {
 	// health probe simply reported the API unreachable while it was healthy. An
 	// explicit host is the one setting Vercel cannot change out from under this.
 	const explicitHost = process.env.API_HOST;
-	if (explicitHost) return explicitHost;
+	if (explicitHost !== undefined && explicitHost !== '') return explicitHost;
 
 	// Left unset outside production on purpose: this lookup is what pairs a
 	// preview of this app with the matching preview of the API.
@@ -67,7 +67,7 @@ export function apiBaseUrl(): string {
  */
 function platformHeaders(): Record<string, string> {
 	const bypass = process.env.API_PROTECTION_BYPASS_SECRET;
-	return bypass ? { 'x-vercel-protection-bypass': bypass } : {};
+	return bypass !== undefined && bypass !== '' ? { 'x-vercel-protection-bypass': bypass } : {};
 }
 
 // oxlint's typescript(explicit-function-return-type) is error-level and the

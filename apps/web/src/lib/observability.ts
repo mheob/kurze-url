@@ -90,7 +90,8 @@ export function scrubEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
 		delete request.cookies;
 		delete request.data;
 		delete request.query_string;
-		if (request.url) request.url = stripQueryString(request.url);
+		if (request.url !== undefined && request.url !== '')
+			request.url = stripQueryString(request.url);
 		if (request.headers) {
 			request.headers = Object.fromEntries(
 				Object.entries(request.headers).filter(([name]: readonly [string, string]) =>
@@ -164,6 +165,9 @@ export function reportUnexpected(error: unknown): void {
  * @returns The options object to pass to `Sentry.init`.
  */
 export function sentryOptions(dsn: string): Parameters<typeof Sentry.init>[0] {
+	const environment = import.meta.env.VITE_SENTRY_ENVIRONMENT;
+	const release = import.meta.env.VITE_SENTRY_RELEASE;
+
 	return {
 		beforeSend: scrubEvent,
 		dataCollection: {
@@ -202,8 +206,8 @@ export function sentryOptions(dsn: string): Parameters<typeof Sentry.init>[0] {
 		// build time and carry no VITE_ prefix, so the browser bundle cannot
 		// see them. Step 6 defines these two from them instead of asking the
 		// maintainer to duplicate two more variables in the dashboard.
-		environment: import.meta.env.VITE_SENTRY_ENVIRONMENT || 'development',
-		release: import.meta.env.VITE_SENTRY_RELEASE || undefined,
+		environment: environment === undefined || environment === '' ? 'development' : environment,
+		release: release === undefined || release === '' ? undefined : release,
 	};
 }
 
@@ -229,7 +233,7 @@ export function initSentry(isServer: boolean): void {
 	if (initialized) return;
 
 	const dsn = import.meta.env.VITE_SENTRY_DSN;
-	if (!dsn) return;
+	if (dsn === undefined || dsn === '') return;
 
 	initialized = true;
 	Sentry.init({ ...sentryOptions(dsn), serverName: isServer ? 'web-ssr' : undefined });

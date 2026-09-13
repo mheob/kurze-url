@@ -574,7 +574,7 @@ function RouteComponent(): React.JSX.Element {
 	return (
 		<>
 			<h1>{t('links.edit')}</h1>
-			{formMessage ? <p role="alert">{formMessage}</p> : null}
+			{formMessage !== null ? <p role="alert">{formMessage}</p> : null}
 			{/*
 			 * Each card below remounts when the link changes, so each carries the
 			 * link id in its key — but the keys must also differ from *each other*.

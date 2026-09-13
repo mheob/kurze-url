@@ -24,7 +24,7 @@ const exchangeCodeForSession = createServerFn({ method: 'GET' }).handler(
 	async (): Promise<{ ok: boolean }> => {
 		const request = getRequest();
 		const code = new URL(request.url).searchParams.get('code');
-		if (!code) return { ok: false };
+		if (code === null || code === '') return { ok: false };
 
 		const headers = new Headers();
 		const supabase = createSupabase(request, headers);

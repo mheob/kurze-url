@@ -95,7 +95,7 @@ function problemDetailsOf(error: unknown): readonly ProblemDetail[] {
  * @returns The trailing field name, or `undefined` when `location` has no dot to split on.
  */
 function fieldNameOf(location: string | undefined): string | undefined {
-	if (!location?.includes('.')) return undefined;
+	if (location === undefined || !location.includes('.')) return undefined;
 	return location.split('.').pop();
 }
 
@@ -104,7 +104,8 @@ function fieldsOf(error: unknown): Record<string, string> {
 
 	for (const detail of problemDetailsOf(error)) {
 		const name = fieldNameOf(detail.location);
-		if (name && detail.message) fields[name] = detail.message;
+		if (name !== undefined && name !== '' && detail.message !== undefined && detail.message !== '')
+			fields[name] = detail.message;
 	}
 
 	return fields;

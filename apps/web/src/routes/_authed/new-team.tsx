@@ -126,7 +126,7 @@ export function RouteComponent(): React.JSX.Element {
 	return (
 		<>
 			<h1>{t('teams.create')}</h1>
-			{formMessage ? <p role="alert">{formMessage}</p> : null}
+			{formMessage !== null ? <p role="alert">{formMessage}</p> : null}
 			<form
 				onSubmit={(event) => {
 					event.preventDefault();
@@ -150,14 +150,14 @@ export function RouteComponent(): React.JSX.Element {
 							<div>
 								<label htmlFor="name">{t('teams.name')}</label>
 								<input
-									aria-describedby={errorMessage ? errorId : undefined}
-									aria-invalid={errorMessage ? true : undefined}
+									aria-describedby={errorMessage !== undefined ? errorId : undefined}
+									aria-invalid={errorMessage !== undefined ? true : undefined}
 									id="name"
 									name={field.name}
 									onBlur={field.handleBlur}
 									onChange={(event) => {
 										field.handleChange(event.target.value);
-										if (!form.getFieldMeta('slug')?.isTouched) {
+										if (form.getFieldMeta('slug')?.isTouched !== true) {
 											// `dontUpdateMeta` alone is not enough: `setFieldValue`'s own
 											// `validateField` call (run unless `dontValidate` is also set)
 											// marks the field touched as a side effect of validating it,
@@ -173,7 +173,7 @@ export function RouteComponent(): React.JSX.Element {
 									required
 									value={field.state.value}
 								/>
-								{errorMessage ? (
+								{errorMessage !== undefined ? (
 									<p id={errorId} role="alert">
 										{errorMessage}
 									</p>
@@ -198,8 +198,8 @@ export function RouteComponent(): React.JSX.Element {
 							<div>
 								<label htmlFor="slug">{t('teams.slug')}</label>
 								<input
-									aria-describedby={errorMessage ? `${hintId} ${errorId}` : hintId}
-									aria-invalid={errorMessage ? true : undefined}
+									aria-describedby={errorMessage !== undefined ? `${hintId} ${errorId}` : hintId}
+									aria-invalid={errorMessage !== undefined ? true : undefined}
 									id="slug"
 									name={field.name}
 									onBlur={field.handleBlur}
@@ -210,7 +210,7 @@ export function RouteComponent(): React.JSX.Element {
 									value={field.state.value}
 								/>
 								<p id={hintId}>{t('teams.slugHint')}</p>
-								{errorMessage ? (
+								{errorMessage !== undefined ? (
 									<p id={errorId} role="alert">
 										{errorMessage}
 									</p>

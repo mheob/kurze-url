@@ -125,8 +125,8 @@ export function LinkForm({
 						<div>
 							<label htmlFor="destination_url">{t('links.destination')}</label>
 							<input
-								aria-describedby={errorMessage ? errorId : undefined}
-								aria-invalid={errorMessage ? true : undefined}
+								aria-describedby={errorMessage !== undefined ? errorId : undefined}
+								aria-invalid={errorMessage !== undefined ? true : undefined}
 								id="destination_url"
 								name={field.name}
 								onBlur={field.handleBlur}
@@ -137,7 +137,7 @@ export function LinkForm({
 								type="url"
 								value={field.state.value}
 							/>
-							{errorMessage ? (
+							{errorMessage !== undefined ? (
 								<p id={errorId} role="alert">
 									{errorMessage}
 								</p>
@@ -158,8 +158,8 @@ export function LinkForm({
 							{/* An empty slug means the API generates one. Said here, because a
 							    blank required-looking field otherwise reads as an oversight. */}
 							<input
-								aria-describedby={errorMessage ? errorId : undefined}
-								aria-invalid={errorMessage ? true : undefined}
+								aria-describedby={errorMessage !== undefined ? errorId : undefined}
+								aria-invalid={errorMessage !== undefined ? true : undefined}
 								id="slug"
 								name={field.name}
 								onBlur={field.handleBlur}
@@ -169,7 +169,7 @@ export function LinkForm({
 								placeholder={t('links.slugGenerated')}
 								value={field.state.value}
 							/>
-							{errorMessage ? (
+							{errorMessage !== undefined ? (
 								<p id={errorId} role="alert">
 									{errorMessage}
 								</p>
@@ -188,8 +188,8 @@ export function LinkForm({
 						<div>
 							<label htmlFor="redirect_type">{t('links.redirectType')}</label>
 							<select
-								aria-describedby={errorMessage ? errorId : undefined}
-								aria-invalid={errorMessage ? true : undefined}
+								aria-describedby={errorMessage !== undefined ? errorId : undefined}
+								aria-invalid={errorMessage !== undefined ? true : undefined}
 								id="redirect_type"
 								name={field.name}
 								onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
@@ -200,7 +200,7 @@ export function LinkForm({
 								<option value={302}>{t('links.redirect302')}</option>
 								<option value={301}>{t('links.redirect301')}</option>
 							</select>
-							{errorMessage ? (
+							{errorMessage !== undefined ? (
 								<p id={errorId} role="alert">
 									{errorMessage}
 								</p>
@@ -226,8 +226,8 @@ export function LinkForm({
 						<div>
 							<label htmlFor="expires_at">{t('links.expiresAt')}</label>
 							<input
-								aria-describedby={errorMessage ? errorId : undefined}
-								aria-invalid={errorMessage ? true : undefined}
+								aria-describedby={errorMessage !== undefined ? errorId : undefined}
+								aria-invalid={errorMessage !== undefined ? true : undefined}
 								id="expires_at"
 								name={field.name}
 								onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
@@ -236,7 +236,7 @@ export function LinkForm({
 								type="datetime-local"
 								value={field.state.value}
 							/>
-							{errorMessage ? (
+							{errorMessage !== undefined ? (
 								<p id={errorId} role="alert">
 									{errorMessage}
 								</p>
@@ -255,8 +255,8 @@ export function LinkForm({
 						<div>
 							<label htmlFor="analytics_enabled">{t('links.analyticsEnabled')}</label>
 							<input
-								aria-describedby={errorMessage ? errorId : undefined}
-								aria-invalid={errorMessage ? true : undefined}
+								aria-describedby={errorMessage !== undefined ? errorId : undefined}
+								aria-invalid={errorMessage !== undefined ? true : undefined}
 								checked={field.state.value}
 								id="analytics_enabled"
 								name={field.name}
@@ -265,7 +265,7 @@ export function LinkForm({
 								}}
 								type="checkbox"
 							/>
-							{errorMessage ? (
+							{errorMessage !== undefined ? (
 								<p id={errorId} role="alert">
 									{errorMessage}
 								</p>
@@ -292,8 +292,8 @@ export function LinkForm({
 							<div>
 								<label htmlFor="domain_id">{t('links.domain')}</label>
 								<select
-									aria-describedby={errorMessage ? errorId : undefined}
-									aria-invalid={errorMessage ? true : undefined}
+									aria-describedby={errorMessage !== undefined ? errorId : undefined}
+									aria-invalid={errorMessage !== undefined ? true : undefined}
 									id="domain_id"
 									name={field.name}
 									onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
@@ -308,7 +308,7 @@ export function LinkForm({
 										</option>
 									))}
 								</select>
-								{errorMessage ? (
+								{errorMessage !== undefined ? (
 									<p id={errorId} role="alert">
 										{errorMessage}
 									</p>

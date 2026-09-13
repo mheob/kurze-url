@@ -26,7 +26,10 @@ const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
 // Fail loudly rather than testing the login page. A protected preview without
 // the secret is precisely the case that produces confident, meaningless
 // passes, so it must not be reachable by forgetting an environment variable.
-if (new URL(baseURL).hostname.endsWith('.vercel.app') && !bypassSecret) {
+if (
+	new URL(baseURL).hostname.endsWith('.vercel.app') &&
+	(bypassSecret === undefined || bypassSecret === '')
+) {
 	throw new Error(
 		`BASE_URL points at a Vercel deployment (${baseURL}) but VERCEL_AUTOMATION_BYPASS_SECRET is unset. ` +
 			'Deployment Protection would redirect every request to the Vercel login page and the suite would ' +
@@ -50,11 +53,13 @@ export default defineConfig({
 		// what was actually on screen do. CI uploads `test-results/` on failure.
 		screenshot: 'only-on-failure',
 		trace: 'retain-on-failure',
-		...(bypassSecret && {
-			extraHTTPHeaders: { 'x-vercel-protection-bypass': bypassSecret },
-		}),
+		...(bypassSecret !== undefined &&
+			bypassSecret !== '' && {
+				extraHTTPHeaders: { 'x-vercel-protection-bypass': bypassSecret },
+			}),
 	},
-	webServer: process.env.BASE_URL
-		? undefined
-		: { command: 'pnpm build && pnpm start', port: 3000, reuseExistingServer: true },
+	webServer:
+		process.env.BASE_URL !== undefined && process.env.BASE_URL !== ''
+			? undefined
+			: { command: 'pnpm build && pnpm start', port: 3000, reuseExistingServer: true },
 });

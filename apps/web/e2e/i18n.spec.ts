@@ -78,7 +78,8 @@ for (const path of PATHS) {
 		// localhost fallback), so this is only ever undefined if that invariant is
 		// broken — worth a loud failure rather than silently falling back to a
 		// wrong host.
-		if (!baseURL) throw new Error('baseURL fixture is unset — check playwright.config.ts');
+		if (baseURL === undefined)
+			throw new Error('baseURL fixture is unset — check playwright.config.ts');
 
 		const english = new Set(await visibleText(page, baseURL, 'en', path));
 		const german = await visibleText(page, baseURL, 'de', path);
@@ -132,7 +133,8 @@ for (const suffix of AUTHENTICATED_PATHS) {
 		teamSlug,
 		teamName,
 	}) => {
-		if (!baseURL) throw new Error('baseURL fixture is unset — check playwright.config.ts');
+		if (baseURL === undefined)
+			throw new Error('baseURL fixture is unset — check playwright.config.ts');
 
 		// Populated only for `links` below, once that link's own destination and
 		// short URL are known — see the long comment above `identicalByDesign`

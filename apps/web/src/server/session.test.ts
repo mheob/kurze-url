@@ -55,7 +55,7 @@ function withSession(accessToken: string | null): void {
 	mocks.createSupabase.mockReturnValue({
 		auth: {
 			getSession: vi.fn(async () => ({
-				data: { session: accessToken ? { access_token: accessToken } : null },
+				data: { session: accessToken !== null ? { access_token: accessToken } : null },
 				error: null,
 			})),
 		},

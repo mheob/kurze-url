@@ -20,22 +20,23 @@ import { defineConfig } from 'vite';
  * `./.output` is what a local or self-hosted `pnpm build` writes (Nitro's
  * default), and a glob that misses it deletes nothing there.
  */
-const sentryPlugins = process.env.SENTRY_AUTH_TOKEN
-	? [
-			sentryTanstackStart({
-				authToken: process.env.SENTRY_AUTH_TOKEN,
-				org: process.env.SENTRY_ORG,
-				project: process.env.SENTRY_PROJECT,
-				sourcemaps: {
-					filesToDeleteAfterUpload: [
-						'./dist/**/*.map',
-						'./.output/**/*.map',
-						'./.vercel/output/**/*.map',
-					],
-				},
-			}),
-		]
-	: [];
+const sentryPlugins =
+	process.env.SENTRY_AUTH_TOKEN !== undefined && process.env.SENTRY_AUTH_TOKEN !== ''
+		? [
+				sentryTanstackStart({
+					authToken: process.env.SENTRY_AUTH_TOKEN,
+					org: process.env.SENTRY_ORG,
+					project: process.env.SENTRY_PROJECT,
+					sourcemaps: {
+						filesToDeleteAfterUpload: [
+							'./dist/**/*.map',
+							'./.output/**/*.map',
+							'./.vercel/output/**/*.map',
+						],
+					},
+				}),
+			]
+		: [];
 
 const config = defineConfig({
 	// Vercel sets VERCEL_ENV and VERCEL_GIT_COMMIT_SHA on the build, without

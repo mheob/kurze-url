@@ -28,7 +28,7 @@ import { request } from '@playwright/test';
  */
 export default async function assertPairedApiIsReal(): Promise<void> {
 	const baseURL = process.env.BASE_URL;
-	if (!baseURL) return;
+	if (baseURL === undefined || baseURL === '') return;
 
 	// Same header the specs themselves send (see `playwright.config.ts`): a
 	// protected preview would otherwise answer with Vercel's login page, and
@@ -36,7 +36,8 @@ export default async function assertPairedApiIsReal(): Promise<void> {
 	const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
 	const context = await request.newContext({
 		baseURL,
-		...(bypassSecret && { extraHTTPHeaders: { 'x-vercel-protection-bypass': bypassSecret } }),
+		...(bypassSecret !== undefined &&
+			bypassSecret !== '' && { extraHTTPHeaders: { 'x-vercel-protection-bypass': bypassSecret } }),
 	});
 
 	try {

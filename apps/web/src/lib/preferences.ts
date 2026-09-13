@@ -19,7 +19,7 @@ export const DEFAULT_LANGUAGE: Language = 'en';
 export const DEFAULT_THEME: Theme = 'light';
 
 function readCookie(cookieHeader: string | undefined, name: string): string | undefined {
-	if (!cookieHeader) return undefined;
+	if (cookieHeader === undefined || cookieHeader === '') return undefined;
 
 	for (const part of cookieHeader.split(';')) {
 		const [rawKey, ...rawValue] = part.split('=');
@@ -56,7 +56,7 @@ function acceptLanguageQuality(entry: string): number {
 		.split(';')
 		.slice(1)
 		.find((param) => param.trim().startsWith('q='));
-	if (!qParam) return 1;
+	if (qParam === undefined) return 1;
 
 	// A malformed `q` (e.g. `q=not-a-number`) degrades to 0 rather than
 	// propagating NaN into the comparison below — the header is as
@@ -92,7 +92,7 @@ function acceptLanguageQuality(entry: string): number {
  * tags are supported.
  */
 function parseAcceptLanguage(header: string | undefined): Language | undefined {
-	if (!header) return undefined;
+	if (header === undefined || header === '') return undefined;
 
 	let best: { language: Language; quality: number } | undefined;
 

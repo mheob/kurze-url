@@ -186,7 +186,7 @@ function RouteComponent(): React.JSX.Element {
 	return (
 		<>
 			<h1>{t('links.create')}</h1>
-			{formMessage ? <p role="alert">{formMessage}</p> : null}
+			{formMessage !== null ? <p role="alert">{formMessage}</p> : null}
 			<LinkForm
 				domains={domains}
 				fieldErrors={fieldErrors}

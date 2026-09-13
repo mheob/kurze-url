@@ -50,7 +50,7 @@ export async function requireSession(
 	headers: Headers,
 ): Promise<{ accessToken: string }> {
 	const accessToken = await getAccessToken(request, headers);
-	if (!accessToken) throw new UnauthenticatedError();
+	if (accessToken === undefined || accessToken === '') throw new UnauthenticatedError();
 	return { accessToken };
 }
 

@@ -58,10 +58,10 @@ export function AuthedShell({
 
 	return (
 		<header className="border-border flex items-center justify-between border-b px-6 py-4">
-			{currentTeamSlug && memberships.length > 0 ? (
+			{currentTeamSlug !== undefined && memberships.length > 0 ? (
 				<TeamSwitcher currentTeamSlug={currentTeamSlug} memberships={memberships} />
 			) : null}
-			{currentTeamSlug && memberships.length > 0 ? (
+			{currentTeamSlug !== undefined && memberships.length > 0 ? (
 				<nav aria-label={t('nav.label')}>
 					<ul>
 						<li>

@@ -154,12 +154,38 @@ export default defineConfig({
 				// `no-confusing-void-expression`'s fix turned their one-expression
 				// arrows into block bodies. If a consuming chain is ever written
 				// here, turn this back on.
+				// Two plugins report this same rule, so 42 places produce 84 warnings,
+				// and every one of them appeared only because
+				// `strict-boolean-expressions` was satisfied: making `if (message)`
+				// explicit as `message !== undefined` turns it into a "negated
+				// condition". Satisfying one enabled rule violates another.
+				//
+				// None of the 42 is the `if (!x) {...} else {...}` shape the rule
+				// exists for — all are ternaries, and 27 are conditional renders of
+				// the form `value !== null ? <p/> : null`. Flipping those puts the
+				// null branch first, which reads worse than the React idiom they
+				// already use.
+				'eslint/no-negated-condition': 'off',
 				// `no-void` forbids exactly what `no-misused-promises` requires. Every
 				// `void` in this app discards a promise on purpose — `void
 				// router.navigate(...)`, `void handleSubmit(event)` — which is the
 				// documented way to say "not awaited, deliberately". With both rules
 				// on there is no spelling that satisfies both.
 				'eslint/no-void': 'off',
+				// Fourteen of the eighteen sites this rule reports are build and test
+				// tooling — vite.config, playwright.config, the e2e global setup and
+				// its fixtures — where reading the environment directly is the whole
+				// job and a config module would be indirection for its own sake.
+				//
+				// The other four are `API_HOST` and the Vercel bypass secret in
+				// `server/api.ts`, and the two Supabase values in `server/supabase.ts`.
+				// Each already sits in the single function that owns that variable and
+				// validates it there: `createSupabase` throws when either value is
+				// missing, `apiBaseUrl` falls back to the related-project lookup, and
+				// CLAUDE.md documents the `API_HOST` pin at exactly that call site.
+				// Moving four reads behind a module would relocate them without
+				// centralising a decision. Revisit if the count grows.
+				'node/no-process-env': 'off',
 				'promise/always-return': 'off',
 				// TanStack Router signals navigation by throwing: `throw redirect({...})`
 				// and `throw notFound()` are its control flow, and neither is an
@@ -184,6 +210,7 @@ export default defineConfig({
 				// mechanically, so it is off rather than warning.
 				'typescript/no-unnecessary-condition': 'off',
 				'typescript/only-throw-error': 'off',
+				'unicorn/no-negated-condition': 'off',
 				'unicorn/no-useless-undefined': 'off',
 				'unicorn/prefer-dom-node-append': 'off',
 				'unicorn/prefer-dom-node-text-content': 'off',

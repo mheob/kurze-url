@@ -293,9 +293,9 @@ function RouteComponent(): React.JSX.Element {
 				verifyPending={verifyMutation.isPending}
 				verifyingId={verifyingId}
 			/>
-			{verifyMessage ? <p role="alert">{verifyMessage}</p> : null}
-			{deleteMessage ? <p role="alert">{deleteMessage}</p> : null}
-			{claimMessage ? <p role="alert">{claimMessage}</p> : null}
+			{verifyMessage !== null ? <p role="alert">{verifyMessage}</p> : null}
+			{deleteMessage !== null ? <p role="alert">{deleteMessage}</p> : null}
+			{claimMessage !== null ? <p role="alert">{claimMessage}</p> : null}
 			<form
 				onSubmit={(event) => {
 					event.preventDefault();
@@ -320,8 +320,8 @@ function RouteComponent(): React.JSX.Element {
 							<div>
 								<label htmlFor="hostname">{t('domains.hostname')}</label>
 								<input
-									aria-describedby={errorMessage ? `${hintId} ${errorId}` : hintId}
-									aria-invalid={errorMessage ? true : undefined}
+									aria-describedby={errorMessage !== undefined ? `${hintId} ${errorId}` : hintId}
+									aria-invalid={errorMessage !== undefined ? true : undefined}
 									id="hostname"
 									name={field.name}
 									onBlur={field.handleBlur}
@@ -332,7 +332,7 @@ function RouteComponent(): React.JSX.Element {
 									value={field.state.value}
 								/>
 								<p id={hintId}>{t('domains.hostnameHint')}</p>
-								{errorMessage ? (
+								{errorMessage !== undefined ? (
 									<p id={errorId} role="alert">
 										{errorMessage}
 									</p>

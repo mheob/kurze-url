@@ -178,11 +178,19 @@ export const test = base.extend<{
 		const url = process.env.SUPABASE_URL;
 		const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 		const databaseUrl = process.env.E2E_DATABASE_URL;
-		if (!url || !serviceRoleKey || !databaseUrl) {
+		if (
+			url === undefined ||
+			url === '' ||
+			serviceRoleKey === undefined ||
+			serviceRoleKey === '' ||
+			databaseUrl === undefined ||
+			databaseUrl === ''
+		) {
 			const missing: string[] = [];
-			if (!url) missing.push('SUPABASE_URL');
-			if (!serviceRoleKey) missing.push('SUPABASE_SERVICE_ROLE_KEY');
-			if (!databaseUrl) missing.push('E2E_DATABASE_URL');
+			if (url === undefined || url === '') missing.push('SUPABASE_URL');
+			if (serviceRoleKey === undefined || serviceRoleKey === '')
+				missing.push('SUPABASE_SERVICE_ROLE_KEY');
+			if (databaseUrl === undefined || databaseUrl === '') missing.push('E2E_DATABASE_URL');
 			throw new Error(
 				`${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} required for authenticated e2e. ` +
 					'Without them these specs would run signed out and pass against the login page — ' +
@@ -193,7 +201,8 @@ export const test = base.extend<{
 		// localhost fallback), so this is only ever undefined if that invariant
 		// is broken — worth a loud failure rather than silently addressing
 		// cookies to a wrong host.
-		if (!baseURL) throw new Error('baseURL fixture is unset — check playwright.config.ts');
+		if (baseURL === undefined)
+			throw new Error('baseURL fixture is unset — check playwright.config.ts');
 
 		const admin = createClient(url, serviceRoleKey);
 		const db = new PgClient({ connectionString: databaseUrl });
@@ -233,7 +242,7 @@ export const test = base.extend<{
 				[teamName, teamSlug],
 			);
 			const teamRow = teamResult.rows[0];
-			if (!teamRow) {
+			if (teamRow === undefined) {
 				throw new Error('could not seed the e2e fixture team: insert returned no row');
 			}
 			teamId = teamRow.id;

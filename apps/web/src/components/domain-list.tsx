@@ -197,7 +197,7 @@ export function DomainList({
 										</tr>
 									</tbody>
 								</table>
-								{verifyingId === domain.id && pendingReason ? (
+								{verifyingId === domain.id && pendingReason !== undefined ? (
 									<output>{reasonLabel(t, pendingReason)}</output>
 								) : null}
 								<Button

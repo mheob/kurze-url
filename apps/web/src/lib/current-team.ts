@@ -20,7 +20,7 @@ export const TEAM_COOKIE = 'team';
  * @returns The cookie's value, or `undefined` if `cookieHeader` is absent or has no such cookie.
  */
 function readCookie(cookieHeader: string | undefined, name: string): string | undefined {
-	if (!cookieHeader) return undefined;
+	if (cookieHeader === undefined || cookieHeader === '') return undefined;
 
 	for (const part of cookieHeader.split(';')) {
 		const [rawKey, ...rawValue] = part.split('=');
@@ -56,7 +56,8 @@ export function resolveCurrentTeam(
 ): string | undefined {
 	const remembered = readCookie(cookieHeader, TEAM_COOKIE);
 	if (
-		remembered &&
+		remembered !== undefined &&
+		remembered !== '' &&
 		memberships.some((membership: Readonly<Membership>) => membership.slug === remembered)
 	) {
 		return remembered;
