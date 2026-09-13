@@ -1,7 +1,15 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
+
+/*
+ * Self-hosted, never a font CDN: a CDN request hands the visitor's IP address
+ * to a third party on every page load, which is exactly the transfer the
+ * privacy policy this instance owes its Vereine should not have to explain.
+ * The preset's `--font-sans` and `--font-mono` name these two families.
+ */
 @import '@fontsource-variable/geist';
+@import '@fontsource-variable/geist-mono';
 
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -60,7 +68,11 @@
  * possible outcome is machinery without a user.
  */
 :root {
-	--radius: 0.625rem;
+	/* The preset selects "Radius: None", which renders all components as square. The
+	 * shadcn CLI does not import the preset's radius setting into the generated CSS, but
+	 * hardcoding it here ensures components generated in future tasks will render correctly
+	 * without a later radius value making them unexpectedly rounded. */
+	--radius: 0;
 }
 
 [data-theme='indigo'] {
