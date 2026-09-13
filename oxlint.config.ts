@@ -74,5 +74,32 @@ export default defineConfig({
 			files: ['apps/web/**/*.test.ts', 'apps/web/**/*.test.tsx'],
 			plugins: ['vitest'],
 		},
+		{
+			// The e2e specs are Playwright, not Vitest. The vitest rules reach them
+			// anyway — the shared config turns whole categories on, and a category
+			// is not scoped by the plugin override above — so they are switched off
+			// here by name rather than left to warn about a framework these files
+			// do not use.
+			//
+			// This is not only noise. `prefer-importing-vitest-globals` carries an
+			// auto-fix, and running `pnpm lint:fix` had it insert
+			// `import { expect, test } from 'vitest'` at the top of all four specs,
+			// which already take `expect` from `@playwright/test` and `test` from
+			// `./fixtures/auth`. The result was duplicate identifiers and a tree
+			// that no longer typechecked.
+			// `plugins` is repeated here for the same reason the react override
+			// above repeats it: overrides matching one file are not deep-merged,
+			// and a `rules` entry only takes effect for a plugin its own override
+			// activates. Without this line the four rules below are silently
+			// dropped and keep warning.
+			files: ['apps/web/e2e/**'],
+			plugins: ['vitest'],
+			rules: {
+				'vitest/consistent-test-filename': 'off',
+				'vitest/no-conditional-in-test': 'off',
+				'vitest/prefer-each': 'off',
+				'vitest/prefer-importing-vitest-globals': 'off',
+			},
+		},
 	],
 });
