@@ -91,28 +91,37 @@ export function AppSidebar({
 			</SidebarHeader>
 			<SidebarContent>
 				{hasResolvedTeam ? (
-					<SidebarMenu aria-label={t('nav.label')}>
-						<SidebarMenuItem>
-							<SidebarMenuButton
-								// oxlint-disable-next-line react-perf/jsx-no-jsx-as-prop -- Base UI's `render`-prop composition idiom (`useRender`'s "Migrating from Radix UI" guide): this is the element `SidebarMenuButton` clones and merges its own props onto, the same pattern `components/ui/sheet.tsx`'s generated `SheetClose` uses. A stable reference would need a `useMemo` around a two-line static element in a two-item menu.
-								render={<Link params={{ teamSlug: currentTeamSlug }} to="/teams/$teamSlug/links" />}
-							>
-								<LinkIcon aria-hidden />
-								<span>{t('nav.links')}</span>
-							</SidebarMenuButton>
-						</SidebarMenuItem>
-						<SidebarMenuItem>
-							<SidebarMenuButton
-								render={
-									// oxlint-disable-next-line react-perf/jsx-no-jsx-as-prop -- same reason as the `links` button above.
-									<Link params={{ teamSlug: currentTeamSlug }} to="/teams/$teamSlug/domains" />
-								}
-							>
-								<GlobeIcon aria-hidden />
-								<span>{t('nav.domains')}</span>
-							</SidebarMenuButton>
-						</SidebarMenuItem>
-					</SidebarMenu>
+					// `SidebarMenu` (components/ui/sidebar.tsx) renders a plain `<ul>` —
+					// an `aria-label` on a list is not a landmark, so the accessible
+					// name has to live on a real `<nav>` wrapping it, the same
+					// "real element over a bolted-on attribute" preference
+					// `team-switcher.tsx`'s `<fieldset>` follows for its own label.
+					<nav aria-label={t('nav.label')}>
+						<SidebarMenu>
+							<SidebarMenuItem>
+								<SidebarMenuButton
+									render={
+										// oxlint-disable-next-line react-perf/jsx-no-jsx-as-prop -- Base UI's `render`-prop composition idiom (`useRender`'s "Migrating from Radix UI" guide): this is the element `SidebarMenuButton` clones and merges its own props onto, the same pattern `components/ui/sheet.tsx`'s generated `SheetClose` uses. A stable reference would need a `useMemo` around a two-line static element in a two-item menu.
+										<Link params={{ teamSlug: currentTeamSlug }} to="/teams/$teamSlug/links" />
+									}
+								>
+									<LinkIcon aria-hidden />
+									<span>{t('nav.links')}</span>
+								</SidebarMenuButton>
+							</SidebarMenuItem>
+							<SidebarMenuItem>
+								<SidebarMenuButton
+									render={
+										// oxlint-disable-next-line react-perf/jsx-no-jsx-as-prop -- same reason as the `links` button above.
+										<Link params={{ teamSlug: currentTeamSlug }} to="/teams/$teamSlug/domains" />
+									}
+								>
+									<GlobeIcon aria-hidden />
+									<span>{t('nav.domains')}</span>
+								</SidebarMenuButton>
+							</SidebarMenuItem>
+						</SidebarMenu>
+					</nav>
 				) : null}
 			</SidebarContent>
 			<SidebarFooter>

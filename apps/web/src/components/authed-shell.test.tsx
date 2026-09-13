@@ -184,4 +184,18 @@ describe(AuthedShell, () => {
 			screen.findByRole('button', { name: 'Toggle the navigation' }),
 		).resolves.toBeInTheDocument();
 	});
+
+	it('renders exactly one main landmark', async () => {
+		// `SidebarInset` (components/ui/sidebar.tsx) renders the page's `<main>`
+		// itself. `_authed.tsx` used to wrap its own children in a second
+		// `<main>` here, nesting one landmark inside the other — axe's
+		// `landmark-one-main`, `landmark-no-duplicate-main` and `landmark-unique`
+		// all catch that, but a count is the check that would have caught it
+		// directly, so this fixture's `children` (`PageContent`, a bare `<p>`)
+		// deliberately do not wrap themselves in a `<main>` either, mirroring
+		// `_authed.tsx`'s current, corrected shape.
+		renderShell({});
+		await screen.findByRole('button', { name: 'Sign out' });
+		expect(document.querySelectorAll('main')).toHaveLength(1);
+	});
 });

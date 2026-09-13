@@ -511,7 +511,13 @@ Update `team-switcher.test.tsx`: the items now live behind a trigger, so the tes
 </SidebarProvider>
 ```
 
-`AuthedShell` now takes `children`, because `SidebarInset` has to wrap the page content for the layout to work. In `_authed.tsx`, move the existing `<main>` — with its sign-out-failure `role="alert"` and its `<Outlet />` — inside `<AuthedShell>` as that child. **Keep the comment explaining why `<main>` lives there**: axe's `landmark-one-main` wants exactly one per document and a per-page wrapper would be forgotten on the next route.
+`AuthedShell` now takes `children`, because `SidebarInset` has to wrap the page content for the layout to work.
+
+**`SidebarInset` IS the `<main>`.** Read `apps/web/src/components/ui/sidebar.tsx` and confirm it before writing anything: the generated component renders `<main data-slot="sidebar-inset">` itself. So `_authed.tsx` must **drop** its own `<main>` wrapper rather than move it inside — keeping both produces `<main>…<main>…</main></main>`, which axe reports as `landmark-no-duplicate-main`, `landmark-main-is-top-level` and `landmark-unique`, and which fails the existing `e2e/links.spec.ts` and `e2e/domains.spec.ts` accessibility assertions on every authenticated page.
+
+Pass the sign-out-failure `role="alert"` paragraph and the `<Outlet />` through as `children` unwrapped (or in a plain `<div>`). Rewrite the comment that used to justify the `<main>`: the reasoning it carried is still true — exactly one `<main>` per document, and a per-page wrapper would be forgotten on the next route added — but the element providing it is now `SidebarInset`, not a wrapper this file writes.
+
+Verify the count rather than trusting the markup: render the shell and assert `document.querySelectorAll('main')` has length 1.
 
 - [ ] **Step 7: Add the stories, light and dark**
 

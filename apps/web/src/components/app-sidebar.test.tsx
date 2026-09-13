@@ -108,6 +108,19 @@ describe(AppSidebar, () => {
 		);
 	});
 
+	it('wraps the section links in a navigation landmark', async () => {
+		// `SidebarMenu` (components/ui/sidebar.tsx) renders a plain `<ul>` — an
+		// `aria-label` on a list is not a landmark, so the accessible name has to
+		// live on a real `<nav>` wrapping it. This is what a screen reader's
+		// quick-navigation region list actually depends on, not just the two
+		// links' own presence.
+		renderSidebar({ currentTeamSlug: 'verein-a' });
+
+		await expect(
+			screen.findByRole('navigation', { name: 'Sections' }),
+		).resolves.toBeInTheDocument();
+	});
+
 	it('renders no section navigation without a resolved team', async () => {
 		// A signed-in visitor with a stale bookmark to a team they have left reaches
 		// this shell with no resolvable slug; the links would have nowhere to point.
