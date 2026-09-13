@@ -8,6 +8,7 @@ import { ConfirmDelete } from '../../components/confirm-delete';
 import { LinkForm, type LinkFormValues } from '../../components/link-form';
 import { LinkPasswordCard } from '../../components/link-password-card';
 import { LinkQRCard } from '../../components/link-qr-card';
+import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { classifyApiError, type ApiFailure, type QrRejectionReason } from '../../lib/api-errors';
 import type { LinkPasswordContext, LinkPasswordReason } from '../../lib/link-password';
 import {
@@ -612,14 +613,28 @@ function RouteComponent(): React.JSX.Element {
 			 * page on the preview and broke the password e2e spec, which then
 			 * matched two password inputs. Prefix every key here.
 			 */}
-			<LinkForm
-				fieldErrors={fieldErrors}
-				initial={toFormValues(link)}
-				key={`form-${linkId}`}
-				onSubmit={(values) => {
-					updateMutation.mutate(values);
-				}}
-			/>
+			<Card>
+				<CardHeader>
+					{/* `CardTitle` hardcodes a `<div>` — see the same note on
+					    `link-password-card.tsx`'s `CardTitle`: a real nested `<h2>`
+					    keeps this section in the page's heading structure without
+					    fighting `jsx-a11y/prefer-tag-over-role`, and without editing
+					    `ui/card.tsx`. */}
+					<CardTitle>
+						<h2>{t('links.detailsHeading')}</h2>
+					</CardTitle>
+				</CardHeader>
+				<CardContent>
+					<LinkForm
+						fieldErrors={fieldErrors}
+						initial={toFormValues(link)}
+						key={`form-${linkId}`}
+						onSubmit={(values) => {
+							updateMutation.mutate(values);
+						}}
+					/>
+				</CardContent>
+			</Card>
 			<LinkPasswordCard
 				context={toPasswordContext(link, me.memberships, teamSlug)}
 				hasPassword={hasPassword}
@@ -656,13 +671,23 @@ function RouteComponent(): React.JSX.Element {
 				rejection={qrRejection}
 				svg={qrQuery.data}
 			/>
-			<ConfirmDelete
-				label={t('links.delete')}
-				onConfirm={() => {
-					deleteMutation.mutate();
-				}}
-				question={t('links.deleteQuestion')}
-			/>
+			<Card>
+				<CardHeader>
+					{/* Same `CardTitle`/`<h2>` note as the details card above. */}
+					<CardTitle>
+						<h2>{t('links.deleteHeading')}</h2>
+					</CardTitle>
+				</CardHeader>
+				<CardContent>
+					<ConfirmDelete
+						label={t('links.delete')}
+						onConfirm={() => {
+							deleteMutation.mutate();
+						}}
+						question={t('links.deleteQuestion')}
+					/>
+				</CardContent>
+			</Card>
 		</>
 	);
 }

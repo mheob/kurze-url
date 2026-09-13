@@ -1,6 +1,15 @@
-import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+	AlertDialogTrigger,
+} from './ui/alert-dialog';
 import { Button } from './ui/button';
 
 interface ConfirmDeleteProps {
@@ -18,9 +27,9 @@ interface ConfirmDeleteProps {
 
 /**
  * One misclick must not delete something: nothing restores a link, and a
- * removed domain has to be re-verified from scratch. The first click only
- * arms the control; a second, explicit click is what actually calls
- * `onConfirm`.
+ * removed domain has to be re-verified from scratch. The trigger only opens
+ * a confirmation dialog; only an explicit click on that dialog's own confirm
+ * action calls `onConfirm`.
  *
  * `question` is a fully rendered string, not a translation key — the same
  * convention `label` already used — because the consequence of confirming
@@ -42,20 +51,21 @@ interface ConfirmDeleteProps {
  * deletion overrides it with its own fully rendered string, on the same
  * "only the caller knows which" reasoning as `question`.
  *
- * `role="alertdialog"` needs an accessible name to mean anything to a screen
- * reader — the plan's own sample rendered a bare `<p role="alertdialog">`
- * with no `aria-label`/`aria-labelledby`, which is exactly the "proper
- * semantics and an accessible name" this task's own instructions call out.
- * `useId()` (not a hardcoded id) is what keeps this safe to render more than
- * once on the same page — one `ConfirmDelete` per row in a list view —
- * without two instances colliding on the same id.
+ * Built on `AlertDialog` rather than the hand-rolled `role="alertdialog"`
+ * `<div>` this component used before: that version had the right role but
+ * none of the behaviour a real dialog needs — no focus trap, no Escape
+ * handling, and cancelling unmounted the trigger and restored focus to
+ * nothing, dropping a keyboard user at the top of the document.
+ * `AlertDialogTitle` both supplies the dialog's accessible name (from
+ * `question`, the same value the old hand-rolled `aria-labelledby` pointed
+ * at) and returns focus to the trigger on close, for free.
  *
  * @param props - The component's props.
  * @param props.confirmLabel - Fully rendered confirm-button string; defaults to "Yes, delete it" when omitted.
- * @param props.label - Fully rendered label for the initial, arming button.
- * @param props.onConfirm - Called on the second, confirming click.
- * @param props.question - Fully rendered question shown once armed.
- * @returns The rendered control, in its armed or unarmed state.
+ * @param props.label - Fully rendered label for the trigger that opens the confirmation dialog.
+ * @param props.onConfirm - Called when the dialog's own confirm action is clicked.
+ * @param props.question - Fully rendered question shown in the confirmation dialog.
+ * @returns The rendered trigger and its confirmation dialog.
  */
 export function ConfirmDelete({
 	confirmLabel,
@@ -64,36 +74,22 @@ export function ConfirmDelete({
 	question,
 }: ConfirmDeleteProps): React.JSX.Element {
 	const { t } = useTranslation();
-	const [armed, setArmed] = useState(false);
-	const questionId = useId();
-
-	if (!armed) {
-		return (
-			<Button
-				onClick={() => {
-					setArmed(true);
-				}}
-				type="button"
-			>
-				{label}
-			</Button>
-		);
-	}
 
 	return (
-		<div aria-labelledby={questionId} role="alertdialog">
-			<p id={questionId}>{question}</p>
-			<Button onClick={onConfirm} type="button">
-				{confirmLabel ?? t('links.deleteConfirm')}
-			</Button>
-			<Button
-				onClick={() => {
-					setArmed(false);
-				}}
-				type="button"
-			>
-				{t('links.cancel')}
-			</Button>
-		</div>
+		<AlertDialog>
+			{/* oxlint-disable-next-line react-perf/jsx-no-jsx-as-prop -- Base UI's `render`-prop composition idiom (`useRender`'s "Migrating from Radix UI" guide): this is the element `AlertDialogTrigger` clones and merges its own props onto. A stable reference would need a `useMemo` around a two-line static element per `ConfirmDelete` instance — one per row in a list view. */}
+			<AlertDialogTrigger render={<Button type="button" />}>{label}</AlertDialogTrigger>
+			<AlertDialogContent>
+				<AlertDialogHeader>
+					<AlertDialogTitle>{question}</AlertDialogTitle>
+				</AlertDialogHeader>
+				<AlertDialogFooter>
+					<AlertDialogCancel type="button">{t('links.cancel')}</AlertDialogCancel>
+					<AlertDialogAction onClick={onConfirm} type="button">
+						{confirmLabel ?? t('links.deleteConfirm')}
+					</AlertDialogAction>
+				</AlertDialogFooter>
+			</AlertDialogContent>
+		</AlertDialog>
 	);
 }
