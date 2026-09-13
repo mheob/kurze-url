@@ -55,7 +55,7 @@ export function RootDocument({ children }: { readonly children: React.ReactNode 
 	const i18n = useMemo(() => createI18n(language), [language]);
 
 	return (
-		// `data-theme` is the color axis, `className` the light/dark one — see
+		// `data-theme` is the colour axis, `className` the light/dark one — see
 		// the comment above the token blocks in styles/app.css. Hardcoded until a
 		// settings page can write a preference; when that arrives it reads a
 		// cookie here exactly as `readTheme` already does for `theme`.
@@ -76,7 +76,7 @@ export function RootDocument({ children }: { readonly children: React.ReactNode 
  * TanStack Router's own default `notFoundComponent` is a hardcoded English
  * literal ("Not Found") with no translation hook at all — it renders for any
  * URL that matches no route, regardless of the request's language, so an
- * unrecognized `/de/...`-flavored link would otherwise ship English text
+ * unrecognised `/de/...`-flavoured link would otherwise ship English text
  * inside an already-correctly-German `<html lang="de">` shell.
  *
  * @returns The rendered not-found page.

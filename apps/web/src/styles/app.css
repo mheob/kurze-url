@@ -49,10 +49,10 @@
 }
 
 /*
- * Color lives under `[data-theme]`, not on bare `:root`, because a color
+ * Colour lives under `[data-theme]`, not on bare `:root`, because a colour
  * theme and light/dark are two independent axes: `<html>` carries a `dark`
  * class (see `themeClassName`) *and* a `data-theme` attribute. A settings
- * page offering a second color theme is planned; structuring the tokens
+ * page offering a second colour theme is planned; structuring the tokens
  * this way now makes that a CSS block instead of a rewrite of every token.
  *
  * The attribute's value is hardcoded to `indigo` in `__root.tsx` for now —
