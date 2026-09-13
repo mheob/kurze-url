@@ -24,6 +24,10 @@ interface TeamSwitcherProps {
  * @param teamSlug - The team's slug to remember; read back on the next request to `/`.
  */
 function remember(teamSlug: string): void {
+	// The Cookie Store API's `set()` is Promise-based; this write has to be
+	// visible to the very next request to `/`, which can follow this click
+	// synchronously, so an awaited alternative could lose the race.
+	// oxlint-disable-next-line unicorn/no-document-cookie
 	document.cookie = teamCookie(teamSlug);
 }
 

@@ -13,6 +13,13 @@ import { getRequest } from '@tanstack/react-start/server';
 
 import { authedApiClient, flushSessionCookies, requireSession } from './session';
 
+/* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding of this rule in this
+ * file is the same `request: Request` parameter each `...For` function takes: `Request` nests a
+ * mutable `Headers` through its own `.headers` getter, and `Readonly<>` is shallow — it does not
+ * reach that nested property, unlike a bare `Headers` parameter, which the check does accept once
+ * wrapped.
+ */
+
 /**
  * Same `...For`/`...Fn` split as `server/links.ts`, for the same reason:
  * `listDomainsFn`'s `createServerFn` can't be called directly under Vitest
@@ -71,8 +78,10 @@ export const listDomainsFn = createServerFn({ method: 'GET' })
 // `queryOptions`'s own return type can't be written out by hand without
 // losing the specific `['domains', teamId]` tuple type `useSuspenseQuery`
 // needs downstream — same reasoning as `linksQueryOptions`, confirmed by
-// trying it there.
-// oxlint-disable-next-line typescript/explicit-function-return-type
+// trying it there. Same reason covers `explicit-module-boundary-types`
+// below: it's the same missing annotation this exported function can't be
+// given either.
+// oxlint-disable-next-line typescript/explicit-function-return-type, typescript/explicit-module-boundary-types
 export const domainsQueryOptions = (teamId: string) =>
 	queryOptions({
 		queryFn: async () => listDomainsFn({ data: { teamId } }),

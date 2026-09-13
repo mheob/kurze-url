@@ -34,6 +34,7 @@ const devtoolsPlugins = [
  * the value lands in the same response as the HTML), and on the client it
  * becomes a regular RPC instead of a crash.
  */
+// oxlint-disable-next-line typescript/require-await -- `createServerFn`'s handler must return a `Promise` whatever its body does; nothing here needs an `await`.
 const getPreferences = createServerFn({ method: 'GET' }).handler(async () => {
 	const cookieHeader = getRequestHeader('cookie');
 	// Only ever the initial guess before a `lang` cookie exists — `readLanguage`
@@ -45,6 +46,7 @@ const getPreferences = createServerFn({ method: 'GET' }).handler(async () => {
 	};
 });
 
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `React.ReactNode` is React's own type; not a declaration this file can edit.
 function RootDocument({ children }: { readonly children: React.ReactNode }) {
 	const { language, theme } = Route.useLoaderData();
 	// A fresh i18n instance per request already (see createI18n's own docstring);
@@ -109,6 +111,7 @@ function NotFound() {
  * @param props.error - Whatever was thrown.
  * @returns The rendered error page.
  */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `ErrorComponentProps` is TanStack Router's own type; not a declaration this file can edit.
 export function RootErrorPage({ error }: ErrorComponentProps) {
 	const { t } = useTranslation();
 
@@ -147,6 +150,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 	// so `documentTitle` reads the catalogue directly instead of going through
 	// `useTranslation`. Axe's `document-title` check (WCAG 2.4.2) needs this
 	// non-empty, and it must still be translated like everything else here.
+	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- TanStack Router's own root route `head` option shape; not a declaration this file can edit.
 	head: ({ loaderData }) => ({
 		links: [
 			{

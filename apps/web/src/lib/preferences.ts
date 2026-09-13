@@ -1,9 +1,14 @@
-/**
+/*
  * Language and theme share this file because they are one mechanism used
  * twice: a cookie, read on the server during rendering so the first paint is
  * already correct. Neither can live in localStorage — a value the server
  * cannot read forces the first paint to guess, and a wrong guess is the flash
  * of untranslated text or of the wrong theme.
+ *
+ * A single `*` on purpose, not `/**`: this is a file overview, not a doc
+ * comment for `readCookie` below it, and a `/**` block here reads to
+ * `jsdoc/require-param`/`require-returns` as an undocumented-but-tagged
+ * comment on that function, which it was never meant to be.
  */
 
 function readCookie(cookieHeader: string | undefined, name: string): string | undefined {
@@ -24,8 +29,13 @@ function readCookie(cookieHeader: string | undefined, name: string): string | un
 // function's hoisting, so moving these down would trade one lint rule's
 // warning for the other. Only these two are pinned here — every other
 // export in this file moved cleanly.
+/* oxlint-disable import/exports-last -- isLanguage/isTheme below read these by value, and
+   eslint(no-use-before-define) checks a variable's textual position regardless of the enclosing
+   function's hoisting; moving these two exports to the bottom would only trade this warning for
+   that one. */
 export const LANGUAGES = ['en', 'de'] as const;
 export const THEMES = ['light', 'dark'] as const;
+/* oxlint-enable import/exports-last */
 
 function isLanguage(value: string | undefined): value is Language {
 	return LANGUAGES.some((language) => language === value);
@@ -44,9 +54,11 @@ function isTheme(value: string | undefined): value is Theme {
  * @param tag - A language tag, e.g. `de-DE`.
  * @returns The primary subtag, e.g. `de`.
  */
+const NOT_FOUND = -1;
+
 function primarySubtag(tag: string): string {
 	const dashIndex = tag.indexOf('-');
-	return dashIndex === -1 ? tag : tag.slice(0, dashIndex);
+	return dashIndex === NOT_FOUND ? tag : tag.slice(0, dashIndex);
 }
 
 function acceptLanguageQuality(entry: string): number {
@@ -60,7 +72,7 @@ function acceptLanguageQuality(entry: string): number {
 	// propagating NaN into the comparison below — the header is as
 	// user-controlled as a cookie, so garbage should just lose priority, not
 	// throw or corrupt the comparison.
-	const quality = Number.parseFloat(qParam.trim().slice(2));
+	const quality = Number(qParam.trim().slice(2));
 	return Number.isFinite(quality) ? quality : 0;
 }
 
@@ -92,17 +104,16 @@ function acceptLanguageQuality(entry: string): number {
 function parseAcceptLanguage(header: string | undefined): Language | undefined {
 	if (header === undefined || header === '') return undefined;
 
-	let best: { language: Language; quality: number } | undefined;
+	let best: { language: Language; quality: number } | undefined = undefined;
 
 	for (const entry of header.split(',')) {
 		const tag = entry.split(';')[0]?.trim().toLowerCase();
-		if (!tag) continue;
+		const primary = tag ? primarySubtag(tag) : undefined;
 
-		const primary = primarySubtag(tag);
-		if (!isLanguage(primary)) continue;
-
-		const quality = acceptLanguageQuality(entry);
-		if (!best || quality > best.quality) best = { language: primary, quality };
+		if (primary !== undefined && isLanguage(primary)) {
+			const quality = acceptLanguageQuality(entry);
+			if (!best || quality > best.quality) best = { language: primary, quality };
+		}
 	}
 
 	return best?.language;

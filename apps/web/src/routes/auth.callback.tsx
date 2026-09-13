@@ -46,6 +46,7 @@ export const Route = createFileRoute('/auth/callback')({
 		// *why* it failed, keeps this from becoming a second enumeration
 		// oracle alongside `sendMagicLinkFor`'s (reused vs. expired vs. missing
 		// verifier all look the same from here).
+		// oxlint-disable-next-line typescript/only-throw-error -- TanStack Router signals navigation by throwing; `redirect()` is its control flow, not an Error.
 		throw redirect({ to: ok ? '/' : '/login' });
 	},
 });

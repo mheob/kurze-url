@@ -1,3 +1,7 @@
+/* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding of this rule in this
+   file traces to `@kurze-url/api-client`'s generated `Domain` type, whose properties are not
+   marked readonly; that is generated codegen output, never edited by hand. */
+
 import type { Domain as ApiDomain, VerifyDomainOutputBody } from '@kurze-url/api-client';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';

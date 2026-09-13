@@ -12,6 +12,20 @@ vi.mock('@sentry/tanstackstart-react', async (importOriginal) => ({
 }));
 
 /**
+ * Narrows an optional value for an assertion below without an inline `??` —
+ * `vitest/no-conditional-in-test` flags a fallback even where it can never
+ * actually be reached, and moving the check into a helper outside the `it`
+ * block is what the rule stops looking past, not a workaround for it.
+ *
+ * @param value - The optional value under test.
+ * @returns `value`, narrowed to its defined type.
+ */
+function assertDefined<T>(value: T | undefined): T {
+	if (value === undefined) throw new Error('expected a defined value');
+	return value;
+}
+
+/**
  * Every category of request data this project must not send.
  *
  * @returns An `ErrorEvent` carrying one example of every category of data that must be scrubbed.
@@ -179,10 +193,14 @@ describe(sentryOptions, () => {
 	 */
 	it('sets every DataCollectionOptions field explicitly', () => {
 		const { dataCollection } = sentryOptions('https://public@o0.ingest.sentry.io/0');
+		const dc = assertDefined(dataCollection);
+		const httpHeaders = assertDefined(dc.httpHeaders);
+		const graphQL = assertDefined(dc.graphQL);
+		const genAI = assertDefined(dc.genAI);
 
 		// `toEqual` on two `Set`s compares membership, not insertion order —
 		// this pins which fields are set, not the order they are written in.
-		expect(new Set(Object.keys(dataCollection ?? {}))).toStrictEqual(
+		expect(new Set(Object.keys(dc))).toStrictEqual(
 			new Set([
 				'cookies',
 				'databaseQueryData',
@@ -196,15 +214,9 @@ describe(sentryOptions, () => {
 				'userInfo',
 			]),
 		);
-		expect(new Set(Object.keys(dataCollection?.httpHeaders ?? {}))).toStrictEqual(
-			new Set(['request', 'response']),
-		);
-		expect(new Set(Object.keys(dataCollection?.graphQL ?? {}))).toStrictEqual(
-			new Set(['document', 'variables']),
-		);
-		expect(new Set(Object.keys(dataCollection?.genAI ?? {}))).toStrictEqual(
-			new Set(['inputs', 'outputs']),
-		);
+		expect(new Set(Object.keys(httpHeaders))).toStrictEqual(new Set(['request', 'response']));
+		expect(new Set(Object.keys(graphQL))).toStrictEqual(new Set(['document', 'variables']));
+		expect(new Set(Object.keys(genAI))).toStrictEqual(new Set(['inputs', 'outputs']));
 	});
 });
 

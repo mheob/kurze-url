@@ -31,7 +31,7 @@ interface FakeResponse {
 const mocks = vi.hoisted(() => ({
 	// Defaulted so tests that never touch cookies don't need their own setup —
 	// only the flush test below overrides this to inspect what was appended.
-	getResponse: vi.fn<() => FakeResponse>(() => ({ headers: { append: () => {} } })),
+	getResponse: vi.fn<() => FakeResponse>(() => ({ headers: { append: () => undefined } })),
 	signInWithOtp: vi.fn<FakeSupabaseClient['auth']['signInWithOtp']>(),
 }));
 
@@ -40,7 +40,12 @@ vi.mock('./supabase', () => ({
 	// adapter: @supabase/ssr writes the PKCE code verifier cookie into
 	// `headers` synchronously, before `signInWithOtp`'s HTTP call even
 	// resolves (see Finding 1's own reasoning in `auth.ts`).
-	createSupabase: (_request: Request, headers: Headers): FakeSupabaseClient => {
+	/* oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `_request` is `Request`,
+	 * which nests a mutable `Headers` through its own `.headers` getter; `Readonly<>` is shallow
+	 * and doesn't reach that nested property, unlike the bare `Headers` parameter beside it, which
+	 * the check accepts once wrapped.
+	 */
+	createSupabase: (_request: Request, headers: Readonly<Headers>): FakeSupabaseClient => {
 		headers.append('set-cookie', 'sb-pkce-code-verifier=abc; Path=/; HttpOnly');
 		return { auth: { signInWithOtp: mocks.signInWithOtp } };
 	},
@@ -50,6 +55,10 @@ vi.mock('@tanstack/react-start/server', () => ({
 	getResponse: mocks.getResponse,
 }));
 
+/* oxlint-disable-next-line node/no-top-level-await -- this file is a Vitest test entry, never
+ * `require(esm)`'d by anything; the dynamic import has to run after the `vi.mock` calls above
+ * register their replacements, which a module-scope `await import` is what expresses.
+ */
 const { ENUMERATION_TIMING_FLOOR_MS, sendMagicLinkFor } = await import('./auth');
 
 describe('sendMagicLinkFor', () => {
@@ -64,6 +73,10 @@ describe('sendMagicLinkFor', () => {
 
 		expect(mocks.signInWithOtp).toHaveBeenCalledWith(
 			expect.objectContaining({
+				/* oxlint-disable-next-line typescript/no-unsafe-assignment -- vitest types
+				 * `expect.objectContaining`'s return as `any`, so assigning it into a typed
+				 * object literal is what every use of this matcher looks like.
+				 */
 				options: expect.objectContaining({ shouldCreateUser: false }),
 			}),
 		);
@@ -98,6 +111,11 @@ describe('sendMagicLinkFor', () => {
 			});
 
 			let settled = false;
+			/* oxlint-disable-next-line promise/prefer-await-to-then -- the point of this test is to
+			 * observe whether the promise has settled *before* awaiting it; `await`ing it here would
+			 * block until it resolves, which is exactly the premature-settling this test exists to
+			 * catch. `.then()` attaches the marker without holding up the assertions below it.
+			 */
 			const pending = sendMagicLinkFor('unknown@example.test', 'https://app.test').then(
 				(result: Readonly<{ sent: true }>) => {
 					settled = true;

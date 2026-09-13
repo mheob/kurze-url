@@ -10,6 +10,7 @@ import { DomainList } from './domain-list';
  * @param overrides - Partial fields to override on the default domain fixture.
  * @returns The domain fixture.
  */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `ApiDomain` is `@kurze-url/api-client`'s generated `Domain` type, whose properties are not marked readonly; that is generated codegen output, never edited by hand.
 function domain(overrides: Partial<ApiDomain> = {}): ApiDomain {
 	return {
 		hostname: 'links.verein.test',
@@ -134,6 +135,7 @@ export const Mixed: StoryObj<typeof meta> = {
  */
 export const DeleteArmed: StoryObj<typeof meta> = {
 	args: { domains: [domain()] },
+	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Storybook's own `play` function context type; not this codebase's to mark readonly.
 	play: async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
 		await userEvent.click(canvas.getByRole('button', { name: 'Delete links.verein.test' }));

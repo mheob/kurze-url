@@ -62,8 +62,10 @@ describe('translation catalogues', () => {
 			'domains.recordTypeCname',
 		]);
 		const english = new Map(flatten(en));
-		for (const [key, german] of flatten(de)) {
-			if (identicalByDesign.has(key)) continue;
+		const toCheck = flatten(de).filter(
+			([key]: readonly [string, string]) => !identicalByDesign.has(key),
+		);
+		for (const [key, german] of toCheck) {
 			expect(german, `${key} is identical in both languages`).not.toBe(english.get(key));
 		}
 	});

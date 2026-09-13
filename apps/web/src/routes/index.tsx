@@ -41,6 +41,7 @@ const getHealthStatus = createServerFn({ method: 'GET' }).handler(async () => fe
  */
 const getCurrentTeamSlug = createServerFn({ method: 'GET' })
 	.validator((memberships: readonly Membership[]) => memberships)
+	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `data`'s shape is `createServerFn`'s own handler option type, inferred from the validator above; not a declaration this file can edit.
 	.handler(({ data: memberships }) => resolveCurrentTeam(getRequestHeader('cookie'), memberships));
 
 /**
@@ -116,6 +117,7 @@ export const Route = createFileRoute('/')({
 		const teamSlug = me ? await getCurrentTeamSlug({ data: me.memberships }) : undefined;
 		const outcome = resolveHomeOutcome(me, teamSlug);
 		if (outcome.kind === 'redirect') {
+			// oxlint-disable-next-line typescript/only-throw-error -- TanStack Router signals navigation by throwing; `redirect()` is its control flow, not an Error.
 			throw redirect({ params: { teamSlug: outcome.teamSlug }, to: '/teams/$teamSlug/links' });
 		}
 		return { outcome, status: health.status };
@@ -140,6 +142,7 @@ function Home() {
 						    no team, so no `_authed` chrome to reach team creation from. Without
 						    this link the first team can only be made with SQL. */}
 						{outcome.isMaintainer ? (
+							// oxlint-disable-next-line react/forbid-component-props -- shadcn/ui's own "link styled as a button" idiom: TanStack Router's `Link` forwards `className` straight to the rendered `<a>`, and `buttonVariants` exists precisely to be applied here.
 							<Link className={buttonVariants({ variant: 'default' })} to="/new-team">
 								{t('teams.create')}
 							</Link>
@@ -149,6 +152,7 @@ function Home() {
 					<>
 						<h1 className="text-3xl font-bold">{t('home.heading')}</h1>
 						<p className="text-muted-foreground max-w-prose">{t('home.body')}</p>
+						{/* oxlint-disable-next-line react/forbid-component-props -- same reason as the maintainer's link above: shadcn/ui's `buttonVariants` idiom, forwarded by TanStack Router's `Link` to the rendered `<a>`. */}
 						<Link className={buttonVariants({ variant: 'default' })} to="/login">
 							{t('actions.signIn')}
 						</Link>

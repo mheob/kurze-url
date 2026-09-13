@@ -104,6 +104,7 @@ export const fetchMe = createServerFn({ method: 'GET' }).handler(async (): Promi
  */
 export function requireTeamId(memberships: readonly Membership[], teamSlug: string): string {
 	const membership = memberships.find((entry) => entry.slug === teamSlug);
+	// oxlint-disable-next-line typescript/only-throw-error -- TanStack Router signals navigation by throwing; `notFound()` is its control flow, not an Error.
 	if (!membership) throw notFound();
 	return membership.team_id;
 }
@@ -113,6 +114,7 @@ export const Route = createFileRoute('/_authed')({
 		try {
 			return { me: await fetchMe() };
 		} catch (error) {
+			// oxlint-disable-next-line typescript/only-throw-error -- TanStack Router signals navigation by throwing; `redirect()` is its control flow, not an Error.
 			if (isUnauthenticatedError(error)) throw redirect({ to: '/login' });
 			throw error;
 		}

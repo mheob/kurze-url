@@ -15,6 +15,12 @@ import {
 	toPasswordContext,
 } from './teams.$teamSlug.links.$linkId';
 
+/* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding below is a type this
+   test file doesn't own: the generated `@kurze-url/api-client` `Link`/`PageLink` types (whose
+   nested arrays are mutable and can't be marked readonly from this side of the codegen boundary),
+   or `Node`'s own generic `appendChild`/`removeChild` signature (`<T extends Node>(node: T): T`),
+   inferred here from the real `document.body` the spies wrap. */
+
 function link(overrides: Partial<Link> = {}): Link {
 	return {
 		analytics_enabled: true,
@@ -75,7 +81,9 @@ function redirectTarget(error: unknown): string | undefined {
 function rejectingWith(
 	status: number,
 ): (options: Readonly<{ data: Readonly<{ linkId: string }> }>) => Promise<Link> {
+	// oxlint-disable-next-line typescript/require-await -- must return a `Promise` to satisfy `rejectingWith`'s declared `LinkFetcher`-shaped return type; the body never reaches an `await`.
 	return async () => {
+		// oxlint-disable-next-line eslint/no-throw-literal, typescript/only-throw-error -- a deliberate fake API failure standing in for a rejected fetch, not a real error.
 		throw { status };
 	};
 }
@@ -83,6 +91,7 @@ function rejectingWith(
 describe(loadLink, () => {
 	it('returns the fetched link when the API call succeeds', async () => {
 		const data = link();
+		// oxlint-disable-next-line typescript/require-await -- must satisfy `loadLink`'s `LinkFetcher` parameter, which returns a `Promise<Link>`; nothing here needs an `await`.
 		const fetchLink = async (): Promise<Link> => data;
 
 		await expect(loadLink(fetchLink, 'link-a')).resolves.toBe(data);
@@ -112,7 +121,9 @@ describe(loadLink, () => {
 
 	it('rethrows any other failure rather than swallowing it', async () => {
 		const boom = { status: 500 };
+		// oxlint-disable-next-line typescript/require-await -- same reason as the fetcher above: `LinkFetcher` returns a `Promise<Link>`.
 		const fetchLink = async (): Promise<Link> => {
+			// oxlint-disable-next-line typescript/only-throw-error -- `boom` is a deliberate fake API failure standing in for a rejected fetch, not a real error.
 			throw boom;
 		};
 
@@ -156,7 +167,9 @@ describe(afterMutation, () => {
 	 * for creation. Both update and delete depend on this.
 	 */
 	it('invalidates both the links query cache and the router', async () => {
+		// oxlint-disable-next-line typescript/require-await -- stands in for `InvalidatableQueryClient.invalidateQueries`, which `afterMutation` awaits; the fake has nothing to await itself.
 		const invalidateQueries = vi.fn(async (): Promise<void> => undefined);
+		// oxlint-disable-next-line typescript/require-await -- same reason: stands in for `InvalidatableRouter.invalidate`, which `afterMutation` awaits.
 		const invalidate = vi.fn(async (): Promise<void> => undefined);
 
 		await afterMutation({ invalidateQueries }, { invalidate }, 'team-a');
@@ -375,6 +388,7 @@ function spyOnDownloadAnchor(): {
 	anchor: HTMLAnchorElement;
 	appendChild: MockInstance<typeof document.body.appendChild>;
 	click: MockInstance<HTMLAnchorElement['click']>;
+	// oxlint-disable-next-line typescript/no-deprecated -- `createElement`'s overloaded type carries one `@deprecated` signature (`HTMLElementDeprecatedTagNameMap`, e.g. `<marquee>`); this spy only ever calls it with `'a'`, the modern overload, which the rule can't see from a bare type reference.
 	createElement: MockInstance<typeof document.createElement>;
 	removeChild: MockInstance<typeof document.body.removeChild>;
 } {
@@ -458,12 +472,11 @@ describe(completeQrDownload, () => {
 		const setFailure = vi.fn((): void => undefined);
 		const setQrRejection = vi.fn((): void => undefined);
 
-		completeQrDownload(
-			{ base64: btoa('<svg/>'), contentType: 'image/svg+xml' },
-			'sommerfest.svg',
-			document,
-			{ setFailure, setQrRejection },
-		);
+		completeQrDownload({ base64: btoa('<svg/>'), contentType: 'image/svg+xml' }, 'sommerfest.svg', {
+			doc: document,
+			setFailure,
+			setQrRejection,
+		});
 
 		expect(setQrRejection).toHaveBeenCalledExactlyOnceWith(undefined);
 		expect(setFailure).toHaveBeenCalledExactlyOnceWith(null);
@@ -495,12 +508,11 @@ describe(completeQrDownload, () => {
 		const setFailure = vi.fn((): void => undefined);
 		const setQrRejection = vi.fn((): void => undefined);
 
-		completeQrDownload(
-			{ base64: btoa('<svg/>'), contentType: 'image/svg+xml' },
-			'sommerfest.svg',
-			document,
-			{ setFailure, setQrRejection },
-		);
+		completeQrDownload({ base64: btoa('<svg/>'), contentType: 'image/svg+xml' }, 'sommerfest.svg', {
+			doc: document,
+			setFailure,
+			setQrRejection,
+		});
 
 		expect(setFailure).toHaveBeenLastCalledWith({ kind: 'unknown' });
 

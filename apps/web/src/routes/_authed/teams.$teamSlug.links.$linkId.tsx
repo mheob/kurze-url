@@ -21,6 +21,15 @@ import {
 } from '../../server/links';
 import { requireTeamId } from '../_authed';
 
+/* oxlint-disable typescript/prefer-readonly-parameter-types -- every parameter this rule flags
+   below is typed by something this file does not own: TanStack Router's own `beforeLoad`/`loader`
+   option shapes, the generated `@kurze-url/api-client` `Link`/`PageLink` types (whose nested arrays
+   are mutable and can't be marked readonly from this side of the codegen boundary), the DOM's own
+   `Document` (mutable by definition — see `saveQrDownload`'s own docstring for why it stays
+   unnarrowed), or `ApiFailure` from `../../lib/api-errors` — out of this lint pass's scope — whose
+   `fields` variant nests a plain, mutable `Record<string, string>`. `Readonly<>` is shallow, so none
+   of these clears without editing a declaration this file does not own. */
+
 /**
  * The one shape `loadLink` below reaches through — a real `getLinkFn`
  * satisfies this structurally, so the loader needs no cast, and
@@ -56,7 +65,9 @@ export async function loadLink(fetchLink: LinkFetcher, linkId: string): Promise<
 		return await fetchLink({ data: { linkId } });
 	} catch (error) {
 		const classified = classifyApiError(error);
+		// oxlint-disable-next-line typescript/only-throw-error -- TanStack Router signals navigation by throwing; `redirect()` is its control flow, not an Error.
 		if (classified.kind === 'unauthenticated') throw redirect({ to: '/login' });
+		// oxlint-disable-next-line typescript/only-throw-error -- same as above: `notFound()` is the router's own signal, not an Error.
 		if (classified.kind === 'notFound') throw notFound();
 		throw error;
 	}
@@ -382,21 +393,33 @@ export function saveQrDownload(
 	doc: Document,
 ): void {
 	const binary = atob(download.base64);
-	const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+	const bytes = Uint8Array.from(binary, (character) => character.codePointAt(0) ?? 0);
 	const url = URL.createObjectURL(new Blob([bytes], { type: download.contentType }));
 
 	const anchor = doc.createElement('a');
 	anchor.download = filename;
 	anchor.href = url;
 	anchor.rel = 'noopener';
+	// oxlint-disable-next-line unicorn/prefer-dom-node-append -- `append()` returns nothing where `appendChild()` returns the node, and `teams.$teamSlug.links.$linkId.test.ts`'s `spyOnDownloadAnchor` asserts through a spy on `appendChild` specifically.
 	doc.body.appendChild(anchor);
 	anchor.click();
+	// oxlint-disable-next-line unicorn/prefer-dom-node-remove -- same reason as `appendChild` above: the test spies on `removeChild` by name, and `.remove()` is a different call it would not see.
 	doc.body.removeChild(anchor);
 	URL.revokeObjectURL(url);
 }
 
-/** The two channels `completeQrDownload` can still touch once the mutation has already succeeded — a subset of `QrErrorHandlers`, minus `navigateToLogin`, which a save can never need. */
-interface QrDownloadSuccessHandlers {
+/**
+ * The two channels `completeQrDownload` can still touch once the mutation has
+ * already succeeded — a subset of `QrErrorHandlers`, minus `navigateToLogin`,
+ * which a save can never need — plus the document it renders a throwaway
+ * download anchor into. `doc` joined this interface (rather than staying its
+ * own parameter) to bring `completeQrDownload` back under `max-params`' limit
+ * of three: `download` and `filename` are the save's own subject, and
+ * everything else it touches is a dependency, so grouping the dependencies is
+ * the split that matches what each parameter *is*, not just a count reduction.
+ */
+interface QrDownloadDeps {
+	readonly doc: Document;
 	readonly setFailure: (failure: ApiFailure | null) => void;
 	readonly setQrRejection: (reason: QrRejectionReason | 'rejected' | undefined) => void;
 }
@@ -423,21 +446,19 @@ interface QrDownloadSuccessHandlers {
  *
  * @param download - The base64-encoded image bytes and their content type.
  * @param filename - The name to save the download under.
- * @param doc - The document to create and click a throwaway download anchor in.
- * @param handlers - The component's error channels, cleared on entry and set if the save throws.
+ * @param deps - The document to render the throwaway anchor in, plus the component's error channels, cleared on entry and set if the save throws.
  */
 export function completeQrDownload(
 	download: Readonly<{ base64: string; contentType: string }>,
 	filename: string,
-	doc: Document,
-	handlers: QrDownloadSuccessHandlers,
+	deps: QrDownloadDeps,
 ): void {
-	handlers.setQrRejection(undefined);
-	handlers.setFailure(null);
+	deps.setQrRejection(undefined);
+	deps.setFailure(null);
 	try {
-		saveQrDownload(download, filename, doc);
+		saveQrDownload(download, filename, deps.doc);
 	} catch {
-		handlers.setFailure({ kind: 'unknown' });
+		deps.setFailure({ kind: 'unknown' });
 	}
 }
 
@@ -626,7 +647,8 @@ function RouteComponent(): React.JSX.Element {
 				}}
 				onDownload={async (options) => {
 					const download = await qrDownloadMutation.mutateAsync(options);
-					completeQrDownload(download, `${link.slug}.${options.format}`, document, {
+					completeQrDownload(download, `${link.slug}.${options.format}`, {
+						doc: document,
 						setFailure,
 						setQrRejection,
 					});

@@ -1,3 +1,8 @@
+/* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding of this rule in this
+   file is the same `(field) => {...}` render-prop parameter TanStack Form's `form.Field` supplies;
+   reconstructing that type by hand to mark it readonly was tried and reverted after a nested field
+   came out subtly wrong. */
+
 import { useForm } from '@tanstack/react-form';
 import { useTranslation } from 'react-i18next';
 

@@ -10,6 +10,11 @@ import { domainsQueryOptions } from '../../server/domains';
 import { createLinkFn } from '../../server/links';
 import { requireTeamId } from '../_authed';
 
+/* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding below is typed by
+   something this file doesn't own: TanStack Query's own `domainsQueryOptions` return type,
+   TanStack Router's `beforeLoad`/`loader` option shapes, or the generated `@kurze-url/api-client`
+   `Domain` type (`page.items`'s element type, inferred in the `filter`/`map` callbacks below). */
+
 /**
  * The one method this loader reaches through on `context.queryClient` — same
  * reasoning as `LinksDataSource` in the list route.

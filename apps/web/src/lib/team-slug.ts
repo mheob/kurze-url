@@ -20,7 +20,7 @@ const TRANSLITERATIONS: readonly (readonly [RegExp, string])[] = [
 	[/&/gu, '-und-'],
 ];
 
-export const TEAM_SLUG_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/u;
+export const TEAM_SLUG_PATTERN = /^[a-z0-9](?<rest>[a-z0-9-]*[a-z0-9])?$/u;
 export const TEAM_SLUG_MIN_LENGTH = 3;
 export const TEAM_SLUG_MAX_LENGTH = 40;
 

@@ -15,6 +15,12 @@ import {
 import { createTeamFn } from '../../server/teams';
 import type { Me } from '../_authed';
 
+/* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding below is a type this
+   file doesn't own: TanStack Router's own `beforeLoad` option shape, TanStack Form's `onSubmit`/
+   field-validator options and its `field` render prop, React's `FormEvent`/`ChangeEvent` on the
+   `<form>`/`<input>` handlers, or the generated `@kurze-url/api-client` `Team` type `createTeamFn`
+   resolves to. `Readonly<>` is shallow and none of these is a declaration this file can edit. */
+
 /**
  * 404, not 403, and the same reasoning `requireTeamId` gives: a route a
  * visitor may not use should not confirm that it exists. Maintainer status is
@@ -25,6 +31,7 @@ import type { Me } from '../_authed';
  * @param me - The signed-in caller, from `GET /v1/me`.
  */
 export function assertMaintainer(me: Me): void {
+	// oxlint-disable-next-line typescript/only-throw-error -- TanStack Router signals navigation by throwing; `notFound()` is its control flow, not an Error.
 	if (!me.is_maintainer) throw notFound();
 }
 
@@ -108,12 +115,11 @@ export function RouteComponent(): React.JSX.Element {
 	});
 
 	const nameFieldError = failure?.kind === 'fields' ? failure.fields.name : undefined;
+	// Two flat ternaries joined by `??`, not one nested inside the other: `failure.kind` can only
+	// ever be one of the two at a time, so at most one side ever produces a value.
 	const slugFieldError =
-		failure?.kind === 'slugTaken'
-			? t('teams.slugTaken')
-			: failure?.kind === 'fields'
-				? failure.fields.slug
-				: undefined;
+		(failure?.kind === 'slugTaken' ? t('teams.slugTaken') : undefined) ??
+		(failure?.kind === 'fields' ? failure.fields.slug : undefined);
 	// A field error renders on the field itself; a second generic banner for
 	// the same failure is what the create-link route deliberately avoids. A
 	// taken slug is the same case: it renders once, on the slug field above,

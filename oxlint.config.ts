@@ -186,7 +186,6 @@ export default defineConfig({
 				// Moving four reads behind a module would relocate them without
 				// centralising a decision. Revisit if the count grows.
 				'node/no-process-env': 'off',
-				'promise/always-return': 'off',
 				// TanStack Router signals navigation by throwing: `throw redirect({...})`
 				// and `throw notFound()` are its control flow, and neither is an
 				// Error. The rule is right in general and wrong for this framework,
@@ -209,12 +208,8 @@ export default defineConfig({
 				// A rule whose advice the type checker rejects cannot be acted on
 				// mechanically, so it is off rather than warning.
 				'typescript/no-unnecessary-condition': 'off',
-				'typescript/only-throw-error': 'off',
 				'unicorn/no-negated-condition': 'off',
 				'unicorn/no-useless-undefined': 'off',
-				'unicorn/prefer-dom-node-append': 'off',
-				'unicorn/prefer-dom-node-text-content': 'off',
-				'unicorn/prefer-spread': 'off',
 			},
 		},
 		{
@@ -257,14 +252,6 @@ export default defineConfig({
 			files: ['apps/web/**/*.tsx'],
 			plugins: ['react', 'react-perf'],
 			rules: {
-				'react/jsx-curly-brace-presence': 'off',
-				// Fires on every TanStack route file, because `createFileRoute`
-				// requires the module to export `Route`, and most of them export a
-				// loader beside it. The rule asks for a file that exports only
-				// components; the router asks for the opposite. The one non-route
-				// case is `ui/button.tsx`, where `buttonVariants` beside the
-				// component is shadcn's own shape.
-				'react/only-export-components': 'off',
 				// Both react-perf rules exist to stop a new prop identity on every
 				// render from defeating a memoised child. That premise does not hold
 				// here: there is no `React.memo` anywhere in apps/web and no
@@ -274,9 +261,20 @@ export default defineConfig({
 				// is where stale-closure bugs come from. React's own guidance is not
 				// to memoise by default. If a list ever measures slow, memoise that
 				// list deliberately rather than turning this back on wholesale.
+				//
+				// Sorted before the `react/*` entries on purpose: eslint(sort-keys)
+				// compares the whole key, and `-` sorts before `/`.
 				'react-perf/jsx-no-new-array-as-prop': 'off',
 				'react-perf/jsx-no-new-function-as-prop': 'off',
 				'react-perf/jsx-no-new-object-as-prop': 'off',
+				'react/jsx-curly-brace-presence': 'off',
+				// Fires on every TanStack route file, because `createFileRoute`
+				// requires the module to export `Route`, and most of them export a
+				// loader beside it. The rule asks for a file that exports only
+				// components; the router asks for the opposite. The one non-route
+				// case is `ui/button.tsx`, where `buttonVariants` beside the
+				// component is shadcn's own shape.
+				'react/only-export-components': 'off',
 			},
 		},
 	],

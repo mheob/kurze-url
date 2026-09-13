@@ -5,17 +5,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { server } from '../test/msw';
 import { apiBaseUrl, getApiClient } from './api';
 
-/**
- * The header is read from the environment at client-construction time, so each
- * test sets it before calling getApiClient and restores it afterwards.
- */
-afterEach(() => {
-	vi.unstubAllEnvs();
-});
-
 async function bypassHeaderSentTo(baseUrl: string): Promise<string | null> {
 	let seen: string | null = null;
 	server.use(
+		/* oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- msw's resolver
+		 * destructures `Request`, which nests a mutable `Headers` through its own `.headers`
+		 * getter; `Readonly<>` is shallow and doesn't reach that nested property.
+		 */
 		http.get(`${baseUrl}/v1/health`, ({ request }) => {
 			seen = request.headers.get('x-vercel-protection-bypass');
 			return HttpResponse.json({ status: 'ok' });
@@ -46,6 +42,14 @@ function relatedProjects(alias: string, branch: string): string {
 }
 
 describe(apiBaseUrl, () => {
+	/**
+	 * The header is read from the environment at client-construction time, so each
+	 * test sets it before calling getApiClient and restores it afterwards.
+	 */
+	afterEach(() => {
+		vi.unstubAllEnvs();
+	});
+
 	it('prefers an explicit API_HOST over the related-projects alias', () => {
 		// The Go router serves /v1 on exactly one hostname and treats every other
 		// Host header as a short-link domain, so pointing this app at the wrong
@@ -84,6 +88,14 @@ describe(apiBaseUrl, () => {
 });
 
 describe(getApiClient, () => {
+	/**
+	 * The header is read from the environment at client-construction time, so each
+	 * test sets it before calling getApiClient and restores it afterwards.
+	 */
+	afterEach(() => {
+		vi.unstubAllEnvs();
+	});
+
 	it('sends the API project bypass secret when one is configured', async () => {
 		// Without this the call reaches a protected API preview unauthenticated,
 		// Vercel answers 302 to its login page, and the probe reports the API

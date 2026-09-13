@@ -35,7 +35,12 @@ interface FakeResponse {
 }
 
 const mocks = vi.hoisted(() => ({
-	createSupabase: vi.fn<(request: Request, headers: Headers) => FakeSupabaseClient>(),
+	/* oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `request` is `Request`,
+	 * which nests a mutable `Headers` through its own `.headers` getter; `Readonly<>` is shallow
+	 * and doesn't reach that nested property, unlike the bare `Headers` parameter beside it, which
+	 * the check accepts once wrapped.
+	 */
+	createSupabase: vi.fn<(request: Request, headers: Readonly<Headers>) => FakeSupabaseClient>(),
 	getResponse: vi.fn<() => FakeResponse>(),
 }));
 
@@ -54,6 +59,10 @@ function req(): [Request, Headers] {
 function withSession(accessToken: string | null): void {
 	mocks.createSupabase.mockReturnValue({
 		auth: {
+			/* oxlint-disable-next-line typescript/require-await -- this mock stands in for
+			 * `createSupabase`'s real `getSession`, which is genuinely async; the body has
+			 * nothing to await, but the return type must stay `Promise<...>` to match.
+			 */
 			getSession: vi.fn(async () => ({
 				data: { session: accessToken !== null ? { access_token: accessToken } : null },
 				error: null,

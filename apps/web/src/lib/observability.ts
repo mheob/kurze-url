@@ -1,4 +1,4 @@
-import * as Sentry from '@sentry/tanstackstart-react';
+import { captureException, type ErrorEvent, init } from '@sentry/tanstackstart-react';
 
 import { classifyApiError } from './api-errors';
 
@@ -60,6 +60,64 @@ const reported = new WeakSet();
 let initialized = false;
 
 /**
+ * Filters out console breadcrumbs — which carry whatever any code logged —
+ * and strips the query string from every URL-shaped breadcrumb field.
+ * Split out of `scrubEvent` only to keep that function's own statement count
+ * down; the in-place mutation contract is the same one documented there.
+ *
+ * @param event - The event being scrubbed, mutated in place.
+ */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `event` is mutated in place, the same documented contract `scrubEvent` itself carries.
+function scrubBreadcrumbs(event: ErrorEvent): void {
+	if (!event.breadcrumbs) return;
+
+	// Console breadcrumbs carry whatever any code logged. Filtered here
+	// rather than by disabling the breadcrumbs integration, so the
+	// guarantee survives an SDK major renaming that integration.
+	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Sentry's `Breadcrumb.data` carries a mutable `{ [key: string]: any }` index signature no wrapper reaches.
+	event.breadcrumbs = event.breadcrumbs.filter((crumb) => crumb.category !== 'console');
+
+	for (const crumb of event.breadcrumbs) {
+		const { data } = crumb;
+		if (data) {
+			for (const key of BREADCRUMB_URL_KEYS) {
+				// `Breadcrumb.data` is typed `{ [key: string]: any }` by the
+				// SDK; the annotation narrows the read to `unknown` so it is
+				// checked below instead of trusted.
+				const value: unknown = data[key];
+				if (typeof value === 'string') data[key] = stripQueryString(value);
+			}
+		}
+	}
+}
+
+/**
+ * Strips cookies, the request body, the query string, and every header
+ * outside `ALLOWED_HEADERS` from `event.request`. Split out of `scrubEvent`
+ * only to keep that function's own statement count down; the in-place
+ * mutation contract is the same one documented there.
+ *
+ * @param event - The event being scrubbed, mutated in place.
+ */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `event` is mutated in place, the same documented contract `scrubEvent` itself carries.
+function scrubRequest(event: ErrorEvent): void {
+	const { request } = event;
+	if (!request) return;
+
+	delete request.cookies;
+	delete request.data;
+	delete request.query_string;
+	if (request.url !== undefined && request.url !== '') request.url = stripQueryString(request.url);
+	if (request.headers) {
+		request.headers = Object.fromEntries(
+			Object.entries(request.headers).filter(([name]: readonly [string, string]) =>
+				ALLOWED_HEADERS.has(name.toLowerCase()),
+			),
+		);
+	}
+}
+
+/**
  * `beforeSend`, and the thing that actually enforces this project's rule
  * about what may leave a visitor's browser. `dataCollection` below reduces
  * what is collected; this guarantees what is sent.
@@ -74,47 +132,14 @@ let initialized = false;
  * @returns `event`, with IP address, cookies, request body, query strings, and disallowed
  * headers removed.
  */
-export function scrubEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
-	// `Sentry.ErrorEvent`'s own `request`/`user`/`breadcrumbs` fields already
-	// carry the shapes read and written below, so no cast is needed to reach
-	// into them.
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `scrubEvent` deletes the IP address from `event` in place; that mutation is its documented contract, not an oversight.
+export function scrubEvent(event: ErrorEvent): ErrorEvent {
+	// `ErrorEvent`'s own `request`/`user`/`breadcrumbs` fields already carry
+	// the shapes read and written by the two helpers below, so no cast is
+	// needed to reach into them.
 	if (event.user) delete event.user.ip_address;
-
-	if (event.breadcrumbs) {
-		// Console breadcrumbs carry whatever any code logged. Filtered here
-		// rather than by disabling the breadcrumbs integration, so the
-		// guarantee survives an SDK major renaming that integration.
-		event.breadcrumbs = event.breadcrumbs.filter((crumb) => crumb.category !== 'console');
-
-		for (const crumb of event.breadcrumbs) {
-			const { data } = crumb;
-			if (!data) continue;
-
-			for (const key of BREADCRUMB_URL_KEYS) {
-				// `Breadcrumb.data` is typed `{ [key: string]: any }` by the
-				// SDK; the annotation narrows the read to `unknown` so it is
-				// checked below instead of trusted.
-				const value: unknown = data[key];
-				if (typeof value === 'string') data[key] = stripQueryString(value);
-			}
-		}
-	}
-
-	const { request } = event;
-	if (request) {
-		delete request.cookies;
-		delete request.data;
-		delete request.query_string;
-		if (request.url !== undefined && request.url !== '')
-			request.url = stripQueryString(request.url);
-		if (request.headers) {
-			request.headers = Object.fromEntries(
-				Object.entries(request.headers).filter(([name]: readonly [string, string]) =>
-					ALLOWED_HEADERS.has(name.toLowerCase()),
-				),
-			);
-		}
-	}
+	scrubBreadcrumbs(event);
+	scrubRequest(event);
 
 	return event;
 }
@@ -139,7 +164,7 @@ export function reportUnexpected(error: unknown): void {
 		reported.add(error);
 	}
 
-	Sentry.captureException(error);
+	captureException(error);
 }
 
 /**
@@ -171,7 +196,7 @@ export function reportUnexpected(error: unknown): void {
  * @param dsn - The Sentry DSN to send events to.
  * @returns The options object to pass to `Sentry.init`.
  */
-export function sentryOptions(dsn: string): Parameters<typeof Sentry.init>[0] {
+export function sentryOptions(dsn: string): Parameters<typeof init>[0] {
 	const environment = import.meta.env.VITE_SENTRY_ENVIRONMENT;
 	const release = import.meta.env.VITE_SENTRY_RELEASE;
 
@@ -236,5 +261,5 @@ export function initSentry(isServer: boolean): void {
 	if (dsn === undefined || dsn === '') return;
 
 	initialized = true;
-	Sentry.init({ ...sentryOptions(dsn), serverName: isServer ? 'web-ssr' : undefined });
+	init({ ...sentryOptions(dsn), serverName: isServer ? 'web-ssr' : undefined });
 }

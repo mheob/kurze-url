@@ -9,6 +9,7 @@ interface FakeQueryClient {
 	ensureQueryData: (options: unknown) => Promise<PageLink>;
 }
 
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `PageLink` is a generated `@kurze-url/api-client` type; `Readonly<>` is shallow and can't reach its nested `items` array from this side of the codegen boundary.
 function page(overrides: Readonly<Partial<PageLink>> = {}): PageLink {
 	return { items: [], page: 1, per_page: 20, total_count: 0, ...overrides };
 }
@@ -62,6 +63,7 @@ function redirectTarget(error: unknown): string | undefined {
 describe(loadLinks, () => {
 	it('returns the fetched page when the API call succeeds', async () => {
 		const data = page({ total_count: 1 });
+		// oxlint-disable-next-line typescript/require-await -- stands in for `FakeQueryClient.ensureQueryData`, which `loadLinks` awaits; the fake has nothing to await itself.
 		const queryClient = fakeQueryClient(async () => data);
 
 		await expect(loadLinks(queryClient, 'team-a', 1)).resolves.toBe(data);
@@ -79,7 +81,9 @@ describe(loadLinks, () => {
 	 * this test actually depends on the redirect branch.
 	 */
 	it('redirects to /login when the API answers unauthenticated', async () => {
+		// oxlint-disable-next-line typescript/require-await -- stands in for `FakeQueryClient.ensureQueryData`, which `loadLinks` awaits; the fake has nothing to await itself.
 		const queryClient = fakeQueryClient(async () => {
+			// oxlint-disable-next-line eslint/no-throw-literal, typescript/only-throw-error -- a deliberate fake API failure standing in for a rejected fetch, not a real error.
 			throw { status: 401 };
 		});
 
@@ -97,7 +101,9 @@ describe(loadLinks, () => {
 	 */
 	it('rethrows any other failure rather than redirecting', async () => {
 		const boom = { status: 500 };
+		// oxlint-disable-next-line typescript/require-await -- stands in for `FakeQueryClient.ensureQueryData`, which `loadLinks` awaits; the fake has nothing to await itself.
 		const queryClient = fakeQueryClient(async () => {
+			// oxlint-disable-next-line typescript/only-throw-error -- `boom` is a deliberate fake API failure standing in for a rejected fetch, not a real error.
 			throw boom;
 		});
 

@@ -24,6 +24,7 @@ export function LoginForm(): React.JSX.Element {
 		// `_authed.tsx` satisfies for the authenticated tree.
 		<main>
 			<form
+				// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- React's own `FormEvent` type; not a declaration this file can edit.
 				onSubmit={(event) => {
 					event.preventDefault();
 					setStatus('pending');
@@ -35,13 +36,14 @@ export function LoginForm(): React.JSX.Element {
 					// misconfigured deployment. `signInWithOtp`'s own failure is never
 					// one of these: `sendMagicLinkFor` deliberately swallows it to keep
 					// this form from becoming an account-enumeration oracle.
-					void sendMagicLink({ data: { email } })
-						.then(() => {
+					void (async () => {
+						try {
+							await sendMagicLink({ data: { email } });
 							setStatus('sent');
-						})
-						.catch(() => {
+						} catch {
 							setStatus('failed');
-						});
+						}
+					})();
 				}}
 			>
 				<h1>{t('auth.signInTitle')}</h1>
@@ -50,6 +52,7 @@ export function LoginForm(): React.JSX.Element {
 					autoComplete="email"
 					id="email"
 					name="email"
+					// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- React's own `ChangeEvent` type; not a declaration this file can edit.
 					onChange={(event) => {
 						setEmail(event.target.value);
 					}}

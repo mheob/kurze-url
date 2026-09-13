@@ -23,7 +23,15 @@ function isProblemDetail(value: unknown): value is ProblemDetail {
 function problemDetailsOf(error: unknown): readonly ProblemDetail[] {
 	if (!isRecord(error)) return [];
 	const { errors } = error;
-	if (!Array.isArray(errors) || !errors.every(isProblemDetail)) return [];
+	// Wrapped, not a bare reference, but still a type predicate: `errors.every(isProblemDetail)`
+	// would narrow `errors` to `ProblemDetail[]` too, but only when the predicate is passed
+	// directly — an arrow that merely calls it loses that narrowing unless it repeats the
+	// predicate's own return type here.
+	if (
+		!Array.isArray(errors) ||
+		!errors.every((entry): entry is ProblemDetail => isProblemDetail(entry))
+	)
+		return [];
 	return errors;
 }
 
@@ -159,14 +167,11 @@ function isKnownLinkPasswordReason(value: string): value is LinkPasswordReason {
  * when the 422 isn't on the password field at all.
  */
 function passwordRejectionOf(error: unknown): (LinkPasswordReason | 'rejected') | undefined {
-	for (const detail of problemDetailsOf(error)) {
-		if (detail.location !== 'body.password') continue;
-		if (typeof detail.value === 'string' && isKnownLinkPasswordReason(detail.value)) {
-			return detail.value;
-		}
-		return 'rejected';
-	}
-	return undefined;
+	const detail = problemDetailsOf(error).find((entry) => entry.location === 'body.password');
+	if (detail === undefined) return undefined;
+	if (typeof detail.value === 'string' && isKnownLinkPasswordReason(detail.value))
+		return detail.value;
+	return 'rejected';
 }
 
 /**
@@ -213,14 +218,13 @@ const QR_LOCATIONS = new Set(['query.bg', 'query.fg', 'query.size']);
  * when the 422 isn't on `fg`, `bg`, or `size`.
  */
 function qrRejectionOf(error: unknown): (QrRejectionReason | 'rejected') | undefined {
-	for (const detail of problemDetailsOf(error)) {
-		if (detail.location === undefined || !QR_LOCATIONS.has(detail.location)) continue;
-		if (typeof detail.value === 'string' && isKnownQrRejectionReason(detail.value)) {
-			return detail.value;
-		}
-		return 'rejected';
-	}
-	return undefined;
+	const detail = problemDetailsOf(error).find(
+		(entry) => entry.location !== undefined && QR_LOCATIONS.has(entry.location),
+	);
+	if (detail === undefined) return undefined;
+	if (typeof detail.value === 'string' && isKnownQrRejectionReason(detail.value))
+		return detail.value;
+	return 'rejected';
 }
 
 /** RFC 9110 status codes this module branches on, named for the reader checking a case against the spec rather than the wire. */
@@ -231,6 +235,35 @@ const HTTP_CONFLICT = 409;
 const HTTP_TOO_MANY_REQUESTS = 429;
 const HTTP_BAD_REQUEST = 400;
 const HTTP_UNPROCESSABLE_CONTENT = 422;
+
+// The API answers 404 for a non-member so it never confirms a team exists;
+// treating 403 differently from 404 here would leak exactly what
+// internal/authz withholds.
+function simpleStatusKind(status: number | undefined): ApiFailure | undefined {
+	if (status === HTTP_UNAUTHORIZED) return { kind: 'unauthenticated' };
+	if (status === HTTP_FORBIDDEN || status === HTTP_NOT_FOUND) return { kind: 'notFound' };
+	if (status === HTTP_TOO_MANY_REQUESTS) return { kind: 'rateLimited' };
+	return undefined;
+}
+
+function conflictKind(error: unknown): ApiFailure | undefined {
+	const count = blockingLinkCountOf(error);
+	if (count !== undefined) return { count, kind: 'domainHasLinks' };
+	if (isSlugConflict(error)) return { kind: 'slugTaken' };
+	return undefined;
+}
+
+function validationKind(error: unknown): ApiFailure | undefined {
+	const reason = passwordRejectionOf(error);
+	if (reason !== undefined) return { kind: 'passwordRejected', reason };
+
+	const qrReason = qrRejectionOf(error);
+	if (qrReason !== undefined) return { kind: 'qrRejected', reason: qrReason };
+
+	const fields = fieldsOf(error);
+	if (Object.keys(fields).length > 0) return { fields, kind: 'fields' };
+	return undefined;
+}
 
 /**
  * The reason tokens `getLinkQR` (apps/api/internal/api/link_qr.go) can send
@@ -289,28 +322,17 @@ export function statusOf(error: unknown): number | undefined {
 export function classifyApiError(error: unknown): ApiFailure {
 	const status = statusOf(error);
 
-	if (status === HTTP_UNAUTHORIZED) return { kind: 'unauthenticated' };
-	// The API answers 404 for a non-member so it never confirms a team
-	// exists; treating 403 differently from 404 here would leak exactly what
-	// internal/authz withholds.
-	if (status === HTTP_FORBIDDEN || status === HTTP_NOT_FOUND) return { kind: 'notFound' };
-	if (status === HTTP_TOO_MANY_REQUESTS) return { kind: 'rateLimited' };
+	const bySimpleStatus = simpleStatusKind(status);
+	if (bySimpleStatus) return bySimpleStatus;
 
 	if (status === HTTP_CONFLICT) {
-		const count = blockingLinkCountOf(error);
-		if (count !== undefined) return { count, kind: 'domainHasLinks' };
-		if (isSlugConflict(error)) return { kind: 'slugTaken' };
+		const kind = conflictKind(error);
+		if (kind) return kind;
 	}
 
 	if (status === HTTP_BAD_REQUEST || status === HTTP_UNPROCESSABLE_CONTENT) {
-		const reason = passwordRejectionOf(error);
-		if (reason !== undefined) return { kind: 'passwordRejected', reason };
-
-		const qrReason = qrRejectionOf(error);
-		if (qrReason !== undefined) return { kind: 'qrRejected', reason: qrReason };
-
-		const fields = fieldsOf(error);
-		if (Object.keys(fields).length > 0) return { fields, kind: 'fields' };
+		const kind = validationKind(error);
+		if (kind) return kind;
 	}
 
 	return { kind: 'unknown' };

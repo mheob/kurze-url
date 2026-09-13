@@ -14,6 +14,10 @@ import { reportUnexpected } from '../../lib/observability';
 import { linksQueryOptions } from '../../server/links';
 import { requireTeamId } from '../_authed';
 
+/* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding below is typed by
+   TanStack Router/Query's own option shapes — `linksQueryOptions`'s `ReturnType`, `validateSearch`,
+   `beforeLoad`, `loaderDeps`, `loader` — none of which is a declaration this file can edit. */
+
 /**
  * The one method this loader reaches through on `context.queryClient` — a
  * real `QueryClient` satisfies this structurally, so the loader below needs
@@ -60,6 +64,7 @@ export async function loadLinks(
 	try {
 		return await queryClient.ensureQueryData(linksQueryOptions(teamId, page));
 	} catch (error) {
+		// oxlint-disable-next-line typescript/only-throw-error -- TanStack Router signals navigation by throwing; `redirect()` is its control flow, not an Error.
 		if (classifyApiError(error).kind === 'unauthenticated') throw redirect({ to: '/login' });
 		throw error;
 	}

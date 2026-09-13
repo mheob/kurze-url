@@ -19,6 +19,7 @@ const baseValues: LinkFormValues = {
  * @param overrides - Fields to override on the base fixture; `id` is required since the base has none.
  * @returns A fixture `Domain`.
  */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `Domain` is a generated `@kurze-url/api-client` type; `Readonly<>` is shallow and can't reach its nested `records` object from this side of the codegen boundary.
 function domain(overrides: Partial<Domain> & Pick<Domain, 'id'>): Domain {
 	return {
 		hostname: 'links.verein.test',
@@ -48,7 +49,9 @@ function domain(overrides: Partial<Domain> & Pick<Domain, 'id'>): Domain {
  */
 describe(afterCreate, () => {
 	it('invalidates both the links query cache and the router', async () => {
+		// oxlint-disable-next-line typescript/require-await -- stands in for `InvalidatableQueryClient.invalidateQueries`, which `afterCreate` awaits; the fake has nothing to await itself.
 		const invalidateQueries = vi.fn(async (): Promise<void> => undefined);
+		// oxlint-disable-next-line typescript/require-await -- same reason: stands in for `InvalidatableRouter.invalidate`, which `afterCreate` awaits.
 		const invalidate = vi.fn(async (): Promise<void> => undefined);
 
 		await afterCreate({ invalidateQueries }, { invalidate }, 'team-a');
@@ -99,6 +102,7 @@ describe(loadVerifiedDomains, () => {
 			per_page: 25,
 			total_count: 2,
 		};
+		// oxlint-disable-next-line typescript/require-await -- stands in for `DomainsDataSource.ensureQueryData`, which `loadVerifiedDomains` awaits; the fake has nothing to await itself.
 		const ensureQueryData = vi.fn(async (): Promise<PageDomain> => page);
 
 		await expect(loadVerifiedDomains({ ensureQueryData }, 'team-a')).resolves.toStrictEqual([
@@ -110,6 +114,7 @@ describe(loadVerifiedDomains, () => {
 		// Huma serialises a nil Go slice as JSON `null` — same normalisation
 		// `listDomainsFor`'s own callers already need.
 		const page: PageDomain = { items: null, page: 1, per_page: 25, total_count: 0 };
+		// oxlint-disable-next-line typescript/require-await -- same reason as above: stands in for `DomainsDataSource.ensureQueryData`.
 		const ensureQueryData = vi.fn(async (): Promise<PageDomain> => page);
 
 		await expect(loadVerifiedDomains({ ensureQueryData }, 'team-a')).resolves.toStrictEqual([]);
@@ -119,6 +124,7 @@ describe(loadVerifiedDomains, () => {
 		// The picker is an enhancement over the shared hostname the form
 		// already falls back to; a failed domains fetch (an expired session,
 		// a network hiccup) must not take the whole page down with it.
+		// oxlint-disable-next-line typescript/require-await -- same reason as above: stands in for `DomainsDataSource.ensureQueryData`.
 		const ensureQueryData = vi.fn(async (): Promise<PageDomain> => {
 			throw new Error('boom');
 		});
@@ -132,10 +138,13 @@ describe(loadVerifiedDomains, () => {
 		// domains fetch makes every later link land on the shared hostname
 		// with nothing anywhere to notice it.
 		const error = new Error('boom');
+		// oxlint-disable-next-line typescript/require-await -- same reason as above: stands in for `DomainsDataSource.ensureQueryData`.
 		const ensureQueryData = vi.fn(async (): Promise<PageDomain> => {
 			throw error;
 		});
-		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {
+			// no-op: this test only cares that `console.error` was called with the swallowed error, not what it does with it.
+		});
 
 		await loadVerifiedDomains({ ensureQueryData }, 'team-a');
 

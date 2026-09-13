@@ -27,7 +27,9 @@ describe(validateLinkPassword, () => {
 	});
 
 	it('rejects a password longer than 128 characters', () => {
-		const long = Array.from({ length: 129 }, (_, i) => String.fromCharCode(97 + (i % 26))).join('');
+		const long = Array.from({ length: 129 }, (_, i) => String.fromCodePoint(97 + (i % 26))).join(
+			'',
+		);
 		expect(validateLinkPassword(long, gruenwald)).toBe('too_long');
 	});
 

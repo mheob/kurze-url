@@ -11,7 +11,7 @@ import { createSupabase } from './supabase';
  * a round trip to the Go service.
  */
 export class UnauthenticatedError extends Error {
-	constructor() {
+	public constructor() {
 		super('no session');
 		this.name = 'UnauthenticatedError';
 	}
@@ -28,8 +28,13 @@ export class UnauthenticatedError extends Error {
  * @returns The current access token, or undefined when there is no session.
  */
 export async function getAccessToken(
+	/* oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `Request` nests a
+	 * mutable `Headers` through its own `.headers` getter, and `Readonly<>` is shallow: it does
+	 * not reach that nested property, so `Readonly<Request>` still fails this check (verified —
+	 * unlike a bare `Headers` parameter below, which the check does accept once wrapped).
+	 */
 	request: Request,
-	headers: Headers,
+	headers: Readonly<Headers>,
 ): Promise<string | undefined> {
 	const supabase = createSupabase(request, headers);
 	const { data } = await supabase.auth.getSession();
@@ -46,8 +51,11 @@ export async function getAccessToken(
  * @returns The current session's access token.
  */
 export async function requireSession(
+	/* oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- same cause as
+	 * `getAccessToken`'s `request` parameter above.
+	 */
 	request: Request,
-	headers: Headers,
+	headers: Readonly<Headers>,
 ): Promise<{ accessToken: string }> {
 	const accessToken = await getAccessToken(request, headers);
 	if (accessToken === undefined || accessToken === '') throw new UnauthenticatedError();

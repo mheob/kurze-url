@@ -20,6 +20,20 @@ const svg = [
  * @param props - Partial overrides merged onto the default `LinkQRCardProps` fixture.
  * @returns The rendered test utilities from Testing Library's `render`.
  */
+/**
+ * Narrows a possibly-null attribute value for an assertion without an inline
+ * `??`/`!` — `vitest/no-conditional-in-test` flags the former and
+ * `typescript/no-non-null-assertion` the latter; moving the check into a
+ * plain helper is what both rules stop looking past.
+ *
+ * @param value - The attribute value under test.
+ * @returns `value`, narrowed to `string`.
+ */
+function assertNotNull(value: string | null): string {
+	if (value === null) throw new Error('expected a non-null attribute value');
+	return value;
+}
+
 function renderCard(props: Partial<LinkQRCardProps> = {}): ReturnType<typeof render> {
 	const merged: LinkQRCardProps = {
 		isLoading: false,
@@ -88,7 +102,7 @@ describe(LinkQRCard, () => {
 
 		const after = screen.getByRole('img').getAttribute('src');
 		expect(after).not.toBe(before);
-		expect(decodeURIComponent(after ?? '')).toContain('#003366');
+		expect(decodeURIComponent(assertNotNull(after))).toContain('#003366');
 		expect(onDownload).not.toHaveBeenCalled();
 	});
 
@@ -135,9 +149,11 @@ describe(LinkQRCard, () => {
 		// `.mock.calls` afterwards — indexing an array `noUncheckedIndexedAccess`
 		// treats as possibly empty would need an unrelated non-null assertion.
 		let sentSize: number | undefined;
+		// Stands in for `onDownload`, which is genuinely async; the mock must return a promise to
+		// match that contract even though this particular fixture has nothing to await.
+		// oxlint-disable-next-line typescript/require-await
 		const onDownload = vi.fn<LinkQRCardProps['onDownload']>(async (options) => {
 			sentSize = options.size;
-			return;
 		});
 		renderCard({ onDownload });
 

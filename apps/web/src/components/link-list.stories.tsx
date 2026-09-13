@@ -1,3 +1,8 @@
+/* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding of this rule in this
+   file traces to `@kurze-url/api-client`'s generated `Link`/`PageLink` types (`Link.tags`'s nested
+   array included), whose properties are not marked readonly; that is generated codegen output,
+   never edited by hand. */
+
 import type { Link as ApiLink, PageLink } from '@kurze-url/api-client';
 import type { Meta, StoryObj } from '@storybook/tanstack-react';
 

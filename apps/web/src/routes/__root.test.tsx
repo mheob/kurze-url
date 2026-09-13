@@ -12,6 +12,7 @@ vi.mock('../lib/observability', async (importOriginal) => ({
 	reportUnexpected: mocks.reportUnexpected,
 }));
 
+// oxlint-disable-next-line node/no-top-level-await -- `vi.mock` above is hoisted; importing the subject module only after it, at module scope, is Vitest's own documented way to get a mocked dependency into an ESM import — the same pattern every other `*.test.ts(x)` in this app that mocks an import uses.
 const { RootErrorPage } = await import('./__root');
 
 /**

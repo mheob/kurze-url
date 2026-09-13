@@ -18,6 +18,16 @@ import { getRequest } from '@tanstack/react-start/server';
 
 import { authedApiClient, flushSessionCookies, requireSession } from './session';
 
+/* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding of this rule in this
+ * file is one of two things this side of the codebase cannot change: the `request: Request` each
+ * `...For` function takes (`Request` nests a mutable `Headers` through its own `.headers` getter,
+ * and `Readonly<>` is shallow — it does not reach that nested property, unlike a bare `Headers`
+ * parameter, which the check does accept once wrapped), or a generated `@kurze-url/api-client`
+ * body type (`CreateLinkInputBodyWritable`, `UpdateLinkInputBodyWritable`, and the validator/
+ * handler `data` objects wrapping them) whose nested arrays are mutable — codegen output that is
+ * never hand-edited.
+ */
+
 /**
  * Takes `request` as a parameter rather than calling `getRequest()` itself,
  * the same shape `requireSession` uses in `server/session.ts`: that is what
@@ -109,8 +119,10 @@ export const listLinksFn = createServerFn({ method: 'GET' })
 // `['links', teamId, page]` tuple type `useSuspenseQuery` needs downstream
 // or fighting a `ReturnType<typeof queryOptions<PageLink>>` annotation that
 // silently widens the key back to `readonly unknown[]` and breaks
-// `pnpm typecheck` two call sites away — confirmed by trying it.
-// oxlint-disable-next-line typescript/explicit-function-return-type
+// `pnpm typecheck` two call sites away — confirmed by trying it. Same reason
+// covers `explicit-module-boundary-types` below: it's the same missing
+// annotation this exported function can't be given either.
+// oxlint-disable-next-line typescript/explicit-function-return-type, typescript/explicit-module-boundary-types
 export const linksQueryOptions = (teamId: string, page: number) =>
 	queryOptions({
 		queryFn: async () => listLinksFn({ data: { page, teamId } }),

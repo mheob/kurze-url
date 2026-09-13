@@ -25,7 +25,9 @@ vi.mock('@sentry/tanstackstart-react', async (importOriginal) => ({
 	captureException: sentryMocks.captureException,
 }));
 
+// oxlint-disable-next-line node/no-top-level-await -- `vi.mock` above is hoisted; importing the subject modules only after it, at module scope, is Vitest's own documented way to get a mocked dependency into an ESM import — the same pattern every other `*.test.ts(x)` in this app that mocks an import uses.
 const { LinksError } = await import('./teams.$teamSlug.links.index');
+// oxlint-disable-next-line node/no-top-level-await -- same reason as the import above.
 const { DomainsError } = await import('./teams.$teamSlug.domains');
 
 /**

@@ -8,6 +8,12 @@ import { expect, type Page } from '@playwright/test';
 import { test } from './fixtures/auth';
 import { waitForHydration } from './fixtures/hydration';
 
+/* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding of this rule in this
+ * file is Playwright's own `Page` (bare, or nested inside the fixture argument object each `test`
+ * callback destructures); `Page` has many mutating methods (`fill`, `click`, `goto`, ...) and that
+ * type isn't ours to edit.
+ */
+
 /**
  * Claims a domain and waits for it to reappear in the list as `pending`.
  * `claimMutation`'s `onSuccess` (`teams.$teamSlug.domains.tsx`) invalidates the

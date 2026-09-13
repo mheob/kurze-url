@@ -18,6 +18,7 @@ import '../src/styles/app.css';
  * @param context - The story's Storybook context; carries the active `language`/`theme` globals.
  * @returns The story wrapped in the i18n provider and theme/background wrapper.
  */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Storybook's own `Decorator` context type; not this codebase's to mark readonly.
 const withPreferences: Decorator = (Story, context) => {
 	const language = context.globals.language === 'de' ? 'de' : 'en';
 	const isDark = context.globals.theme === 'dark';

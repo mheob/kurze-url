@@ -17,6 +17,13 @@ import {
 } from '../../server/domains';
 import { requireTeamId } from '../_authed';
 
+/* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding below is a type this
+   file doesn't own: TanStack Router's own `beforeLoad`/`loader` option shapes, TanStack Query's own
+   `queryOptions()` return type, TanStack Form's `onSubmit`/field-validator options and its `field`
+   render prop, React's `FormEvent`/`ChangeEvent` on the `<form>`/`<input>` handlers, or the
+   generated `@kurze-url/api-client` `Domain`/`VerifyDomainOutputBody` types. `Readonly<>` is
+   shallow and none of these is a declaration this file can edit. */
+
 type VerifyReason = VerifyDomainOutputBody['reason'];
 
 /**
@@ -74,6 +81,7 @@ export async function loadDomains(
 	try {
 		return await queryClient.ensureQueryData(domainsQueryOptions(teamId));
 	} catch (error) {
+		// oxlint-disable-next-line typescript/only-throw-error -- TanStack Router signals navigation by throwing; `redirect()` is its control flow, not an Error.
 		if (classifyApiError(error).kind === 'unauthenticated') throw redirect({ to: '/login' });
 		throw error;
 	}

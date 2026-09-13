@@ -38,6 +38,10 @@ export function CopyButton({
 				aria-label={label}
 				onClick={() => {
 					setCopied(false);
+					// Deliberately fire-and-forget: the leading `void` marks the clipboard write as discarded, but
+					// an onClick handler cannot itself be awaited by React, so `.then()` is how a synchronous handler
+					// schedules work after the write completes.
+					// oxlint-disable-next-line promise/prefer-await-to-then, promise/always-return -- neither rule can see the `void` above that says the promise is deliberately discarded.
 					void navigator.clipboard.writeText(value).then(() => {
 						setCopied(true);
 					});

@@ -8,6 +8,12 @@ import { expect, type Page } from '@playwright/test';
 import { test } from './fixtures/auth';
 import { waitForHydration } from './fixtures/hydration';
 
+/* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding of this rule in this
+ * file is Playwright's own `Page`/`Browser`/`TestInfo` (bare, or nested inside the fixture
+ * argument object each `test` callback destructures); each has mutating methods (`goto`, `fill`,
+ * `newContext`, ...) and none of these types are ours to edit.
+ */
+
 /**
  * Shared by every test below that needs a non-empty list. `LinkList`'s own
  * empty-state branch (`src/components/link-list.tsx`) returns before
@@ -115,10 +121,11 @@ test('downloads a link’s QR code', async ({ page, teamSlug }) => {
 	const preview = page.getByRole('img', { name: /preview of this link/iu });
 	await expect(preview).toBeVisible();
 
-	const download = page.waitForEvent('download');
+	const downloadPromise = page.waitForEvent('download');
 	await page.getByRole('button', { name: /^download$/iu }).click();
+	const download = await downloadPromise;
 
-	expect((await download).suggestedFilename()).toMatch(/\.svg$/u);
+	expect(download.suggestedFilename()).toMatch(/\.svg$/u);
 });
 
 test('sends a signed-out visitor to login', async ({ browser, teamSlug }, testInfo) => {

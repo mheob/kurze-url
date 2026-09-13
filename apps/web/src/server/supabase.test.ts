@@ -74,7 +74,7 @@ describe(createCookieAdapter, () => {
 			},
 		]);
 
-		const cookie = headers.get('set-cookie') ?? '';
+		const cookie = headers.get('set-cookie');
 		expect(cookie).toContain('HttpOnly');
 		expect(cookie).toContain('Secure');
 		expect(cookie).toContain('SameSite=Lax');
@@ -99,7 +99,7 @@ describe(createCookieAdapter, () => {
 
 		setAll([{ name: 'sb-x', options: { sameSite: 'strict' }, value: 'y' }]);
 
-		const cookie = headers.get('set-cookie') ?? '';
+		const cookie = headers.get('set-cookie');
 		expect(cookie).toContain('SameSite=Lax');
 		expect(cookie).not.toContain('SameSite=Strict');
 	});

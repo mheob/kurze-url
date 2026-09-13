@@ -28,6 +28,11 @@ export function ThemeToggle({ theme: initialTheme }: { readonly theme: Theme }) 
 	const next: Theme = theme === 'dark' ? 'light' : 'dark';
 
 	function toggle() {
+		// The Cookie Store API's `set()` is Promise-based; this write, the class
+		// toggle right after it, and `setTheme` all need to land in this same
+		// click's tick for the "instant" feel this control is designed around —
+		// see the docstring above.
+		// oxlint-disable-next-line unicorn/no-document-cookie
 		document.cookie = preferenceCookie(THEME_COOKIE, next);
 		document.documentElement.classList.toggle('dark', next === 'dark');
 		setTheme(next);

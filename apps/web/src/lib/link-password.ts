@@ -87,10 +87,13 @@ function distinctCharacters(value: string): number {
  * @param destinationUrl - The link's destination URL.
  * @returns The hostname's second-level label, or `''` if `destinationUrl` doesn't parse.
  */
+// Drops the last label (the TLD) via `Array#slice`'s end index, e.g. `de` from `sv-gruenwald.de`.
+const EXCLUDING_LAST_LABEL = -1;
+
 function destinationLabel(destinationUrl: string): string {
 	try {
 		const labels = new URL(destinationUrl).hostname.replace(/^www\./u, '').split('.');
-		return (labels.length > 1 ? labels.slice(0, -1) : labels).join('.');
+		return (labels.length > 1 ? labels.slice(0, EXCLUDING_LAST_LABEL) : labels).join('.');
 	} catch {
 		return '';
 	}
@@ -101,10 +104,17 @@ function contextTokens(context: LinkPasswordContext): string[] {
 	const label = destinationLabel(context.destinationUrl);
 	if (label !== '') sources.push(label);
 
-	return sources
-		.flatMap((source) => [source, ...source.split(/[-._\s]+/u)])
-		.map(normalize)
-		.filter((token) => token.length >= MIN_CONTEXT_TOKEN);
+	return (
+		sources
+			// oxc's no-map-spread and unicorn's prefer-spread disagree on this exact construct: the
+			// former wants concat/push instead of a spread inside a flatMap's returned array, the
+			// latter wants a spread instead of concat. Kept as a spread — the array is freshly built
+			// on every call, nothing here mutates an existing one.
+			// oxlint-disable-next-line oxc/no-map-spread
+			.flatMap((source) => [source, ...source.split(/[-._\s]+/u)])
+			.map((source) => normalize(source))
+			.filter((token) => token.length >= MIN_CONTEXT_TOKEN)
+	);
 }
 
 export type LinkPasswordReason =
@@ -146,6 +156,7 @@ export function validateLinkPassword(
 	// Array.from, not a spread: oxlint's no-misused-spread flags spreading a
 	// string directly, even though both iterate the same Unicode code points
 	// — the same count Go's []rune conversion produces.
+	// oxlint-disable-next-line unicorn/prefer-spread
 	const characters = Array.from(password);
 	if (characters.length < MIN_LINK_PASSWORD_LENGTH) return 'too_short';
 	if (characters.length > MAX_LINK_PASSWORD_LENGTH) return 'too_long';

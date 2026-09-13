@@ -18,6 +18,10 @@ import { authedApiClient, flushSessionCookies, requireSession } from './session'
  * this app has already hit twice.
  */
 export const createTeamFor = createServerOnlyFn(
+	/* oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `Request` nests a
+	 * mutable `Headers` through its own `.headers` getter, and `Readonly<>` is shallow: it does
+	 * not reach that nested property, so `Readonly<Request>` still fails this check.
+	 */
 	async (request: Request, name: string, slug: string): Promise<Team> => {
 		const headers = new Headers();
 		const { accessToken } = await requireSession(request, headers);

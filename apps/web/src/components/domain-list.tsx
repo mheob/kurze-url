@@ -38,6 +38,7 @@ interface DomainListProps {
  * @param status - The domain's raw `verification_status`, echoed back unchanged when unrecognised.
  * @returns The label to render for this status.
  */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `Readonly<TFunction>` strips i18next's call signature and produces a real TS2349 "not callable"; that was tried.
 function statusLabel(t: TFunction, status: string): string {
 	switch (status) {
 		case 'pending': {
@@ -74,6 +75,7 @@ function statusLabel(t: TFunction, status: string): string {
  * @param reason - The pending-verification reason to label; `''` never actually reaches here.
  * @returns The label to render for this reason.
  */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `Readonly<TFunction>` strips i18next's call signature and produces a real TS2349 "not callable"; that was tried.
 function reasonLabel(t: TFunction, reason: VerifyReason): string {
 	switch (reason) {
 		case '': {
@@ -133,6 +135,7 @@ function reasonLabel(t: TFunction, reason: VerifyReason): string {
  * @param props.verifyingId - The id of the domain a verify check is in flight for, or null.
  * @returns The rendered domain list section.
  */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `domains` carries `@kurze-url/api-client`'s generated `Domain` type, whose properties are not marked readonly; that is generated codegen output, never edited by hand.
 export function DomainList({
 	deleteBlockedCount,
 	deletingId,
@@ -151,6 +154,7 @@ export function DomainList({
 		<>
 			<h1>{t('domains.heading')}</h1>
 			<ul>
+				{/* oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `domain` is the generated `Domain` type; see the disable above on this component's own `domains` prop. */}
 				{domains.map((domain) => (
 					<li key={domain.id}>
 						<h2>{domain.hostname}</h2>

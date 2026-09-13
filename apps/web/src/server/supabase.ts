@@ -17,6 +17,11 @@ function sameSiteValue(sameSite: NonNullable<CookieOptions['sameSite']>): string
 	return 'Lax';
 }
 
+/* oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `CookieOptions` is
+ * `@supabase/ssr`'s own type (itself derived from the `cookie` package's `SerializeOptions`);
+ * wrapping it in `Readonly<>` was tried and it still fails the deep check on a nested property
+ * that library defines, not this file, and it cannot be edited from this side.
+ */
 function serialize(name: string, value: string, options: CookieOptions): string {
 	const parts = [`${name}=${value}`, `Path=${options.path ?? '/'}`];
 	if (options.maxAge !== undefined) parts.push(`Max-Age=${options.maxAge}`);
@@ -80,17 +85,31 @@ export const SUPABASE_COOKIE_OPTIONS: CookieOptions = {
  * @returns A `getAll`/`setAll` pair satisfying @supabase/ssr's cookie adapter shape.
  */
 export function createCookieAdapter(
+	/* oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `Request` nests a
+	 * mutable `Headers` through its own `.headers` getter, and `Readonly<>` is shallow: it does
+	 * not reach that nested property, so `Readonly<Request>` still fails this check (verified —
+	 * unlike a bare `Headers` parameter below, which the check does accept once wrapped).
+	 */
 	request: Request,
-	headers: Headers,
+	headers: Readonly<Headers>,
 ): {
 	getAll: () => { name: string; value: string }[];
 	setAll: (
+		/* oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `options` is
+		 * `@supabase/ssr`'s own `CookieOptions` (see `serialize`'s parameter above); wrapping the
+		 * array or its `options` field in `Readonly<>` does not clear the library's own nested
+		 * non-readonly property, and that type isn't ours to edit.
+		 */
 		cookies: { name: string; value: string; options: CookieOptions }[],
 		responseHeaders?: Readonly<Record<string, string>>,
 	) => void;
 } {
 	return {
 		getAll: () => parse(request.headers.get('cookie')),
+		/* oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- same
+		 * `CookieOptions` cause as the type literal above; this implementation's inferred
+		 * parameter carries the identical non-readonly nested field.
+		 */
 		setAll: (cookies, responseHeaders) => {
 			for (const { name, value, options } of cookies) {
 				headers.append(
@@ -115,13 +134,28 @@ export function createCookieAdapter(
  * @param headers - Written into when the session is created or refreshed; the caller must flush it.
  * @returns A Supabase client bound to this request's cookies.
  */
-export function createSupabase(request: Request, headers: Headers): SupabaseClient {
+export function createSupabase(
+	/* oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- same cause as
+	 * `createCookieAdapter`'s `request` parameter above: `Request` nests a mutable `Headers`
+	 * that `Readonly<>`'s shallow wrap can't reach.
+	 */
+	request: Request,
+	headers: Readonly<Headers>,
+): SupabaseClient {
 	const url = process.env.SUPABASE_URL;
 	const key = process.env.SUPABASE_PUBLISHABLE_KEY;
 	if (url === undefined || url === '' || key === undefined || key === '') {
 		throw new Error('SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY are required');
 	}
 
+	/* oxlint-disable-next-line typescript/no-unsafe-return -- `createServerClient`'s own
+	 * `Database`/`SchemaName` generics default to `any`/`any` when neither is inferred from an
+	 * argument (no `Database` schema type exists on this side of the stack), while the
+	 * `SupabaseClient` annotated above defaults `SchemaName` to the literal `"public"` on its
+	 * own — so the two only look like the same type. Passing explicit generics to force a match
+	 * was tried; it moves `createServerClient` to resolve its *other*, deprecated
+	 * get/set/remove overload instead of the getAll/setAll one this file actually implements.
+	 */
 	return createServerClient(url, key, {
 		cookieOptions: SUPABASE_COOKIE_OPTIONS,
 		cookies: createCookieAdapter(request, headers),

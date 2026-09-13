@@ -7,6 +7,11 @@ import { expect, test } from '@playwright/test';
 
 import { waitForHydration } from './fixtures/hydration';
 
+/* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding of this rule in this
+ * file is Playwright's own fixture argument object, which nests `Page`/`BrowserContext`; both have
+ * many mutating methods (`goto`, `click`, `addCookies`, ...) and neither type is ours to edit.
+ */
+
 const THEMES = ['light', 'dark'] as const;
 const LANGUAGES = ['en', 'de'] as const;
 

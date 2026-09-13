@@ -1,3 +1,8 @@
+/* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding of this rule in this
+   file traces to `@kurze-url/api-client`'s generated `PageLink`/`Link` types, whose properties
+   (and `Link.tags`'s nested array) are not marked readonly; that is generated codegen output,
+   never edited by hand. */
+
 import type { PageLink } from '@kurze-url/api-client';
 import { Link } from '@tanstack/react-router';
 import { LockIcon } from 'lucide-react';

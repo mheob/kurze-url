@@ -33,6 +33,10 @@ import { expect, type Locator } from '@playwright/test';
 export async function waitForHydration(locator: Readonly<Locator>): Promise<void> {
 	await expect
 		.poll(async () =>
+			/* oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `node` is the
+			 * real DOM element this callback runs against inside the browser, via Playwright's
+			 * `evaluate`; it's a live, mutable DOM node, not a value this file constructs or owns.
+			 */
 			locator.evaluate((node) => Object.keys(node).some((key) => key.startsWith('__reactFiber$'))),
 		)
 		.toBe(true);

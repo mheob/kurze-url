@@ -25,6 +25,7 @@ export const Default: StoryObj<typeof meta> = {};
  * not only the unarmed default above.
  */
 export const Armed: StoryObj<typeof meta> = {
+	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Storybook's own `play` function context type; not this codebase's to mark readonly.
 	play: async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
 		await userEvent.click(canvas.getByRole('button', { name: 'Delete' }));

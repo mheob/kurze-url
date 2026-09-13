@@ -3,6 +3,14 @@ import { expect, type Locator, type Page } from '@playwright/test';
 import { test } from './fixtures/auth';
 import { waitForHydration } from './fixtures/hydration';
 
+/* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding of this rule in this
+ * file is one of two things this side of the codebase cannot change: Playwright's own `Page`
+ * (bare, or nested inside the fixture argument object each `test` callback destructures — it has
+ * many mutating methods, `goto`/`fill`/`click` among them), or the `node`/`nodes` parameter of a
+ * `.evaluate`/`.evaluateAll` callback, which is the real, live, mutable DOM running inside the
+ * browser, not a value this file constructs or owns.
+ */
+
 /**
  * The half of the no-hardcoded-string rule that react/jsx-no-literals cannot
  * see. That rule reads JSX text children; a hardcoded aria-label or a string
@@ -31,13 +39,30 @@ const IDENTICAL_BY_DESIGN = new Set(['kurze.url', 'TXT', 'CNAME']);
  */
 const PATHS = ['/', '/this-page-does-not-exist'] as const;
 
-async function visibleText(
-	page: Page,
-	baseURL: string,
-	language: string,
-	path: string,
-	identicalByDesign: ReadonlySet<string> = IDENTICAL_BY_DESIGN,
-): Promise<string[]> {
+/**
+ * @param options - The page to crawl and the language/path to render it at.
+ * @param options.page - The page to drive.
+ * @param options.baseURL - The fixture's own base URL; a cookie's domain must come from here, not
+ * from wherever `page.goto` later navigates.
+ * @param options.language - The `lang` cookie value to set before navigating.
+ * @param options.path - The path to visit.
+ * @param options.identicalByDesign - Strings expected to render identically in both languages;
+ * excluded from the returned crawl.
+ * @returns Every visible string this render produced, one exclusion pass already applied.
+ */
+async function visibleText({
+	page,
+	baseURL,
+	language,
+	path,
+	identicalByDesign = IDENTICAL_BY_DESIGN,
+}: Readonly<{
+	page: Page;
+	baseURL: string;
+	language: string;
+	path: string;
+	identicalByDesign?: ReadonlySet<string>;
+}>): Promise<string[]> {
 	// Playwright derives a cookie's domain from `url`, not from wherever
 	// `page.goto` later navigates — it has to be the fixture's `baseURL`, the
 	// same host the test actually runs against, or the cookie is scoped to
@@ -81,8 +106,8 @@ for (const path of PATHS) {
 		if (baseURL === undefined)
 			throw new Error('baseURL fixture is unset — check playwright.config.ts');
 
-		const english = new Set(await visibleText(page, baseURL, 'en', path));
-		const german = await visibleText(page, baseURL, 'de', path);
+		const english = new Set(await visibleText({ baseURL, language: 'en', page, path }));
+		const german = await visibleText({ baseURL, language: 'de', page, path });
 
 		const untranslated = german.filter((value) => english.has(value));
 
@@ -175,6 +200,11 @@ for (const suffix of AUTHENTICATED_PATHS) {
 			// to get the exact value, and a locator that's supposed to match
 			// exactly one element fails loudly rather than silently if that
 			// assumption ever stops holding.
+			//
+			// `innerText`, not `textContent`: this crawl compares against `visibleText`'s own
+			// `allInnerTexts()`-based read of everything else on the page, so this one link's text
+			// has to be collected the same rendered-and-visible way, not as raw text-node content.
+			// oxlint-disable-next-line unicorn/prefer-dom-node-text-content
 			const shortUrl = await page.locator('a[href^="http"]').innerText();
 			linkStrings.push(I18N_CRAWL_DESTINATION_URL, shortUrl);
 		}
@@ -246,8 +276,10 @@ for (const suffix of AUTHENTICATED_PATHS) {
 		]);
 
 		const path = `/teams/${teamSlug}/${suffix}`;
-		const english = new Set(await visibleText(page, baseURL, 'en', path, identicalByDesign));
-		const german = await visibleText(page, baseURL, 'de', path, identicalByDesign);
+		const english = new Set(
+			await visibleText({ baseURL, identicalByDesign, language: 'en', page, path }),
+		);
+		const german = await visibleText({ baseURL, identicalByDesign, language: 'de', page, path });
 
 		const untranslated = german.filter((value) => english.has(value));
 

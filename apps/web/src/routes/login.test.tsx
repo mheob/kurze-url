@@ -15,11 +15,13 @@ import { createI18n } from '../i18n';
 const mocks = vi.hoisted(() => ({
 	sendMagicLink: vi.fn<
 		(input: Readonly<{ data: Readonly<{ email: string }> }>) => Promise<{ sent: true }>
+		// oxlint-disable-next-line typescript/require-await -- stands in for `sendMagicLink`, which returns a `Promise`; nothing here needs an `await`.
 	>(async () => ({ sent: true })),
 }));
 
 vi.mock('../server/auth', () => ({ sendMagicLink: mocks.sendMagicLink }));
 
+// oxlint-disable-next-line node/no-top-level-await -- `vi.mock` above is hoisted; importing the subject module only after it, at module scope, is Vitest's own documented way to get a mocked dependency into an ESM import — the same pattern every other `*.test.ts(x)` in this app that mocks an import uses.
 const { LoginForm } = await import('./login');
 
 /**
@@ -93,6 +95,7 @@ describe('loginForm', () => {
 		let resolveSend: (() => void) | undefined;
 		mocks.sendMagicLink.mockImplementationOnce(
 			async () =>
+				// oxlint-disable-next-line promise/avoid-new -- a deliberately deferred promise: the test resolves it later, from the `resolveSend` closure, in response to what the UI does while the request is still in flight. There is no async/await equivalent for "resolve this from arbitrary code, later."
 				new Promise((resolve) => {
 					resolveSend = () => {
 						resolve({ sent: true });

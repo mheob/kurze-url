@@ -1,7 +1,7 @@
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from 'cn';
 import { Slot } from 'radix-ui';
-import * as React from 'react';
+import type { ComponentProps } from 'react';
 
 const buttonVariants = cva(
 	"group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
@@ -40,13 +40,14 @@ const buttonVariants = cva(
 	},
 );
 
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- React's own `ComponentProps` is a framework type this codebase does not own; it cannot be made readonly from this side.
 function Button({
 	className,
 	variant = 'default',
 	size = 'default',
 	asChild = false,
 	...props
-}: React.ComponentProps<'button'> &
+}: ComponentProps<'button'> &
 	VariantProps<typeof buttonVariants> & {
 		asChild?: boolean;
 	}) {
@@ -57,6 +58,12 @@ function Button({
 			data-slot="button"
 			data-variant={variant}
 			data-size={size}
+			// `Comp` is either `Slot.Root` or the native `button` element — both
+			// accept and forward `className` by contract (Slot merges it into
+			// its child, the intrinsic element forwards it to the DOM). This is
+			// shadcn's polymorphic-component pattern, not a bespoke design-system
+			// component the className-forwarding rule below is meant to gate.
+			// oxlint-disable-next-line react/forbid-component-props
 			className={cn(buttonVariants({ className, size, variant }))}
 			{...props}
 		/>
