@@ -1,5 +1,6 @@
 import { TanStackDevtools } from '@tanstack/react-devtools';
 import type { QueryClient } from '@tanstack/react-query';
+import type { ErrorComponentProps } from '@tanstack/react-router';
 import { HeadContent, Scripts, createRootRouteWithContext } from '@tanstack/react-router';
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools';
 import { createServerFn } from '@tanstack/react-start';
@@ -94,7 +95,15 @@ function NotFound() {
  * Reported during render rather than in an effect: this component also
  * renders on the server, where effects never run.
  */
-export function RootErrorPage({ error }: { readonly error: Error }) {
+/**
+ * The error is `unknown`, not `Error`, and that is the router's type rather
+ * than a loosening on our side: `ErrorComponentProps` resolves its error
+ * through `ErrorBoundaryTypes`, which defaults to `unknown` because JavaScript
+ * can throw any value at all. Nothing here reads a property off it — the page
+ * shows one generic translated sentence, and `reportUnexpected` has always
+ * taken `unknown` and done its own narrowing.
+ */
+export function RootErrorPage({ error }: ErrorComponentProps) {
 	const { t } = useTranslation();
 
 	reportUnexpected(error);

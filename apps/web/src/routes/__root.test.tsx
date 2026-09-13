@@ -20,10 +20,13 @@ const { RootErrorPage } = await import('./__root');
  * `login.test.tsx` settled on the same `createI18n` + `I18nextProvider`
  * wrapper for the same reason.
  */
-function renderRootErrorPage(error: Error): ReturnType<typeof render> {
+function renderRootErrorPage(error: unknown): ReturnType<typeof render> {
 	return render(
 		<I18nextProvider i18n={createI18n('en')}>
-			<RootErrorPage error={error} />
+			{/* `reset` is the router's retry callback, required by
+			    `ErrorComponentProps` and unused by this page — it renders one
+			    generic sentence and offers nothing to retry. */}
+			<RootErrorPage error={error} reset={vi.fn()} />
 		</I18nextProvider>,
 	);
 }
