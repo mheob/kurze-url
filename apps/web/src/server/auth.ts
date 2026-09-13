@@ -4,6 +4,12 @@ import { getRequest, getRequestUrl } from '@tanstack/react-start/server';
 import { flushSessionCookies } from './session';
 import { createSupabase } from './supabase';
 
+// Stays here, ahead of the exports block below, even though that leaves this
+// one `export const` flagged by import(exports-last): sendMagicLinkForImpl
+// reads it by value, and eslint(no-use-before-define) checks a variable's
+// textual position regardless of the enclosing function's hoisting, so
+// moving this down would trade one lint rule's warning for the other. Every
+// other export in this file moved cleanly.
 /**
  * Floor under `sendMagicLinkFor`'s response time. Defends the same
  * enumeration guarantee as the discarded error below, but for *timing*

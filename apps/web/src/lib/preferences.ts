@@ -6,18 +6,6 @@
  * of untranslated text or of the wrong theme.
  */
 
-export const LANGUAGE_COOKIE = 'lang';
-export const THEME_COOKIE = 'theme';
-
-export const LANGUAGES = ['en', 'de'] as const;
-export const THEMES = ['light', 'dark'] as const;
-
-export type Language = (typeof LANGUAGES)[number];
-export type Theme = (typeof THEMES)[number];
-
-export const DEFAULT_LANGUAGE: Language = 'en';
-export const DEFAULT_THEME: Theme = 'light';
-
 function readCookie(cookieHeader: string | undefined, name: string): string | undefined {
 	if (cookieHeader === undefined || cookieHeader === '') return undefined;
 
@@ -28,6 +16,16 @@ function readCookie(cookieHeader: string | undefined, name: string): string | un
 
 	return undefined;
 }
+
+// LANGUAGES/THEMES stay here, ahead of the exports block below, even though
+// that leaves these two `export const`s flagged by import(exports-last):
+// isLanguage/isTheme read them by value, and eslint(no-use-before-define)
+// checks a variable's textual position regardless of the enclosing
+// function's hoisting, so moving these down would trade one lint rule's
+// warning for the other. Only these two are pinned here — every other
+// export in this file moved cleanly.
+export const LANGUAGES = ['en', 'de'] as const;
+export const THEMES = ['light', 'dark'] as const;
 
 function isLanguage(value: string | undefined): value is Language {
 	return LANGUAGES.some((language) => language === value);
@@ -110,6 +108,23 @@ function parseAcceptLanguage(header: string | undefined): Language | undefined {
 	return best?.language;
 }
 
+const SECONDS_PER_MINUTE = 60;
+const MINUTES_PER_HOUR = 60;
+const HOURS_PER_DAY = 24;
+const DAYS_PER_YEAR = 365;
+
+/** One year, in seconds. A preference should outlive the session that set it. */
+const COOKIE_MAX_AGE = SECONDS_PER_MINUTE * MINUTES_PER_HOUR * HOURS_PER_DAY * DAYS_PER_YEAR;
+
+export const LANGUAGE_COOKIE = 'lang';
+export const THEME_COOKIE = 'theme';
+
+export type Language = (typeof LANGUAGES)[number];
+export type Theme = (typeof THEMES)[number];
+
+export const DEFAULT_LANGUAGE: Language = 'en';
+export const DEFAULT_THEME: Theme = 'light';
+
 /**
  * Cookies are user-controlled, so an unrecognised value falls back rather
  * than propagating. With no cookie at all, `acceptLanguageHeader` — the
@@ -149,9 +164,6 @@ export function readTheme(cookieHeader: string | undefined): Theme {
 export function themeClassName(theme: Theme): string | undefined {
 	return theme === 'dark' ? 'dark' : undefined;
 }
-
-/** One year, in seconds. A preference should outlive the session that set it. */
-const COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 
 export function preferenceCookie(name: string, value: string): string {
 	return `${name}=${value}; Path=/; Max-Age=${COOKIE_MAX_AGE}; SameSite=Lax`;

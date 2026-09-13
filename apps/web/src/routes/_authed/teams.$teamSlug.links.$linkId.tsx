@@ -136,12 +136,17 @@ function toFormValues(link: Link): LinkFormValues {
  * @param values - The form's values, as `LinkForm` hands them back.
  * @returns The API request body, with empty optional fields mapped to `undefined`.
  */
+/** The two redirect status codes a link can use; see CLAUDE.md's "301 vs 302" note for why 302 is the default. */
+const REDIRECT_PERMANENT = 301;
+const REDIRECT_TEMPORARY = 302;
+
 function toUpdateBody(values: LinkFormValues): UpdateLinkInputBodyWritable {
 	return {
 		analytics_enabled: values.analytics_enabled,
 		destination_url: values.destination_url,
 		expires_at: values.expires_at === '' ? undefined : new Date(values.expires_at).toISOString(),
-		redirect_type: values.redirect_type === 301 ? 301 : 302,
+		redirect_type:
+			values.redirect_type === REDIRECT_PERMANENT ? REDIRECT_PERMANENT : REDIRECT_TEMPORARY,
 		slug: values.slug === '' ? undefined : values.slug,
 	};
 }

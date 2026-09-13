@@ -36,8 +36,11 @@ type VerifyReason = VerifyDomainOutputBody['reason'];
  */
 type VerifyFailureKind = 'conflict' | 'notFound' | 'rateLimited' | 'unknown';
 
+/** The status `verifyDomain` answers with when another team already verified this hostname. */
+const HTTP_CONFLICT = 409;
+
 function classifyVerifyFailure(error: unknown): VerifyFailureKind {
-	if (statusOf(error) === 409) return 'conflict';
+	if (statusOf(error) === HTTP_CONFLICT) return 'conflict';
 	const { kind } = classifyApiError(error);
 	return kind === 'notFound' || kind === 'rateLimited' ? kind : 'unknown';
 }

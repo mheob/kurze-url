@@ -3,15 +3,6 @@ import { useTranslation } from 'react-i18next';
 
 import { Button } from './ui/button';
 
-export interface LinkFormValues {
-	readonly analytics_enabled: boolean;
-	readonly destination_url: string;
-	readonly domain_id: string;
-	readonly expires_at: string;
-	readonly redirect_type: number;
-	readonly slug: string;
-}
-
 const defaultValues: LinkFormValues = {
 	analytics_enabled: true,
 	destination_url: '',
@@ -28,6 +19,9 @@ const defaultValues: LinkFormValues = {
  * without a fallback it would silently vanish instead of surfacing. See the
  * generic alert rendered below for those.
  */
+/** The redirect status code CLAUDE.md's "301 vs 302" note warns about: cached by browsers, so clicks go uncounted and destination changes stop taking effect. */
+const REDIRECT_PERMANENT = 301;
+
 const KNOWN_FIELD_NAMES: ReadonlySet<string> = new Set([
 	'analytics_enabled',
 	'destination_url',
@@ -46,6 +40,15 @@ interface LinkFormProps {
 	readonly fieldErrors?: Readonly<Record<string, string>>;
 	readonly initial?: Partial<LinkFormValues>;
 	readonly onSubmit: (values: LinkFormValues) => void;
+}
+
+export interface LinkFormValues {
+	readonly analytics_enabled: boolean;
+	readonly destination_url: string;
+	readonly domain_id: string;
+	readonly expires_at: string;
+	readonly redirect_type: number;
+	readonly slug: string;
 }
 
 /**
@@ -209,7 +212,7 @@ export function LinkForm({
 							    and stops later destination changes taking effect for anyone who
 							    has already visited — breakage a volunteer cannot diagnose and
 							    cannot undo. It belongs next to the choice, not in a tooltip. */}
-							{field.state.value === 301 ? (
+							{field.state.value === REDIRECT_PERMANENT ? (
 								<p role="note">{t('links.redirect301Warning')}</p>
 							) : null}
 						</div>

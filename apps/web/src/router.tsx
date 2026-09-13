@@ -5,6 +5,12 @@ import { setupRouterSsrQueryIntegration } from '@tanstack/react-router-ssr-query
 import { initSentry } from './lib/observability';
 import { routeTree } from './routeTree.gen';
 
+declare module '@tanstack/react-router' {
+	interface Register {
+		router: ReturnType<typeof getRouter>;
+	}
+}
+
 /**
  * The plan's own sample named `@tanstack/react-router-with-query` here —
  * that package has since been superseded by `@tanstack/react-router-ssr-query`
@@ -69,10 +75,4 @@ export function getRouter() {
 	initSentry(router.isServer);
 
 	return router;
-}
-
-declare module '@tanstack/react-router' {
-	interface Register {
-		router: ReturnType<typeof getRouter>;
-	}
 }

@@ -6,27 +6,6 @@ import { hasEnoughQrContrast } from '../lib/qr-contrast';
 import { qrSvgDataUrl, restyleQrSvg } from '../lib/qr-svg';
 import { Button } from './ui/button';
 
-export interface LinkQRCardProps {
-	/** True while the one SVG fetch is in flight. `svg` undefined with this false means the fetch failed. */
-	readonly isLoading: boolean;
-	/** Called when the reader changes a control, so a stale API-reported `rejection` does not linger over a combination they are already correcting. */
-	readonly onDismissRejection?: () => void;
-	/** Resolves when the download has been handed to the browser, rejects on failure. Colours are sent as bare `rrggbb`. */
-	readonly onDownload: (options: {
-		readonly background: string;
-		readonly foreground: string;
-		readonly format: QrFormat;
-		readonly size: number;
-	}) => Promise<void>;
-	/** A reason the API returned that the mirrored contrast rule did not predict. */
-	readonly rejection?: QrRejectionReason | 'rejected';
-	/** The document fetched once for this link, in the default colours. */
-	readonly svg: string | undefined;
-}
-
-/** Exported because `LinkQRCardProps` names it: an unexported type in a public prop makes the prop unnameable from a parent. */
-export type QrFormat = 'png' | 'svg';
-
 /**
  * Every reason the mirrored rule or the API's typed 422 can carry, mapped to
  * its translation key as a `Record` rather than a lookup function — adding a
@@ -65,6 +44,27 @@ const MAX_PREVIEW_PIXELS = 240;
 function bare(color: string): string {
 	return color.startsWith('#') ? color.slice(1) : color;
 }
+
+export interface LinkQRCardProps {
+	/** True while the one SVG fetch is in flight. `svg` undefined with this false means the fetch failed. */
+	readonly isLoading: boolean;
+	/** Called when the reader changes a control, so a stale API-reported `rejection` does not linger over a combination they are already correcting. */
+	readonly onDismissRejection?: () => void;
+	/** Resolves when the download has been handed to the browser, rejects on failure. Colours are sent as bare `rrggbb`. */
+	readonly onDownload: (options: {
+		readonly background: string;
+		readonly foreground: string;
+		readonly format: QrFormat;
+		readonly size: number;
+	}) => Promise<void>;
+	/** A reason the API returned that the mirrored contrast rule did not predict. */
+	readonly rejection?: QrRejectionReason | 'rejected';
+	/** The document fetched once for this link, in the default colours. */
+	readonly svg: string | undefined;
+}
+
+/** Exported because `LinkQRCardProps` names it: an unexported type in a public prop makes the prop unnameable from a parent. */
+export type QrFormat = 'png' | 'svg';
 
 /**
  * The card that turns a link into something a Verein can print.

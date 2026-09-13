@@ -9,6 +9,22 @@ import {
 import { ConfirmDelete } from './confirm-delete';
 import { Button } from './ui/button';
 
+/**
+ * Maps every reason `validateLinkPassword` (Task 7) or the API's typed 422
+ * detail (Task 8's `passwordRejected`) can carry to its translation key, as a
+ * `Record` rather than a lookup function — adding a reason to
+ * `LinkPasswordReason` without adding it here is a compile error, not a blank
+ * message a reader would have no way to act on.
+ */
+const messageKeys: Record<LinkPasswordReason | 'rejected', string> = {
+	derived_from_context: 'links.passwordDerivedFromContext',
+	rejected: 'links.passwordRejected',
+	too_common: 'links.passwordTooCommon',
+	too_long: 'links.passwordTooLong',
+	too_repetitive: 'links.passwordTooRepetitive',
+	too_short: 'links.passwordTooShort',
+};
+
 export interface LinkPasswordCardProps {
 	readonly context: LinkPasswordContext;
 	readonly hasPassword: boolean;
@@ -33,22 +49,6 @@ export interface LinkPasswordCardProps {
 	/** A reason the API returned that the mirrored policy did not predict. */
 	readonly rejection?: LinkPasswordReason | 'rejected';
 }
-
-/**
- * Maps every reason `validateLinkPassword` (Task 7) or the API's typed 422
- * detail (Task 8's `passwordRejected`) can carry to its translation key, as a
- * `Record` rather than a lookup function — adding a reason to
- * `LinkPasswordReason` without adding it here is a compile error, not a blank
- * message a reader would have no way to act on.
- */
-const messageKeys: Record<LinkPasswordReason | 'rejected', string> = {
-	derived_from_context: 'links.passwordDerivedFromContext',
-	rejected: 'links.passwordRejected',
-	too_common: 'links.passwordTooCommon',
-	too_long: 'links.passwordTooLong',
-	too_repetitive: 'links.passwordTooRepetitive',
-	too_short: 'links.passwordTooShort',
-};
 
 /**
  * Deliberately not a field inside `<LinkForm>`: that form maps to `PATCH`,

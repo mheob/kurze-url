@@ -1,39 +1,5 @@
 import type { LinkPasswordReason } from './link-password';
 
-/**
- * The reason tokens `getLinkQR` (apps/api/internal/api/link_qr.go) can send
- * on a QR refusal. Each one is a Go sentinel's own `Error()` string, or —
- * for `size_requires_png` — a literal the handler owns; both are wire
- * contracts pinned by that package's tests, not prose.
- */
-export type QrRejectionReason = 'invalid_color' | 'low_contrast' | 'size_requires_png';
-
-/**
- * Turns whatever a failed API call throws into something a route or form can
- * act on, without either of them needing to know Huma's wire format.
- *
- * The shape this inspects is grounded in `apps/api/openapi.json`'s
- * `ErrorModel`/`ErrorDetail` schemas and in how
- * `packages/api-client/src/generated/client/client.gen.ts` actually surfaces
- * a failure: every operation's error response is `application/problem+json`
- * (RFC 9457), and with `throwOnError: true` — the convention already
- * established in `src/server/health.ts` and `src/routes/_authed.tsx` — the
- * generated client throws that parsed JSON body directly. There is no
- * `.response`/`.error` wrapper around it; `status`, `errors`, and `detail`
- * all sit at the top level. See api-errors.test.ts for the divergence from
- * an earlier, unverified assumption about this shape.
- */
-export type ApiFailure =
-	| { kind: 'unauthenticated' }
-	| { kind: 'notFound' }
-	| { kind: 'rateLimited' }
-	| { kind: 'fields'; fields: Record<string, string> }
-	| { kind: 'domainHasLinks'; count: number }
-	| { kind: 'slugTaken' }
-	| { kind: 'passwordRejected'; reason: LinkPasswordReason | 'rejected' }
-	| { kind: 'qrRejected'; reason: QrRejectionReason | 'rejected' }
-	| { kind: 'unknown' };
-
 /** The `ErrorDetail` fields this module reads; see `apps/api/openapi.json`. */
 interface ProblemDetail {
 	readonly location?: string;
@@ -52,26 +18,6 @@ function isProblemDetail(value: unknown): value is ProblemDetail {
 		(location === undefined || typeof location === 'string') &&
 		(message === undefined || typeof message === 'string')
 	);
-}
-
-/**
- * Exported for the rare call site that needs the raw HTTP status alongside
- * `ApiFailure`'s kind — `teams.$teamSlug.domains.tsx`'s verify mutation is the
- * first: a 409 there ("another team already verified this hostname") carries
- * no `ErrorDetail` to key on, the same as a 500 or a network failure, so
- * `classifyApiError` alone cannot tell them apart — both fall into `unknown`.
- * That collapse is correct for every other caller (nothing else needs to
- * split them), so this stays a plain status accessor rather than a new
- * `ApiFailure` kind that would force every other 409-without-detail call site
- * (members, tags, link slugs) to adopt a message that does not fit them.
- *
- * @param error - Whatever the failed API call threw.
- * @returns The HTTP status code, or `undefined` if `error` isn't shaped like one that carries one.
- */
-export function statusOf(error: unknown): number | undefined {
-	if (!isRecord(error)) return undefined;
-	const { status } = error;
-	return typeof status === 'number' ? status : undefined;
 }
 
 function problemDetailsOf(error: unknown): readonly ProblemDetail[] {
@@ -277,23 +223,86 @@ function qrRejectionOf(error: unknown): (QrRejectionReason | 'rejected') | undef
 	return undefined;
 }
 
+/** RFC 9110 status codes this module branches on, named for the reader checking a case against the spec rather than the wire. */
+const HTTP_UNAUTHORIZED = 401;
+const HTTP_FORBIDDEN = 403;
+const HTTP_NOT_FOUND = 404;
+const HTTP_CONFLICT = 409;
+const HTTP_TOO_MANY_REQUESTS = 429;
+const HTTP_BAD_REQUEST = 400;
+const HTTP_UNPROCESSABLE_CONTENT = 422;
+
+/**
+ * The reason tokens `getLinkQR` (apps/api/internal/api/link_qr.go) can send
+ * on a QR refusal. Each one is a Go sentinel's own `Error()` string, or —
+ * for `size_requires_png` — a literal the handler owns; both are wire
+ * contracts pinned by that package's tests, not prose.
+ */
+export type QrRejectionReason = 'invalid_color' | 'low_contrast' | 'size_requires_png';
+
+/**
+ * Turns whatever a failed API call throws into something a route or form can
+ * act on, without either of them needing to know Huma's wire format.
+ *
+ * The shape this inspects is grounded in `apps/api/openapi.json`'s
+ * `ErrorModel`/`ErrorDetail` schemas and in how
+ * `packages/api-client/src/generated/client/client.gen.ts` actually surfaces
+ * a failure: every operation's error response is `application/problem+json`
+ * (RFC 9457), and with `throwOnError: true` — the convention already
+ * established in `src/server/health.ts` and `src/routes/_authed.tsx` — the
+ * generated client throws that parsed JSON body directly. There is no
+ * `.response`/`.error` wrapper around it; `status`, `errors`, and `detail`
+ * all sit at the top level. See api-errors.test.ts for the divergence from
+ * an earlier, unverified assumption about this shape.
+ */
+export type ApiFailure =
+	| { kind: 'unauthenticated' }
+	| { kind: 'notFound' }
+	| { kind: 'rateLimited' }
+	| { kind: 'fields'; fields: Record<string, string> }
+	| { kind: 'domainHasLinks'; count: number }
+	| { kind: 'slugTaken' }
+	| { kind: 'passwordRejected'; reason: LinkPasswordReason | 'rejected' }
+	| { kind: 'qrRejected'; reason: QrRejectionReason | 'rejected' }
+	| { kind: 'unknown' };
+
+/**
+ * Exported for the rare call site that needs the raw HTTP status alongside
+ * `ApiFailure`'s kind — `teams.$teamSlug.domains.tsx`'s verify mutation is the
+ * first: a 409 there ("another team already verified this hostname") carries
+ * no `ErrorDetail` to key on, the same as a 500 or a network failure, so
+ * `classifyApiError` alone cannot tell them apart — both fall into `unknown`.
+ * That collapse is correct for every other caller (nothing else needs to
+ * split them), so this stays a plain status accessor rather than a new
+ * `ApiFailure` kind that would force every other 409-without-detail call site
+ * (members, tags, link slugs) to adopt a message that does not fit them.
+ *
+ * @param error - Whatever the failed API call threw.
+ * @returns The HTTP status code, or `undefined` if `error` isn't shaped like one that carries one.
+ */
+export function statusOf(error: unknown): number | undefined {
+	if (!isRecord(error)) return undefined;
+	const { status } = error;
+	return typeof status === 'number' ? status : undefined;
+}
+
 export function classifyApiError(error: unknown): ApiFailure {
 	const status = statusOf(error);
 
-	if (status === 401) return { kind: 'unauthenticated' };
+	if (status === HTTP_UNAUTHORIZED) return { kind: 'unauthenticated' };
 	// The API answers 404 for a non-member so it never confirms a team
 	// exists; treating 403 differently from 404 here would leak exactly what
 	// internal/authz withholds.
-	if (status === 403 || status === 404) return { kind: 'notFound' };
-	if (status === 429) return { kind: 'rateLimited' };
+	if (status === HTTP_FORBIDDEN || status === HTTP_NOT_FOUND) return { kind: 'notFound' };
+	if (status === HTTP_TOO_MANY_REQUESTS) return { kind: 'rateLimited' };
 
-	if (status === 409) {
+	if (status === HTTP_CONFLICT) {
 		const count = blockingLinkCountOf(error);
 		if (count !== undefined) return { count, kind: 'domainHasLinks' };
 		if (isSlugConflict(error)) return { kind: 'slugTaken' };
 	}
 
-	if (status === 400 || status === 422) {
+	if (status === HTTP_BAD_REQUEST || status === HTTP_UNPROCESSABLE_CONTENT) {
 		const reason = passwordRejectionOf(error);
 		if (reason !== undefined) return { kind: 'passwordRejected', reason };
 

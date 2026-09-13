@@ -2,14 +2,6 @@ import type { Membership } from '../routes/_authed';
 import { preferenceCookie } from './preferences';
 
 /**
- * The same mechanism `preferences.ts` uses for language and theme, for the
- * same reason: a cookie is readable on the server during rendering, so the
- * redirect happens before the first paint rather than after a round trip.
- * localStorage cannot do that.
- */
-export const TEAM_COOKIE = 'team';
-
-/**
  * A private copy of `preferences.ts`'s own (unexported) `readCookie`, not an
  * import: that one is module-private parsing for `lang`/`theme` alone, and
  * duplicating four lines here keeps this module from reaching into another
@@ -29,6 +21,14 @@ function readCookie(cookieHeader: string | undefined, name: string): string | un
 
 	return undefined;
 }
+
+/**
+ * The same mechanism `preferences.ts` uses for language and theme, for the
+ * same reason: a cookie is readable on the server during rendering, so the
+ * redirect happens before the first paint rather than after a round trip.
+ * localStorage cannot do that.
+ */
+export const TEAM_COOKIE = 'team';
 
 /**
  * Validated against current memberships, not trusted outright: a cookie

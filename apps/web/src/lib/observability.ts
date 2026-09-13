@@ -45,6 +45,21 @@ function stripQueryString(url: string): string {
 }
 
 /**
+ * Errors already reported. A router error component can render more than
+ * once for one error, and on the server it renders again on the client after
+ * hydration — without this, one failure becomes several events out of the
+ * monthly 5,000.
+ */
+const reported = new WeakSet();
+
+/**
+ * `Sentry.init` is process-global, and `getRouter` runs once per request on
+ * the server — so this guards against re-initialising the client on every
+ * page view.
+ */
+let initialized = false;
+
+/**
  * `beforeSend`, and the thing that actually enforces this project's rule
  * about what may leave a visitor's browser. `dataCollection` below reduces
  * what is collected; this guarantees what is sent.
@@ -115,14 +130,6 @@ export function scrubEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
 export function isReportable(error: unknown): boolean {
 	return classifyApiError(error).kind === 'unknown';
 }
-
-/**
- * Errors already reported. A router error component can render more than
- * once for one error, and on the server it renders again on the client after
- * hydration — without this, one failure becomes several events out of the
- * monthly 5,000.
- */
-const reported = new WeakSet();
 
 export function reportUnexpected(error: unknown): void {
 	if (!isReportable(error)) return;
@@ -210,13 +217,6 @@ export function sentryOptions(dsn: string): Parameters<typeof Sentry.init>[0] {
 		release: release === undefined || release === '' ? undefined : release,
 	};
 }
-
-/**
- * `Sentry.init` is process-global, and `getRouter` runs once per request on
- * the server — so this guards against re-initialising the client on every
- * page view.
- */
-let initialized = false;
 
 /**
  * Called from `getRouter`, which is the one place that exists in both

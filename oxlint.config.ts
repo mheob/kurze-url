@@ -218,6 +218,31 @@ export default defineConfig({
 			},
 		},
 		{
+			// TanStack's file-route convention puts `export const Route =
+			// createFileRoute(...)` at the top of the module and the component it
+			// names below it. That is what every example in the router's own
+			// documentation looks like, and it is where a reader goes to find what a
+			// route does.
+			//
+			// Both rules here object to it. `no-use-before-define` fires on
+			// `component: RouteComponent` referencing a function declared lower down
+			// — ten of its eleven findings are exactly that, and it works because
+			// function declarations hoist. `exports-last` wants `Route` moved to the
+			// bottom, which inverts the file.
+			//
+			// Satisfying them is not merely unidiomatic, it is hazardous: an attempt
+			// at exactly this reordering on 2026-09-13 removed 97 lines from
+			// `_authed.tsx` — every export, including the `Membership` type five
+			// other modules import — and the file had to be restored from the last
+			// commit. Both rules stay on everywhere else in the app.
+			files: ['apps/web/src/routes/**'],
+			plugins: ['import'],
+			rules: {
+				'eslint/no-use-before-define': 'off',
+				'import/exports-last': 'off',
+			},
+		},
+		{
 			// Scoped to .tsx, matching the jsx-a11y override above: `react` must not
 			// be activated for plain .ts files, or `react-hooks/rules-of-hooks`
 			// reaches `e2e/fixtures/auth.ts`, where Playwright's `use` fixture
@@ -230,8 +255,29 @@ export default defineConfig({
 			// to satisfy it. One rule's fixer breaking a rule the project
 			// deliberately set to error.
 			files: ['apps/web/**/*.tsx'],
-			plugins: ['react'],
-			rules: { 'react/jsx-curly-brace-presence': 'off' },
+			plugins: ['react', 'react-perf'],
+			rules: {
+				'react/jsx-curly-brace-presence': 'off',
+				// Fires on every TanStack route file, because `createFileRoute`
+				// requires the module to export `Route`, and most of them export a
+				// loader beside it. The rule asks for a file that exports only
+				// components; the router asks for the opposite. The one non-route
+				// case is `ui/button.tsx`, where `buttonVariants` beside the
+				// component is shadcn's own shape.
+				'react/only-export-components': 'off',
+				// Both react-perf rules exist to stop a new prop identity on every
+				// render from defeating a memoised child. That premise does not hold
+				// here: there is no `React.memo` anywhere in apps/web and no
+				// `useCallback` at all — grep before re-enabling. Every child
+				// re-renders regardless, so wrapping 58 inline handlers would buy no
+				// avoided render and cost 58 dependency arrays to keep correct, which
+				// is where stale-closure bugs come from. React's own guidance is not
+				// to memoise by default. If a list ever measures slow, memoise that
+				// list deliberately rather than turning this back on wholesale.
+				'react-perf/jsx-no-new-array-as-prop': 'off',
+				'react-perf/jsx-no-new-function-as-prop': 'off',
+				'react-perf/jsx-no-new-object-as-prop': 'off',
+			},
 		},
 	],
 });

@@ -11,23 +11,6 @@
  * out of the response.
  */
 
-export type LinkPasswordReason =
-	| 'derived_from_context'
-	| 'too_common'
-	| 'too_long'
-	| 'too_repetitive'
-	| 'too_short';
-
-export interface LinkPasswordContext {
-	readonly destinationUrl: string;
-	readonly linkSlug: string;
-	readonly teamName: string;
-	readonly teamSlug: string;
-}
-
-export const MIN_LINK_PASSWORD_LENGTH = 8;
-export const MAX_LINK_PASSWORD_LENGTH = 128;
-
 const MIN_DISTINCT_CHARACTERS = 4;
 const MIN_CONTEXT_TOKEN = 4;
 const MIN_NORMALIZED_FOR_CONTEXT = 3;
@@ -123,6 +106,23 @@ function contextTokens(context: LinkPasswordContext): string[] {
 		.map(normalize)
 		.filter((token) => token.length >= MIN_CONTEXT_TOKEN);
 }
+
+export type LinkPasswordReason =
+	| 'derived_from_context'
+	| 'too_common'
+	| 'too_long'
+	| 'too_repetitive'
+	| 'too_short';
+
+export interface LinkPasswordContext {
+	readonly destinationUrl: string;
+	readonly linkSlug: string;
+	readonly teamName: string;
+	readonly teamSlug: string;
+}
+
+export const MIN_LINK_PASSWORD_LENGTH = 8;
+export const MAX_LINK_PASSWORD_LENGTH = 128;
 
 /**
  * Applies the policy in the fixed order `policy.go`'s `ValidatePassword`

@@ -6,19 +6,6 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-/**
- * Auth cookies are not preference cookies. `preferences.ts` writes `lang` and
- * `theme` for the client to read; these must be invisible to JavaScript, which
- * is the whole reason the access token lives here rather than in memory the
- * browser can reach.
- */
-export const SUPABASE_COOKIE_OPTIONS: CookieOptions = {
-	httpOnly: true,
-	path: '/',
-	sameSite: 'lax',
-	secure: true,
-};
-
 // Mirrors the `cookie` package's own `sameSite` mapping (the same package
 // @supabase/ssr's `CookieOptions` type is defined against): `true` and
 // `'strict'` both serialize to `Strict`; only `'none'` serializes to `None`.
@@ -53,6 +40,19 @@ function parse(cookieHeader: string | null): { name: string; value: string }[] {
 		})
 		.filter((c: Readonly<{ name: string; value: string }>) => c.name !== '');
 }
+
+/**
+ * Auth cookies are not preference cookies. `preferences.ts` writes `lang` and
+ * `theme` for the client to read; these must be invisible to JavaScript, which
+ * is the whole reason the access token lives here rather than in memory the
+ * browser can reach.
+ */
+export const SUPABASE_COOKIE_OPTIONS: CookieOptions = {
+	httpOnly: true,
+	path: '/',
+	sameSite: 'lax',
+	secure: true,
+};
 
 /**
  * Pure request/response binding, with no shared state of any kind: the only
