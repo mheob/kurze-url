@@ -27,6 +27,8 @@ const { LoginForm } = await import('./login');
  * `I18nextProvider` in scope — without one, `t()` has no instance to draw
  * from and renders the raw key. `language-switcher.test.tsx` settled on the
  * same `createI18n` + `I18nextProvider` wrapper for the same reason.
+ *
+ * @returns The render result.
  */
 function renderLoginForm(): ReturnType<typeof render> {
 	return render(

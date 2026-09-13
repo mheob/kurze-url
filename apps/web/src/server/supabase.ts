@@ -58,7 +58,7 @@ function parse(cookieHeader: string | null): { name: string; value: string }[] {
  * seam @supabase/ssr needs into cookies, factored out of `createSupabase` so
  * it can be exercised directly in tests instead of through a global.
  *
- * @supabase/ssr's own `SetAllCookies` type allows `setAll` to return
+ * The `SetAllCookies` type @supabase/ssr defines allows `setAll` to return
  * `Promise<void>`, since a custom cookie store (e.g. Next.js's async cookie
  * jar) may need one. This adapter never awaits anything — `headers.append`
  * and `headers.set` are both synchronous — so `setAll` is typed here as
@@ -73,6 +73,10 @@ function parse(cookieHeader: string | null): { name: string; value: string }[] {
  * response that sets one person's session cookie for another — is declared
  * optional here only so tests exercising the cookie half alone can call
  * `setAll` with one argument; @supabase/ssr itself always passes it.
+ *
+ * @param request - The incoming request, read for its `cookie` header.
+ * @param headers - Written into via `set-cookie` and other response headers when `setAll` runs.
+ * @returns A `getAll`/`setAll` pair satisfying @supabase/ssr's cookie adapter shape.
  */
 export function createCookieAdapter(
 	request: Request,
@@ -105,6 +109,10 @@ export function createCookieAdapter(
  * frontend renders on the server, where one process serves many people, and a
  * shared client would leak one person's session into another's request — the
  * same reason `createApiClient` returns a fresh instance.
+ *
+ * @param request - The incoming request, read for its session cookies.
+ * @param headers - Written into when the session is created or refreshed; the caller must flush it.
+ * @returns A Supabase client bound to this request's cookies.
  */
 export function createSupabase(request: Request, headers: Headers): SupabaseClient {
 	const url = process.env.SUPABASE_URL;

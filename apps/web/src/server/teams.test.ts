@@ -37,6 +37,8 @@ const { createTeamFor } = await import('./teams');
  * Reading the session is what refreshes an expiring one, and the refreshed
  * cookies are written into the `headers` argument. Simulated as a synchronous
  * side effect of `createSupabase`, the way `links.test.ts` does it.
+ *
+ * @param accessToken - The token the faked session should report.
  */
 function withSession(accessToken: string): void {
 	mocks.createSupabase.mockImplementation((_request, headers) => {

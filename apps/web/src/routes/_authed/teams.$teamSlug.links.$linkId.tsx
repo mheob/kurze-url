@@ -46,6 +46,10 @@ type LinkFetcher = (options: { data: { linkId: string } }) => Promise<Link>;
  * list route: the narrow window where `_authed.tsx`'s own session check
  * passed but the token dies, or is rejected, by the time this route's own
  * fetch runs.
+ *
+ * @param fetchLink - The server function to fetch through; only needs this narrow shape.
+ * @param linkId - The link's id, from the route's own path parameter.
+ * @returns The fetched link.
  */
 export async function loadLink(fetchLink: LinkFetcher, linkId: string): Promise<Link> {
 	try {
@@ -73,6 +77,9 @@ export async function loadLink(fetchLink: LinkFetcher, linkId: string): Promise<
  * `null` (no expiry) becomes `''`, not an epoch date — `new Date(null)` is
  * the Unix epoch, and showing that in the input would read as "this link
  * expires January 1970" for a link that never expires at all.
+ *
+ * @param value - The date/time component to zero-pad.
+ * @returns `value`, zero-padded to at least two digits.
  */
 function pad(value: number): string {
 	return String(value).padStart(2, '0');
@@ -102,6 +109,9 @@ export function toDateTimeLocal(expiresAt: string | null): string {
  * scope stops at the create route) — `Link.domain_id` is always a concrete
  * id, never `''`, and `LinkFormValues` requires the field regardless of
  * whether the picker is shown.
+ *
+ * @param link - The fetched link to seed the form from.
+ * @returns The form's initial values.
  */
 function toFormValues(link: Link): LinkFormValues {
 	return {
@@ -122,6 +132,9 @@ function toFormValues(link: Link): LinkFormValues {
  * clear-and-regenerate signal in `UpdateLinkInputBodyWritable`, unlike
  * `folder_id`'s explicit `null`-to-unfile) rather than the create form's
  * "generate one" — inherited from reusing the same `<LinkForm>` unmodified.
+ *
+ * @param values - The form's values, as `LinkForm` hands them back.
+ * @returns The API request body, with empty optional fields mapped to `undefined`.
  */
 function toUpdateBody(values: LinkFormValues): UpdateLinkInputBodyWritable {
 	return {
@@ -148,6 +161,10 @@ interface InvalidatableRouter {
  * `link.new.tsx`'s `afterCreate` falsifies for creation. Delete's own
  * "navigate back to the list" step lives in its `onSuccess`, not here, since
  * update has no such step.
+ *
+ * @param queryClient - The query client to invalidate this link's cached list entries on.
+ * @param router - The router to invalidate, so its loaders refetch too.
+ * @param teamId - The team this link belongs to.
  */
 export async function afterMutation(
 	queryClient: InvalidatableQueryClient,
@@ -177,6 +194,11 @@ export const Route = createFileRoute('/_authed/teams/$teamSlug/links/$linkId')({
  * Exported (like `loadLink`/`afterMutation` above) so
  * `teams.$teamSlug.links.$linkId.test.ts` can exercise it with a hand-built
  * `memberships` array, no router or React tree required.
+ *
+ * @param link - The fetched link the password context is built for.
+ * @param memberships - The signed-in caller's own membership list, from `GET /v1/me`.
+ * @param teamSlug - The team slug from the route's path parameter, looked up in `memberships`.
+ * @returns The context `LinkPasswordCard` needs to explain its policy.
  */
 export function toPasswordContext(
 	link: Link,
@@ -226,6 +248,9 @@ interface PasswordErrorHandlers {
  * task-9 review found untested: `teams.$teamSlug.links.$linkId.test.ts` can
  * call this directly with hand-built spies, the same pattern `afterMutation`
  * already uses above.
+ *
+ * @param error - The value caught from a rejected password mutation.
+ * @param handlers - The component callbacks this dispatches to, based on the error's kind.
  */
 export function handlePasswordError(error: unknown, handlers: PasswordErrorHandlers): void {
 	const classified = classifyApiError(error);
@@ -260,6 +285,9 @@ interface PasswordSuccessHandlers {
  * `teams.$teamSlug.domains.tsx`'s verify mutation merges one row into its
  * own cached list instead of invalidating it. `hasPassword` is this same
  * value, tracked locally because it is what this page's own card reads.
+ *
+ * @param updatedLink - The link returned by the password mutation that just succeeded.
+ * @param handlers - The component state and query client this writes the result into.
  */
 export function applyPasswordSuccess(updatedLink: Link, handlers: PasswordSuccessHandlers): void {
 	handlers.setHasPassword(updatedLink.has_password);
@@ -291,6 +319,9 @@ interface QrErrorHandlers {
  * the endpoint keyed to one of its own query parameters belongs under the
  * control that caused it, and everything else — a rate limit, a 404, a
  * genuine 500 — falls through to the one banner this route already has.
+ *
+ * @param error - The value caught from a rejected QR download mutation.
+ * @param handlers - The component callbacks this dispatches to, based on the error's kind.
  */
 export function handleQrError(error: unknown, handlers: QrErrorHandlers): void {
 	const classified = classifyApiError(error);
@@ -333,6 +364,10 @@ export function handleQrError(error: unknown, handlers: QrErrorHandlers): void {
  * The object URL is revoked immediately: the click has already started the
  * save, and leaving it alive would pin the whole image in memory for the life
  * of the document.
+ *
+ * @param download - The base64-encoded image bytes and their content type.
+ * @param filename - The name to save the download under.
+ * @param doc - The document to create and click a throwaway download anchor in.
  */
 export function saveQrDownload(
 	download: { base64: string; contentType: string },
@@ -378,6 +413,11 @@ interface QrDownloadSuccessHandlers {
  * parameters rather than closing over the component's hooks, for the same
  * reason every other exported helper in this file is: so the route's test can
  * drive the guard directly, without a router or a rendered tree.
+ *
+ * @param download - The base64-encoded image bytes and their content type.
+ * @param filename - The name to save the download under.
+ * @param doc - The document to create and click a throwaway download anchor in.
+ * @param handlers - The component's error channels, cleared on entry and set if the save throws.
  */
 export function completeQrDownload(
 	download: { base64: string; contentType: string },

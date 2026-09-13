@@ -26,6 +26,9 @@ function fakeQueryClient(ensureQueryData: FakeQueryClient['ensureQueryData']): F
  * value, unconditionally, is what keeps "did it throw at all" and "what did
  * it throw" both covered. Async counterpart to the same helper in
  * `routes/_authed.test.ts`.
+ *
+ * @param fn - The async operation expected to reject.
+ * @returns The rejection reason, or `undefined` if `fn` resolved instead.
  */
 async function rejected(fn: () => Promise<unknown>): Promise<unknown> {
 	try {
@@ -42,9 +45,18 @@ async function rejected(fn: () => Promise<unknown>): Promise<unknown> {
  * `.options.to` without an unsafe cast, and without tripping
  * `no-conditional-expect` by putting the `expect` call itself inside an
  * `if`.
+ *
+ * @param error - The value caught from a rejected `loadLinks` call.
+ * @returns The redirect's destination, or `undefined` if `error` is not a redirect.
  */
 function redirectTarget(error: unknown): string | undefined {
-	return isRedirect(error) ? error.options.to : undefined;
+	if (!isRedirect(error)) return undefined;
+
+	// Narrowed at runtime rather than asserted: the router types `options.to`
+	// as `any`, so trusting it would put an `any` into a `string | undefined`
+	// and every caller would inherit it.
+	const target: unknown = error.options.to;
+	return typeof target === 'string' ? target : undefined;
 }
 
 describe('loadLinks', () => {

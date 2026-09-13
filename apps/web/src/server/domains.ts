@@ -61,6 +61,9 @@ export const listDomainsFn = createServerFn({ method: 'GET' })
  * (`ensureQueryData`) and its component (`useSuspenseQuery`), the same reason
  * `linksQueryOptions` exists. Two definitions drift, and the symptom is a
  * domain list that updates on navigation but not after a claim or delete.
+ *
+ * @param teamId - The team whose domains to list.
+ * @returns Query options for `useSuspenseQuery`/`ensureQueryData`, keyed on `['domains', teamId]`.
  */
 // oxlint's typescript(explicit-function-return-type) is error-level, but
 // `queryOptions`'s own return type can't be written out by hand without

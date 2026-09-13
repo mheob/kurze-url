@@ -21,6 +21,8 @@ import { type Me } from '../_authed';
  * not tenant data, so nothing leaks either way — but two guards in one tree
  * answering differently is the kind of inconsistency that later gets copied
  * into a route where it does matter.
+ *
+ * @param me - The signed-in caller, from `GET /v1/me`.
  */
 export function assertMaintainer(me: Me): void {
 	if (!me.is_maintainer) throw notFound();
@@ -43,6 +45,10 @@ export const Route = createFileRoute('/_authed/new-team')({
 /**
  * Exported and translate-injected so it can be unit-tested without rendering
  * the form — the same shape `assertMaintainer` above uses for the same reason.
+ *
+ * @param value - The raw field value, trimmed before checking.
+ * @param t - The translation function to render an error key through.
+ * @returns The translated error message, or `undefined` if the value is valid.
  */
 export function validateSlugField(value: string, t: (key: string) => string): string | undefined {
 	const slug = value.trim();
@@ -61,6 +67,8 @@ export function validateSlugField(value: string, t: (key: string) => string): st
  * Exported for the same reason `validateSlugField` above is: the name-to-slug
  * suggestion wiring lives entirely in this component's JSX event handlers, so
  * proving it works means rendering it, not just calling a pure function.
+ *
+ * @returns The rendered new-team form.
  */
 export function RouteComponent(): React.JSX.Element {
 	const { t } = useTranslation();

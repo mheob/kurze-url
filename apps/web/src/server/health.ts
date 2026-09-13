@@ -13,6 +13,9 @@ export interface HealthStatus {
  * Degrades rather than throws. This probe exists to prove the deployment
  * wiring, and a shell that fails to render because the API is down would
  * report the wrong problem.
+ *
+ * @param baseUrl - The API deployment to probe; defaults to the resolved `apiBaseUrl()`.
+ * @returns `'unknown'` when the API answered without a status, `'unreachable'` when the request failed.
  */
 export async function fetchHealth(baseUrl: string = apiBaseUrl()): Promise<HealthStatus> {
 	try {

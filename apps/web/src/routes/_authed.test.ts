@@ -13,6 +13,9 @@ const memberships = [{ team_id: 'a', name: 'Verein A', role: 'owner', slug: 'ver
  * would pass for the wrong reason. Asserting on this function's return
  * value, unconditionally, is what keeps the "did it throw at all" question
  * and the "what did it throw" question both covered.
+ *
+ * @param fn - The synchronous operation expected to throw.
+ * @returns Whatever `fn` threw, or `undefined` if it did not throw.
  */
 function thrown(fn: () => void): unknown {
 	try {

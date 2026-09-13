@@ -72,6 +72,8 @@ function RootDocument({ children }: { readonly children: React.ReactNode }) {
  * URL that matches no route, regardless of the request's language, so an
  * unrecognised `/de/...`-flavoured link would otherwise ship English text
  * inside an already-correctly-German `<html lang="de">` shell.
+ *
+ * @returns The rendered not-found page.
  */
 function NotFound() {
 	const { t } = useTranslation();
@@ -102,6 +104,10 @@ function NotFound() {
  * can throw any value at all. Nothing here reads a property off it — the page
  * shows one generic translated sentence, and `reportUnexpected` has always
  * taken `unknown` and done its own narrowing.
+ *
+ * @param props - The router's error-boundary props.
+ * @param props.error - Whatever was thrown.
+ * @returns The rendered error page.
  */
 export function RootErrorPage({ error }: ErrorComponentProps) {
 	const { t } = useTranslation();

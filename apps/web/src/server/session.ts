@@ -22,6 +22,10 @@ export class UnauthenticatedError extends Error {
  * expired one and writes the new cookies through the adapter's setAll. That is
  * why `headers` is threaded all the way down here rather than only used at
  * sign-in.
+ *
+ * @param request - The incoming request, read for its session cookies.
+ * @param headers - Written into if the session is refreshed; the caller must flush it.
+ * @returns The current access token, or undefined when there is no session.
  */
 export async function getAccessToken(
 	request: Request,
@@ -36,6 +40,10 @@ export async function getAccessToken(
  * Fails closed: an empty or missing token throws rather than falling through
  * to an "authenticated" request the API will 401 anyway. That 401 would be the
  * same symptom, three layers further from the cause.
+ *
+ * @param request - The incoming request, forwarded to `getAccessToken`.
+ * @param headers - Forwarded to `getAccessToken`; the caller must flush it.
+ * @returns The current session's access token.
  */
 export async function requireSession(
 	request: Request,
@@ -69,6 +77,9 @@ export async function requireSession(
  * check against the identical cross-boundary shape. `UnauthenticatedError.name`
  * (the class's own name, not a string literal) is used so a rename of the
  * class can't quietly desync this check from it.
+ *
+ * @param error - The thrown value to test, possibly reconstructed across a server/client boundary.
+ * @returns True if `error` is (or, after reconstruction, looks like) an `UnauthenticatedError`.
  */
 export function isUnauthenticatedError(error: unknown): boolean {
 	return error instanceof Error && error.name === UnauthenticatedError.name;
@@ -77,6 +88,9 @@ export function isUnauthenticatedError(error: unknown): boolean {
 /**
  * The one place callers turn a known-good token into an API client. Every
  * authenticated server function calls `requireSession` then this.
+ *
+ * @param accessToken - A token already known to be valid, e.g. from `requireSession`.
+ * @returns An API client authenticated with `accessToken`.
  */
 export function authedApiClient(accessToken: string): ReturnType<typeof getApiClient> {
 	return getApiClient(undefined, () => accessToken);

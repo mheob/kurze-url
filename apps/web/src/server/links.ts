@@ -94,6 +94,10 @@ export const listLinksFn = createServerFn({ method: 'GET' })
  * (`ensureQueryData`) and its component (`useSuspenseQuery`). Two
  * definitions drift, and the symptom is a list that updates on navigation
  * but not after a mutation.
+ *
+ * @param teamId - The team whose links to list.
+ * @param page - The 1-based page number.
+ * @returns Query options for `useSuspenseQuery`/`ensureQueryData`, keyed on `['links', teamId, page]`.
  */
 // oxlint's typescript(explicit-function-return-type) is error-level, but
 // `queryOptions`'s own return type (`UseQueryOptions<...> &
@@ -314,6 +318,9 @@ export interface QrDownloadOptions {
  * and a regenerated client is free to change that without changing the
  * runtime. Throwing beats defaulting: an empty image is a broken download
  * that reports success.
+ *
+ * @param body - Whatever the generated client's `getParseAs` produced for an `image/*` response.
+ * @returns The image's raw bytes.
  */
 export async function qrBodyBytes(body: unknown): Promise<Uint8Array> {
 	if (body instanceof Blob) return new Uint8Array(await body.arrayBuffer());

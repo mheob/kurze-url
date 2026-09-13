@@ -39,6 +39,8 @@ const { claimDomainFor, deleteDomainFor, listDomainsFor, verifyDomainFor } =
  * cookies are written into the `headers` argument. Simulated as a synchronous
  * side effect of `createSupabase`, the way `links.test.ts` and `teams.test.ts`
  * do it.
+ *
+ * @param accessToken - The token the faked session should report.
  */
 function withSession(accessToken: string): void {
 	mocks.createSupabase.mockImplementation((_request, headers) => {

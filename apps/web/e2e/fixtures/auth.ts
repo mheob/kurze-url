@@ -70,6 +70,12 @@ interface SessionCookie {
  * app itself) expects, by running the identical `onAuthStateChange` ->
  * `applyServerStorage` path production uses instead of hand-reproducing its
  * encoding.
+ *
+ * @param admin - A Supabase Admin API client, reused here for `generateLink`.
+ * @param url - The Supabase project URL, used to derive the session cookies' names.
+ * @param serviceRoleKey - Any valid project key; GoTrue accepts it for `verifyOtp` regardless of role.
+ * @param email - The address to mint a session for.
+ * @returns The session cookies captured from the `@supabase/ssr` cookie sink.
  */
 async function mintSessionCookies(
 	admin: SupabaseClient,
@@ -128,6 +134,10 @@ async function mintSessionCookies(
  * still delivered there in local development, but it must not be forced on
  * an `http://` CI preview that isn't `localhost`, or the cookie would never
  * be sent at all.
+ *
+ * @param cookies - The session cookies minted by `mintSessionCookies`.
+ * @param baseURL - The app's base URL; its scheme and hostname decide whether `secure` is forced.
+ * @returns Cookie descriptors ready for `context.addCookies`.
  */
 function toBrowserCookies(
 	cookies: readonly SessionCookie[],
@@ -261,6 +271,10 @@ export const test = base.extend<{
 	 * database assertions — it is a real column value, not a URL fragment —
 	 * while `teamSlug` is what every spec now builds `/teams/...` URLs from,
 	 * since that is what the app itself routes on.
+	 *
+	 * @param root0 - The fixtures this one depends on.
+	 * @param root0.team - The provisioned team to read the id from.
+	 * @param use - Playwright's callback, given this fixture's value.
 	 */
 	teamId: async ({ team }, use): Promise<void> => {
 		await use(team.id);

@@ -13,6 +13,9 @@ import { LinkForm, type LinkFormValues } from './link-form';
  * regexes below (`/redirect|weiterleitung/i`, `/destination|ziel/i`) already
  * match either language, and no test in this file asserts on German copy
  * specifically.
+ *
+ * @param props - The props to render `LinkForm` with.
+ * @returns The rendered test utilities from Testing Library's `render`.
  */
 function renderForm(props: {
 	readonly domains?: readonly { id: string; hostname: string }[];

@@ -13,7 +13,12 @@ const context = {
 	teamSlug: 'sv-gruenwald',
 };
 
-/** Same pattern as `link-form.test.tsx`'s `renderForm`: `useTranslation` needs an `I18nextProvider` in the tree. */
+/**
+ * Same pattern as `link-form.test.tsx`'s `renderForm`: `useTranslation` needs an `I18nextProvider` in the tree.
+ *
+ * @param props - The props to render `LinkPasswordCard` with.
+ * @returns The rendered test utilities from Testing Library's `render`.
+ */
 function renderCard(props: LinkPasswordCardProps): ReturnType<typeof render> {
 	return render(
 		<I18nextProvider i18n={createI18n('en')}>

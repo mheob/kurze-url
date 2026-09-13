@@ -33,6 +33,10 @@ interface DomainListProps {
  * generated type), not the narrower union this UI actually knows about — an
  * unrecognised value is echoed back rather than silently dropped, so a
  * status this screen doesn't yet handle surfaces instead of disappearing.
+ *
+ * @param t - The translation function.
+ * @param status - The domain's raw `verification_status`, echoed back unchanged when unrecognised.
+ * @returns The label to render for this status.
  */
 function statusLabel(t: TFunction, status: string): string {
 	switch (status) {
@@ -65,6 +69,10 @@ function statusLabel(t: TFunction, status: string): string {
  * `never` today, so it only ever runs — echoing the raw value, the same
  * fallback `statusLabel` above uses — if a later reason is added here before
  * its catalogue entry exists.
+ *
+ * @param t - The translation function.
+ * @param reason - The pending-verification reason to label; `''` never actually reaches here.
+ * @returns The label to render for this reason.
  */
 function reasonLabel(t: TFunction, reason: VerifyReason): string {
 	switch (reason) {
@@ -113,6 +121,17 @@ function reasonLabel(t: TFunction, reason: VerifyReason): string {
  * delete control has no such restriction — every domain, regardless of
  * status, can be removed; only a domain that still has links refuses (409),
  * which is what `deleteBlockedCount` surfaces.
+ *
+ * @param props - The component's props.
+ * @param props.deleteBlockedCount - The blocking link count, set only for the domain named by `deletingId`.
+ * @param props.deletingId - The id of the domain a delete is in flight for, or null.
+ * @param props.domains - The team's domains, already fetched by the caller.
+ * @param props.onDelete - Deletes the domain with the given id.
+ * @param props.onVerify - Re-checks verification for the domain with the given id.
+ * @param props.pendingReason - Set only for the domain named by `verifyingId`.
+ * @param props.verifyPending - True while the verify call named by `verifyingId` is still in flight.
+ * @param props.verifyingId - The id of the domain a verify check is in flight for, or null.
+ * @returns The rendered domain list section.
  */
 export function DomainList({
 	deleteBlockedCount,

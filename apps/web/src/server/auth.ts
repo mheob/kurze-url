@@ -37,6 +37,10 @@ function delay(ms: number): Promise<void> {
  * before Supabase knows whether the address exists, so doing this any other
  * way would reopen the timing/shape side-channel the floor and the
  * discarded error below exist to close.
+ *
+ * @param email - The address to send the magic link to; never confirmed to exist or not.
+ * @param origin - This request's origin, used for the redirect URL and the synthetic request Supabase reads cookies from.
+ * @returns `{ sent: true }` unconditionally, whether or not the address is known.
  */
 async function sendMagicLinkForImpl(email: string, origin: string): Promise<{ sent: true }> {
 	const headers = new Headers();

@@ -19,6 +19,9 @@ const { RootErrorPage } = await import('./__root');
  * from and silently renders the raw key instead of either locale's text.
  * `login.test.tsx` settled on the same `createI18n` + `I18nextProvider`
  * wrapper for the same reason.
+ *
+ * @param error - The value passed to `RootErrorPage`'s `error` prop.
+ * @returns The render result.
  */
 function renderRootErrorPage(error: unknown): ReturnType<typeof render> {
 	return render(

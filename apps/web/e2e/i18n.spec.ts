@@ -117,6 +117,9 @@ const I18N_CRAWL_DESTINATION_URL = 'https://example.org/i18n-crawl';
  * a plain text node, since the JSX puts the value before `CopyButton` — gets
  * the bare value instead, so it can be excluded below the same way the
  * hostname next to it is, regardless of whether that gluing keeps holding.
+ *
+ * @param cell - The table cell locator to read the leading text node from.
+ * @returns The cell's own text, with the glued-on `CopyButton` label excluded.
  */
 async function directText(cell: Locator): Promise<string> {
 	return cell.evaluate((node) => node.childNodes[0]?.textContent?.trim() ?? '');

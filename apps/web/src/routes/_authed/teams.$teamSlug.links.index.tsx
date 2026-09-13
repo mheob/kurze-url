@@ -46,6 +46,11 @@ interface LinksDataSource {
  * Extracted from the route's `loader` option so it can be unit-tested with a
  * fake `LinksDataSource` instead of a real router loader context; see
  * `teams.$teamSlug.links.index.test.ts`.
+ *
+ * @param queryClient - The query client to fetch through; only needs `ensureQueryData`.
+ * @param teamId - The team's id, already resolved from its slug.
+ * @param page - The 1-indexed page number to fetch.
+ * @returns The requested page of links.
  */
 export async function loadLinks(
 	queryClient: LinksDataSource,
@@ -133,6 +138,10 @@ export const Route = createFileRoute('/_authed/teams/$teamSlug/links/')({
  * kinds rendered as ordinary UI above still cost no event. Called during
  * render rather than from an effect, for the same reason `RootErrorPage`
  * does: this component also renders on the server, where effects never run.
+ *
+ * @param props - The route's error-boundary props.
+ * @param props.error - Whatever the loader or query threw.
+ * @returns A redirect to `/login` for an expired session, otherwise the failure rendered inline.
  */
 export function LinksError({ error }: { readonly error: unknown }): React.JSX.Element {
 	const { t } = useTranslation();

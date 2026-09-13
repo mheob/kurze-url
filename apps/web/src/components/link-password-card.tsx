@@ -70,6 +70,15 @@ const messageKeys: Record<LinkPasswordReason | 'rejected', string> = {
  * mirror missed (or a token this build doesn't recognise, `'rejected'`) that
  * only the API caught, still rendered through the exact same message table
  * so it reaches the reader either way.
+ *
+ * @param props - The component's props.
+ * @param props.context - The link/destination/team values the mirrored password policy checks against.
+ * @param props.hasPassword - Whether the link currently has a password.
+ * @param props.onDismissRejection - Called when the reader edits the field, to clear a stale `rejection`.
+ * @param props.onRemove - Removes the link's password.
+ * @param props.onSet - Sets or changes the link's password; resolves on success, rejects on failure.
+ * @param props.rejection - A reason the API returned that the mirrored policy did not predict.
+ * @returns The rendered password card section.
  */
 export function LinkPasswordCard({
 	context,
@@ -106,6 +115,8 @@ export function LinkPasswordCard({
 	 * field so they can edit and resubmit, and the parent's `rejection` prop
 	 * (or its own banner, for a failure that isn't a policy rejection at
 	 * all) is what tells them why.
+	 *
+	 * @param event - The form's submit event; prevented immediately so the mirrored policy check runs before any network call.
 	 */
 	async function handleSubmit(event: React.FormEvent<HTMLFormElement>): Promise<void> {
 		event.preventDefault();
@@ -138,8 +149,13 @@ export function LinkPasswordCard({
 		setLocalReason(null);
 	}
 
+	// `void`, not a bare `onSubmit={handleSubmit}`: the handler is async, and
+	// React ignores the promise it returns. Discarding it explicitly says that
+	// is intended rather than overlooked, which is what `no-misused-promises`
+	// asks for. Nothing is lost by it — the only await inside is already
+	// wrapped in its own try/catch, so the promise cannot reject.
 	const passwordInput = (
-		<form onSubmit={handleSubmit}>
+		<form onSubmit={(event) => void handleSubmit(event)}>
 			<div>
 				<label htmlFor={inputId}>{t('links.passwordLabel')}</label>
 				<input

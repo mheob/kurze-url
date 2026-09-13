@@ -69,6 +69,7 @@ Inside `apps/api`: `cmd/api/main.go` and `cmd/openapi/main.go` (writes `openapi.
 - **Auth in handlers**: declare `Security: {"bearerAuth": {}}` on operations that need it; a global middleware enforces it only where declared.
 - **JWT verification**: fetch + cache Supabase's JWKS (`https://<project>.supabase.co/auth/v1/.well-known/jwks.json`), verify ES256 locally. **Not** the legacy HS256 shared secret.
 - **Commits**: Conventional Commits (checked in CI, not hard-blocking yet).
+- **JSDoc tags are required on any function that carries a doc comment**, and that requirement outranks this codebase's usual "explain why, never restate what" habit. `oxlint`'s `jsdoc/require-param` and `jsdoc/require-returns` enforce it, and they only fire where a `/** … */` block already exists — an undocumented function stays undocumented. Settled 2026-09-13, when 221 of these were added at once. Two shapes are not obvious and were established empirically: a destructured object parameter needs the parent tag **and** a dotted tag per property (`@param props` plus `@param props.error`), and an anonymous destructured parameter takes oxlint's own `root0` naming (`@param root0`, `@param root0.team`) because there is no identifier to name. A bare `@param props` alone does not clear the rule.
 - **Testing**: Vitest + RTL (+ MSW) for the frontend, Playwright + axe-core for E2E, `go test` for Go. E2E runs against Vercel previews, not on every push.
 
 ---

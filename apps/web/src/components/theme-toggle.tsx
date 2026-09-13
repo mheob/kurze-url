@@ -17,6 +17,10 @@ import { Button } from './ui/button';
  * is what lets repeated clicks keep working without a reload or a router
  * round trip, matching the "instant" feel the class-toggle-on-click below is
  * already designed around.
+ *
+ * @param props - The component's props.
+ * @param props.theme - The loader's theme value at render time; seeds local state and is not read again after the first click.
+ * @returns The rendered toggle button.
  */
 export function ThemeToggle({ theme: initialTheme }: { readonly theme: Theme }) {
 	const { t } = useTranslation();

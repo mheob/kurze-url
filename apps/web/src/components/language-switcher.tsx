@@ -13,6 +13,8 @@ import { Button } from './ui/button';
  * component's closure (`language` is a parameter), and defining it inside a
  * component body reads to the linter as a render-time mutation of `document`
  * rather than the click-time one it actually is.
+ *
+ * @param language - The language to switch to; written to the cookie before the reload.
  */
 function choose(language: Language) {
 	document.cookie = preferenceCookie(LANGUAGE_COOKIE, language);

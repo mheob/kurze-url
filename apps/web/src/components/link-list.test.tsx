@@ -51,6 +51,10 @@ function pageOf(overrides: Partial<PageLink> = {}): PageLink {
  * here does not fail any test), but registering them keeps this fixture
  * honest about the routes actually existing, matching every other route
  * `<Link>` here targets.
+ *
+ * @param data - The page of links to render.
+ * @param page - The current page number.
+ * @returns The rendered test utilities from Testing Library's `render`.
  */
 function renderWith(data: PageLink, page = 1): ReturnType<typeof render> {
 	const rootRoute = createRootRoute({

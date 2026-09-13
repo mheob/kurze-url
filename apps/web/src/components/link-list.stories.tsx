@@ -3,7 +3,12 @@ import type { Meta, StoryObj } from '@storybook/tanstack-react';
 
 import { LinkList } from './link-list';
 
-/** Mirrors `link-list.test.tsx`'s own fixture — kept local rather than shared, the same reasoning that file's own docstring gives for building fixtures inline. */
+/**
+ * Mirrors `link-list.test.tsx`'s own fixture — kept local rather than shared, the same reasoning that file's own docstring gives for building fixtures inline.
+ *
+ * @param overrides - Partial fields to override on the default link fixture.
+ * @returns The link fixture.
+ */
 function link(overrides: Partial<ApiLink> = {}): ApiLink {
 	return {
 		analytics_enabled: true,

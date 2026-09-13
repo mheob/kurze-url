@@ -14,7 +14,12 @@ const svg = [
 	'</svg>',
 ].join('\n');
 
-/** Same pattern as `link-password-card.test.tsx`'s `renderCard`: `useTranslation` needs an `I18nextProvider` in the tree. */
+/**
+ * Same pattern as `link-password-card.test.tsx`'s `renderCard`: `useTranslation` needs an `I18nextProvider` in the tree.
+ *
+ * @param props - Partial overrides merged onto the default `LinkQRCardProps` fixture.
+ * @returns The rendered test utilities from Testing Library's `render`.
+ */
 function renderCard(props: Partial<LinkQRCardProps> = {}): ReturnType<typeof render> {
 	const merged: LinkQRCardProps = {
 		isLoading: false,

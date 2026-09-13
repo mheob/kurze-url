@@ -14,7 +14,12 @@ export const MIN_QR_CONTRAST_RATIO = 4.5;
 
 const HEX_COLOR = /^#?[0-9a-f]{6}$/i;
 
-/** Returns the three sRGB channels as 0–255, or `null` for anything that is not `rrggbb`. */
+/**
+ * Returns the three sRGB channels as 0–255, or `null` for anything that is not `rrggbb`.
+ *
+ * @param raw - A hex colour, with or without a leading `#`.
+ * @returns The `[r, g, b]` channels, or `null` if `raw` is not a valid 6-digit hex colour.
+ */
 function channels(raw: string): [number, number, number] | null {
 	if (!HEX_COLOR.test(raw)) return null;
 	const digits = raw.startsWith('#') ? raw.slice(1) : raw;
@@ -30,13 +35,24 @@ function channels(raw: string): [number, number, number] | null {
  * `relativeLuminance` rather than nested there: it captures nothing from that
  * scope, so oxlint's `unicorn/consistent-function-scoping` refuses a closure
  * that would otherwise be recreated on every call for no reason.
+ *
+ * @param value - One sRGB channel, 0–255.
+ * @returns The linearised channel value.
  */
 function linearizeChannel(value: number): number {
 	const s = value / 255;
 	return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
 }
 
-/** WCAG 2.1's relative luminance: sRGB channels linearised, then weighted. */
+/**
+ * WCAG 2.1's relative luminance: sRGB channels linearised, then weighted.
+ *
+ * @param rgb - The `[r, g, b]` sRGB channels, each 0–255.
+ * @param rgb.0 - The red channel.
+ * @param rgb.1 - The green channel.
+ * @param rgb.2 - The blue channel.
+ * @returns The relative luminance.
+ */
 function relativeLuminance([r, g, b]: [number, number, number]): number {
 	return 0.2126 * linearizeChannel(r) + 0.7152 * linearizeChannel(g) + 0.0722 * linearizeChannel(b);
 }
@@ -46,6 +62,10 @@ function relativeLuminance([r, g, b]: [number, number, number]): number {
  * matter. Returns `1` — the worst possible ratio — for an unparseable colour,
  * so a malformed value fails closed rather than passing the check by
  * accident.
+ *
+ * @param a - One of the two colours, as `rrggbb`.
+ * @param b - The other colour, as `rrggbb`.
+ * @returns The WCAG contrast ratio between `a` and `b`, or `1` if either is unparseable.
  */
 export function qrContrastRatio(a: string, b: string): number {
 	const first = channels(a);

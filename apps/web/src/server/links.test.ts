@@ -54,6 +54,8 @@ const { createLinkFor, linkQrDownloadFor, linkQrSvgFor, listLinksFor, qrBodyByte
  * in the real `@supabase/ssr` adapter. Simulated here the same way
  * `auth.test.ts` simulates the PKCE verifier write: synchronously, as a side
  * effect of the mocked `createSupabase` call itself.
+ *
+ * @param accessToken - The token the faked session should report.
  */
 function withSession(accessToken: string): void {
 	mocks.createSupabase.mockImplementation((_request, headers) => {

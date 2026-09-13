@@ -27,6 +27,10 @@ import { waitForHydration } from './fixtures/hydration';
  * still gets its own hostname built from `Date.now()` rather than a fixed
  * literal: a rerun of this file, or `i18n.spec.ts`'s own claim, must not
  * collide with this one.
+ *
+ * @param page - The page to drive; must already be authenticated.
+ * @param teamSlug - The team to claim the domain for; used to build the domains-page URL.
+ * @returns The freshly claimed hostname, built from `Date.now()` to avoid colliding with other runs.
  */
 async function claimDomain(page: Page, teamSlug: string): Promise<string> {
 	await page.goto(`/teams/${teamSlug}/domains`);

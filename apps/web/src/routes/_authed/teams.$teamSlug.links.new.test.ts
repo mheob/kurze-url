@@ -13,7 +13,12 @@ const baseValues: LinkFormValues = {
 	slug: '',
 };
 
-/** A minimally-filled `Domain`, overridden per test — same shape `domains.test.ts` uses. */
+/**
+ * A minimally-filled `Domain`, overridden per test — same shape `domains.test.ts` uses.
+ *
+ * @param overrides - Fields to override on the base fixture; `id` is required since the base has none.
+ * @returns A fixture `Domain`.
+ */
 function domain(overrides: Partial<Domain> & Pick<Domain, 'id'>): Domain {
 	return {
 		hostname: 'links.verein.test',

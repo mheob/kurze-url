@@ -78,6 +78,9 @@ const COMMON_PASSWORDS = new Set([
  * dropped — the same fold `normalizeForPolicy` performs in Go. The
  * transliteration is load-bearing: without it a team called `SV Grünwald`
  * does not catch `Gruenwald2026`, which is the password that team will pick.
+ *
+ * @param value - The raw string to fold, e.g. a password or a context token.
+ * @returns The lowercased, transliterated, `[a-z0-9]`-only form of `value`.
  */
 function normalize(value: string): string {
 	return value
@@ -97,6 +100,9 @@ function distinctCharacters(value: string): number {
  * The destination's hostname with a leading `www.` and its last label
  * removed, so `https://www.sv-gruenwald.de/verein` contributes
  * `sv-gruenwald` rather than `de`. An unparsable URL contributes nothing.
+ *
+ * @param destinationUrl - The link's destination URL.
+ * @returns The hostname's second-level label, or `''` if `destinationUrl` doesn't parse.
  */
 function destinationLabel(destinationUrl: string): string {
 	try {
@@ -128,6 +134,10 @@ function contextTokens(context: LinkPasswordContext): string[] {
  * more actionable reason, rather than the generic `too_common`.
  *
  * Returns the reason the password is refused, or `null` when it passes.
+ *
+ * @param password - The candidate link password.
+ * @param context - The link, destination, and team the password must not be derived from.
+ * @returns The reason the password is refused, or `null` when it passes.
  */
 export function validateLinkPassword(
 	password: string,

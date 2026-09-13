@@ -4,7 +4,12 @@ import { expect, fn, userEvent, within } from 'storybook/test';
 
 import { DomainList } from './domain-list';
 
-/** Mirrors `domain-list.test.tsx`'s own fixture — kept local for the same reason that file's docstring gives. */
+/**
+ * Mirrors `domain-list.test.tsx`'s own fixture — kept local for the same reason that file's docstring gives.
+ *
+ * @param overrides - Partial fields to override on the default domain fixture.
+ * @returns The domain fixture.
+ */
 function domain(overrides: Partial<ApiDomain> = {}): ApiDomain {
 	return {
 		hostname: 'links.verein.test',

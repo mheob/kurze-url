@@ -56,7 +56,12 @@ const MAX_SIZE = 2048;
 /** The preview's own box, in CSS pixels. Small sizes render smaller so the control's effect is visible; large ones stop here rather than filling the page. */
 const MAX_PREVIEW_PIXELS = 240;
 
-/** The API takes `rrggbb`: a raw `#` in a query string is the fragment delimiter and never reaches the server. `<input type="color">` produces the `#` form, so it is stripped on the way out. */
+/**
+ * The API takes `rrggbb`: a raw `#` in a query string is the fragment delimiter and never reaches the server. `<input type="color">` produces the `#` form, so it is stripped on the way out.
+ *
+ * @param color - The colour string, possibly still carrying the leading `#` an `<input type="color">` produces.
+ * @returns The colour with any leading `#` stripped.
+ */
 function bare(color: string): string {
 	return color.startsWith('#') ? color.slice(1) : color;
 }
@@ -72,6 +77,14 @@ function bare(color: string): string {
  * That is the property worth protecting: a second QR generator in TypeScript
  * would drift from the Go one, and drift in an image means the preview shows
  * something the download does not deliver.
+ *
+ * @param props - The component's props.
+ * @param props.isLoading - True while the one SVG fetch is in flight.
+ * @param props.onDismissRejection - Called when a control changes, to clear a stale `rejection`.
+ * @param props.onDownload - Requests the download for the chosen format/colours/size; colours are passed without a leading `#`.
+ * @param props.rejection - A reason the API returned that the mirrored contrast rule did not predict.
+ * @param props.svg - The document fetched once for this link, in the default colours.
+ * @returns The rendered QR card section.
  */
 export function LinkQRCard({
 	isLoading,

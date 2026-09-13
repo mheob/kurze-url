@@ -42,6 +42,9 @@ function isTheme(value: string | undefined): value is Theme {
  * `noUncheckedIndexedAccess` makes `tag.split('-')[0]` read as possibly
  * `undefined` even though a non-empty string always has one; slicing on the
  * first `-` instead keeps the return type a plain `string`.
+ *
+ * @param tag - A language tag, e.g. `de-DE`.
+ * @returns The primary subtag, e.g. `de`.
  */
 function primarySubtag(tag: string): string {
 	const dashIndex = tag.indexOf('-');
@@ -83,6 +86,10 @@ function acceptLanguageQuality(entry: string): number {
  * the sort keeps both gates satisfied by construction, and ties naturally go
  * to whichever supported tag appears first — a reasonable, standard-adjacent
  * tie-break given `Accept-Language` doesn't mandate one.
+ *
+ * @param header - The request's `Accept-Language` header value, if any.
+ * @returns The highest-quality supported language, or `undefined` if none of the header's
+ * tags are supported.
  */
 function parseAcceptLanguage(header: string | undefined): Language | undefined {
 	if (!header) return undefined;
@@ -109,6 +116,11 @@ function parseAcceptLanguage(header: string | undefined): Language | undefined {
  * request's `Accept-Language` — supplies a one-time initial guess; still
  * falls back to `DEFAULT_LANGUAGE` if that is absent, unsupported, or
  * malformed.
+ *
+ * @param cookieHeader - The request's raw `Cookie` header, if any.
+ * @param acceptLanguageHeader - The request's `Accept-Language` header, consulted only when
+ * `cookieHeader` carries no recognized language.
+ * @returns The language to render with.
  */
 export function readLanguage(
 	cookieHeader: string | undefined,
@@ -130,6 +142,9 @@ export function readTheme(cookieHeader: string | undefined): Theme {
  * in JSX is invisible to every test, so an inverted comparison would silently
  * flip the theme with nothing to catch it. Pulling the mapping out here makes
  * it a unit the root route's test suite can assert on directly.
+ *
+ * @param theme - The current theme preference.
+ * @returns The class name to apply for `theme`, or `undefined` for the light theme.
  */
 export function themeClassName(theme: Theme): string | undefined {
 	return theme === 'dark' ? 'dark' : undefined;

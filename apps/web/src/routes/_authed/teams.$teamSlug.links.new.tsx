@@ -28,6 +28,10 @@ interface DomainsDataSource {
  * to `/login` the moment they try to submit against a session that is
  * actually gone. Mirrors `listDomainsFor`'s own normalisation of a nil items
  * slice (Huma serialises it as JSON `null`).
+ *
+ * @param queryClient - The query client to fetch through; only needs `ensureQueryData`.
+ * @param teamId - The team's id, already resolved from its slug.
+ * @returns The team's verified domains, or an empty list on any failure.
  */
 export async function loadVerifiedDomains(
 	queryClient: DomainsDataSource,
@@ -79,6 +83,9 @@ export const Route = createFileRoute('/_authed/teams/$teamSlug/links/new')({
  * that this function forwards them (confirmed by deleting the `domain_id`
  * line below and re-running the suite: nothing failed until this file grew
  * its own test for it).
+ *
+ * @param values - The form's values, as `LinkForm` hands them back.
+ * @returns The API request body, with empty optional fields mapped to `undefined`.
  */
 export function toRequestBody(values: LinkFormValues): CreateLinkInputBodyWritable {
 	return {
@@ -116,6 +123,10 @@ interface InvalidatableRouter {
  * visitor currently has open (sort order isn't this task's concern), and
  * React Query's `invalidateQueries` already treats a queryKey as a prefix
  * match by default.
+ *
+ * @param queryClient - The query client to invalidate the links cache on.
+ * @param router - The router to invalidate, so its loaders refetch too.
+ * @param teamId - The team whose links were just created into.
  */
 export async function afterCreate(
 	queryClient: InvalidatableQueryClient,

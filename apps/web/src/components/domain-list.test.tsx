@@ -45,6 +45,10 @@ interface RenderOverrides {
  * `DomainList` renders no `<Link>` at all — there is no per-domain detail
  * page to navigate to, only inline `onVerify`/`onDelete` callbacks — so it
  * needs nothing beyond an `I18nextProvider`.
+ *
+ * @param domains - The domains to render.
+ * @param overrides - Optional callback and pending/blocked-state overrides for the render.
+ * @returns The rendered test utilities from Testing Library's `render`.
  */
 function renderList(
 	domains: ApiDomain[],

@@ -47,6 +47,9 @@ function me(isMaintainer: boolean): Me {
  * Same shape as `_authed.test.ts`'s helper, and for the same reason: vitest's
  * `no-conditional-expect` is error-level, and an assertion inside a `catch`
  * silently does not run when nothing was thrown.
+ *
+ * @param fn - The synchronous operation expected to throw.
+ * @returns Whatever `fn` threw, or `undefined` if it did not throw.
  */
 function thrown(fn: () => void): unknown {
 	try {
@@ -129,6 +132,9 @@ describe('validateSlugField', () => {
  * `href` a test could read directly, so proving where it actually lands means
  * letting the navigation finish and then inspecting
  * `router.state.location.pathname`.
+ *
+ * @returns The render result, plus the `router` instance so a test can inspect
+ *   where navigation actually landed.
  */
 function renderNewTeamForm() {
 	const queryClient = new QueryClient();

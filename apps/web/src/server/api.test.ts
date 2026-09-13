@@ -30,6 +30,10 @@ async function bypassHeaderSentTo(baseUrl: string): Promise<string | null> {
  * The shape Vercel injects as VERCEL_RELATED_PROJECTS. Only the fields
  * withRelatedProject actually reads are set: it takes `production.alias` first
  * for a production deployment and `preview.branch` for a preview one.
+ *
+ * @param alias - The production alias to report.
+ * @param branch - The preview branch to report.
+ * @returns The `VERCEL_RELATED_PROJECTS` JSON string.
  */
 function relatedProjects(alias: string, branch: string): string {
 	return JSON.stringify([

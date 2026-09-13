@@ -26,6 +26,9 @@ const memberships: Membership[] = [
  * that needs no such context. A minimal, test-only route tree — just a root
  * that mounts the component and the one path it actually links to — is
  * enough; it doesn't need any of the real app's routes or loaders.
+ *
+ * @param currentTeamSlug - The slug of the team to render as current.
+ * @returns The rendered test utilities from Testing Library's `render`.
  */
 function renderWith(currentTeamSlug: string): ReturnType<typeof render> {
 	const rootRoute = createRootRoute({

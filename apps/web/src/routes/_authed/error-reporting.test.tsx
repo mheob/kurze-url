@@ -38,6 +38,8 @@ const { DomainsError } = await import('./teams.$teamSlug.domains');
  * Both components render `<Navigate>` for an unauthenticated failure, which
  * needs a router in context — the same minimal tree
  * `teams.$teamSlug.links.index.error.test.tsx` builds, and for the same reason.
+ *
+ * @param element - The error component under test, already given its `error` prop.
  */
 function renderInRouter(element: React.JSX.Element): void {
 	const rootRoute = createRootRoute({ component: () => <Outlet /> });

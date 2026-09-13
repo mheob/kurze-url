@@ -56,6 +56,8 @@ const getCurrentTeamSlug = createServerFn({ method: 'GET' })
  * docstring in `server/session.ts` explains. Anything else — an actual
  * failure reading `/v1/me` — is rethrown rather than swallowed: this route
  * only has an opinion about the signed-out case.
+ *
+ * @returns The signed-in caller, or `undefined` if there is no session.
  */
 export async function fetchCurrentUser(): Promise<Me | undefined> {
 	try {
@@ -90,6 +92,10 @@ export type HomeOutcome =
  * plain, three-way decision with no cookie or membership-list logic of its
  * own, and it's what makes a returning visitor land back on the team they
  * last used instead of always the first one in membership order.
+ *
+ * @param me - The signed-in caller, or `undefined` if there is no session.
+ * @param teamSlug - The visitor's remembered team slug, already resolved from their `team` cookie.
+ * @returns The outcome this route renders or redirects for.
  */
 export function resolveHomeOutcome(me: Me | undefined, teamSlug: string | undefined): HomeOutcome {
 	if (!me) return { kind: 'marketing' };

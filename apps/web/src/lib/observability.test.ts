@@ -10,7 +10,11 @@ vi.mock('@sentry/tanstackstart-react', async (importOriginal) => ({
 	init: sentryMocks.init,
 }));
 
-/** Every category of request data this project must not send. */
+/**
+ * Every category of request data this project must not send.
+ *
+ * @returns An `ErrorEvent` carrying one example of every category of data that must be scrubbed.
+ */
 function eventWithEverything(): ErrorEvent {
 	return {
 		breadcrumbs: [

@@ -32,7 +32,12 @@ const IP_OR_USER_LIKE_KEYS = ['forwarded', '-ip', 'remote-', 'via', '-user'];
  */
 const BREADCRUMB_URL_KEYS = ['from', 'to', 'url'] as const;
 
-/** Strips the query string off a URL. Shared by `request.url` and every breadcrumb field that carries a URL. */
+/**
+ * Strips the query string off a URL. Shared by `request.url` and every breadcrumb field that carries a URL.
+ *
+ * @param url - The URL (or breadcrumb field value) to strip.
+ * @returns `url` with everything from the first `?` onward removed.
+ */
 function stripQueryString(url: string): string {
 	// `split` on a non-empty separator always yields at least one element;
 	// the `?? url` only satisfies `noUncheckedIndexedAccess`, it is never hit.
@@ -49,6 +54,10 @@ function stripQueryString(url: string): string {
  * connection, so Sentry's ingest sees the address regardless. The project
  * setting "Prevent Storing of IP Addresses" is the other switch, and both
  * are required.
+ *
+ * @param event - The event Sentry is about to send, mutated in place.
+ * @returns `event`, with IP address, cookies, request body, query strings, and disallowed
+ * headers removed.
  */
 export function scrubEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
 	// `Sentry.ErrorEvent`'s own `request`/`user`/`breadcrumbs` fields already
@@ -96,6 +105,9 @@ export function scrubEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
  * `classifyApiError` names every failure this app deliberately renders as
  * UI. `unknown` is what is left: a 500, a network failure, a render error —
  * the things nobody chose to handle, and the only things worth an event.
+ *
+ * @param error - Whatever was thrown or caught.
+ * @returns Whether `error` is worth reporting to Sentry.
  */
 export function isReportable(error: unknown): boolean {
 	return classifyApiError(error).kind === 'unknown';
@@ -145,6 +157,9 @@ export function reportUnexpected(error: unknown): void {
  * The deprecated `queryParams` field is the one omission: `urlQueryParams`
  * below already resolves first (`dc.urlQueryParams ?? dc.queryParams ?? …`),
  * so `queryParams` is never consulted.
+ *
+ * @param dsn - The Sentry DSN to send events to.
+ * @returns The options object to pass to `Sentry.init`.
  */
 export function sentryOptions(dsn: string): Parameters<typeof Sentry.init>[0] {
 	return {
@@ -205,6 +220,8 @@ let initialized = false;
  * node command line. With tracing off, plain `Sentry.init` is enough for
  * error capture, which is all this project asked for. If auto-instrumentation
  * is ever wanted, that constraint is what has to be solved first.
+ *
+ * @param isServer - Whether this call runs in the server bundle; tags the event's `serverName`.
  */
 export function initSentry(isServer: boolean): void {
 	if (initialized) return;

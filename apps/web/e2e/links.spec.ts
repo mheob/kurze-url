@@ -17,6 +17,10 @@ import { waitForHydration } from './fixtures/hydration';
  * the warning itself being broken. Creating a real link first is what makes
  * that assertion, and the accessibility scan below it, exercise the list's
  * actual populated markup rather than its empty one.
+ *
+ * @param page - The page to drive; must already be authenticated.
+ * @param teamSlug - The team to create the link under; used to build the create-link URL.
+ * @param destinationUrl - The URL the new link should redirect to.
  */
 async function createLink(page: Page, teamSlug: string, destinationUrl: string): Promise<void> {
 	await page.goto(`/teams/${teamSlug}/links/new`);

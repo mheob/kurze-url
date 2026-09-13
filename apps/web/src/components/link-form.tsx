@@ -62,6 +62,13 @@ interface LinkFormProps {
  * looked authoritative would be the more dangerous kind of wrong. The one
  * client-side check here is "destination is required", surfaced through
  * `form.Field`'s own `onChange` validator rather than a parallel schema.
+ *
+ * @param props - The component's props.
+ * @param props.domains - The team's verified domains; the domain picker renders nothing when this is empty or undefined.
+ * @param props.fieldErrors - Server-reported field errors, keyed by field name.
+ * @param props.initial - Initial values to seed the form from, for the edit route.
+ * @param props.onSubmit - Called with the form's values on submit.
+ * @returns The rendered form.
  */
 export function LinkForm({
 	domains,

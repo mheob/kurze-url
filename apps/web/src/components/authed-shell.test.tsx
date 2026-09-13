@@ -23,6 +23,9 @@ const memberships: Membership[] = [
  * `AuthedShell` renders `TeamSwitcher`, which needs a router in context for
  * the same reason `team-switcher.test.tsx` gives for its own minimal,
  * test-only route tree.
+ *
+ * @param props - Partial overrides merged onto this fixture's own defaults before rendering `AuthedShell`.
+ * @returns The rendered test utilities from Testing Library's `render`.
  */
 function renderShell(props: {
 	readonly currentTeamSlug?: string;

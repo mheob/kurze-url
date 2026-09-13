@@ -32,6 +32,8 @@ import { routeTree } from './routeTree.gen';
  * another's response — the exact hazard `packages/api-client/src/index.ts`'s
  * `createApiClient` docstring describes for why it returns a fresh client
  * per call rather than exporting a shared one.
+ *
+ * @returns A freshly constructed router, wired to its own `QueryClient`.
  */
 export function getRouter() {
 	const queryClient = new QueryClient();

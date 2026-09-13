@@ -97,6 +97,10 @@ export const fetchMe = createServerFn({ method: 'GET' }).handler(async (): Promi
  * "may this caller be here" and "which team is this" — are answered by one
  * lookup in the membership list `_authed`'s `beforeLoad` has already fetched,
  * so nothing here costs a request.
+ *
+ * @param memberships - The signed-in caller's own membership list, from `GET /v1/me`.
+ * @param teamSlug - The team slug from the route's path parameter.
+ * @returns The matching membership's team id.
  */
 export function requireTeamId(memberships: Membership[], teamSlug: string): string {
 	const membership = memberships.find((entry) => entry.slug === teamSlug);
@@ -127,6 +131,8 @@ export const Route = createFileRoute('/_authed')({
  * falling back to the first membership covers the layout rendering above a
  * child that has no `teamSlug` of its own, or none at all (see `AuthedShell`'s
  * own docstring for why `currentTeamSlug` is optional rather than assumed).
+ *
+ * @returns The rendered authenticated shell, wrapping the matched child route.
  */
 function AuthedLayout(): React.JSX.Element {
 	const { me } = Route.useRouteContext();

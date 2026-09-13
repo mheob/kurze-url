@@ -20,6 +20,8 @@ interface TeamSwitcherProps {
  * render-time mutation of `document` rather than the click-time one it
  * actually is (the same reasoning `language-switcher.tsx`'s `choose` is
  * factored out for).
+ *
+ * @param teamSlug - The team's slug to remember; read back on the next request to `/`.
  */
 function remember(teamSlug: string): void {
 	document.cookie = teamCookie(teamSlug);

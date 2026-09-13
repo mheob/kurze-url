@@ -1,5 +1,6 @@
 import type { Link, PageLink } from '@kurze-url/api-client';
 import { isNotFound, isRedirect } from '@tanstack/react-router';
+import type { MockInstance } from 'vitest';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -42,6 +43,9 @@ function link(overrides: Partial<Link> = {}): Link {
  * asserting on a returned value, unconditionally, instead of inside a
  * try/catch — `no-conditional-expect` is error-level, and an `expect` inside
  * `catch` silently skips when nothing throws.
+ *
+ * @param fn - The async operation expected to reject.
+ * @returns The rejection reason, or `undefined` if `fn` resolved instead.
  */
 async function rejected(fn: () => Promise<unknown>): Promise<unknown> {
 	try {
@@ -53,10 +57,21 @@ async function rejected(fn: () => Promise<unknown>): Promise<unknown> {
 }
 
 function redirectTarget(error: unknown): string | undefined {
-	return isRedirect(error) ? error.options.to : undefined;
+	if (!isRedirect(error)) return undefined;
+
+	// Narrowed at runtime rather than asserted: the router types `options.to`
+	// as `any`, so trusting it would put an `any` into a `string | undefined`
+	// and every caller would inherit it.
+	const target: unknown = error.options.to;
+	return typeof target === 'string' ? target : undefined;
 }
 
-/** A fetcher that always rejects with a given status — captures `status`, so unlike an inline `() => Promise.reject({ status: 401 })` it isn't flagged as a closure that captures nothing. */
+/**
+ * A fetcher that always rejects with a given status — captures `status`, so unlike an inline `() => Promise.reject({ status: 401 })` it isn't flagged as a closure that captures nothing.
+ *
+ * @param status - The HTTP status code the rejection carries.
+ * @returns A fetcher matching `loadLink`'s expected shape, which always rejects.
+ */
 function rejectingWith(status: number): (options: { data: { linkId: string } }) => Promise<Link> {
 	return () => Promise.reject({ status });
 }
@@ -347,13 +362,15 @@ describe('handleQrError', () => {
  * — no cast, no suppression, and the assertions run against actual DOM
  * behaviour rather than a hand-built double that could silently disagree
  * with it.
+ *
+ * @returns The spied-on anchor and the `document`/anchor method spies, so a test can assert on calls.
  */
 function spyOnDownloadAnchor(): {
 	anchor: HTMLAnchorElement;
-	appendChild: ReturnType<typeof vi.spyOn>;
-	click: ReturnType<typeof vi.spyOn>;
-	createElement: ReturnType<typeof vi.spyOn>;
-	removeChild: ReturnType<typeof vi.spyOn>;
+	appendChild: MockInstance<typeof document.body.appendChild>;
+	click: MockInstance<HTMLAnchorElement['click']>;
+	createElement: MockInstance<typeof document.createElement>;
+	removeChild: MockInstance<typeof document.body.removeChild>;
 } {
 	const anchor = document.createElement('a');
 	// Captured and returned, rather than asserted on as `anchor.click` at the

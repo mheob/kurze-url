@@ -34,6 +34,9 @@ import { LinksError } from './teams.$teamSlug.links.index';
  * since there is no outlet to mount it into. The `/login` route renders a
  * marker unique to it, so a test can tell "navigated to /login" apart from
  * "rendered something, somewhere" just from what ends up on screen.
+ *
+ * @param error - The value passed to `LinksError`'s `error` prop.
+ * @returns The router driving the render, so a test can inspect where navigation landed.
  */
 function renderWith(error: unknown): { readonly router: AnyRouter } {
 	const rootRoute = createRootRoute({ component: () => <Outlet /> });

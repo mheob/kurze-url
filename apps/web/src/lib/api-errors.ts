@@ -64,6 +64,9 @@ function isProblemDetail(value: unknown): value is ProblemDetail {
  * split them), so this stays a plain status accessor rather than a new
  * `ApiFailure` kind that would force every other 409-without-detail call site
  * (members, tags, link slugs) to adopt a message that does not fit them.
+ *
+ * @param error - Whatever the failed API call threw.
+ * @returns The HTTP status code, or `undefined` if `error` isn't shaped like one that carries one.
  */
 export function statusOf(error: unknown): number | undefined {
 	if (!isRecord(error)) return undefined;
@@ -87,6 +90,9 @@ function problemDetailsOf(error: unknown): readonly ProblemDetail[] {
  * (`validateBody` in `huma.go`) — before any field-level validation ran. That
  * is a whole-request problem, not a report about a field named "body", and
  * must not be mistaken for one.
+ *
+ * @param location - An `ErrorDetail.location` value, e.g. `body.destination_url`.
+ * @returns The trailing field name, or `undefined` when `location` has no dot to split on.
  */
 function fieldNameOf(location: string | undefined): string | undefined {
 	if (!location?.includes('.')) return undefined;
@@ -118,6 +124,9 @@ function fieldsOf(error: unknown): Record<string, string> {
  * The *verify* endpoint's own unrelated conflict ("another team has already
  * verified this hostname") carries no `ErrorDetail` at all, so it falls
  * through to `undefined` here too, never an invented count.
+ *
+ * @param error - Whatever the failed API call threw.
+ * @returns The blocking link count from a `deleteDomain` 409, or `undefined` if it never arrived.
  */
 function blockingLinkCountOf(error: unknown): number | undefined {
 	for (const detail of problemDetailsOf(error)) {
@@ -147,6 +156,9 @@ function blockingLinkCountOf(error: unknown): number | undefined {
  * `fields`, and `errors.slugTaken` exists in neither catalogue. Whoever adds
  * that typed detail to a link-slug 409 needs to also teach those two banners
  * about `slugTaken`, the way `new-team.tsx` already excludes it from its own.
+ *
+ * @param error - Whatever the failed API call threw.
+ * @returns Whether `error` is a 409 carrying `location === 'body.slug'`.
  */
 function isSlugConflict(error: unknown): boolean {
 	return problemDetailsOf(error).some((detail) => detail.location === 'body.slug');
@@ -161,6 +173,9 @@ function isSlugConflict(error: unknown): boolean {
  * predicate is what lets `passwordRejectionOf` tell a token this build
  * recognizes apart from one it doesn't — the latter maps to `'rejected'`
  * rather than being passed through as a string with no translation.
+ *
+ * @param value - The password-rejection reason token from a typed `ErrorDetail.value`.
+ * @returns Whether `value` is one of the reason tokens this build recognizes.
  */
 function isKnownLinkPasswordReason(value: string): value is LinkPasswordReason {
 	switch (value) {
@@ -189,6 +204,10 @@ function isKnownLinkPasswordReason(value: string): value is LinkPasswordReason {
  * or a token a newer server knows about and this build doesn't. Only a 422
  * on a *different* field returns `undefined`, so it still falls through to
  * `fieldsOf` below rather than being misread as a password rejection.
+ *
+ * @param error - Whatever the failed API call threw.
+ * @returns The password-rejection reason, `'rejected'` for an unrecognized one, or `undefined`
+ * when the 422 isn't on the password field at all.
  */
 function passwordRejectionOf(error: unknown): (LinkPasswordReason | 'rejected') | undefined {
 	for (const detail of problemDetailsOf(error)) {
@@ -206,6 +225,9 @@ function passwordRejectionOf(error: unknown): (LinkPasswordReason | 'rejected') 
  * `isKnownLinkPasswordReason` above is: TypeScript narrows a `string` to a
  * literal union across matching `case`s on its own, so this needs no type
  * assertion.
+ *
+ * @param value - The QR-rejection reason token from a typed `ErrorDetail.value`.
+ * @returns Whether `value` is one of the reason tokens this build recognizes.
  */
 function isKnownQrRejectionReason(value: string): value is QrRejectionReason {
 	switch (value) {
@@ -234,6 +256,10 @@ const QR_LOCATIONS = new Set(['query.bg', 'query.fg', 'query.size']);
  * Returns `'rejected'`, not `undefined`, whenever the detail is on one of
  * those three but carries no value this build can use — a missing `value`, or
  * a token a newer server knows about and this build does not.
+ *
+ * @param error - Whatever the failed API call threw.
+ * @returns The QR-rejection reason, `'rejected'` for an unrecognized one, or `undefined`
+ * when the 422 isn't on `fg`, `bg`, or `size`.
  */
 function qrRejectionOf(error: unknown): (QrRejectionReason | 'rejected') | undefined {
 	for (const detail of problemDetailsOf(error)) {

@@ -13,6 +13,10 @@ import '../src/styles/app.css';
  * be checked in both without duplicating stories. German strings are reliably
  * longer than their English equivalents, which is a common way for a layout to
  * break — being able to flip a whole story set is the point.
+ *
+ * @param Story - The story being decorated.
+ * @param context - The story's Storybook context; carries the active `language`/`theme` globals.
+ * @returns The story wrapped in the i18n provider and theme/background wrapper.
  */
 const withPreferences: Decorator = (Story, context) => {
 	const language = context.globals.language === 'de' ? 'de' : 'en';

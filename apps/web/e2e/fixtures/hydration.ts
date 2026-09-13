@@ -27,6 +27,8 @@ import { expect, type Locator } from '@playwright/test';
  * name, and the alternative was retrying `fill` + `click` until something
  * stuck, which creates duplicate rows whenever the click did land and only the
  * assertion was slow. This waits for the actual condition instead.
+ *
+ * @param locator - The element to wait for React to take ownership of.
  */
 export async function waitForHydration(locator: Locator): Promise<void> {
 	await expect

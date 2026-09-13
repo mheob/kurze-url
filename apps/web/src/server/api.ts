@@ -18,6 +18,8 @@ import { withRelatedProject } from '@vercel/related-projects';
  *
  * withRelatedProject resolves the API URL per deployment, so a preview of this
  * app talks to the matching preview of the API rather than to production.
+ *
+ * @returns The API's base URL: `API_HOST` in production, else the paired preview (or localhost) from `withRelatedProject`.
  */
 export function apiBaseUrl(): string {
 	// API_HOST wins outright instead of being withRelatedProject's `defaultHost`,
@@ -60,6 +62,8 @@ export function apiBaseUrl(): string {
  * Deliberately not named VERCEL_AUTOMATION_BYPASS_SECRET: Vercel injects that
  * name into this project's own deployments with this project's own secret,
  * which unlocks the web app, not the API.
+ *
+ * @returns The bypass header when `API_PROTECTION_BYPASS_SECRET` is set, otherwise an empty object.
  */
 function platformHeaders(): Record<string, string> {
 	const bypass = process.env.API_PROTECTION_BYPASS_SECRET;

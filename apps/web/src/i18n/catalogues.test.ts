@@ -11,6 +11,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * Half of the no-hardcoded-string rule. This catches a key added to one
  * catalogue and forgotten in the other; it cannot catch a string with no key
  * at all, which is what the rendered-divergence check in Task 11 is for.
+ *
+ * @param value - The catalogue (or nested object within it) to walk.
+ * @param prefix - The dotted key prefix accumulated so far from enclosing objects.
+ * @returns Every leaf key, dotted, e.g. `domains.recordTypeTxt`.
  */
 function keysOf(value: Record<string, unknown>, prefix = ''): string[] {
 	return Object.entries(value).flatMap(([key, child]) =>
@@ -18,7 +22,13 @@ function keysOf(value: Record<string, unknown>, prefix = ''): string[] {
 	);
 }
 
-/** Module scope, not inline in the test: it captures nothing from the closure it would sit in. */
+/**
+ * Module scope, not inline in the test: it captures nothing from the closure it would sit in.
+ *
+ * @param value - The catalogue (or nested object within it) to walk.
+ * @param prefix - The dotted key prefix accumulated so far from enclosing objects.
+ * @returns Every leaf key/value pair, the key dotted the same way `keysOf` produces it.
+ */
 function flatten(value: Record<string, unknown>, prefix = ''): [string, string][] {
 	return Object.entries(value).flatMap(([key, child]) =>
 		isRecord(child) ? flatten(child, `${prefix}${key}.`) : [[`${prefix}${key}`, String(child)]],

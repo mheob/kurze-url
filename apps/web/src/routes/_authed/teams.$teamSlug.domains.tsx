@@ -57,6 +57,10 @@ interface DomainsDataSource {
  * `beforeLoad` already redirects) must not fall through to `errorComponent`
  * as dead-end inline text — it sends the visitor back to `/login` instead.
  * Every other error kind is rethrown unchanged.
+ *
+ * @param queryClient - The query client to fetch through; only needs `ensureQueryData`.
+ * @param teamId - The team's id, already resolved from its slug.
+ * @returns The team's domains.
  */
 export async function loadDomains(
 	queryClient: DomainsDataSource,
@@ -91,6 +95,10 @@ export const Route = createFileRoute('/_authed/teams/$teamSlug/domains')({
  * without this call a 500 from listing domains never reaches
  * `RootErrorPage` and no event is ever sent. `reportUnexpected` refuses
  * every kind rendered as ordinary UI below.
+ *
+ * @param props - The route's error-boundary props.
+ * @param props.error - Whatever the loader or query threw.
+ * @returns A redirect to `/login` for an expired session, otherwise the failure rendered inline.
  */
 export function DomainsError({ error }: { readonly error: unknown }): React.JSX.Element {
 	const { t } = useTranslation();
