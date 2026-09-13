@@ -98,7 +98,11 @@ describe('listDomainsFor', () => {
 		withSession('tok');
 		const appended: string[] = [];
 		mocks.getResponse.mockReturnValueOnce({
-			headers: { append: (_name, value) => appended.push(value) },
+			headers: {
+				append: (_name, value) => {
+					appended.push(value);
+				},
+			},
 		});
 		server.use(
 			http.get('http://api.test/v1/teams/team-a/domains', () =>
@@ -150,7 +154,11 @@ describe('claimDomainFor', () => {
 		withSession('tok');
 		const appended: string[] = [];
 		mocks.getResponse.mockReturnValueOnce({
-			headers: { append: (_name, value) => appended.push(value) },
+			headers: {
+				append: (_name, value) => {
+					appended.push(value);
+				},
+			},
 		});
 		server.use(
 			http.post('http://api.test/v1/teams/team-a/domains', () =>
@@ -220,7 +228,11 @@ describe('verifyDomainFor', () => {
 		withSession('tok');
 		const appended: string[] = [];
 		mocks.getResponse.mockReturnValueOnce({
-			headers: { append: (_name, value) => appended.push(value) },
+			headers: {
+				append: (_name, value) => {
+					appended.push(value);
+				},
+			},
 		});
 		server.use(
 			http.post('http://api.test/v1/domains/d1/verify', () =>
@@ -286,7 +298,11 @@ describe('deleteDomainFor', () => {
 		withSession('tok');
 		const appended: string[] = [];
 		mocks.getResponse.mockReturnValueOnce({
-			headers: { append: (_name, value) => appended.push(value) },
+			headers: {
+				append: (_name, value) => {
+					appended.push(value);
+				},
+			},
 		});
 		server.use(
 			http.delete('http://api.test/v1/domains/d1', () => new HttpResponse(null, { status: 204 })),

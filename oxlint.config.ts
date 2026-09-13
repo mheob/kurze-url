@@ -145,7 +145,7 @@ export default defineConfig({
 			// `Locator` it swaps two different methods with different return types:
 			// `innerText()` is `string`, `textContent()` is `string | null`.
 			files: ['apps/web/**'],
-			plugins: ['promise', 'unicorn'],
+			plugins: ['promise', 'typescript', 'unicorn'],
 			rules: {
 				// `always-return` cannot see a `void`. Both `.then()` chains in this
 				// app — `copy-button.tsx` and `login.tsx`, the only two outside tests
@@ -154,7 +154,36 @@ export default defineConfig({
 				// `no-confusing-void-expression`'s fix turned their one-expression
 				// arrows into block bodies. If a consuming chain is ever written
 				// here, turn this back on.
+				// `no-void` forbids exactly what `no-misused-promises` requires. Every
+				// `void` in this app discards a promise on purpose — `void
+				// router.navigate(...)`, `void handleSubmit(event)` — which is the
+				// documented way to say "not awaited, deliberately". With both rules
+				// on there is no spelling that satisfies both.
+				'eslint/no-void': 'off',
 				'promise/always-return': 'off',
+				// TanStack Router signals navigation by throwing: `throw redirect({...})`
+				// and `throw notFound()` are its control flow, and neither is an
+				// Error. The rule is right in general and wrong for this framework,
+				// and the alternative — wrapping a router signal in an Error — would
+				// stop the router recognising it.
+				// This rule disagrees with the project's own type checking. It reports
+				// `rawKey?.trim()` in `lib/preferences.ts` as an unnecessary optional
+				// chain, but the repository sets `noUncheckedIndexedAccess`, so a
+				// destructured array element really is `string | undefined` - removing
+				// the `?.` was tried and `pnpm typecheck` answered
+				// "TS18048: 'rawKey' is possibly 'undefined'". Ten of its twelve
+				// findings are that same pattern, including the `rows[0]` guard in the
+				// e2e fixture.
+				//
+				// The remaining two are runtime guards deliberately kept beyond what
+				// the types promise: `restyleQrSvg` checks `documentElement` because
+				// its contract is to fail safe on anything that is not an SVG, which
+				// the DOM types cannot express about parser output.
+				//
+				// A rule whose advice the type checker rejects cannot be acted on
+				// mechanically, so it is off rather than warning.
+				'typescript/no-unnecessary-condition': 'off',
+				'typescript/only-throw-error': 'off',
 				'unicorn/no-useless-undefined': 'off',
 				'unicorn/prefer-dom-node-append': 'off',
 				'unicorn/prefer-dom-node-text-content': 'off',

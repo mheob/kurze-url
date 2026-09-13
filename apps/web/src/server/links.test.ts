@@ -160,7 +160,11 @@ describe('listLinksFor', () => {
 
 		const appended: string[] = [];
 		mocks.getResponse.mockReturnValue({
-			headers: { append: (name, value) => appended.push(`${name}: ${value}`) },
+			headers: {
+				append: (name, value) => {
+					appended.push(`${name}: ${value}`);
+				},
+			},
 		});
 
 		await listLinksFor(request, 'team-a', 1);
@@ -252,7 +256,11 @@ describe('createLinkFor', () => {
 
 		const appended: string[] = [];
 		mocks.getResponse.mockReturnValue({
-			headers: { append: (name, value) => appended.push(`${name}: ${value}`) },
+			headers: {
+				append: (name, value) => {
+					appended.push(`${name}: ${value}`);
+				},
+			},
 		});
 
 		await createLinkFor(request, 'team-a', { destination_url: 'https://example.org/' });

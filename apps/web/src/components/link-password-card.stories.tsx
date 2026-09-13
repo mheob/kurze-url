@@ -20,12 +20,12 @@ export default meta;
 
 /** A link with no password yet — the input is visible right away, nothing to reveal first. */
 export const Unprotected: StoryObj<typeof meta> = {
-	args: { context, hasPassword: false, onRemove: fn(), onSet: fn() },
+	args: { context, hasPassword: false, onRemove: fn<() => void>(), onSet: fn() },
 };
 
 /** A protected link: the input stays hidden behind "Change password" until asked for, and removal needs its own confirmation. */
 export const Protected: StoryObj<typeof meta> = {
-	args: { context, hasPassword: true, onRemove: fn(), onSet: fn() },
+	args: { context, hasPassword: true, onRemove: fn<() => void>(), onSet: fn() },
 };
 
 /**
@@ -35,7 +35,13 @@ export const Protected: StoryObj<typeof meta> = {
  * `link-form.stories.tsx`'s own `WithFieldError` gives for its story.
  */
 export const WithRejection: StoryObj<typeof meta> = {
-	args: { context, hasPassword: false, onRemove: fn(), onSet: fn(), rejection: 'too_common' },
+	args: {
+		context,
+		hasPassword: false,
+		onRemove: fn<() => void>(),
+		onSet: fn(),
+		rejection: 'too_common',
+	},
 };
 
 /**
@@ -45,5 +51,11 @@ export const WithRejection: StoryObj<typeof meta> = {
  * would not be caught by `WithRejection` above alone.
  */
 export const WithUnrecognizedRejection: StoryObj<typeof meta> = {
-	args: { context, hasPassword: false, onRemove: fn(), onSet: fn(), rejection: 'rejected' },
+	args: {
+		context,
+		hasPassword: false,
+		onRemove: fn<() => void>(),
+		onSet: fn(),
+		rejection: 'rejected',
+	},
 };

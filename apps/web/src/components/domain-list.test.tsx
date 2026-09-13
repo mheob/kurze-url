@@ -60,8 +60,8 @@ function renderList(
 				deleteBlockedCount={overrides.deleteBlockedCount}
 				deletingId={overrides.deletingId ?? null}
 				domains={domains}
-				onDelete={overrides.onDelete ?? vi.fn()}
-				onVerify={vi.fn()}
+				onDelete={overrides.onDelete ?? vi.fn<(domainId: string) => void>()}
+				onVerify={vi.fn<(domainId: string) => void>()}
 				pendingReason={overrides.pendingReason}
 				verifyPending={overrides.verifyPending}
 				verifyingId={overrides.verifyingId ?? null}
@@ -205,7 +205,7 @@ describe(DomainList, () => {
 	it('calls onDelete with the id of the domain that was actually confirmed', async () => {
 		// Two domains rendered, and the *second* row confirmed — a test that
 		// always fires on the first row cannot pass by accident.
-		const onDelete = vi.fn();
+		const onDelete = vi.fn<(domainId: string) => void>();
 		const other = domain({ hostname: 'other.verein.test', id: 'domain-2' });
 		renderList([pendingDomain, other], { onDelete });
 
@@ -218,7 +218,7 @@ describe(DomainList, () => {
 	it('requires confirmation before onDelete fires', async () => {
 		// Nothing restores a deleted domain, and an empty one is gone for good —
 		// one misclick must not be enough.
-		const onDelete = vi.fn();
+		const onDelete = vi.fn<(domainId: string) => void>();
 		renderList([pendingDomain], { onDelete });
 
 		await userEvent.click(screen.getByRole('button', { name: 'Delete links.verein.test' }));

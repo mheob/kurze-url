@@ -203,9 +203,9 @@ describe(toPasswordContext, () => {
  */
 describe(handlePasswordError, () => {
 	it('routes a passwordRejected failure into the rejection channel, not the banner', () => {
-		const setFailure = vi.fn();
-		const setPasswordRejection = vi.fn();
-		const navigateToLogin = vi.fn();
+		const setFailure = vi.fn((): void => undefined);
+		const setPasswordRejection = vi.fn((): void => undefined);
+		const navigateToLogin = vi.fn((): void => undefined);
 		const error = { errors: [{ location: 'body.password', value: 'too_common' }], status: 422 };
 
 		handlePasswordError(error, { navigateToLogin, setFailure, setPasswordRejection });
@@ -216,9 +216,9 @@ describe(handlePasswordError, () => {
 	});
 
 	it('routes a rate-limited failure into the banner, not the rejection channel', () => {
-		const setFailure = vi.fn();
-		const setPasswordRejection = vi.fn();
-		const navigateToLogin = vi.fn();
+		const setFailure = vi.fn((): void => undefined);
+		const setPasswordRejection = vi.fn((): void => undefined);
+		const navigateToLogin = vi.fn((): void => undefined);
 		const error = { status: 429 };
 
 		handlePasswordError(error, { navigateToLogin, setFailure, setPasswordRejection });
@@ -229,9 +229,9 @@ describe(handlePasswordError, () => {
 	});
 
 	it('navigates to login for an unauthenticated failure, touching neither state', () => {
-		const setFailure = vi.fn();
-		const setPasswordRejection = vi.fn();
-		const navigateToLogin = vi.fn();
+		const setFailure = vi.fn((): void => undefined);
+		const setPasswordRejection = vi.fn((): void => undefined);
+		const navigateToLogin = vi.fn((): void => undefined);
 		const error = { status: 401 };
 
 		handlePasswordError(error, { navigateToLogin, setFailure, setPasswordRejection });
@@ -252,9 +252,9 @@ describe(handlePasswordError, () => {
 describe(applyPasswordSuccess, () => {
 	it('clears failure/rejection state and reports the new hasPassword value', () => {
 		const updated = link({ has_password: true });
-		const setFailure = vi.fn();
-		const setHasPassword = vi.fn();
-		const setPasswordRejection = vi.fn();
+		const setFailure = vi.fn((): void => undefined);
+		const setHasPassword = vi.fn((): void => undefined);
+		const setPasswordRejection = vi.fn((): void => undefined);
 		const setQueriesData = vi.fn();
 
 		applyPasswordSuccess(updated, {
@@ -288,9 +288,9 @@ describe(applyPasswordSuccess, () => {
 		applyPasswordSuccess(updated, {
 			linkId: 'link-a',
 			queryClient: { setQueriesData },
-			setFailure: vi.fn(),
-			setHasPassword: vi.fn(),
-			setPasswordRejection: vi.fn(),
+			setFailure: vi.fn((): void => undefined),
+			setHasPassword: vi.fn((): void => undefined),
+			setPasswordRejection: vi.fn((): void => undefined),
 			teamId: 'team-a',
 		});
 
@@ -455,8 +455,8 @@ describe(completeQrDownload, () => {
 			createObjectURL: vi.fn().mockReturnValue('blob:fake'),
 			revokeObjectURL: vi.fn(),
 		});
-		const setFailure = vi.fn();
-		const setQrRejection = vi.fn();
+		const setFailure = vi.fn((): void => undefined);
+		const setQrRejection = vi.fn((): void => undefined);
 
 		completeQrDownload(
 			{ base64: btoa('<svg/>'), contentType: 'image/svg+xml' },
@@ -492,8 +492,8 @@ describe(completeQrDownload, () => {
 			createObjectURL: vi.fn().mockReturnValue('blob:fake'),
 			revokeObjectURL: vi.fn(),
 		});
-		const setFailure = vi.fn();
-		const setQrRejection = vi.fn();
+		const setFailure = vi.fn((): void => undefined);
+		const setQrRejection = vi.fn((): void => undefined);
 
 		completeQrDownload(
 			{ base64: btoa('<svg/>'), contentType: 'image/svg+xml' },

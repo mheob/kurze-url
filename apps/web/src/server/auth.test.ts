@@ -136,7 +136,11 @@ describe('sendMagicLinkFor', () => {
 		mocks.signInWithOtp.mockResolvedValue({ error: null });
 		const appended: string[] = [];
 		mocks.getResponse.mockReturnValue({
-			headers: { append: (name, value) => appended.push(`${name}: ${value}`) },
+			headers: {
+				append: (name, value) => {
+					appended.push(`${name}: ${value}`);
+				},
+			},
 		});
 
 		await sendMagicLinkFor('someone@example.test', 'https://app.test');

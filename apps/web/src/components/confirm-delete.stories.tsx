@@ -6,7 +6,7 @@ import { ConfirmDelete } from './confirm-delete';
 const meta = {
 	args: {
 		label: 'Delete',
-		onConfirm: fn(),
+		onConfirm: fn<() => void>(),
 		question: 'Delete this link? Anyone who already has the short URL will get a 404.',
 	},
 	component: ConfirmDelete,

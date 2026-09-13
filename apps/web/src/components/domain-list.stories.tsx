@@ -32,8 +32,8 @@ const meta = {
 	args: {
 		deleteBlockedCount: undefined,
 		deletingId: null,
-		onDelete: fn(),
-		onVerify: fn(),
+		onDelete: fn<(domainId: string) => void>(),
+		onVerify: fn<(domainId: string) => void>(),
 		pendingReason: undefined,
 		verifyPending: false,
 		verifyingId: null,

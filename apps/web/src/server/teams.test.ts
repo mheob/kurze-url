@@ -123,7 +123,11 @@ describe('createTeamFor', () => {
 
 		const appended: string[] = [];
 		mocks.getResponse.mockReturnValueOnce({
-			headers: { append: (_name, value) => appended.push(value) },
+			headers: {
+				append: (_name, value) => {
+					appended.push(value);
+				},
+			},
 		});
 		server.use(
 			http.post('http://api.test/v1/teams', () =>

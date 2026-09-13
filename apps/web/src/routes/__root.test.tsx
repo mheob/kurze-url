@@ -30,7 +30,7 @@ function renderRootErrorPage(error: unknown): ReturnType<typeof render> {
 			{/* `reset` is the router's retry callback, required by
 			    `ErrorComponentProps` and unused by this page — it renders one
 			    generic sentence and offers nothing to retry. */}
-			<RootErrorPage error={error} reset={vi.fn()} />
+			<RootErrorPage error={error} reset={vi.fn((): void => undefined)} />
 		</I18nextProvider>,
 	);
 }

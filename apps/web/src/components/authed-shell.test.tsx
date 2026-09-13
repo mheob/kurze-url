@@ -38,7 +38,7 @@ function renderShell(props: {
 		currentTeamSlug = 'verein-a',
 		isMaintainer = false,
 		memberships: membershipsProp = memberships,
-		onSignOut = vi.fn(),
+		onSignOut = vi.fn<() => void>(),
 		signingOut = false,
 	} = props;
 
@@ -92,7 +92,7 @@ describe(AuthedShell, () => {
 
 	it('offers a sign-out control that calls the caller-supplied handler', async () => {
 		// Finding 2: `signOut` in `server/auth.ts` had no caller at all.
-		const onSignOut = vi.fn();
+		const onSignOut = vi.fn<() => void>();
 		renderShell({ onSignOut });
 
 		await userEvent.click(await screen.findByRole('button', { name: 'Sign out' }));

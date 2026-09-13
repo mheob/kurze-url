@@ -40,6 +40,12 @@ describe(requireTeamId, () => {
 	 * thrown error, and from nothing thrown at all.
 	 */
 	it('throws a not-found, not a generic error, for a slug you do not belong to', () => {
-		expect(isNotFound(thrown(() => requireTeamId(memberships, 'verein-b')))).toBe(true);
+		expect(
+			isNotFound(
+				thrown(() => {
+					requireTeamId(memberships, 'verein-b');
+				}),
+			),
+		).toBe(true);
 	});
 });

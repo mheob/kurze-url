@@ -102,7 +102,11 @@ describe(flushSessionCookies, () => {
 	it('appends every Set-Cookie the adapter wrote onto the real response', () => {
 		const appended: string[] = [];
 		mocks.getResponse.mockReturnValue({
-			headers: { append: (name, value) => appended.push(`${name}: ${value}`) },
+			headers: {
+				append: (name, value) => {
+					appended.push(`${name}: ${value}`);
+				},
+			},
 		});
 
 		const adapterHeaders = new Headers();
@@ -120,7 +124,11 @@ describe(flushSessionCookies, () => {
 	it('does nothing to the response when the adapter wrote no cookies', () => {
 		const appended: string[] = [];
 		mocks.getResponse.mockReturnValue({
-			headers: { append: (name, value) => appended.push(`${name}: ${value}`) },
+			headers: {
+				append: (name, value) => {
+					appended.push(`${name}: ${value}`);
+				},
+			},
 		});
 
 		flushSessionCookies(new Headers());
