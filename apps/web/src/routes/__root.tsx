@@ -47,7 +47,7 @@ const getPreferences = createServerFn({ method: 'GET' }).handler(async () => {
 });
 
 // oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `React.ReactNode` is React's own type; not a declaration this file can edit.
-function RootDocument({ children }: { readonly children: React.ReactNode }) {
+export function RootDocument({ children }: { readonly children: React.ReactNode }) {
 	const { language, theme } = Route.useLoaderData();
 	// A fresh i18n instance per request already (see createI18n's own docstring);
 	// memoizing here just stops the client from rebuilding it on every
@@ -55,7 +55,11 @@ function RootDocument({ children }: { readonly children: React.ReactNode }) {
 	const i18n = useMemo(() => createI18n(language), [language]);
 
 	return (
-		<html className={themeClassName(theme)} lang={language}>
+		// `data-theme` is the color axis, `className` the light/dark one — see
+		// the comment above the token blocks in styles/app.css. Hardcoded until a
+		// settings page can write a preference; when that arrives it reads a
+		// cookie here exactly as `readTheme` already does for `theme`.
+		<html className={themeClassName(theme)} data-theme="indigo" lang={language}>
 			<head>
 				<HeadContent />
 			</head>
@@ -72,7 +76,7 @@ function RootDocument({ children }: { readonly children: React.ReactNode }) {
  * TanStack Router's own default `notFoundComponent` is a hardcoded English
  * literal ("Not Found") with no translation hook at all — it renders for any
  * URL that matches no route, regardless of the request's language, so an
- * unrecognised `/de/...`-flavoured link would otherwise ship English text
+ * unrecognized `/de/...`-flavored link would otherwise ship English text
  * inside an already-correctly-German `<html lang="de">` shell.
  *
  * @returns The rendered not-found page.

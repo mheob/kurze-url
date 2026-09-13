@@ -25,7 +25,7 @@ const withPreferences: Decorator = (Story, context) => {
 
 	return (
 		<I18nextProvider i18n={createI18n(language)}>
-			<div className={isDark ? 'dark' : undefined}>
+			<div className={isDark ? 'dark' : undefined} data-theme="indigo">
 				<div className="bg-background p-6 text-foreground">
 					<Story />
 				</div>
