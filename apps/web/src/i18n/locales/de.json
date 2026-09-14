@@ -36,6 +36,8 @@
 		"label": "Bereiche",
 		"links": "Kurzlinks",
 		"domains": "Eigene Domains",
+		"settingsRegionLabel": "Einstellungen",
+		"teamRegionLabel": "Aktueller Verein",
 		"toggleSidebar": "Navigation ein- und ausblenden"
 	},
 	"teams": {

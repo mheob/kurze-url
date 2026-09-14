@@ -86,7 +86,17 @@ export function AppSidebar({
 		<Sidebar>
 			<SidebarHeader>
 				{hasResolvedTeam ? (
-					<TeamSwitcher currentTeamSlug={currentTeamSlug} memberships={memberships} />
+					// `SidebarHeader` (components/ui/sidebar.tsx) renders a plain `<div>` —
+					// before this, the team switcher sat in no landmark at all, which is
+					// exactly what a full-page axe scan (`links.spec.ts`, `domains.spec.ts`)
+					// flags as the `region` violation. A `<section>` with an accessible
+					// name carries the implicit ARIA role "region" (HTML-AAM), so this is a
+					// real landmark rather than a bolted-on `role` attribute, the same
+					// preference the `<nav>` below and `team-switcher.tsx`'s own `<fieldset>`
+					// follow.
+					<section aria-label={t('nav.teamRegionLabel')}>
+						<TeamSwitcher currentTeamSlug={currentTeamSlug} memberships={memberships} />
+					</section>
 				) : null}
 			</SidebarHeader>
 			<SidebarContent>
@@ -125,19 +135,25 @@ export function AppSidebar({
 				) : null}
 			</SidebarContent>
 			<SidebarFooter>
-				<div className="flex items-center justify-between gap-2 p-1">
-					<LanguageSwitcher />
-					<ThemeToggle theme={theme} />
-				</div>
-				{isMaintainer ? (
-					// oxlint-disable-next-line react/forbid-component-props -- shadcn/ui's own "link styled as a button" idiom: TanStack Router's `Link` forwards `className` straight to the rendered `<a>`, and `buttonVariants` exists precisely to be applied here.
-					<Link className={buttonVariants({ size: 'sm', variant: 'ghost' })} to="/new-team">
-						{t('teams.create')}
-					</Link>
-				) : null}
-				<Button disabled={signingOut} onClick={onSignOut} type="button" variant="outline">
-					{t('auth.signOut')}
-				</Button>
+				{/* `SidebarFooter` (components/ui/sidebar.tsx) renders a plain `<div>` —
+				    before this, the language switcher, the theme toggle, the create-team
+				    link and the sign-out control all sat in no landmark at all. Same fix
+				    and same reasoning as `SidebarHeader`'s own `<section>` above. */}
+				<section aria-label={t('nav.settingsRegionLabel')}>
+					<div className="flex items-center justify-between gap-2 p-1">
+						<LanguageSwitcher />
+						<ThemeToggle theme={theme} />
+					</div>
+					{isMaintainer ? (
+						// oxlint-disable-next-line react/forbid-component-props -- shadcn/ui's own "link styled as a button" idiom: TanStack Router's `Link` forwards `className` straight to the rendered `<a>`, and `buttonVariants` exists precisely to be applied here.
+						<Link className={buttonVariants({ size: 'sm', variant: 'ghost' })} to="/new-team">
+							{t('teams.create')}
+						</Link>
+					) : null}
+					<Button disabled={signingOut} onClick={onSignOut} type="button" variant="outline">
+						{t('auth.signOut')}
+					</Button>
+				</section>
 			</SidebarFooter>
 		</Sidebar>
 	);

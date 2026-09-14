@@ -36,6 +36,8 @@
 		"label": "Sections",
 		"links": "Links",
 		"domains": "Domains",
+		"settingsRegionLabel": "Settings",
+		"teamRegionLabel": "Current team",
 		"toggleSidebar": "Toggle the navigation"
 	},
 	"teams": {
