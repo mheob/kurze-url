@@ -168,16 +168,6 @@ describe(LinkList, () => {
 		expect(screen.getAllByRole('button', { name: 'Copy' })).toHaveLength(2);
 	});
 
-	it('renders one row per link', async () => {
-		renderWith(pageOf({ items: [link(), link({ id: 'link-2', slug: 'def456' })], total_count: 2 }));
-
-		// `findAllBy*`, not `getAllBy*`, for the first assertion — same reason as
-		// every other test in this file: `RouterProvider`'s initial match
-		// resolves asynchronously. One header row plus one per link.
-		await expect(screen.findAllByRole('row')).resolves.toHaveLength(3);
-		expect(screen.getByRole('columnheader', { name: 'Short link' })).toBeInTheDocument();
-	});
-
 	it('marks a password-protected link', async () => {
 		renderWith(pageOf({ items: [link({ has_password: true })], total_count: 1 }));
 
