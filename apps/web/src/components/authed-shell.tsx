@@ -40,7 +40,7 @@ interface AuthedShellProps {
  *
  * @param props - The component's props.
  * @param props.children - The matched child route's content, rendered inside `SidebarInset`.
- * @param props.currentTeamSlug - The resolved current team's slug, or undefined when there is none (e.g. a stale bookmark to a team the visitor has left).
+ * @param props.currentTeamSlug - The resolved current team's slug, or undefined when there is none (e.g. a maintainer with no team yet, on `/new-team`).
  * @param props.isMaintainer - Whether to offer team creation.
  * @param props.memberships - The signed-in visitor's team memberships.
  * @param props.onSignOut - Called when the sign-out control is clicked.

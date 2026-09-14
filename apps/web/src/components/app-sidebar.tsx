@@ -47,10 +47,15 @@ interface AppSidebarProps {
  * exactly the property this task exists to preserve.
  *
  * `currentTeamSlug` is optional, not read off `memberships[0]` in here: a
- * signed-in visitor with zero memberships can still reach this shell (e.g.
- * `/`'s `noTeam` outcome never enters `_authed` at all, but a stale bookmark
- * to a team the visitor has since left 404s deeper in the tree, past this
- * shell) and `TeamSwitcher` has nothing to switch between in that case.
+ * signed-in visitor with zero memberships can still reach this shell — `/`'s
+ * `noTeam` outcome never enters `_authed` at all, but `/new-team` is gated
+ * only on `is_maintainer` (`assertMaintainer`), not on having a team, so a
+ * maintainer with none yet can land here directly — and `TeamSwitcher` has
+ * nothing to switch between in that case. A stale bookmark to a team the
+ * visitor has since left does not reach this shell at all: every
+ * `$teamSlug` route's own `beforeLoad` calls `requireTeamId`, and its thrown
+ * `notFound()` stops `_authed` itself from rendering, this component
+ * included, rather than 404ing somewhere further down the tree.
  *
  * The Links/Domains section list shares `TeamSwitcher`'s exact guard —
  * `currentTeamSlug !== undefined && memberships.length > 0` — for the same
@@ -63,7 +68,7 @@ interface AppSidebarProps {
  * visitor had no way to switch either at all.
  *
  * @param props - The component's props.
- * @param props.currentTeamSlug - The resolved current team's slug, or undefined when there is none (e.g. a stale bookmark to a team the visitor has left).
+ * @param props.currentTeamSlug - The resolved current team's slug, or undefined when there is none (e.g. a maintainer with no team yet, on `/new-team`).
  * @param props.isMaintainer - Whether to offer team creation.
  * @param props.memberships - The signed-in visitor's team memberships.
  * @param props.onSignOut - Called when the sign-out control is clicked.
