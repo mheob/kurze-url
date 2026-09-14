@@ -35,3 +35,20 @@ export const Armed: StoryObj<typeof meta> = {
 		await expect(screen.getByRole('alertdialog')).toBeInTheDocument();
 	},
 };
+
+// The theme toolbar global defaults to `light`, and `test:storybook` runs
+// every story at its defaults — so without this story the dialog's dark
+// palette is never checked by anything, only viewable by hand. Armed, not
+// closed: the dialog is the most visually-changed part of this component, and
+// `Armed` above already proves the `play` function that opens it, so `Dark`
+// reuses the same play function rather than only re-checking the closed
+// trigger button.
+export const Dark: StoryObj<typeof meta> = {
+	globals: { theme: 'dark' },
+	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Storybook's own `play` function context type; not this codebase's to mark readonly.
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await userEvent.click(canvas.getByRole('button', { name: 'Delete' }));
+		await expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+	},
+};
