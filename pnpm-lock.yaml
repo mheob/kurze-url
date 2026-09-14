@@ -122,9 +122,6 @@ importers:
       react-i18next:
         specifier: ^17.0.13
         version: 17.0.13(i18next@26.4.2(typescript@7.0.2))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@7.0.2)
-      shadcn:
-        specifier: ^4.21.0
-        version: 4.21.0(supports-color@10.2.2)(typescript@7.0.2)
       tailwindcss:
         specifier: ^4.3.3
         version: 4.3.3
@@ -198,6 +195,9 @@ importers:
       pg:
         specifier: ^8.23.0
         version: 8.23.0
+      shadcn:
+        specifier: ^4.21.0
+        version: 4.21.0(supports-color@10.2.2)(typescript@7.0.2)
       storybook:
         specifier: ^10.6.0
         version: 10.6.0(@types/react@19.3.0)(prettier@3.9.6)(react@19.3.0)
