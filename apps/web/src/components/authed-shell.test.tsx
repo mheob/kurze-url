@@ -39,11 +39,19 @@ function PageContent(): React.JSX.Element {
  * gives for its own minimal, test-only route tree.
  *
  * @param props - Partial overrides merged onto this fixture's own defaults before rendering `AuthedShell`.
+ * @param props.currentTeamSlug - Overrides the resolved current team's slug.
+ * @param props.isMaintainer - Overrides whether to offer team creation.
+ * @param props.language - Overrides the `I18nextProvider`'s language; defaults to English, matching every existing test in this file.
+ * @param props.memberships - Overrides the signed-in visitor's team memberships.
+ * @param props.onSignOut - Overrides the sign-out handler.
+ * @param props.signingOut - Overrides whether sign-out is in flight.
+ * @param props.theme - Overrides the theme preference.
  * @returns The rendered test utilities from Testing Library's `render`.
  */
 function renderShell(props: {
 	readonly currentTeamSlug?: string;
 	readonly isMaintainer?: boolean;
+	readonly language?: 'de' | 'en';
 	readonly memberships?: readonly Membership[];
 	readonly onSignOut?: () => void;
 	readonly signingOut?: boolean;
@@ -52,6 +60,7 @@ function renderShell(props: {
 	const {
 		currentTeamSlug = 'verein-a',
 		isMaintainer = false,
+		language = 'en',
 		memberships: membershipsProp = memberships,
 		onSignOut = vi.fn<() => void>(),
 		signingOut = false,
@@ -93,7 +102,7 @@ function renderShell(props: {
 	});
 
 	return render(
-		<I18nextProvider i18n={createI18n('en')}>
+		<I18nextProvider i18n={createI18n(language)}>
 			<RouterProvider router={router} />
 		</I18nextProvider>,
 	);
@@ -183,6 +192,19 @@ describe(AuthedShell, () => {
 		await expect(
 			screen.findByRole('button', { name: 'Toggle the navigation' }),
 		).resolves.toBeInTheDocument();
+	});
+
+	it('translates the sidebar trigger label, with no leftover English text', async () => {
+		// `e2e/i18n.spec.ts` caught the generated `SidebarTrigger`'s hardcoded
+		// `sr-only` span ("Toggle Sidebar"): an `aria-label` overrides the
+		// accessible *name*, so the German-language assertion below would have
+		// passed even before the fix — the span's own text is what would not
+		// have, since it renders regardless of which language wins the name.
+		renderShell({ language: 'de' });
+		await expect(
+			screen.findByRole('button', { name: 'Navigation ein- und ausblenden' }),
+		).resolves.toBeInTheDocument();
+		expect(screen.queryByText('Toggle Sidebar')).not.toBeInTheDocument();
 	});
 
 	it('renders exactly one main landmark', async () => {

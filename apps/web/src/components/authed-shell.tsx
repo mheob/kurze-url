@@ -3,8 +3,9 @@ import { useTranslation } from 'react-i18next';
 import type { Theme } from '../lib/preferences';
 import type { Membership } from '../routes/_authed';
 import { AppSidebar } from './app-sidebar';
+import { SidebarTrigger } from './sidebar-trigger';
 import { Separator } from './ui/separator';
-import { SidebarInset, SidebarProvider, SidebarTrigger } from './ui/sidebar';
+import { SidebarInset, SidebarProvider } from './ui/sidebar';
 
 interface AuthedShellProps {
 	readonly children: React.ReactNode;
@@ -72,7 +73,7 @@ export function AuthedShell({
 			/>
 			<SidebarInset>
 				<header className="flex h-12 items-center gap-2 border-b px-4">
-					<SidebarTrigger aria-label={t('nav.toggleSidebar')} />
+					<SidebarTrigger />
 					{/* oxlint-disable-next-line react/forbid-component-props -- `Separator` (components/ui/separator.tsx) forwards `className` straight to its underlying element; this is how every caller sizes and orients it, the same as `orientation` below. */}
 					<Separator className="h-4" orientation="vertical" />
 					<span className="font-semibold">{t('brand')}</span>
