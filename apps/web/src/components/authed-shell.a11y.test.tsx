@@ -7,7 +7,7 @@ import {
 } from '@tanstack/react-router';
 import { render, screen } from '@testing-library/react';
 import axe from 'axe-core';
-import { I18nextProvider } from 'react-i18next';
+import { I18nextProvider, useTranslation } from 'react-i18next';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createI18n } from '../i18n';
@@ -18,6 +18,20 @@ const memberships: Membership[] = [
 	{ name: 'Verein A', role: 'owner', slug: 'verein-a', team_id: 'a' },
 	{ name: 'Verein B', role: 'editor', slug: 'verein-b', team_id: 'b' },
 ];
+
+/**
+ * Stands in for a matched child route's own content — the same fixture
+ * `authed-shell.test.tsx`'s own `PageContent` is, and for the same reason:
+ * `react/jsx-no-literals` is error-level project-wide, test files included,
+ * so this renders an existing catalogue string via `t()` rather than a
+ * literal.
+ *
+ * @returns A single paragraph, standing in for page content.
+ */
+function PageContent(): React.JSX.Element {
+	const { t } = useTranslation();
+	return <p>{t('footer.tagline')}</p>;
+}
 
 /**
  * Renders the real, composed `AuthedShell` — real `AppSidebar`,
@@ -41,7 +55,7 @@ function renderRealShell(): ReturnType<typeof render> {
 				signingOut={false}
 				theme="light"
 			>
-				<p>page content</p>
+				<PageContent />
 			</AuthedShell>
 		),
 	});
@@ -72,7 +86,7 @@ function renderRealShell(): ReturnType<typeof render> {
 	);
 }
 
-describe('AuthedShell accessibility', () => {
+describe(AuthedShell, () => {
 	// Finding (Critical): before this branch's fix, the sidebar's team switcher,
 	// language switcher, theme toggle, create-team link and sign-out button sat
 	// in no landmark at all — only the section menu (`app-sidebar.tsx`'s own
@@ -92,6 +106,6 @@ describe('AuthedShell accessibility', () => {
 		// `domains.spec.ts` never see that rule fire against the real, fully
 		// server-rendered page.
 		const results = await axe.run(document.body);
-		expect(results.violations).toEqual([]);
+		expect(results.violations).toStrictEqual([]);
 	});
 });
