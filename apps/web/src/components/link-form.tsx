@@ -4,6 +4,7 @@
    came out subtly wrong. */
 
 import { useForm } from '@tanstack/react-form';
+import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from './ui/button';
@@ -89,6 +90,18 @@ export function LinkForm({
 	onSubmit,
 }: LinkFormProps): React.JSX.Element {
 	const { t } = useTranslation();
+	// One per field with an inline error, not a hardcoded `'<field>-error'`
+	// string: two hardcoded ids of the same shape (this file's own `slug` field
+	// and `new-team.tsx`'s team-slug field) collide the instant both render on
+	// one page, producing a duplicate id and a mis-pointed `aria-describedby`.
+	// `link-password-card.tsx`/`link-qr-card.tsx` already use `useId()` for the
+	// same reason; this standardises on it.
+	const analyticsEnabledErrorId = useId();
+	const destinationUrlErrorId = useId();
+	const domainErrorId = useId();
+	const expiresAtErrorId = useId();
+	const redirectTypeErrorId = useId();
+	const slugErrorId = useId();
 
 	const form = useForm({
 		defaultValues: { ...defaultValues, ...initial },
@@ -129,7 +142,7 @@ export function LinkForm({
 					}}
 				>
 					{(field) => {
-						const errorId = 'destination_url-error';
+						const errorId = destinationUrlErrorId;
 						const errorMessage =
 							fieldErrors?.destination_url ??
 							(field.state.meta.isTouched ? field.state.meta.errors[0] : undefined);
@@ -160,7 +173,7 @@ export function LinkForm({
 
 				<form.Field name="slug">
 					{(field) => {
-						const errorId = 'slug-error';
+						const errorId = slugErrorId;
 						const errorMessage = fieldErrors?.slug;
 
 						return (
@@ -197,7 +210,7 @@ export function LinkForm({
 				    so it keeps both the behaviour and the shared look. */}
 				<form.Field name="redirect_type">
 					{(field) => {
-						const errorId = 'redirect_type-error';
+						const errorId = redirectTypeErrorId;
 						const errorMessage = fieldErrors?.redirect_type;
 
 						return (
@@ -233,7 +246,7 @@ export function LinkForm({
 
 				<form.Field name="expires_at">
 					{(field) => {
-						const errorId = 'expires_at-error';
+						const errorId = expiresAtErrorId;
 						const errorMessage = fieldErrors?.expires_at;
 
 						return (
@@ -260,11 +273,21 @@ export function LinkForm({
 
 				<form.Field name="analytics_enabled">
 					{(field) => {
-						const errorId = 'analytics_enabled-error';
+						const errorId = analyticsEnabledErrorId;
 						const errorMessage = fieldErrors?.analytics_enabled;
 
 						return (
 							<Field data-invalid={errorMessage !== undefined} orientation="horizontal">
+								{/* `id` is load-bearing, not a leftover: Base UI's `Checkbox` renders
+								    a visible `role="checkbox"` `<span>` (its own generated id,
+								    unaffected by this prop) plus a hidden native input for form
+								    semantics, which *does* take this `id`. That hidden input's id is
+								    also how Base UI finds `FieldLabel` below as this checkbox's label
+								    (matching its `htmlFor` against the hidden input's sibling
+								    position) and gives the visible span an `aria-labelledby` pointing
+								    at it — remove this prop and the span loses its accessible name,
+								    which is exactly what breaks link-form.test.tsx's "lets the reader
+								    turn analytics off" (`getByRole('checkbox', { name: ... })`). */}
 								<Checkbox
 									aria-describedby={errorMessage !== undefined ? errorId : undefined}
 									aria-invalid={errorMessage !== undefined ? true : undefined}
@@ -295,7 +318,7 @@ export function LinkForm({
 				{domains && domains.length > 0 ? (
 					<form.Field name="domain_id">
 						{(field) => {
-							const errorId = 'domain_id-error';
+							const errorId = domainErrorId;
 							const errorMessage = fieldErrors?.domain_id;
 
 							return (

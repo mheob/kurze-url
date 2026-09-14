@@ -2,7 +2,7 @@ import type { PageDomain, VerifyDomainOutputBody } from '@kurze-url/api-client';
 import { useForm } from '@tanstack/react-form';
 import { useMutation, useQueryClient, useSuspenseQuery } from '@tanstack/react-query';
 import { createFileRoute, Navigate, redirect, useRouter } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { DomainList } from '../../components/domain-list';
@@ -134,6 +134,11 @@ function RouteComponent(): React.JSX.Element {
 	const router = useRouter();
 	const queryClient = useQueryClient();
 	const { data } = useSuspenseQuery(domainsQueryOptions(teamId));
+	// Not a hardcoded `'hostname-error'` string: `link-form.tsx` and
+	// `new-team.tsx` both standardise on `useId()` for the same collision
+	// reason — a hardcoded id duplicates the instant a second instance of the
+	// same field shape renders on one page.
+	const hostnameErrorId = useId();
 
 	// `items` is nullable on the wire, the same reason `LinkList` normalises
 	// `data.items` — Huma serialises a nil Go slice as JSON `null`.
@@ -324,7 +329,7 @@ function RouteComponent(): React.JSX.Element {
 					}}
 				>
 					{(field) => {
-						const errorId = 'hostname-error';
+						const errorId = hostnameErrorId;
 						const hintId = 'hostname-hint';
 						const errorMessage =
 							fieldError ?? (field.state.meta.isTouched ? field.state.meta.errors[0] : undefined);

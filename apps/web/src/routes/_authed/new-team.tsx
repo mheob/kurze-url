@@ -1,7 +1,7 @@
 import { useForm } from '@tanstack/react-form';
 import { useMutation } from '@tanstack/react-query';
 import { createFileRoute, notFound, useRouter } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '../../components/ui/button';
@@ -89,6 +89,14 @@ export function RouteComponent(): React.JSX.Element {
 	const { t } = useTranslation();
 	const router = useRouter();
 	const [failure, setFailure] = useState<ApiFailure | null>(null);
+	// Not a hardcoded `'name-error'`/`'slug-error'` string: `link-form.tsx` has
+	// its own `slug` field emitting `id="slug-error"`, and a future page
+	// composing both would produce duplicate ids and a mis-pointed
+	// `aria-describedby`. `link-password-card.tsx`/`link-qr-card.tsx` already
+	// use `useId()` for the same reason; this standardises on it.
+	const nameErrorId = useId();
+	const slugErrorId = useId();
+	const slugHintId = useId();
 
 	const mutation = useMutation({
 		mutationFn: async ({ name, slug }: Readonly<{ name: string; slug: string }>) =>
@@ -156,7 +164,7 @@ export function RouteComponent(): React.JSX.Element {
 						}}
 					>
 						{(field) => {
-							const errorId = 'name-error';
+							const errorId = nameErrorId;
 							const errorMessage =
 								nameFieldError ??
 								(field.state.meta.isTouched ? field.state.meta.errors[0] : undefined);
@@ -201,8 +209,8 @@ export function RouteComponent(): React.JSX.Element {
 						validators={{ onChange: ({ value }) => validateSlugField(value, t) }}
 					>
 						{(field) => {
-							const hintId = 'slug-hint';
-							const errorId = 'slug-error';
+							const hintId = slugHintId;
+							const errorId = slugErrorId;
 							const errorMessage =
 								slugFieldError ??
 								(field.state.meta.isTouched ? field.state.meta.errors[0] : undefined);
