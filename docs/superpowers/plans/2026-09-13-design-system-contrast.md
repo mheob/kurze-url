@@ -20,8 +20,10 @@ The conversion was validated before trusting it: pure black (`oklch(0 0 0)`) aga
 | `--primary-foreground` | `oklch(0.962 0.018 272.314)` | `oklch(0.962 0.018 272.314)` |
 | `--muted-foreground`   | `oklch(0.556 0 0)`           | `oklch(0.708 0 0)`           |
 | `--ring`               | `oklch(0.511 0.262 276.966)` | `oklch(0.585 0.233 277.117)` |
+| `--sidebar`            | `oklch(0.985 0 0)`           | `oklch(0.205 0 0)`           |
+| `--sidebar-ring`       | `oklch(0.511 0.262 276.966)` | `oklch(0.585 0.233 277.117)` |
 
-`--ring` is no longer the preset's neutral grey in either mode — see "The original failure and the fix" below for what it shipped as and why it changed.
+`--ring` and `--sidebar-ring` are no longer the preset's neutral grey in either mode — see "The original failure and the fix" and "The sidebar-ring failure and the fix" below for what they shipped as and why they changed.
 
 ## Measurements (current)
 
@@ -35,8 +37,10 @@ The conversion was validated before trusting it: pure black (`oklch(0 0 0)`) aga
 | Dark  | `--primary-foreground` on `--primary`  | 4.5:1     | 9.022:1  | Pass   |
 | Dark  | `--muted-foreground` on `--background` | 4.5:1     | 7.633:1  | Pass   |
 | Dark  | `--ring` on `--background`             | 3:1       | 4.324:1  | Pass   |
+| Light | `--sidebar-ring` on `--sidebar`        | 3:1       | 6.170:1  | Pass   |
+| Dark  | `--sidebar-ring` on `--sidebar`        | 3:1       | 3.935:1  | Pass   |
 
-All eight measurements now pass.
+All ten measurements now pass.
 
 ## The original failure and the fix
 
@@ -54,3 +58,14 @@ The fix draws both rings from the indigo ramp already in the file, rather than f
 Copying `--primary` straight into `--ring` was considered and rejected: dark mode's `--primary` is `--chart-5` (`oklch(0.398 0.195 277.366)`), a dark indigo that measures only **1.962:1** against the near-black dark background — copying it would have fixed light mode while silently breaking dark mode's ring, which passed before this change. Each candidate step of the ramp was measured against its own mode's background before being chosen; light and dark deliberately use different steps of the same hue family rather than one shared value.
 
 The change lives in `apps/web/src/styles/app.css`, with a comment at each `--ring` declaration recording the measured baseline and the reason it is no longer the preset's neutral.
+
+## The sidebar-ring failure and the fix
+
+A later review of the same branch measured `--sidebar-ring` — the token `ui/sidebar.tsx` uses for the sidebar's primary navigation (`focus-visible:ring-2 ring-sidebar-ring`, alongside `outline-hidden`, so it is the only focus indicator there) — and found it had been left as the preset's neutral grey in both modes, the same root cause `--ring` above already had: **light-mode `--sidebar-ring` on `--sidebar` measured 2.484:1**, short of the 3:1 WCAG 1.4.11 floor. Dark mode's neutral, `oklch(0.556 0 0)`, already passed at 3.785:1 against `--sidebar` (dark) — lower than the 4.183:1 it measured against `--background` in the `--ring` case above, because `--sidebar` (dark) is a lighter `oklch(0.205 0 0)` than `--background`'s `oklch(0.145 0 0)`.
+
+The same conversion script was reused, unmodified, to check the replacement values, and the same fix applied: draw `--sidebar-ring` from the indigo ramp already in the file, matching `--ring`'s own token per mode rather than introducing a third value.
+
+- **Light `--sidebar-ring`** is now `oklch(0.511 0.262 276.966)` — `--chart-3`, the same value light mode's `--ring` and `--sidebar-primary` already use. It measures **6.170:1** against `--sidebar`.
+- **Dark `--sidebar-ring`** is now `oklch(0.585 0.233 277.117)` — `--chart-2`, the same value dark mode's `--ring` and `--sidebar-primary` already use. It measures **3.935:1** against `--sidebar`. Dark mode's neutral ring already passed here too, but it was changed for the same consistency reason `--ring` was: both modes now draw every ring token in the file from the same recoloured indigo family.
+
+The change lives in `apps/web/src/styles/app.css`, with a comment at each `--sidebar-ring` declaration recording the measured baseline and the reason it is no longer the preset's neutral.

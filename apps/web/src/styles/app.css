@@ -112,7 +112,14 @@
 	--sidebar-accent: oklch(0.97 0 0);
 	--sidebar-accent-foreground: oklch(0.205 0 0);
 	--sidebar-border: oklch(0.922 0 0);
-	--sidebar-ring: oklch(0.708 0 0);
+	/* The preset's neutral sidebar ring, oklch(0.708 0 0), measured at 2.484:1
+	 * against --sidebar — short of the 3:1 that WCAG 1.4.11 requires, and
+	 * `ui/sidebar.tsx` sets `outline-hidden` alongside `focus-visible:ring-2
+	 * ring-sidebar-ring`, so this is the sidebar's primary navigation's only
+	 * focus indicator. This is --chart-3 (same value as --ring above), which
+	 * measures 6.170:1 here. See
+	 * docs/superpowers/plans/2026-09-13-design-system-contrast.md. */
+	--sidebar-ring: oklch(0.511 0.262 276.966);
 }
 
 [data-theme='indigo'].dark {
@@ -153,7 +160,13 @@
 	--sidebar-accent: oklch(0.269 0 0);
 	--sidebar-accent-foreground: oklch(0.985 0 0);
 	--sidebar-border: oklch(1 0 0 / 10%);
-	--sidebar-ring: oklch(0.556 0 0);
+	/* Kept in the same indigo hue family as --ring above, for the same
+	 * reason — `ui/sidebar.tsx` sets `outline-hidden` alongside this ring, so
+	 * it is the sidebar's only focus indicator — even though the preset's
+	 * neutral oklch(0.556 0 0) already cleared 3:1 here (3.785:1). This is
+	 * --chart-2 (same value as --ring above), which measures 3.935:1. See
+	 * docs/superpowers/plans/2026-09-13-design-system-contrast.md. */
+	--sidebar-ring: oklch(0.585 0.233 277.117);
 }
 
 @layer base {
