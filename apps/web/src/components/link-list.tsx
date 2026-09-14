@@ -10,6 +10,10 @@ import { useTranslation } from 'react-i18next';
 
 import { CopyButton } from './copy-button';
 import { ShortUrlNotice } from './short-url-notice';
+import { Badge } from './ui/badge';
+import { Empty, EmptyDescription } from './ui/empty';
+import { Pagination, PaginationContent, PaginationItem } from './ui/pagination';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 
 interface LinkListViewProps {
 	readonly data: PageLink;
@@ -55,12 +59,14 @@ export function LinkList({ data, page, teamSlug }: LinkListViewProps): React.JSX
 
 	if (items.length === 0) {
 		return (
-			<p>
-				{t('links.empty')}{' '}
-				<Link params={{ teamSlug }} to="/teams/$teamSlug/links/new">
-					{t('links.create')}
-				</Link>
-			</p>
+			<Empty>
+				<EmptyDescription>
+					{t('links.empty')}{' '}
+					<Link params={{ teamSlug }} to="/teams/$teamSlug/links/new">
+						{t('links.create')}
+					</Link>
+				</EmptyDescription>
+			</Empty>
 		);
 	}
 
@@ -73,40 +79,59 @@ export function LinkList({ data, page, teamSlug }: LinkListViewProps): React.JSX
 				{t('links.create')}
 			</Link>
 			<ShortUrlNotice hostname={invalidHostname} />
-			<ul>
-				{items.map((link) => (
-					<li key={link.id}>
-						<a href={link.short_url}>{link.short_url}</a>
-						<CopyButton value={link.short_url} />
-						{link.has_password ? (
-							<span>
-								<LockIcon aria-hidden />
-								<span className="sr-only">{t('links.passwordBadge')}</span>
-							</span>
-						) : null}
-						<span>{link.destination_url}</span>
-						<Link params={{ linkId: link.id, teamSlug }} to="/teams/$teamSlug/links/$linkId">
-							{t('links.edit')}
-						</Link>
-					</li>
-				))}
-			</ul>
-			<nav aria-label={t('links.paginationLabel')}>
-				{hasPreviousPage ? (
-					<Link params={{ teamSlug }} search={{ page: page - 1 }} to="/teams/$teamSlug/links">
-						{t('links.previousPage')}
-					</Link>
-				) : (
-					<span aria-disabled="true">{t('links.previousPage')}</span>
-				)}
-				{hasNextPage ? (
-					<Link params={{ teamSlug }} search={{ page: page + 1 }} to="/teams/$teamSlug/links">
-						{t('links.nextPage')}
-					</Link>
-				) : (
-					<span aria-disabled="true">{t('links.nextPage')}</span>
-				)}
-			</nav>
+			<Table>
+				<TableHeader>
+					<TableRow>
+						<TableHead>{t('links.columnShortUrl')}</TableHead>
+						<TableHead>{t('links.columnDestination')}</TableHead>
+						<TableHead>{t('links.columnActions')}</TableHead>
+					</TableRow>
+				</TableHeader>
+				<TableBody>
+					{items.map((link) => (
+						<TableRow key={link.id}>
+							<TableCell>
+								<a href={link.short_url}>{link.short_url}</a>
+								<CopyButton value={link.short_url} />
+								{link.has_password ? (
+									<Badge variant="secondary">
+										<LockIcon aria-hidden />
+										{t('links.passwordBadge')}
+									</Badge>
+								) : null}
+							</TableCell>
+							<TableCell>{link.destination_url}</TableCell>
+							<TableCell>
+								<Link params={{ linkId: link.id, teamSlug }} to="/teams/$teamSlug/links/$linkId">
+									{t('links.edit')}
+								</Link>
+							</TableCell>
+						</TableRow>
+					))}
+				</TableBody>
+			</Table>
+			<Pagination aria-label={t('links.paginationLabel')}>
+				<PaginationContent>
+					<PaginationItem>
+						{hasPreviousPage ? (
+							<Link params={{ teamSlug }} search={{ page: page - 1 }} to="/teams/$teamSlug/links">
+								{t('links.previousPage')}
+							</Link>
+						) : (
+							<span aria-disabled="true">{t('links.previousPage')}</span>
+						)}
+					</PaginationItem>
+					<PaginationItem>
+						{hasNextPage ? (
+							<Link params={{ teamSlug }} search={{ page: page + 1 }} to="/teams/$teamSlug/links">
+								{t('links.nextPage')}
+							</Link>
+						) : (
+							<span aria-disabled="true">{t('links.nextPage')}</span>
+						)}
+					</PaginationItem>
+				</PaginationContent>
+			</Pagination>
 		</>
 	);
 }

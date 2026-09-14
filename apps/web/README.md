@@ -48,13 +48,13 @@ src/
   lib/               preferences (cookies + Accept-Language), utils (cn)
   routes/            __root.tsx (shell + notFoundComponent), index.tsx
   server/            api.ts (Go API client, Related Projects), health.ts
-  styles/            app.css — Tailwind v4 tokens + shadcn, on Radix
+  styles/            app.css — Tailwind v4 tokens + shadcn, on Base UI
   test/              Vitest setup (jest-dom, MSW) shared by the `unit` project
 e2e/                 Playwright specs (i18n divergence, shell + axe)
 .storybook/          Storybook config; addon-a11y + addon-vitest
 ```
 
-`components.json` is shadcn's config (`-b radix`, deliberately not the newer Base UI default — Tremor, planned for analytics, is Radix-based). Add new primitives with `pnpm dlx shadcn@latest add <component>` from `apps/web`, and prefer them over hand-rolled `<button>`s — see `src/components/ui/button.tsx`.
+`components.json` is shadcn's config (`-b base`, style `base-sera` — Base UI replaced Radix on 2026-09-13, once Tremor was dropped for shadcn's own `chart` component). Add new primitives with `pnpm dlx shadcn@latest add <component>` from `apps/web`, and prefer them over hand-rolled `<button>`s — see `src/components/ui/button.tsx`.
 
 ## Testing strategy
 

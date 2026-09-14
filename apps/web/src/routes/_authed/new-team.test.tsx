@@ -271,14 +271,18 @@ describe('submitting the form', () => {
 
 		await submitForm();
 
-		// The translated message, on the slug field's own error paragraph
-		// (`id="slug-error"`) — and, crucially, the *only* alert on the page:
-		// if `formMessage` also rendered its `<p role="alert">` banner (the
-		// regression this test guards against), there would be two.
+		// The translated message, on the slug field's own error paragraph —
+		// proven by the slug input's `aria-describedby` actually pointing at
+		// it, not a hardcoded id (`useId()` generates a fresh one per render)
+		// — and, crucially, the *only* alert on the page: if `formMessage` also
+		// rendered its `<p role="alert">` banner (the regression this test
+		// guards against), there would be two.
 		const slugError = await screen.findByText(
 			'That URL name is already taken. Please choose another.',
 		);
-		expect(slugError).toHaveAttribute('id', 'slug-error');
+		expect(screen.getByLabelText('URL name').getAttribute('aria-describedby')).toContain(
+			slugError.id,
+		);
 		expect(screen.getAllByRole('alert')).toHaveLength(1);
 	});
 });

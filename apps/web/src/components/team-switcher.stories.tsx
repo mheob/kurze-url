@@ -18,3 +18,14 @@ export const TwoTeams: StoryObj<typeof meta> = {
 		],
 	},
 };
+
+// The theme toolbar global defaults to `light`, and `test:storybook` runs every
+// story at its defaults — so without this story the dropdown's dark palette is
+// never checked by anything, only viewable by hand. `globals.theme` is what
+// preview.tsx's decorator reads to add the `dark` class; `TeamSwitcher` itself
+// takes no `theme` prop, so unlike `AppSidebar`'s pair only `globals` differs
+// here.
+export const Dark: StoryObj<typeof meta> = {
+	args: { ...TwoTeams.args },
+	globals: { theme: 'dark' },
+};

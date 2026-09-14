@@ -2,6 +2,7 @@
 	"languages": {
 		"CSS": {
 			"formatter": [{ "language_server": { "name": "oxfmt" } }],
+			"language_servers": ["tailwindcss-intellisense-css", "!vscode-css-language-server", "..."],
 			"prettier": { "allowed": false }
 		},
 		"JavaScript": {

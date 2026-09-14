@@ -1,10 +1,18 @@
 import { useForm } from '@tanstack/react-form';
 import { useMutation } from '@tanstack/react-query';
 import { createFileRoute, notFound, useRouter } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '../../components/ui/button';
+import {
+	Field,
+	FieldDescription,
+	FieldError,
+	FieldGroup,
+	FieldLabel,
+} from '../../components/ui/field';
+import { Input } from '../../components/ui/input';
 import { classifyApiError, type ApiFailure } from '../../lib/api-errors';
 import {
 	suggestTeamSlug,
@@ -81,6 +89,14 @@ export function RouteComponent(): React.JSX.Element {
 	const { t } = useTranslation();
 	const router = useRouter();
 	const [failure, setFailure] = useState<ApiFailure | null>(null);
+	// Not a hardcoded `'name-error'`/`'slug-error'` string: `link-form.tsx` has
+	// its own `slug` field emitting `id="slug-error"`, and a future page
+	// composing both would produce duplicate ids and a mis-pointed
+	// `aria-describedby`. `link-password-card.tsx`/`link-qr-card.tsx` already
+	// use `useId()` for the same reason; this standardises on it.
+	const nameErrorId = useId();
+	const slugErrorId = useId();
+	const slugHintId = useId();
 
 	const mutation = useMutation({
 		mutationFn: async ({ name, slug }: Readonly<{ name: string; slug: string }>) =>
@@ -140,91 +156,89 @@ export function RouteComponent(): React.JSX.Element {
 					void form.handleSubmit();
 				}}
 			>
-				<form.Field
-					name="name"
-					validators={{
-						onChange: ({ value }) => (value.trim() === '' ? t('teams.nameRequired') : undefined),
-					}}
-				>
-					{(field) => {
-						const errorId = 'name-error';
-						const errorMessage =
-							nameFieldError ??
-							(field.state.meta.isTouched ? field.state.meta.errors[0] : undefined);
+				<FieldGroup>
+					<form.Field
+						name="name"
+						validators={{
+							onChange: ({ value }) => (value.trim() === '' ? t('teams.nameRequired') : undefined),
+						}}
+					>
+						{(field) => {
+							const errorId = nameErrorId;
+							const errorMessage =
+								nameFieldError ??
+								(field.state.meta.isTouched ? field.state.meta.errors[0] : undefined);
 
-						return (
-							<div>
-								<label htmlFor="name">{t('teams.name')}</label>
-								<input
-									aria-describedby={errorMessage !== undefined ? errorId : undefined}
-									aria-invalid={errorMessage !== undefined ? true : undefined}
-									id="name"
-									name={field.name}
-									onBlur={field.handleBlur}
-									onChange={(event) => {
-										field.handleChange(event.target.value);
-										if (form.getFieldMeta('slug')?.isTouched !== true) {
-											// `dontUpdateMeta` alone is not enough: `setFieldValue`'s own
-											// `validateField` call (run unless `dontValidate` is also set)
-											// marks the field touched as a side effect of validating it,
-											// independently of the `dontUpdateMeta` flag above — see
-											// `FormApi.ts`'s `validateField`. Both are required to write the
-											// suggestion without it counting as the maintainer's own edit.
-											form.setFieldValue('slug', suggestTeamSlug(event.target.value), {
-												dontUpdateMeta: true,
-												dontValidate: true,
-											});
-										}
-									}}
-									required
-									value={field.state.value}
-								/>
-								{errorMessage !== undefined ? (
-									<p id={errorId} role="alert">
-										{errorMessage}
-									</p>
-								) : null}
-							</div>
-						);
-					}}
-				</form.Field>
+							return (
+								<Field data-invalid={errorMessage !== undefined}>
+									<FieldLabel htmlFor={field.name}>{t('teams.name')}</FieldLabel>
+									<Input
+										aria-describedby={errorMessage !== undefined ? errorId : undefined}
+										aria-invalid={errorMessage !== undefined ? true : undefined}
+										id={field.name}
+										name={field.name}
+										onBlur={field.handleBlur}
+										onChange={(event) => {
+											field.handleChange(event.target.value);
+											if (form.getFieldMeta('slug')?.isTouched !== true) {
+												// `dontUpdateMeta` alone is not enough: `setFieldValue`'s own
+												// `validateField` call (run unless `dontValidate` is also set)
+												// marks the field touched as a side effect of validating it,
+												// independently of the `dontUpdateMeta` flag above — see
+												// `FormApi.ts`'s `validateField`. Both are required to write the
+												// suggestion without it counting as the maintainer's own edit.
+												form.setFieldValue('slug', suggestTeamSlug(event.target.value), {
+													dontUpdateMeta: true,
+													dontValidate: true,
+												});
+											}
+										}}
+										required
+										value={field.state.value}
+									/>
+									{errorMessage === undefined ? null : (
+										<FieldError id={errorId}>{errorMessage}</FieldError>
+									)}
+								</Field>
+							);
+						}}
+					</form.Field>
 
-				<form.Field
-					name="slug"
-					validators={{ onChange: ({ value }) => validateSlugField(value, t) }}
-				>
-					{(field) => {
-						const hintId = 'slug-hint';
-						const errorId = 'slug-error';
-						const errorMessage =
-							slugFieldError ??
-							(field.state.meta.isTouched ? field.state.meta.errors[0] : undefined);
+					<form.Field
+						name="slug"
+						validators={{ onChange: ({ value }) => validateSlugField(value, t) }}
+					>
+						{(field) => {
+							const hintId = slugHintId;
+							const errorId = slugErrorId;
+							const errorMessage =
+								slugFieldError ??
+								(field.state.meta.isTouched ? field.state.meta.errors[0] : undefined);
 
-						return (
-							<div>
-								<label htmlFor="slug">{t('teams.slug')}</label>
-								<input
-									aria-describedby={errorMessage !== undefined ? `${hintId} ${errorId}` : hintId}
-									aria-invalid={errorMessage !== undefined ? true : undefined}
-									id="slug"
-									name={field.name}
-									onBlur={field.handleBlur}
-									onChange={(event) => {
-										field.handleChange(event.target.value);
-									}}
-									required
-									value={field.state.value}
-								/>
-								<p id={hintId}>{t('teams.slugHint')}</p>
-								{errorMessage !== undefined ? (
-									<p id={errorId} role="alert">
-										{errorMessage}
-									</p>
-								) : null}
-							</div>
-						);
-					}}
-				</form.Field>
+							return (
+								<Field data-invalid={errorMessage !== undefined}>
+									<FieldLabel htmlFor={field.name}>{t('teams.slug')}</FieldLabel>
+									<Input
+										aria-describedby={errorMessage !== undefined ? `${hintId} ${errorId}` : hintId}
+										aria-invalid={errorMessage !== undefined ? true : undefined}
+										id={field.name}
+										name={field.name}
+										onBlur={field.handleBlur}
+										onChange={(event) => {
+											field.handleChange(event.target.value);
+										}}
+										required
+										value={field.state.value}
+									/>
+									<FieldDescription id={hintId}>{t('teams.slugHint')}</FieldDescription>
+									{errorMessage === undefined ? null : (
+										<FieldError id={errorId}>{errorMessage}</FieldError>
+									)}
+								</Field>
+							);
+						}}
+					</form.Field>
+				</FieldGroup>
 
 				<Button disabled={mutation.isPending} type="submit">
 					{t('teams.save')}

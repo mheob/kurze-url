@@ -41,3 +41,11 @@ export const PreviewUnavailable: StoryObj<typeof meta> = {
 export const WithRejection: StoryObj<typeof meta> = {
 	args: { isLoading: false, onDownload: fn(), rejection: 'low_contrast', svg },
 };
+
+// The theme toolbar global defaults to `light`, and `test:storybook` runs every
+// story at its defaults — so without this story the dark palette is never
+// checked by anything, only viewable by hand.
+export const Dark: StoryObj<typeof meta> = {
+	args: { ...Ready.args },
+	globals: { theme: 'dark' },
+};

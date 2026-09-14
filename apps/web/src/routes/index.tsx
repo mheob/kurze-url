@@ -132,10 +132,10 @@ function Home() {
 	return (
 		<div className="flex min-h-screen flex-col bg-background text-foreground">
 			<SiteHeader theme={theme} />
-			<main className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
+			<main className="flex flex-1 flex-col items-center justify-center gap-6 px-6 py-16 text-center">
 				{outcome.kind === 'noTeam' ? (
 					<>
-						<p className="max-w-prose text-muted-foreground">
+						<p className="max-w-prose text-lg text-muted-foreground">
 							{outcome.isMaintainer ? t('teams.noneMaintainer') : t('teams.none')}
 						</p>
 						{/* The bootstrap case: a maintainer signing in to a fresh instance has
@@ -150,8 +150,10 @@ function Home() {
 					</>
 				) : (
 					<>
-						<h1 className="text-3xl font-bold">{t('home.heading')}</h1>
-						<p className="max-w-prose text-muted-foreground">{t('home.body')}</p>
+						<h1 className="font-heading text-4xl font-semibold tracking-tight sm:text-5xl">
+							{t('home.heading')}
+						</h1>
+						<p className="max-w-prose text-lg text-muted-foreground">{t('home.body')}</p>
 						{/* oxlint-disable-next-line react/forbid-component-props -- same reason as the maintainer's link above: shadcn/ui's `buttonVariants` idiom, forwarded by TanStack Router's `Link` to the rendered `<a>`. */}
 						<Link className={buttonVariants({ variant: 'default' })} to="/login">
 							{t('actions.signIn')}

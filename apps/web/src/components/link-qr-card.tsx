@@ -5,6 +5,10 @@ import type { QrRejectionReason } from '../lib/api-errors';
 import { hasEnoughQrContrast } from '../lib/qr-contrast';
 import { qrSvgDataUrl, restyleQrSvg } from '../lib/qr-svg';
 import { Button } from './ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { Field, FieldDescription, FieldError, FieldLabel } from './ui/field';
+import { Input } from './ui/input';
+import { NativeSelect, NativeSelectOption } from './ui/native-select';
 
 /**
  * Every reason the mirrored rule or the API's typed 422 can carry, mapped to
@@ -153,96 +157,106 @@ export function LinkQRCard({
 	const preview = svg !== undefined ? restyleQrSvg(svg, { background, foreground }) : undefined;
 
 	return (
-		<section>
-			<h2>{t('links.qrHeading')}</h2>
-			<p>{t('links.qrExplainer')}</p>
+		<Card>
+			<CardHeader>
+				{/* `CardTitle` hardcodes a `<div>` — see the same note on
+				    `link-password-card.tsx`'s `CardTitle`: a real nested `<h2>`
+				    keeps this in the page's heading structure without fighting
+				    `jsx-a11y/prefer-tag-over-role`, and without editing `ui/card.tsx`. */}
+				<CardTitle>
+					<h2>{t('links.qrHeading')}</h2>
+				</CardTitle>
+				<CardDescription>{t('links.qrExplainer')}</CardDescription>
+			</CardHeader>
+			<CardContent>
+				{preview !== undefined ? (
+					<img
+						alt={t('links.qrPreviewAlt')}
+						height={previewSize}
+						src={qrSvgDataUrl(preview)}
+						width={previewSize}
+					/>
+				) : (
+					<p>{t(isLoading ? 'links.qrPreviewLoading' : 'links.qrPreviewUnavailable')}</p>
+				)}
 
-			{preview !== undefined ? (
-				<img
-					alt={t('links.qrPreviewAlt')}
-					height={previewSize}
-					src={qrSvgDataUrl(preview)}
-					width={previewSize}
-				/>
-			) : (
-				<p>{t(isLoading ? 'links.qrPreviewLoading' : 'links.qrPreviewUnavailable')}</p>
-			)}
-
-			<div>
-				<label htmlFor={formatId}>{t('links.qrFormat')}</label>
-				<select
-					id={formatId}
-					onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
-						setFormat(event.target.value === 'png' ? 'png' : 'svg');
-						changed();
-					}}
-					value={format}
-				>
-					<option value="svg">{t('links.qrFormatSvg')}</option>
-					<option value="png">{t('links.qrFormatPng')}</option>
-				</select>
-			</div>
-
-			<div>
-				<label htmlFor={foregroundId}>{t('links.qrForeground')}</label>
-				<input
-					id={foregroundId}
-					onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
-						setForeground(event.target.value);
-						changed();
-					}}
-					type="color"
-					value={foreground}
-				/>
-			</div>
-
-			<div>
-				<label htmlFor={backgroundId}>{t('links.qrBackground')}</label>
-				<input
-					id={backgroundId}
-					onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
-						setBackground(event.target.value);
-						changed();
-					}}
-					type="color"
-					value={background}
-				/>
-			</div>
-
-			{format === 'png' ? (
-				<div>
-					<label htmlFor={sizeId}>{t('links.qrSize')}</label>
-					<input
-						aria-describedby={sizeHintId}
-						id={sizeId}
-						max={MAX_SIZE}
-						min={MIN_SIZE}
+				{/* `redirect_type` in `link-form.tsx` explains why the native
+				    `<select>` stays instead of the design system's popup-based
+				    `Select` — same reasoning here. `NativeSelect` gives it the
+				    same styling as every other control without changing how it's
+				    operated, or breaking `userEvent.selectOptions` below. */}
+				<Field>
+					<FieldLabel htmlFor={formatId}>{t('links.qrFormat')}</FieldLabel>
+					<NativeSelect
+						id={formatId}
 						onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
-							setSize(Number(event.target.value));
+							setFormat(event.target.value === 'png' ? 'png' : 'svg');
 							changed();
 						}}
-						type="number"
-						value={size}
+						value={format}
+					>
+						<NativeSelectOption value="svg">{t('links.qrFormatSvg')}</NativeSelectOption>
+						<NativeSelectOption value="png">{t('links.qrFormatPng')}</NativeSelectOption>
+					</NativeSelect>
+				</Field>
+
+				<Field>
+					<FieldLabel htmlFor={foregroundId}>{t('links.qrForeground')}</FieldLabel>
+					<input
+						id={foregroundId}
+						onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
+							setForeground(event.target.value);
+							changed();
+						}}
+						type="color"
+						value={foreground}
 					/>
-					<p id={sizeHintId}>{t('links.qrSizeHint')}</p>
-				</div>
-			) : null}
+				</Field>
 
-			{message !== undefined ? (
-				<p id={errorId} role="alert">
-					{message}
-				</p>
-			) : null}
+				<Field>
+					<FieldLabel htmlFor={backgroundId}>{t('links.qrBackground')}</FieldLabel>
+					<input
+						id={backgroundId}
+						onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
+							setBackground(event.target.value);
+							changed();
+						}}
+						type="color"
+						value={background}
+					/>
+				</Field>
 
-			<Button
-				aria-describedby={message !== undefined ? errorId : undefined}
-				onClick={() => {
-					void handleDownload();
-				}}
-				type="button"
-			>
-				{t('links.qrDownload')}
-			</Button>
-		</section>
+				{format === 'png' ? (
+					<Field>
+						<FieldLabel htmlFor={sizeId}>{t('links.qrSize')}</FieldLabel>
+						<Input
+							aria-describedby={sizeHintId}
+							id={sizeId}
+							max={MAX_SIZE}
+							min={MIN_SIZE}
+							onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
+								setSize(Number(event.target.value));
+								changed();
+							}}
+							type="number"
+							value={size}
+						/>
+						<FieldDescription id={sizeHintId}>{t('links.qrSizeHint')}</FieldDescription>
+					</Field>
+				) : null}
+
+				{message === undefined ? null : <FieldError id={errorId}>{message}</FieldError>}
+
+				<Button
+					aria-describedby={message !== undefined ? errorId : undefined}
+					onClick={() => {
+						void handleDownload();
+					}}
+					type="button"
+				>
+					{t('links.qrDownload')}
+				</Button>
+			</CardContent>
+		</Card>
 	);
 }

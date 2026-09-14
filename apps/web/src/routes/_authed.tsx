@@ -15,6 +15,7 @@ import { useTranslation } from 'react-i18next';
 
 import { AuthedShell } from '../components/authed-shell';
 import { classifyApiError } from '../lib/api-errors';
+import { usePreferences } from '../lib/use-preferences';
 import { signOut } from '../server/auth';
 import {
 	authedApiClient,
@@ -141,6 +142,7 @@ function AuthedLayout(): React.JSX.Element {
 	const { t } = useTranslation();
 	const router = useRouter();
 	const { teamSlug } = useParams({ strict: false });
+	const { theme } = usePreferences();
 	const [signOutFailed, setSignOutFailed] = useState(false);
 
 	const signOutMutation = useMutation({
@@ -163,28 +165,32 @@ function AuthedLayout(): React.JSX.Element {
 	});
 
 	return (
-		<>
-			<AuthedShell
-				currentTeamSlug={teamSlug ?? me.memberships[0]?.slug}
-				isMaintainer={me.is_maintainer}
-				memberships={me.memberships}
-				onSignOut={() => {
-					signOutMutation.mutate();
-				}}
-				signingOut={signOutMutation.isPending}
-			/>
-			{/* Every authenticated page renders through this one `<Outlet>`, so
-			    the `<main>` belongs here rather than in each child route: axe's
-			    `landmark-one-main` wants exactly one per document, and a per-page
-			    wrapper would either duplicate it or be forgotten on the next
-			    route added. The sign-out failure goes inside it too — `region`
-			    fails any content that sits in no landmark at all, and this
-			    `role="alert"` is the only shell-level node that isn't part of
-			    `AuthedShell`'s own `<header>` banner. */}
-			<main>
-				{signOutFailed ? <p role="alert">{t('errors.unknown')}</p> : null}
-				<Outlet />
-			</main>
-		</>
+		<AuthedShell
+			currentTeamSlug={teamSlug ?? me.memberships[0]?.slug}
+			isMaintainer={me.is_maintainer}
+			memberships={me.memberships}
+			onSignOut={() => {
+				signOutMutation.mutate();
+			}}
+			signingOut={signOutMutation.isPending}
+			theme={theme}
+		>
+			{/* `AuthedShell`'s own `SidebarInset` (components/ui/sidebar.tsx) renders
+			    the page's `<main>` itself — this file used to wrap its children in a
+			    second `<main>` here, which nested one landmark inside the other
+			    (axe's `landmark-one-main`, `landmark-no-duplicate-main` and
+			    `landmark-unique` all catch it). The reasoning that `<main>` existed
+			    for still holds, it just isn't this file's job to provide the element
+			    any more: every authenticated page renders through this one
+			    `<Outlet>`, axe's `landmark-one-main` wants exactly one `<main>` per
+			    document, and a per-page wrapper would either duplicate it or be
+			    forgotten on the next route added. The sign-out failure sits beside
+			    `<Outlet>` here, unwrapped, and still lands inside `SidebarInset`'s
+			    landmark — `region` fails any content that sits in no landmark at
+			    all, and this `role="alert"` is the only shell-level node that isn't
+			    part of `AuthedShell`'s own header or sidebar. */}
+			{signOutFailed ? <p role="alert">{t('errors.unknown')}</p> : null}
+			<Outlet />
+		</AuthedShell>
 	);
 }

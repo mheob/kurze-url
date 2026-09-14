@@ -47,7 +47,7 @@ const getPreferences = createServerFn({ method: 'GET' }).handler(async () => {
 });
 
 // oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `React.ReactNode` is React's own type; not a declaration this file can edit.
-function RootDocument({ children }: { readonly children: React.ReactNode }) {
+export function RootDocument({ children }: { readonly children: React.ReactNode }) {
 	const { language, theme } = Route.useLoaderData();
 	// A fresh i18n instance per request already (see createI18n's own docstring);
 	// memoizing here just stops the client from rebuilding it on every
@@ -55,7 +55,11 @@ function RootDocument({ children }: { readonly children: React.ReactNode }) {
 	const i18n = useMemo(() => createI18n(language), [language]);
 
 	return (
-		<html className={themeClassName(theme)} lang={language}>
+		// `data-theme` is the colour axis, `className` the light/dark one — see
+		// the comment above the token blocks in styles/app.css. Hardcoded until a
+		// settings page can write a preference; when that arrives it reads a
+		// cookie here exactly as `readTheme` already does for `theme`.
+		<html className={themeClassName(theme)} data-theme="indigo" lang={language}>
 			<head>
 				<HeadContent />
 			</head>
@@ -81,9 +85,11 @@ function NotFound() {
 	const { t } = useTranslation();
 
 	return (
-		<main className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
-			<h1 className="text-3xl font-bold">{t('notFound.heading')}</h1>
-			<p className="max-w-prose text-muted-foreground">{t('notFound.body')}</p>
+		<main className="flex min-h-screen flex-1 flex-col items-center justify-center gap-6 px-6 py-16 text-center">
+			<h1 className="font-heading text-4xl font-semibold tracking-tight sm:text-5xl">
+				{t('notFound.heading')}
+			</h1>
+			<p className="max-w-prose text-lg text-muted-foreground">{t('notFound.body')}</p>
 		</main>
 	);
 }

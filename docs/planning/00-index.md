@@ -14,7 +14,7 @@ An open-source, multi-tenant URL shortener for German non-profit associations ("
 | --- | --- | --- |
 | 01 | `01-architecture.md` | System components, redirect data flow (incl. the password-protected branch), per-link 301/302, security-by-design MVP list, privacy-first analytics, CLI OAuth/PKCE |
 | 02 | `02-external-services-and-hosting.md` | Every external service and its free-tier ceiling: Supabase, Upstash, Vercel, Cloudflare (rejected), Safe Browsing, Vercel Domain API, Resend, alert thresholds, Sentry, Better Stack |
-| 03 | `03-frontend.md` | TanStack Start stack, shadcn/ui on Radix (and why not Base UI), Tremor, server-side QR, i18n EN+DE, WCAG 2.1 AA, dark/light, Storybook, full testing strategy |
+| 03 | `03-frontend.md` | TanStack Start stack, primitive-layer reasoning (Radix, then Base UI), shadcn `chart` on Recharts, self-hosted fonts, server-side QR, i18n EN+DE, WCAG 2.1 AA, dark/light, Storybook, full testing strategy |
 | 04 | `04-backend-architecture.md` | Vercel Go Framework Preset, chi, Huma (code-first OpenAPI), sqlc (not GORM), Supabase-CLI-only migrations, custom Redis rate limiting, project layout |
 | 05 | `05-database-schema.md` | Complete schema, `team` naming, analytics rollup model, Redis-based unique-visitor dedup, audit log, the RLS decision, indexes, password protection |
 | 06 | `06-api-design.md` | `/v1` versioning, JWKS auth, pagination/filtering conventions, the public redirect surface, team invitations, full endpoint list |
@@ -29,7 +29,7 @@ Findings from research that actually changed a decision, rather than just confir
 
 - **Cloudflare was dropped** because Containers require the paid Workers plan — Vercel it is.
 - **Supabase supports OAuth 2.1 but not the Device Authorization Grant**, so CLI auth is Authorization Code + PKCE with a loopback redirect.
-- **Tremor is built on Radix**, so shadcn/ui runs on Radix here even though Base UI became shadcn's default in July 2026.
+- **Tremor being built on Radix is why shadcn/ui ran on Radix here from 2026-09-01 — reversed 2026-09-13.** Once Tremor was dropped for shadcn's own `chart` component (bare Recharts v3, no primitive dependency of its own), the reason for choosing Radix over shadcn's own Base UI default no longer applied; see `03-frontend.md`'s "Primitive layer: Radix, then Base UI" for the measurements that made the switch cheap.
 - **Supabase's built-in mail sender caps at 2 emails/hour**, which is why Resend (custom SMTP) entered the stack at all.
 - **Supabase Branching is billed per hour** and isn't covered by the Spend Cap, so per-PR preview databases are out; migrations run on merge to `main`.
 - **Vercel's Pro plan keeps runtime logs for one day** (Hobby: one hour; 30-day retention needs the paid Observability Plus add-on). This project is on Pro, so the "one hour" figure this line used to carry was wrong — the conclusion it supported is not: a day is short for an infrequently-checked side project, which is what turns Sentry from optional into necessary.

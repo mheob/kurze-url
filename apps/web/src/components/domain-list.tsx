@@ -1,12 +1,17 @@
 import type { Domain, VerifyDomainOutputBody } from '@kurze-url/api-client';
 import type { TFunction } from 'i18next';
+import { CheckIcon, ClockIcon, XIcon } from 'lucide-react';
+import { Fragment } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ConfirmDelete } from './confirm-delete';
 import { CopyButton } from './copy-button';
+import { Badge } from './ui/badge';
 import { Button } from './ui/button';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 
 type VerifyReason = VerifyDomainOutputBody['reason'];
+type DomainStatusVariant = 'default' | 'destructive' | 'secondary';
 
 interface DomainListProps {
 	readonly domains: readonly Domain[];
@@ -52,6 +57,34 @@ function statusLabel(t: TFunction, status: string): string {
 		}
 		default: {
 			return status;
+		}
+	}
+}
+
+/**
+ * Maps a domain's raw `verification_status` to the icon and `Badge` variant
+ * that carry it as a second, non-textual signal — `statusLabel`'s string is
+ * the one WCAG 1.4.1 actually requires; this is decoration on top of it, not
+ * a replacement for it. Falls back to the same treatment as `pending` for a
+ * status this screen doesn't otherwise recognise, matching `statusLabel`'s
+ * own fallback.
+ *
+ * @param status - The domain's raw `verification_status`.
+ * @returns The `aria-hidden` icon and badge variant to render for this status.
+ */
+function statusAppearance(status: string): {
+	icon: React.JSX.Element;
+	variant: DomainStatusVariant;
+} {
+	switch (status) {
+		case 'verified': {
+			return { icon: <CheckIcon aria-hidden />, variant: 'default' };
+		}
+		case 'failed': {
+			return { icon: <XIcon aria-hidden />, variant: 'destructive' };
+		}
+		default: {
+			return { icon: <ClockIcon aria-hidden />, variant: 'secondary' };
 		}
 	}
 }
@@ -153,81 +186,101 @@ export function DomainList({
 	return (
 		<>
 			<h1>{t('domains.heading')}</h1>
-			<ul>
-				{/* oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `domain` is the generated `Domain` type; see the disable above on this component's own `domains` prop. */}
-				{domains.map((domain) => (
-					<li key={domain.id}>
-						<h2>{domain.hostname}</h2>
-						{/* `<dl>`, not a literal ": " between two spans: the label/value
-						    pairing is expressed structurally, so no punctuation has to be
-						    hardcoded to join them. */}
-						<dl>
-							<dt>{t('domains.status')}</dt>
-							<dd>{statusLabel(t, domain.verification_status)}</dd>
-						</dl>
-						{domain.verification_status === 'pending' ? (
-							<>
-								<h3>{t('domains.recordsHeading')}</h3>
-								<table>
-									<thead>
-										<tr>
-											<th scope="col">{t('domains.recordType')}</th>
-											<th scope="col">{t('domains.recordName')}</th>
-											<th scope="col">{t('domains.recordValue')}</th>
-										</tr>
-									</thead>
-									<tbody>
-										<tr>
-											<td>{t('domains.recordTypeTxt')}</td>
-											<td>{domain.records.txt.name}</td>
-											<td>
-												{domain.records.txt.value}
-												<CopyButton
-													label={t('domains.copyTxtValue')}
-													value={domain.records.txt.value}
-												/>
-											</td>
-										</tr>
-										<tr>
-											<td>{t('domains.recordTypeCname')}</td>
-											<td>{domain.records.cname.name}</td>
-											<td>
-												{domain.records.cname.value}
-												<CopyButton
-													label={t('domains.copyCnameValue')}
-													value={domain.records.cname.value}
-												/>
-											</td>
-										</tr>
-									</tbody>
-								</table>
-								{verifyingId === domain.id && pendingReason !== undefined ? (
-									<output>{reasonLabel(t, pendingReason)}</output>
+			<Table>
+				<TableHeader>
+					<TableRow>
+						<TableHead>{t('domains.hostname')}</TableHead>
+						<TableHead>{t('domains.status')}</TableHead>
+						<TableHead>{t('domains.columnActions')}</TableHead>
+					</TableRow>
+				</TableHeader>
+				<TableBody>
+					{/* oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `domain` is the generated `Domain` type; see the disable above on this component's own `domains` prop. */}
+					{domains.map((domain) => {
+						const { icon, variant } = statusAppearance(domain.verification_status);
+
+						return (
+							<Fragment key={domain.id}>
+								<TableRow>
+									<TableCell>{domain.hostname}</TableCell>
+									<TableCell>
+										<Badge variant={variant}>
+											{icon}
+											{statusLabel(t, domain.verification_status)}
+										</Badge>
+									</TableCell>
+									<TableCell>
+										{deletingId === domain.id && deleteBlockedCount !== undefined ? (
+											<output>
+												{t('domains.deleteBlockedByLinks', { count: deleteBlockedCount })}
+											</output>
+										) : null}
+										<ConfirmDelete
+											label={t('domains.delete', { hostname: domain.hostname })}
+											onConfirm={() => {
+												onDelete(domain.id);
+											}}
+											question={t('domains.deleteQuestion', { hostname: domain.hostname })}
+										/>
+									</TableCell>
+								</TableRow>
+								{domain.verification_status === 'pending' ? (
+									<TableRow>
+										<TableCell colSpan={3}>
+											<h2>{t('domains.recordsHeadingFor', { hostname: domain.hostname })}</h2>
+											<Table>
+												<TableHeader>
+													<TableRow>
+														<TableHead>{t('domains.recordType')}</TableHead>
+														<TableHead>{t('domains.recordName')}</TableHead>
+														<TableHead>{t('domains.recordValue')}</TableHead>
+													</TableRow>
+												</TableHeader>
+												<TableBody>
+													<TableRow>
+														<TableCell>{t('domains.recordTypeTxt')}</TableCell>
+														<TableCell>{domain.records.txt.name}</TableCell>
+														<TableCell>
+															{domain.records.txt.value}
+															<CopyButton
+																label={t('domains.copyTxtValue')}
+																value={domain.records.txt.value}
+															/>
+														</TableCell>
+													</TableRow>
+													<TableRow>
+														<TableCell>{t('domains.recordTypeCname')}</TableCell>
+														<TableCell>{domain.records.cname.name}</TableCell>
+														<TableCell>
+															{domain.records.cname.value}
+															<CopyButton
+																label={t('domains.copyCnameValue')}
+																value={domain.records.cname.value}
+															/>
+														</TableCell>
+													</TableRow>
+												</TableBody>
+											</Table>
+											{verifyingId === domain.id && pendingReason !== undefined ? (
+												<output>{reasonLabel(t, pendingReason)}</output>
+											) : null}
+											<Button
+												disabled={verifyingId === domain.id && verifyPending}
+												onClick={() => {
+													onVerify(domain.id);
+												}}
+												type="button"
+											>
+												{t('domains.verify')}
+											</Button>
+										</TableCell>
+									</TableRow>
 								) : null}
-								<Button
-									disabled={verifyingId === domain.id && verifyPending}
-									onClick={() => {
-										onVerify(domain.id);
-									}}
-									type="button"
-								>
-									{t('domains.verify')}
-								</Button>
-							</>
-						) : null}
-						{deletingId === domain.id && deleteBlockedCount !== undefined ? (
-							<output>{t('domains.deleteBlockedByLinks', { count: deleteBlockedCount })}</output>
-						) : null}
-						<ConfirmDelete
-							label={t('domains.delete', { hostname: domain.hostname })}
-							onConfirm={() => {
-								onDelete(domain.id);
-							}}
-							question={t('domains.deleteQuestion', { hostname: domain.hostname })}
-						/>
-					</li>
-				))}
-			</ul>
+							</Fragment>
+						);
+					})}
+				</TableBody>
+			</Table>
 		</>
 	);
 }

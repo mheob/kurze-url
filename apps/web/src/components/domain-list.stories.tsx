@@ -1,6 +1,6 @@
 import type { Domain as ApiDomain } from '@kurze-url/api-client';
 import type { Meta, StoryObj } from '@storybook/tanstack-react';
-import { expect, fn, userEvent, within } from 'storybook/test';
+import { expect, fn, screen, userEvent, within } from 'storybook/test';
 
 import { DomainList } from './domain-list';
 
@@ -127,11 +127,15 @@ export const Mixed: StoryObj<typeof meta> = {
 };
 
 /**
- * The armed, labelled-alertdialog state of a row's delete control, reached
- * the same way `ConfirmDelete`'s own `Armed` story reaches it — a `play`
- * function, since `armed` is internal `useState` with no args-only way in.
- * This is what proves the dialog still passes axe once nested inside a list
- * row, not only in `ConfirmDelete`'s own isolated story.
+ * The open, labelled-alertdialog state of a row's delete control, reached the
+ * same way `ConfirmDelete`'s own `Armed` story reaches it — a `play`
+ * function, since `AlertDialog` owns whether it is open with no args-only
+ * way in. This is what proves the dialog still passes axe once nested inside
+ * a list row, not only in `ConfirmDelete`'s own isolated story. The
+ * assertion queries `screen`, not `within(canvasElement)`, for the same
+ * reason `ConfirmDelete`'s own `Armed` story does: `AlertDialogContent`
+ * renders through a portal, so the open dialog is not a descendant of this
+ * story's own canvas element.
  */
 export const DeleteArmed: StoryObj<typeof meta> = {
 	args: { domains: [domain()] },
@@ -139,7 +143,7 @@ export const DeleteArmed: StoryObj<typeof meta> = {
 	play: async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
 		await userEvent.click(canvas.getByRole('button', { name: 'Delete links.verein.test' }));
-		await expect(canvas.getByRole('alertdialog')).toBeInTheDocument();
+		await expect(screen.getByRole('alertdialog')).toBeInTheDocument();
 	},
 };
 
@@ -150,4 +154,12 @@ export const DeleteArmed: StoryObj<typeof meta> = {
  */
 export const DeleteBlockedByLinks: StoryObj<typeof meta> = {
 	args: { deleteBlockedCount: 3, deletingId: 'domain-1', domains: [domain()] },
+};
+
+// The theme toolbar global defaults to `light`, and `test:storybook` runs every
+// story at its defaults — so without this story the dark palette is never
+// checked by anything, only viewable by hand.
+export const Dark: StoryObj<typeof meta> = {
+	args: { ...Mixed.args },
+	globals: { theme: 'dark' },
 };

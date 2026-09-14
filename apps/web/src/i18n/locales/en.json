@@ -35,7 +35,10 @@
 	"nav": {
 		"label": "Sections",
 		"links": "Links",
-		"domains": "Domains"
+		"domains": "Domains",
+		"settingsRegionLabel": "Settings",
+		"teamRegionLabel": "Current team",
+		"toggleSidebar": "Toggle the navigation"
 	},
 	"teams": {
 		"create": "Create team",
@@ -53,6 +56,9 @@
 	},
 	"links": {
 		"heading": "Your links",
+		"columnShortUrl": "Short link",
+		"columnDestination": "Destination",
+		"columnActions": "Actions",
 		"copy": "Copy",
 		"copied": "Copied",
 		"empty": "No links yet.",
@@ -61,6 +67,7 @@
 		"previousPage": "Previous page",
 		"nextPage": "Next page",
 		"create": "Create link",
+		"detailsHeading": "Link details",
 		"destination": "Destination URL",
 		"destinationRequired": "Destination URL is required.",
 		"slug": "Short path",
@@ -75,6 +82,7 @@
 		"domainShared": "Shared domain (default)",
 		"save": "Save",
 		"edit": "Edit",
+		"deleteHeading": "Delete link",
 		"delete": "Delete",
 		"deleteQuestion": "Delete this link? Anyone who already has the short URL will get a 404.",
 		"deleteConfirm": "Yes, delete it",
@@ -122,10 +130,11 @@
 		"hostnameRequired": "A hostname is required.",
 		"claim": "Add domain",
 		"status": "Status",
+		"columnActions": "Actions",
 		"pending": "Waiting for DNS",
 		"verified": "Working",
 		"failed": "Another team verified this hostname first",
-		"recordsHeading": "Create these two DNS records",
+		"recordsHeadingFor": "Create these two DNS records for {{hostname}}",
 		"recordType": "Type",
 		"recordTypeTxt": "TXT",
 		"recordTypeCname": "CNAME",

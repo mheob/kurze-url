@@ -69,6 +69,22 @@ describe(LinkForm, () => {
 		);
 	});
 
+	it('associates each error with its field', () => {
+		// The whole reason for moving to `Field`: the association used to be four
+		// hand-written attributes per field (`htmlFor`, `id`, `aria-describedby`,
+		// `aria-invalid`), and a missed one is invisible until a screen reader hits
+		// it. `Field` owns all four, so this asserts the outcome rather than the
+		// attributes.
+		renderForm({
+			fieldErrors: { destination_url: 'Destination URL is required.' },
+			onSubmit: vi.fn<(values: LinkFormValues) => void>(),
+		});
+
+		expect(screen.getByLabelText('Destination URL')).toHaveAccessibleDescription(
+			'Destination URL is required.',
+		);
+	});
+
 	it('marks a field with a server error as aria-invalid, not only described-by', () => {
 		// Minor 11: `aria-describedby` alone tells assistive tech there is *a*
 		// description, not that the field failed validation — `aria-invalid` is
@@ -113,6 +129,26 @@ describe(LinkForm, () => {
 			'placeholder',
 			'Leave empty and one will be generated',
 		);
+	});
+
+	it('lets the reader turn analytics off', async () => {
+		// The one field this task moved onto the design system's `Checkbox`
+		// rather than `Input`. `Checkbox` renders a visible, interactive
+		// `role="checkbox"` `<span>` beside a hidden native input that only
+		// exists for form semantics (Base UI's own doing, not this form's) —
+		// `<label for>` resolves to that hidden input by plain HTML rules,
+		// so `getByLabelText` matches both and this needs `getByRole`'s own
+		// accessible-name lookup, which excludes the `aria-hidden` half,
+		// instead. That is what proves the label association and the toggle
+		// itself still work post-migration, not only that the form renders.
+		const onSubmit = vi.fn<(values: LinkFormValues) => void>();
+		renderForm({ onSubmit });
+
+		await userEvent.click(screen.getByRole('checkbox', { name: /count clicks|klicks/iu }));
+		await userEvent.type(screen.getByLabelText(/destination|ziel/iu), 'https://example.org/');
+		await userEvent.click(screen.getByRole('button', { name: /save/iu }));
+
+		expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ analytics_enabled: false }));
 	});
 
 	it('offers a domain picker when the team has a verified domain', async () => {

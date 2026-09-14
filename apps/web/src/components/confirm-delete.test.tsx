@@ -114,4 +114,36 @@ describe(ConfirmDelete, () => {
 			}),
 		).toBeInTheDocument();
 	});
+
+	it('closes the dialog once confirmed', async () => {
+		// `ui/alert-dialog.tsx`'s `AlertDialogAction` is a bare `Button` — unlike
+		// `AlertDialogCancel`, it does not wrap `AlertDialogPrimitive.Close` — so
+		// confirming used to leave the dialog mounted, trapping focus and hiding
+		// whatever the caller rendered behind it (`domain-list.tsx`'s 409
+		// message, in production). Nothing in this file asserted on the dialog
+		// itself before, which is exactly how that survived.
+		const onConfirm = vi.fn<() => void>();
+		renderWith(onConfirm);
+
+		await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
+		await userEvent.click(screen.getByRole('button', { name: 'Yes, delete it' }));
+
+		expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+	});
+
+	it('returns focus to the trigger when dismissed', async () => {
+		// The in-place version had no focus management at all: cancelling unmounted
+		// the trigger and restored focus to nothing, dropping a keyboard user at the
+		// top of the document. Every existing test in this file still has to pass —
+		// the arming behaviour they cover is the point of the component and is not
+		// what changes here.
+		const user = userEvent.setup();
+		renderWith(vi.fn<() => void>());
+
+		const trigger = screen.getByRole('button', { name: 'Delete' });
+		await user.click(trigger);
+		await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+		expect(trigger).toHaveFocus();
+	});
 });

@@ -75,6 +75,18 @@ function renderList(
 }
 
 describe(DomainList, () => {
+	it.each([
+		['pending', 'Waiting for DNS'],
+		['verified', 'Working'],
+		['failed', 'Another team verified this hostname first'],
+	] as const)('states %s in words, not only in colour', (status, label) => {
+		// WCAG 1.4.1: colour is never the only carrier of meaning. The badge's icon
+		// is aria-hidden, so the text is what every reader actually gets.
+		renderList([domain({ verification_status: status })]);
+
+		expect(screen.getByText(label)).toBeInTheDocument();
+	});
+
 	it('shows both DNS records for a pending domain', () => {
 		// A Verein that cannot see what to put in DNS cannot proceed, and this
 		// is the only screen that tells them.
@@ -105,6 +117,29 @@ describe(DomainList, () => {
 
 		expect(screen.getByRole('button', { name: 'Copy the TXT record value' })).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Copy the CNAME record value' })).toBeInTheDocument();
+	});
+
+	it('names each pending domain hostname in its DNS heading', () => {
+		// A team onboarding several domains at once (CLAUDE.md: "one person
+		// legitimately onboards several domains at once") sees two otherwise
+		// identical "Create these two DNS records" blocks — a screen-reader
+		// user navigating by heading list cannot tell them apart unless the
+		// hostname is part of the heading itself.
+		const other = domain({ hostname: 'other.verein.test', id: 'domain-2' });
+		renderList([pendingDomain, other]);
+
+		expect(
+			screen.getByRole('heading', {
+				level: 2,
+				name: 'Create these two DNS records for links.verein.test',
+			}),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole('heading', {
+				level: 2,
+				name: 'Create these two DNS records for other.verein.test',
+			}),
+		).toBeInTheDocument();
 	});
 
 	it('hides the records once the domain works', () => {
