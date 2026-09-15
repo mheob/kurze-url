@@ -5,6 +5,9 @@
 	"type": "module",
 	"scripts": {
 		"cve": "cve-lite . --fail-on high --verbose --cache-dir .cache/cve-lite",
+		"db:reset": "supabase db reset",
+		"dev": "node scripts/dev.ts",
+		"dev:stop": "supabase stop; docker stop kurze-url-redis",
 		"format": "oxfmt",
 		"format:check": "oxfmt --check",
 		"generate:api": "cd apps/api && go run ./cmd/openapi > openapi.json && cd ../.. && pnpm --filter @kurze-url/api-client generate && pnpm format",
@@ -17,6 +20,7 @@
 	"devDependencies": {
 		"@mheob/oxfmt-config": "^1.3.3",
 		"@mheob/oxlint-config": "^4.0.1",
+		"@types/node": "^26.5.1",
 		"cve-lite-cli": "^1.34.0",
 		"eslint-plugin-better-tailwindcss": "^4.7.0",
 		"eslint-plugin-jsonc": "^3.4.2",

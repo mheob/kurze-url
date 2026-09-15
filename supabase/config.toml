@@ -159,13 +159,26 @@ site_url = "http://127.0.0.1:3000"
 # The public URL that Auth serves on. Defaults to the API external URL with `/auth/v1` appended.
 # external_url = ""
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = ["https://127.0.0.1:3000"]
+# `signInWithOtp` asks for `<origin>/auth/callback`, and GoTrue silently falls back to
+# site_url when the requested URL is not listed here — the magic link then lands on the
+# home page with no code to exchange, which reads as "the link did nothing". Both hosts
+# are listed because the dev server answers on either one and the origin is whichever the
+# developer typed. The scheme is http: this is a local server with no certificate.
+additional_redirect_urls = [
+	"http://127.0.0.1:3000/auth/callback",
+	"http://localhost:3000/auth/callback",
+]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
 # JWT issuer URL. If not set, defaults to auth.external_url.
 # jwt_issuer = ""
 # Path to JWT signing key. DO NOT commit your signing keys file to git.
-# signing_keys_path = "./signing_keys.json"
+# Required, not optional, for this project: the API verifies ES256 through the
+# JWKS endpoint and refuses the legacy HS256 shared secret, so without a signing
+# key the local stack issues tokens the API cannot accept. Generate your own with
+# `supabase gen signing-key --algorithm ES256 > supabase/signing_keys.json`; the
+# file is gitignored because it is private key material.
+signing_keys_path = "./signing_keys.json"
 # If disabled, the refresh token will never expire.
 enable_refresh_token_rotation = true
 # Allows refresh tokens to be reused after expiry, up to the specified interval in seconds.

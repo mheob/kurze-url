@@ -66,3 +66,8 @@ pnpm-debug.log*
 # Written by `vercel link`. `.env.example` stays tracked, so no blanket .env* here.
 .env*
 !.env.example
+
+# Local JWT signing key for the Supabase stack. Private key material —
+# supabase/config.toml says not to commit it, and the file is generated per
+# developer by `supabase gen signing-key`.
+supabase/signing_keys.json

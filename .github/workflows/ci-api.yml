@@ -108,6 +108,17 @@ jobs:
         with:
           version: latest
 
+      # supabase/config.toml sets signing_keys_path, and the file it names holds
+      # private key material, so it is gitignored and generated per environment.
+      # Without this step `supabase start` refuses to run at all. The key is
+      # ephemeral and never leaves the runner: these tests talk to Postgres
+      # directly and verify no token, so any valid ES256 key will do.
+      - name: Generate an ephemeral JWT signing key
+        working-directory: .
+        run: |
+          printf '[]' > supabase/signing_keys.json
+          supabase gen signing-key --algorithm ES256 --append
+
       # Brings up Postgres with auth.users, applies every migration and loads
       # supabase/seed.sql. The db and api tests resolve the seeded short.test
       # link; the cache and api tests start their own Redis via testcontainers,

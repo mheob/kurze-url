@@ -47,6 +47,33 @@ export default defineConfig({
 	ignorePatterns: generatedFiles,
 	overrides: [
 		{
+			// scripts/ holds Node CLI entry points, not application code, and eight
+			// rules in the shared config assume the latter. Each is switched off for
+			// its own reason rather than as a blanket exemption:
+			//
+			// no-sync — a startup script is sequential by definition. Reading two
+			//   dotenv files asynchronously would add ceremony and no concurrency,
+			//   because nothing else can run until the checks pass.
+			// no-process-env — reading and composing the environment is what these
+			//   scripts are for; the rule exists to keep config out of app code.
+			// no-top-level-await — the rule protects `require(esm)` interop. Nothing
+			//   imports a file under scripts/; Node runs it directly.
+			// avoid-new — Node's socket and timer APIs are callback-based and have no
+			//   promise equivalents worth the indirection here.
+			// no-await-in-loop — polling a port until it answers is sequential on
+			//   purpose. Promise.all would fire every attempt at once.
+			// no-magic-numbers is NOT disabled: timeouts are named constants.
+			files: ['scripts/**/*.ts'],
+			plugins: ['node', 'promise'],
+			rules: {
+				'eslint/no-await-in-loop': 'off',
+				'node/no-process-env': 'off',
+				'node/no-sync': 'off',
+				'node/no-top-level-await': 'off',
+				'promise/avoid-new': 'off',
+			},
+		},
+		{
 			files: ['apps/web/**/*.tsx'],
 			// reactConfig turns on react, react-perf and typescript, but not
 			// jsx-a11y. Accessibility is a project requirement rather than a
