@@ -3,7 +3,7 @@ import { isNotFound } from '@tanstack/react-router';
 import { describe, expect, it } from 'vitest';
 
 import { loadLink } from './teams.$teamSlug.links.$linkId';
-import { loadStats, statsView } from './teams.$teamSlug.links.$linkId_.stats.tsx';
+import { loadStats, loadStatsPage, statsView } from './teams.$teamSlug.links.$linkId_.stats.tsx';
 
 /* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding below is a type this
    test file doesn't own: the generated `@kurze-url/api-client` `Link`/`LinkStats` types, whose
@@ -249,5 +249,55 @@ describe('a missing link 404s the same way regardless of which fetch reports it'
 		);
 
 		expect(isNotFound(error)).toBe(true);
+	});
+});
+
+describe(loadStatsPage, () => {
+	it('reports the loaded link together with its statistics', async () => {
+		// oxlint-disable-next-line typescript/require-await -- must satisfy `StatsDataSource.query`, which returns a `Promise<LinkStats>`; nothing here needs an `await`.
+		const query = async (): Promise<LinkStats> => STATS_FIXTURE;
+		// oxlint-disable-next-line typescript/require-await -- must satisfy `loadLink`'s `LinkFetcher`-shaped parameter; nothing here needs an `await`.
+		const fetchLink = async (): Promise<Link> => link();
+
+		const result = await loadStatsPage({
+			fetchLink,
+			linkId: 'link-a',
+			queryClient: { query },
+			window: {},
+		});
+
+		expect(result.stats).toBe(STATS_FIXTURE);
+		expect(result.link).toStrictEqual(link());
+	});
+
+	/**
+	 * Residual finding 4: `RouteComponent` used to read `new Date()` at
+	 * render time, and the server and the browser each call that
+	 * independently — a server render landing just before midnight and
+	 * hydrating just after resolves `matchingPreset` differently on each
+	 * side, flipping the preset button's `aria-pressed` between the SSR
+	 * markup and the first client render. Asserting the returned `today` is
+	 * a `Date` bracketed by the call's own start and end is what proves it
+	 * comes from this one loader run rather than from a second, independent
+	 * clock read downstream.
+	 */
+	it('returns the instant it ran at, not one the caller has to supply', async () => {
+		const before = Date.now();
+		// oxlint-disable-next-line typescript/require-await -- must satisfy `StatsDataSource.query`, which returns a `Promise<LinkStats>`; nothing here needs an `await`.
+		const query = async (): Promise<LinkStats> => STATS_FIXTURE;
+		// oxlint-disable-next-line typescript/require-await -- must satisfy `loadLink`'s `LinkFetcher`-shaped parameter; nothing here needs an `await`.
+		const fetchLink = async (): Promise<Link> => link();
+
+		const { today } = await loadStatsPage({
+			fetchLink,
+			linkId: 'link-a',
+			queryClient: { query },
+			window: {},
+		});
+		const after = Date.now();
+
+		expect(today).toBeInstanceOf(Date);
+		expect(today.getTime()).toBeGreaterThanOrEqual(before);
+		expect(today.getTime()).toBeLessThanOrEqual(after);
 	});
 });

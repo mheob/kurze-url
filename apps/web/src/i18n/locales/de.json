@@ -201,7 +201,7 @@
 		"backToLink": "Zurück zum Link",
 		"viewStatistics": "Statistik",
 		"disabledTitle": "Für diesen Link wird nicht gezählt",
-		"disabledBody": "Solange die Zählung aus ist, wird nichts erfasst — das ist etwas anderes als ein Link, den niemand geklickt hat.",
+		"disabledBody": "Solange die Zählung aus ist, wird nichts erfasst — das ist etwas anderes als ein Link, den niemand geklickt hat. Wurde sie erst vor Kurzem ausgeschaltet, zeigt ein längerer Zeitraum möglicherweise noch Daten von davor.",
 		"disabledAction": "In den Link-Einstellungen einschalten",
 		"countingOffBanner": "Die Klickzählung ist für diesen Link derzeit ausgeschaltet — diese Zahlen sind historisch.",
 		"noClicksTitle": "Keine Klicks in diesem Zeitraum",

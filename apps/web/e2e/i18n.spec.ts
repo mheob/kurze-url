@@ -26,8 +26,18 @@ import { waitForHydration } from './fixtures/hydration';
  * and reviewable. `TXT`/`CNAME` (`domain-list.tsx`'s record-type cells) join
  * `kurze.url` for the same reason: a DNS record type is a protocol literal,
  * not copy — nobody translates it, so it never changes with the language.
+ *
+ * `Bot`/`QR` (`stats.dimensionValueBot`/`stats.dimensionValueQr`, rendered by
+ * `StatSummary`'s binary splits) join them for the same reason `catalogues
+ * .test.ts` already allowlists those two keys: "Bot" is the established
+ * German loanword and "QR" is the initialism in both languages, neither is
+ * prose to translate. This crawl only reaches the statistics page in its
+ * empty state today, where no split has values and neither string renders —
+ * so this stays a dead entry until a spec seeds click data into that page,
+ * at which point it disarms a failure that would otherwise look exactly
+ * like a missing translation.
  */
-const IDENTICAL_BY_DESIGN = new Set(['kurze.url', 'TXT', 'CNAME']);
+const IDENTICAL_BY_DESIGN = new Set(['kurze.url', 'TXT', 'CNAME', 'Bot', 'QR']);
 
 /**
  * `/` is a real route with real content; the 404 page is a separate render

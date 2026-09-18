@@ -260,7 +260,12 @@ describe('the statistics page', () => {
 
 	it('has no axe violations under the default ruleset for the disabled state', async () => {
 		renderComposedPage(DISABLED_STATS);
-		await screen.findByText('Click counting is off for this link');
+		// Residual finding 2: `EmptyTitle` renders a plain `<div>`, so this
+		// state's own heading only exists at all because a real `<h2>` was
+		// nested inside it — `findByRole` with `level: 2` is what proves that
+		// heading survives, rather than merely waiting for its text via
+		// `findByText`, which would pass just as well against a bare `<div>`.
+		await screen.findByRole('heading', { level: 2, name: 'Click counting is off for this link' });
 
 		const results = await axe.run(document.body);
 		expect(results.violations).toStrictEqual([]);
@@ -268,10 +273,27 @@ describe('the statistics page', () => {
 
 	it('has no axe violations under the default ruleset for the empty state', async () => {
 		renderComposedPage(EMPTY_STATS);
-		await screen.findByText('No clicks in this window');
+		// Same reason as the disabled state just above.
+		await screen.findByRole('heading', { level: 2, name: 'No clicks in this window' });
 
 		const results = await axe.run(document.body);
 		expect(results.violations).toStrictEqual([]);
+	});
+
+	// Residual finding 1: `totals.clicks` is window-scoped, so a link switched
+	// off a month ago falls into this same state under the default 30-day
+	// window while a 90-day window still holds data — the old copy asserted
+	// nothing was ever recorded, which is only true for the window being
+	// viewed, not for the link's whole history.
+	it('points the disabled-with-no-history state at a longer window', async () => {
+		renderComposedPage(DISABLED_STATS);
+		await screen.findByRole('heading', { level: 2, name: 'Click counting is off for this link' });
+
+		expect(
+			screen.getByText(
+				'Nothing is recorded while it is off, so this is not the same as a link nobody clicked. If counting was only switched off recently, try a longer window — it may still hold data from before then.',
+			),
+		).toBeInTheDocument();
 	});
 
 	it('renders historical data with a banner, not the disabled empty state, when counting is off but clicks remain', async () => {

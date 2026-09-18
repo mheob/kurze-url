@@ -18,8 +18,11 @@ const PERCENT_SCALE = 100;
  * `values` plus its `other_clicks` — never against `totals.clicks` from
  * elsewhere on the page — because that sum is the dimension's true total.
  * It agrees with `totals.clicks` only when nothing was truncated into
- * `other_clicks`. Mirrors `splitTotal` in `stat-summary.tsx`, which computes
- * the same thing for a binary split.
+ * `other_clicks`. Mirrors `splitValuesTotal` in `stat-summary.tsx`, which
+ * sums a split's own values the same way but never adds `other_clicks`:
+ * `bot_status`/`qr_vs_regular` have a closed, fixed value set of at most
+ * two values each, so nothing is ever truncated there and the term would
+ * always be zero — load-bearing here, dead weight there.
  *
  * @param breakdown - The dimension to size.
  * @returns The denominator every one of its values' shares is computed against.

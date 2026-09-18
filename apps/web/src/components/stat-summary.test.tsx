@@ -130,6 +130,31 @@ describe(StatSummary, () => {
 		expect(screen.getByText('100%')).toBeInTheDocument();
 	});
 
+	// Residual finding 6: `other_clicks` is the API's top-ten truncation
+	// remainder. `bot_status`/`qr_vs_regular` are closed, two-value
+	// dimensions that can never truncate, so this must not feed a split's own
+	// denominator the way it does for `StatBreakdownCard`'s open dimensions —
+	// a nonzero value here has to leave the share unchanged.
+	it('does not let other_clicks affect a split share', () => {
+		renderWithI18n(
+			<StatSummary
+				botStatus={{
+					other_clicks: 500,
+					other_unique_visitors: 0,
+					other_values: 0,
+					values: [
+						{ clicks: 750, unique_visitors: 700, value: 'human' },
+						{ clicks: 250, unique_visitors: 200, value: 'bot' },
+					],
+				}}
+				language="en"
+				qrVsRegular={EMPTY_BREAKDOWN}
+				totals={TOTALS}
+			/>,
+		);
+		expect(screen.getByText('75%')).toBeInTheDocument();
+	});
+
 	it('says so when a split has no values at all', () => {
 		renderWithI18n(
 			<StatSummary

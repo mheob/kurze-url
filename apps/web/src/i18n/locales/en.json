@@ -201,7 +201,7 @@
 		"backToLink": "Back to the link",
 		"viewStatistics": "Statistics",
 		"disabledTitle": "Click counting is off for this link",
-		"disabledBody": "Nothing is recorded while it is off, so this is not the same as a link nobody clicked.",
+		"disabledBody": "Nothing is recorded while it is off, so this is not the same as a link nobody clicked. If counting was only switched off recently, try a longer window — it may still hold data from before then.",
 		"disabledAction": "Turn it on in the link settings",
 		"countingOffBanner": "Click counting is currently switched off for this link — these figures are historical.",
 		"noClicksTitle": "No clicks in this window",

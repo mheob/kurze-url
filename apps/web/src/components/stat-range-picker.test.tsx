@@ -215,6 +215,32 @@ describe.each(TIMEZONE_CASES)('the range picker under %s', (_label, timezone) =>
 		expect(onChange).toHaveBeenCalledExactlyOnceWith({ from: '2026-09-05', to: '2026-09-10' });
 	});
 
+	// Residual finding 3: the retention-boundary test above only proves the
+	// calendar cannot ask for a window past the retention floor — it says
+	// nothing about which days the calendar actually highlights as
+	// *selected*, which is the other half of the same bug. A UTC-pinned
+	// `Date` for a date-only ISO string renders one calendar day early for
+	// anyone west of Greenwich, so this has to run under the negative-offset
+	// case above to mean anything; `data-range-start`/`data-range-end` are
+	// `CalendarDayButton`'s own attributes (`ui/calendar.tsx`), driven by
+	// react-day-picker's range modifiers.
+	it('marks both ends of the given window as the selected range start and end', async () => {
+		const user = userEvent.setup();
+		renderWithI18n(
+			<StatRangePicker
+				language="en"
+				onChange={vi.fn<(window: Readonly<StatsWindow>) => void>()}
+				today={TODAY}
+				window={{ from: '2026-09-03', to: '2026-09-11' }}
+			/>,
+		);
+
+		await user.click(screen.getByRole('button', { name: 'Choose dates' }));
+
+		expect(getDayButton('2026-09-03')).toHaveAttribute('data-range-start', 'true');
+		expect(getDayButton('2026-09-11')).toHaveAttribute('data-range-end', 'true');
+	});
+
 	it('leaves the window unchanged when the popover closes after only one click', async () => {
 		// The other half of the same property: a half-finished pick that never
 		// completes must not have mutated anything the caller can see.
