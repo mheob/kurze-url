@@ -63,6 +63,12 @@ describe('translation catalogues', () => {
 			// "Browser" is the German word too — an established loanword, not a
 			// forgotten translation.
 			'stats.browser',
+			// A formatting template — two interpolated placeholders and a
+			// typographic en dash, no actual words — not prose to translate. It
+			// still gets a key rather than a literal `–` baked into the
+			// component, so a locale whose date-range convention differs (or an
+			// RTL one) has somewhere to change it without touching code.
+			'stats.rangeSummary',
 		]);
 		const english = new Map(flatten(en));
 		const toCheck = flatten(de).filter(

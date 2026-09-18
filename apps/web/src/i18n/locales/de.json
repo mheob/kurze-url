@@ -188,6 +188,7 @@
 		"preset7": "7 Tage",
 		"preset30": "30 Tage",
 		"preset90": "90 Tage",
+		"rangeSummary": "{{from}} – {{to}}",
 		"customRange": "Zeitraum wählen",
 		"rangeRetentionNote": "Statistiken werden 90 Tage lang aufbewahrt."
 	},

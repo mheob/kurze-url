@@ -16,7 +16,7 @@ import {
 } from '../lib/stats-window';
 import { Button } from './ui/button';
 import { Calendar } from './ui/calendar';
-import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
+import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from './ui/popover';
 
 /** The middle preset, in days. See `stats-window.ts` for why 7 and `RETENTION_DAYS` need no constant of their own. */
 const PRESET_MONTH_DAYS = 30;
@@ -137,6 +137,12 @@ export function StatRangePicker({
 						{t('stats.customRange')}
 					</PopoverTrigger>
 					<PopoverContent>
+						{/* Base UI wires the popup's `aria-labelledby` to this title's own
+						    id automatically (the same mechanism `AlertDialogTitle` uses),
+						    so the open popover — role `dialog` — has a real accessible
+						    name instead of none. Reusing the trigger's own translation key
+						    rather than adding a new one: the two describe the same thing. */}
+						<PopoverTitle>{t('stats.customRange')}</PopoverTitle>
 						<Calendar
 							disabled={{ after: today, before: new Date(`${retentionFloor(today)}T00:00:00Z`) }}
 							mode="range"
@@ -156,7 +162,12 @@ export function StatRangePicker({
 					</PopoverContent>
 				</Popover>
 
-				<span>{`${formatDay(window.from, language)} – ${formatDay(window.to, language)}`}</span>
+				<span>
+					{t('stats.rangeSummary', {
+						from: formatDay(window.from, language),
+						to: formatDay(window.to, language),
+					})}
+				</span>
 			</fieldset>
 
 			<p>{t('stats.rangeRetentionNote')}</p>
