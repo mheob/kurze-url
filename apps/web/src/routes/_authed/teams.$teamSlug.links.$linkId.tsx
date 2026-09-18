@@ -1,6 +1,12 @@
 import type { Link, PageLink, UpdateLinkInputBodyWritable } from '@kurze-url/api-client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { createFileRoute, notFound, redirect, useRouter } from '@tanstack/react-router';
+import {
+	createFileRoute,
+	Link as RouterLink,
+	notFound,
+	redirect,
+	useRouter,
+} from '@tanstack/react-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -8,6 +14,7 @@ import { ConfirmDelete } from '../../components/confirm-delete';
 import { LinkForm, type LinkFormValues } from '../../components/link-form';
 import { LinkPasswordCard } from '../../components/link-password-card';
 import { LinkQRCard } from '../../components/link-qr-card';
+import { buttonVariants } from '../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { classifyApiError, type ApiFailure, type QrRejectionReason } from '../../lib/api-errors';
 import type { LinkPasswordContext, LinkPasswordReason } from '../../lib/link-password';
@@ -601,6 +608,14 @@ function RouteComponent(): React.JSX.Element {
 	return (
 		<>
 			<h1>{t('links.edit')}</h1>
+			<RouterLink
+				// oxlint-disable-next-line react/forbid-component-props -- shadcn/ui's own "link styled as a button" idiom, same as `routes/index.tsx`'s two call sites: TanStack Router's `Link` forwards `className` straight to the rendered `<a>`, and `buttonVariants` exists precisely to be applied here.
+				className={buttonVariants({ variant: 'outline' })}
+				params={{ linkId, teamSlug }}
+				to="/teams/$teamSlug/links/$linkId/stats"
+			>
+				{t('stats.viewStatistics')}
+			</RouterLink>
 			{formMessage !== null ? <p role="alert">{formMessage}</p> : null}
 			{/*
 			 * Each card below remounts when the link changes, so each carries the

@@ -190,7 +190,14 @@
 		"preset90": "90 days",
 		"rangeSummary": "{{from}} – {{to}}",
 		"customRange": "Choose dates",
-		"rangeRetentionNote": "Statistics are kept for 90 days."
+		"rangeRetentionNote": "Statistics are kept for 90 days.",
+		"backToLink": "Back to the link",
+		"viewStatistics": "Statistics",
+		"disabledTitle": "Click counting is off for this link",
+		"disabledBody": "Nothing is recorded while it is off, so this is not the same as a link nobody clicked.",
+		"disabledAction": "Turn it on in the link settings",
+		"noClicksTitle": "No clicks in this window",
+		"noClicksBody": "Try a longer window."
 	},
 	"errors": {
 		"rateLimited": "Too many links created just now. Please wait a minute and try again.",

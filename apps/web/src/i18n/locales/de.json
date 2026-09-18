@@ -190,7 +190,14 @@
 		"preset90": "90 Tage",
 		"rangeSummary": "{{from}} – {{to}}",
 		"customRange": "Zeitraum wählen",
-		"rangeRetentionNote": "Statistiken werden 90 Tage lang aufbewahrt."
+		"rangeRetentionNote": "Statistiken werden 90 Tage lang aufbewahrt.",
+		"backToLink": "Zurück zum Link",
+		"viewStatistics": "Statistik",
+		"disabledTitle": "Für diesen Link wird nicht gezählt",
+		"disabledBody": "Solange die Zählung aus ist, wird nichts erfasst — das ist etwas anderes als ein Link, den niemand geklickt hat.",
+		"disabledAction": "In den Link-Einstellungen einschalten",
+		"noClicksTitle": "Keine Klicks in diesem Zeitraum",
+		"noClicksBody": "Versuche einen längeren Zeitraum."
 	},
 	"errors": {
 		"rateLimited": "Gerade wurden zu viele Links erstellt. Warte eine Minute und versuch es dann noch mal.",
