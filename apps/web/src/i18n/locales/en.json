@@ -201,11 +201,14 @@
 		"backToLink": "Back to the link",
 		"viewStatistics": "Statistics",
 		"disabledTitle": "Click counting is off for this link",
-		"disabledBody": "Nothing is recorded while it is off, so this is not the same as a link nobody clicked. If counting was only switched off recently, try a longer window — it may still hold data from before then.",
+		"disabledBody": "Nothing is recorded while it is off, so this is not the same as a link nobody clicked.",
+		"disabledElsewhere": "Counting is off now, but statistics recorded before it was switched off are still here.",
 		"disabledAction": "Turn it on in the link settings",
+		"showRecorded": "Show {{from}} – {{to}}",
 		"countingOffBanner": "Click counting is currently switched off for this link — these figures are historical.",
 		"noClicksTitle": "No clicks in this window",
-		"noClicksBody": "Try a longer window."
+		"noClicksBody": "There are no statistics for this link.",
+		"noClicksElsewhere": "This link has statistics outside the window you are looking at."
 	},
 	"errors": {
 		"rateLimited": "Too many links created just now. Please wait a minute and try again.",

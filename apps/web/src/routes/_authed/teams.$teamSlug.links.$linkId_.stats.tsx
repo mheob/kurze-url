@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next';
 
 import { StatBreakdownCard } from '../../components/stat-breakdown-card';
 import { StatRangePicker } from '../../components/stat-range-picker';
+import { StatRecordedJump } from '../../components/stat-recorded-jump';
 import { StatSeriesChart } from '../../components/stat-series-chart';
 import { StatSummary } from '../../components/stat-summary';
 import {
@@ -270,6 +271,16 @@ export function StatsPageBody({
 	const { t } = useTranslation();
 	const view = statsView(stats);
 	const series = stats.series ?? [];
+	// The condition is the field alone, with nothing about the window in it,
+	// and that is an invariant rather than an oversight. Reaching either empty
+	// view requires `totals.clicks === 0`; every recorded click writes a
+	// `total` row (`analytics.Dimensions.Rows` always emits one) and the
+	// upsert only ever adds a positive count — so a servable row inside the
+	// requested window would have made the totals positive and neither empty
+	// view would be on screen. In an empty view a present `recorded` is
+	// therefore always outside the window, and an overlap check here would
+	// guard a state the data model cannot produce.
+	const recorded = stats.recorded;
 
 	return (
 		<>
@@ -299,9 +310,14 @@ export function StatsPageBody({
 						<EmptyTitle>
 							<h2>{t('stats.disabledTitle')}</h2>
 						</EmptyTitle>
-						<EmptyDescription>{t('stats.disabledBody')}</EmptyDescription>
+						<EmptyDescription>
+							{t(recorded === undefined ? 'stats.disabledBody' : 'stats.disabledElsewhere')}
+						</EmptyDescription>
 					</EmptyHeader>
 					<EmptyContent>
+						{recorded === undefined ? null : (
+							<StatRecordedJump language={language} onSelect={onWindowChange} recorded={recorded} />
+						)}
 						<RouterLink params={{ linkId: link.id, teamSlug }} to="/teams/$teamSlug/links/$linkId">
 							{t('stats.disabledAction')}
 						</RouterLink>
@@ -316,8 +332,15 @@ export function StatsPageBody({
 						<EmptyTitle>
 							<h2>{t('stats.noClicksTitle')}</h2>
 						</EmptyTitle>
-						<EmptyDescription>{t('stats.noClicksBody')}</EmptyDescription>
+						<EmptyDescription>
+							{t(recorded === undefined ? 'stats.noClicksBody' : 'stats.noClicksElsewhere')}
+						</EmptyDescription>
 					</EmptyHeader>
+					{recorded === undefined ? null : (
+						<EmptyContent>
+							<StatRecordedJump language={language} onSelect={onWindowChange} recorded={recorded} />
+						</EmptyContent>
+					)}
 				</Empty>
 			) : null}
 

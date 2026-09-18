@@ -23,7 +23,11 @@ type statsBody struct {
 	From             string `json:"from"`
 	To               string `json:"to"`
 	AnalyticsEnabled bool   `json:"analytics_enabled"`
-	Totals           struct {
+	Recorded         *struct {
+		From string `json:"from"`
+		To   string `json:"to"`
+	} `json:"recorded"`
+	Totals struct {
 		Clicks              int64 `json:"clicks"`
 		UniqueVisitors      int64 `json:"unique_visitors"`
 		HumanClicks         int64 `json:"human_clicks"`
@@ -407,4 +411,147 @@ func TestLinkStatsOpenAPISchemaInlinesTheDayCounts(t *testing.T) {
 		require.Contains(t, statDay.Properties, key,
 			"the generated schema must inline StatCounts' fields as direct properties, not nest them")
 	}
+}
+
+// TestLinkStatsReportsTheRecordedRangeOutsideTheWindow is the case the field
+// exists for: the requested window is empty, and the page has to be able to
+// tell "nothing was ever clicked" from "you are looking at the wrong week".
+func TestLinkStatsReportsTheRecordedRangeOutsideTheWindow(t *testing.T) {
+	f := newTenancyFixture(t)
+	pinToday(t, f, "2026-09-11")
+	created := f.createLink(t, "older", "https://example.org/older")
+
+	seedStatRow(t, f, created.ID, "2026-08-01", "total", nil, 3, 2)
+	seedStatRow(t, f, created.ID, "2026-08-04", "total", nil, 5, 4)
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		statsPath(created.ID.String(), "from=2026-09-05&to=2026-09-11"), nil)
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	body := decode[statsBody](t, rec)
+
+	require.EqualValues(t, 0, body.Totals.Clicks, "the window itself is empty")
+	require.NotNil(t, body.Recorded, "rows exist outside the window")
+	require.Equal(t, "2026-08-01", body.Recorded.From)
+	require.Equal(t, "2026-08-04", body.Recorded.To)
+}
+
+// TestLinkStatsReportsNoRecordedRangeForALinkNobodyClicked pins the absent
+// half of the contract. The page renders a different sentence for it, so "no
+// rows" must not arrive as a zero-valued range.
+func TestLinkStatsReportsNoRecordedRangeForALinkNobodyClicked(t *testing.T) {
+	f := newTenancyFixture(t)
+	pinToday(t, f, "2026-09-11")
+	created := f.createLink(t, "fresh", "https://example.org/fresh")
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		statsPath(created.ID.String(), ""), nil)
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	require.Nil(t, decode[statsBody](t, rec).Recorded)
+}
+
+// TestLinkStatsIgnoresRowsBelowTheRetentionFloor is why the floor is in the
+// query rather than applied to its result. The retention job runs nightly
+// while the endpoint's floor moves at midnight, so rows it can no longer serve
+// survive for up to a day. Reported, they would send the reader to a window
+// that comes back empty — and if they are the only rows, clamping a range's
+// start up to the floor would leave that start later than its own end.
+func TestLinkStatsIgnoresRowsBelowTheRetentionFloor(t *testing.T) {
+	f := newTenancyFixture(t)
+	pinToday(t, f, "2026-09-11")
+	created := f.createLink(t, "stale", "https://example.org/stale")
+
+	// The floor on 2026-09-11 is 2026-06-14 (today minus 89). Both of these
+	// are older than that and are awaiting the next retention run.
+	seedStatRow(t, f, created.ID, "2026-06-10", "total", nil, 7, 5)
+	seedStatRow(t, f, created.ID, "2026-06-12", "total", nil, 9, 6)
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		statsPath(created.ID.String(), ""), nil)
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	require.Nil(t, decode[statsBody](t, rec).Recorded,
+		"rows the endpoint would not serve must not be advertised as a window to request")
+}
+
+// TestLinkStatsRecordedRangeStartsAtTheFloor is the mixed case: some rows are
+// too old to serve and some are not. The range must begin at the oldest
+// servable day, not at the oldest row.
+func TestLinkStatsRecordedRangeStartsAtTheFloor(t *testing.T) {
+	f := newTenancyFixture(t)
+	pinToday(t, f, "2026-09-11")
+	created := f.createLink(t, "mixed", "https://example.org/mixed")
+
+	seedStatRow(t, f, created.ID, "2026-06-10", "total", nil, 7, 5)
+	seedStatRow(t, f, created.ID, "2026-06-14", "total", nil, 4, 3)
+	seedStatRow(t, f, created.ID, "2026-07-02", "total", nil, 2, 1)
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		statsPath(created.ID.String(), ""), nil)
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	body := decode[statsBody](t, rec)
+	require.NotNil(t, body.Recorded)
+	require.Equal(t, "2026-06-14", body.Recorded.From, "the floor itself is servable")
+	require.Equal(t, "2026-07-02", body.Recorded.To)
+}
+
+// TestRecordedRangeUsesTheWindowsOwnFloor holds the endpoint's two floors
+// together. `statsWindow` clamps a requested window up to the retention floor
+// and `GetLinkRecordedRange` filters by it; the two deriving that day
+// separately is the drift CLAUDE.md's retention note warns about, and here it
+// would surface as a range the endpoint advertises and then refuses to serve.
+// A request reaching further back than retention allows must come back with a
+// window that starts exactly where the oldest reportable row can sit.
+func TestRecordedRangeUsesTheWindowsOwnFloor(t *testing.T) {
+	f := newTenancyFixture(t)
+	pinToday(t, f, "2026-09-11")
+	created := f.createLink(t, "floor", "https://example.org/floor")
+
+	seedStatRow(t, f, created.ID, "2026-06-14", "total", nil, 1, 1)
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		statsPath(created.ID.String(), "from=2020-01-01&to=2026-09-11"), nil)
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	body := decode[statsBody](t, rec)
+
+	require.Equal(t, "2026-06-14", body.From, "the window clamps to the floor")
+	require.NotNil(t, body.Recorded)
+	require.Equal(t, body.From, body.Recorded.From,
+		"the oldest reportable row sits exactly on the window's own floor")
+}
+
+// TestLinkStatsOmitsTheRecordedKeyEntirely is the one assertion that can see
+// the difference between "absent" and "null", which every other test in this
+// file is blind to: decoding into a pointer leaves it nil either way. The
+// distinction is the contract. Huma cannot express a nullable object, so a
+// `recorded` that arrived as null would be a value the published schema says
+// cannot occur — and the only thing standing between here and there is the
+// `omitempty` on one struct tag.
+func TestLinkStatsOmitsTheRecordedKeyEntirely(t *testing.T) {
+	f := newTenancyFixture(t)
+	pinToday(t, f, "2026-09-11")
+	created := f.createLink(t, "keyless", "https://example.org/keyless")
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		statsPath(created.ID.String(), ""), nil)
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+
+	var raw map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &raw))
+	require.NotContains(t, raw, "recorded",
+		"a link with no statistics must omit the key, not send null")
+
+	// And the other direction, so this test fails if the key stops being sent
+	// at all rather than only when it should be.
+	seedStatRow(t, f, created.ID, "2026-09-10", "total", nil, 1, 1)
+	rec = f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		statsPath(created.ID.String(), ""), nil)
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+
+	raw = nil
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &raw))
+	require.Contains(t, raw, "recorded")
 }

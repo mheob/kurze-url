@@ -43,6 +43,16 @@ const TopValuesPerDimension = 10
 // errFromAfterTo is the one way a caller can be refused outright.
 var errFromAfterTo = errors.New("from is later than to")
 
+// retentionFloor is the oldest day this endpoint will serve, and the only
+// place that day is computed. statsWindow clamps the requested window up to it
+// and GetLinkRecordedRange filters by it; two derivations of one boundary is
+// the drift CLAUDE.md's retention note exists to prevent, and here it would
+// show as a reported range the endpoint refuses to serve. retentionCutoff in
+// retention.go delegates to this function for the same reason.
+func retentionFloor(now time.Time) time.Time {
+	return dayOf(now).AddDate(0, 0, -(RetentionDays - 1))
+}
+
 // statsWindow resolves the requested dates into the window the queries run
 // over. A zero from or to means the caller omitted that parameter.
 //
@@ -65,7 +75,7 @@ func statsWindow(from, to, now time.Time) (start, end time.Time, err error) {
 	}
 
 	today := dayOf(now)
-	floor := today.AddDate(0, 0, -(RetentionDays - 1))
+	floor := retentionFloor(now)
 
 	end = today
 	if !to.IsZero() {
@@ -100,6 +110,12 @@ func clampDay(value, low, high time.Time) time.Time {
 	return value
 }
 
+// StatRange is a pair of days, inclusive, as YYYY-MM-DD in UTC.
+type StatRange struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
 // LinkStats is the whole answer of GET /v1/links/{link_id}/stats: one document
 // per link, rather than one request per dimension. A dashboard would otherwise
 // make nine calls, each repeating the same authorization resolve and the same
@@ -109,12 +125,22 @@ type LinkStats struct {
 	// From and To are the window that was actually used, which is not always
 	// the one that was asked for: both are clamped into the retention window,
 	// silently, and echoing them here is the only way a caller can see that.
-	From             string              `json:"from" doc:"First day included, as YYYY-MM-DD in UTC. This is the window actually used, which may be narrower than the one requested."`
-	To               string              `json:"to" doc:"Last day included, as YYYY-MM-DD in UTC. This is the window actually used, which may be narrower than the one requested."`
-	AnalyticsEnabled bool                `json:"analytics_enabled" doc:"False when this link's click counting is switched off. The redirect path then records nothing, so an empty document means 'not counted' rather than 'not clicked'."`
-	Totals           StatCounts          `json:"totals"`
-	Series           []StatDay           `json:"series" doc:"One entry per day of the window, including days with no clicks. At most 90 entries."`
-	Breakdowns       LinkStatsBreakdowns `json:"breakdowns"`
+	From             string `json:"from" doc:"First day included, as YYYY-MM-DD in UTC. This is the window actually used, which may be narrower than the one requested."`
+	To               string `json:"to" doc:"Last day included, as YYYY-MM-DD in UTC. This is the window actually used, which may be narrower than the one requested."`
+	AnalyticsEnabled bool   `json:"analytics_enabled" doc:"False when this link's click counting is switched off. The redirect path then records nothing, so an empty document means 'not counted' rather than 'not clicked'."`
+	// Absent rather than null when the link has no statistics, and that is a
+	// concession to the schema generator rather than a preference. Huma refuses
+	// a nullable object outright — `nullable:"true"` on a field whose ref is an
+	// object panics, and automatic nullability covers only scalars — so a
+	// required `$ref` answered with `null` would document a shape the endpoint
+	// does not send. `omitempty` on a pointer makes Huma mark the property
+	// optional and non-nullable, which is what the handler actually does: Go
+	// omits the key. A reader still makes one check and still cannot meet a
+	// half-populated range.
+	Recorded   *StatRange          `json:"recorded,omitempty" doc:"The first and last day this link has statistics for, whatever window was requested — absent when it has none. Bounded by the same 90-day retention floor the window is, so a range reported here can always be requested. This is what is still stored, not what ever happened: rows older than the floor are deleted nightly, and a link whose clicks have all aged out is indistinguishable from one that was never clicked."`
+	Totals     StatCounts          `json:"totals"`
+	Series     []StatDay           `json:"series" doc:"One entry per day of the window, including days with no clicks. At most 90 entries."`
+	Breakdowns LinkStatsBreakdowns `json:"breakdowns"`
 }
 
 // StatCounts is the four numbers every level of this response reports.
@@ -311,7 +337,12 @@ type LinkStatsOutput struct {
 func (d Deps) getLinkStats(ctx context.Context, in *LinkStatsInput) (*LinkStatsOutput, error) {
 	link := in.Link()
 
-	start, end, err := statsWindow(in.From, in.To, d.now())
+	// Read once and pass to both callers below: statsWindow and retentionFloor
+	// must agree on "today", and two separate d.now() calls straddling a UTC
+	// midnight would disagree by a day.
+	now := d.now()
+
+	start, end, err := statsWindow(in.From, in.To, now)
 	if err != nil {
 		if !errors.Is(err, errFromAfterTo) {
 			d.Log.Error("resolve stats window", "error", err, "link_id", link.ID)
@@ -352,6 +383,26 @@ func (d Deps) getLinkStats(ctx context.Context, in *LinkStatsInput) (*LinkStatsO
 		return nil, huma.Error500InternalServerError("could not read the statistics")
 	}
 
+	var recorded *StatRange
+	recordedRow, err := d.Queries.GetLinkRecordedRange(ctx, db.GetLinkRecordedRangeParams{
+		LinkID: link.ID, FloorDay: retentionFloor(now),
+	})
+	switch {
+	// No row rather than a row of nulls: the query's `having count(*) > 0`
+	// makes "this link has nothing inside the retention window" an absent row,
+	// so recorded stays nil and, with omitempty on its tag, the response omits
+	// the key entirely rather than sending it as null.
+	case errors.Is(err, pgx.ErrNoRows):
+	case err != nil:
+		d.Log.Error("read recorded range", "error", err, "link_id", link.ID)
+		return nil, huma.Error500InternalServerError("could not read the statistics")
+	default:
+		recorded = &StatRange{
+			From: recordedRow.FirstDay.UTC().Format(dayLayout),
+			To:   recordedRow.LastDay.UTC().Format(dayLayout),
+		}
+	}
+
 	series, totals := buildSeries(seriesRows, start, end)
 
 	return &LinkStatsOutput{Body: LinkStats{
@@ -359,6 +410,7 @@ func (d Deps) getLinkStats(ctx context.Context, in *LinkStatsInput) (*LinkStatsO
 		From:             start.Format(dayLayout),
 		To:               end.Format(dayLayout),
 		AnalyticsEnabled: row.AnalyticsEnabled,
+		Recorded:         recorded,
 		Totals:           totals,
 		Series:           series,
 		Breakdowns:       buildBreakdowns(breakdownRows),

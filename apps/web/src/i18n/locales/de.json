@@ -201,11 +201,14 @@
 		"backToLink": "Zurück zum Link",
 		"viewStatistics": "Statistik",
 		"disabledTitle": "Für diesen Link wird nicht gezählt",
-		"disabledBody": "Solange die Zählung aus ist, wird nichts erfasst — das ist etwas anderes als ein Link, den niemand geklickt hat. Wurde sie erst vor Kurzem ausgeschaltet, zeigt ein längerer Zeitraum möglicherweise noch Daten von davor.",
+		"disabledBody": "Solange die Zählung aus ist, wird nichts erfasst — das ist etwas anderes als ein Link, den niemand geklickt hat.",
+		"disabledElsewhere": "Die Zählung ist jetzt aus, aber davor erfasste Zahlen sind noch da.",
 		"disabledAction": "In den Link-Einstellungen einschalten",
+		"showRecorded": "{{from}} – {{to}} anzeigen",
 		"countingOffBanner": "Die Klickzählung ist für diesen Link derzeit ausgeschaltet — diese Zahlen sind historisch.",
 		"noClicksTitle": "Keine Klicks in diesem Zeitraum",
-		"noClicksBody": "Versuche einen längeren Zeitraum."
+		"noClicksBody": "Für diesen Link liegen keine Statistiken vor.",
+		"noClicksElsewhere": "Für diesen Link gibt es Zahlen außerhalb des gewählten Zeitraums."
 	},
 	"errors": {
 		"rateLimited": "Gerade wurden zu viele Links erstellt. Warte eine Minute und versuch es dann noch mal.",

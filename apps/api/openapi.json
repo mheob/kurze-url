@@ -487,6 +487,10 @@
 					"link_id": {
 						"type": "string"
 					},
+					"recorded": {
+						"$ref": "#/components/schemas/StatRange",
+						"description": "The first and last day this link has statistics for, whatever window was requested — absent when it has none. Bounded by the same 90-day retention floor the window is, so a range reported here can always be requested. This is what is still stored, not what ever happened: rows older than the floor are deleted nightly, and a link whose clicks have all aged out is indistinguishable from one that was never clicked."
+					},
 					"series": {
 						"description": "One entry per day of the window, including days with no clicks. At most 90 entries.",
 						"items": {
@@ -929,6 +933,19 @@
 					}
 				},
 				"required": ["date", "clicks", "unique_visitors", "human_clicks", "human_unique_visitors"],
+				"type": "object"
+			},
+			"StatRange": {
+				"additionalProperties": false,
+				"properties": {
+					"from": {
+						"type": "string"
+					},
+					"to": {
+						"type": "string"
+					}
+				},
+				"required": ["from", "to"],
 				"type": "object"
 			},
 			"StatValue": {

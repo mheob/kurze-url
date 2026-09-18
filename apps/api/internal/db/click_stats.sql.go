@@ -219,3 +219,49 @@ func (q *Queries) GetLinkClickSeries(ctx context.Context, arg GetLinkClickSeries
 	}
 	return items, nil
 }
+
+const getLinkRecordedRange = `-- name: GetLinkRecordedRange :one
+
+select min(bucket_start)::date as first_day, max(bucket_start)::date as last_day
+from link_click_stats
+where link_id = $1
+  and bucket_start >= $2
+having count(*) > 0
+`
+
+type GetLinkRecordedRangeParams struct {
+	LinkID   uuid.UUID
+	FloorDay time.Time
+}
+
+type GetLinkRecordedRangeRow struct {
+	FirstDay time.Time
+	LastDay  time.Time
+}
+
+// The window a link has data for, which is deliberately not the window the
+// caller asked about: the stats endpoint reports it so a page looking at an
+// empty week can tell "nothing was ever clicked" from "wrong week".
+//
+// Filtered by the retention floor, and that filter is load-bearing rather than
+// tidy. The retention job runs nightly while the endpoint's floor moves at
+// midnight, so rows the endpoint would refuse to serve can survive for the
+// better part of a day. Reported, they name a window that comes back empty.
+// Applying the floor to the result instead of inside the query has a worse
+// failure: when every row is below the floor, raising the range's start to the
+// floor leaves it later than the range's own end.
+//
+// `having count(*) > 0` is what makes the two non-null columns honest. Without
+// it a link with no rows returns one row of nulls, which sqlc cannot model
+// here: it propagates bucket_start's NOT NULL through the aggregate rather
+// than allowing that an aggregate over zero rows is null. With it, that link
+// returns no row at all, :one answers pgx.ErrNoRows, and "this link has no
+// statistics" travels as the absence the caller already handles for
+// GetLinkForAPI rather than as a zero time.Time that would format as a real
+// date.
+func (q *Queries) GetLinkRecordedRange(ctx context.Context, arg GetLinkRecordedRangeParams) (GetLinkRecordedRangeRow, error) {
+	row := q.db.QueryRow(ctx, getLinkRecordedRange, arg.LinkID, arg.FloorDay)
+	var i GetLinkRecordedRangeRow
+	err := row.Scan(&i.FirstDay, &i.LastDay)
+	return i, err
+}

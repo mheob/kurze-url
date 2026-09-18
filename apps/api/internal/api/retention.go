@@ -77,10 +77,11 @@ func (d Deps) HandleRetention(w http.ResponseWriter, r *http.Request) {
 }
 
 // retentionCutoff is the oldest day the stats endpoint will still serve, and
-// therefore the oldest day this job must keep. It is derived from
-// RetentionDays rather than restated, because the endpoint's own floor comes
-// from the same constant — two definitions of one boundary would eventually
-// disagree, and the disagreement is silent in both directions.
+// therefore the oldest day this job must keep. It delegates to retentionFloor
+// rather than restating its arithmetic, because the endpoint's own floor
+// comes from the same constant — two definitions of one boundary would
+// eventually disagree, and the disagreement is silent in both directions. By
+// construction, not by coincidence, this is the stats endpoint's floor.
 func retentionCutoff(now time.Time) time.Time {
-	return dayOf(now).AddDate(0, 0, -(RetentionDays - 1))
+	return retentionFloor(now)
 }
