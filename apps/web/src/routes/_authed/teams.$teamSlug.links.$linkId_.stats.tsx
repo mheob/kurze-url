@@ -239,7 +239,15 @@ export function StatsPageBody({
 			{view === 'disabled' ? (
 				<Empty>
 					<EmptyHeader>
-						<EmptyTitle>{t('stats.disabledTitle')}</EmptyTitle>
+						{/* `EmptyTitle` hardcodes a `<div>` with no `render` prop, so a real
+						    `<h2>` nests inside it rather than reaching for `role="heading"`,
+						    which `jsx-a11y/prefer-tag-over-role` refuses on a `<div>` — the
+						    same pattern `StatSummary`/`StatSeriesChart`/`StatBreakdownCard`
+						    already use for `CardTitle`. Without it, this state's whole
+						    heading outline is the page's single `<h1>`. */}
+						<EmptyTitle>
+							<h2>{t('stats.disabledTitle')}</h2>
+						</EmptyTitle>
 						<EmptyDescription>{t('stats.disabledBody')}</EmptyDescription>
 					</EmptyHeader>
 					<EmptyContent>
@@ -253,7 +261,10 @@ export function StatsPageBody({
 			{view === 'empty' ? (
 				<Empty>
 					<EmptyHeader>
-						<EmptyTitle>{t('stats.noClicksTitle')}</EmptyTitle>
+						{/* Same reason as the 'disabled' state just above. */}
+						<EmptyTitle>
+							<h2>{t('stats.noClicksTitle')}</h2>
+						</EmptyTitle>
 						<EmptyDescription>{t('stats.noClicksBody')}</EmptyDescription>
 					</EmptyHeader>
 				</Empty>
