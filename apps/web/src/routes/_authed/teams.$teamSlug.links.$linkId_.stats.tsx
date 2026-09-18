@@ -6,6 +6,7 @@ import {
 	notFound,
 	type SearchSchemaInput,
 } from '@tanstack/react-router';
+import { TriangleAlertIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { StatBreakdownCard } from '../../components/stat-breakdown-card';
@@ -36,14 +37,24 @@ import { loadLink } from './teams.$teamSlug.links.$linkId';
 
 /**
  * The three states the endpoint distinguishes, and the page must too.
- * Collapsing them is how this page would come to lie: a link with counting
- * switched off returns the same zeroes as a link nobody clicked.
+ * Collapsing them is how this page would come to lie — in either direction.
+ * `analytics_enabled: false` does not mean the document is empty: the
+ * endpoint reads it from the link row and the totals/series/breakdowns from
+ * the rollup independently, so a team that collected thousands of clicks and
+ * later switched counting off keeps every one of them in this response.
+ * Gating `'disabled'` on the flag alone would hide real, already-recorded
+ * data behind an empty state for up to 90 days, until retention deletes it —
+ * exactly the lie this function exists to prevent, just pointed the other
+ * way. `'disabled'` is therefore reserved for the case an empty document
+ * actually means "not counted": the flag is off *and* there is nothing to
+ * show. Counting-off-with-history renders as ordinary `'data'`;
+ * `StatsPageBody` is what adds the persistent banner explaining why.
  *
  * @param stats - The statistics document.
  * @returns Which of the three views to render.
  */
 export function statsView(stats: LinkStats): 'data' | 'disabled' | 'empty' {
-	if (!stats.analytics_enabled) return 'disabled';
+	if (!stats.analytics_enabled && stats.totals.clicks === 0) return 'disabled';
 	return stats.totals.clicks > 0 ? 'data' : 'empty';
 }
 
@@ -250,6 +261,22 @@ export function StatsPageBody({
 
 			{view === 'data' ? (
 				<>
+					{!stats.analytics_enabled ? (
+						// Counting is off, but this document still carries clicks recorded
+						// before it was switched off — `statsView`'s own docstring explains
+						// why that is 'data', not 'disabled'. Rendering the figures with no
+						// explanation would let a reader assume they're still growing; this
+						// banner is what keeps that assumption from forming. Same markup as
+						// `ShortUrlNotice`, the other persistent, visible warning banner in
+						// this app.
+						<p
+							className="flex items-center gap-2 border border-destructive/50 bg-destructive/10 p-3 text-sm text-foreground"
+							role="note"
+						>
+							<TriangleAlertIcon aria-hidden />
+							{t('stats.countingOffBanner')}
+						</p>
+					) : null}
 					<StatSummary
 						botStatus={stats.breakdowns.bot_status}
 						language={language}

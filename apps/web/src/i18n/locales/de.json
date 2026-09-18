@@ -203,6 +203,7 @@
 		"disabledTitle": "Für diesen Link wird nicht gezählt",
 		"disabledBody": "Solange die Zählung aus ist, wird nichts erfasst — das ist etwas anderes als ein Link, den niemand geklickt hat.",
 		"disabledAction": "In den Link-Einstellungen einschalten",
+		"countingOffBanner": "Die Klickzählung ist für diesen Link derzeit ausgeschaltet — diese Zahlen sind historisch.",
 		"noClicksTitle": "Keine Klicks in diesem Zeitraum",
 		"noClicksBody": "Versuche einen längeren Zeitraum."
 	},

@@ -162,6 +162,16 @@ const EMPTY_STATS: LinkStats = {
 	totals: TOTALS_ZERO,
 };
 
+// Final-review finding: counting switched off does not mean the document is
+// empty — this link collected the same 1000 clicks as `DATA_STATS`, then had
+// analytics switched off afterwards, and every one of them is still in the
+// response. The page must render them as ordinary data, with a banner, not
+// the 'disabled' empty state `DISABLED_STATS` above exercises.
+const DISABLED_WITH_HISTORY_STATS: LinkStats = {
+	...DATA_STATS,
+	analytics_enabled: false,
+};
+
 /**
  * Renders the real `StatsPageBody` (exported from
  * `teams.$teamSlug.links.$linkId_.stats.tsx` for exactly this reason) inside
@@ -259,6 +269,25 @@ describe('the statistics page', () => {
 	it('has no axe violations under the default ruleset for the empty state', async () => {
 		renderComposedPage(EMPTY_STATS);
 		await screen.findByText('No clicks in this window');
+
+		const results = await axe.run(document.body);
+		expect(results.violations).toStrictEqual([]);
+	});
+
+	it('renders historical data with a banner, not the disabled empty state, when counting is off but clicks remain', async () => {
+		renderComposedPage(DISABLED_WITH_HISTORY_STATS);
+		await screen.findByRole('heading', { level: 1, name: 'https://kurze.url/abc123' });
+
+		// The banner is shown, the figures still render …
+		expect(
+			screen.getByText(
+				'Click counting is currently switched off for this link — these figures are historical.',
+			),
+		).toBeInTheDocument();
+		expect(screen.getByText('1,000')).toBeInTheDocument();
+		// … and the 'disabled' empty state — the one for a link with no
+		// history at all — must not also render.
+		expect(screen.queryByText('Click counting is off for this link')).not.toBeInTheDocument();
 
 		const results = await axe.run(document.body);
 		expect(results.violations).toStrictEqual([]);

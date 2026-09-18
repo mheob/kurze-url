@@ -157,6 +157,27 @@ describe(statsView, () => {
 			}),
 		).toBe('data');
 	});
+
+	// Final-review finding: the endpoint does not zero anything when counting
+	// is switched off — `AnalyticsEnabled` comes from the link row, the
+	// totals/series/breakdowns come from the rollup, independently. A team
+	// that collected clicks and later unticked the analytics checkbox keeps
+	// every one of them in this document, so gating 'disabled' on the flag
+	// alone would hide real data for up to 90 days. This is 'data', not
+	// 'disabled' — `StatsPageBody` is what adds the banner explaining why.
+	it('reports data (not disabled) when counting is off but historical clicks remain', () => {
+		expect(
+			statsView({
+				analytics_enabled: false,
+				breakdowns: EMPTY_BREAKDOWNS,
+				from: '2026-08-20',
+				link_id: 'l1',
+				series: [],
+				to: '2026-09-18',
+				totals: { ...TOTALS_ZERO, clicks: 5000 },
+			}),
+		).toBe('data');
+	});
 });
 
 describe(loadStats, () => {
