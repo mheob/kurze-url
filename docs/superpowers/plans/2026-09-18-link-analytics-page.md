@@ -931,7 +931,25 @@ And in `de.json`, the same keys:
 
 - [ ] **Step 2: Write the failing test**
 
-Create `apps/web/src/components/stat-summary.test.tsx`:
+Create `apps/web/src/components/stat-summary.test.tsx`. Every component test in this plan needs the i18n provider — `useTranslation` finds no instance without one. Define this helper at the top of the test file, matching the pattern `link-form.test.tsx` already uses, and call it instead of `render`:
+
+```tsx
+/**
+ * @param ui - The element under test.
+ * @param language - Which catalogue to load; the provider's language drives `t()`, while a component's own `language` prop drives number and date formatting.
+ * @returns Testing Library's render result.
+ */
+function renderWithI18n(
+	ui: React.ReactElement,
+	language: Language = 'en',
+): ReturnType<typeof render> {
+	return render(<I18nextProvider i18n={createI18n(language)}>{ui}</I18nextProvider>);
+}
+```
+
+Imports: `import { I18nextProvider } from 'react-i18next';` and `import { createI18n } from '../i18n';` (from a route test, `'../../i18n'`).
+
+The tests:
 
 ```tsx
 import { render, screen } from '@testing-library/react';
@@ -954,7 +972,7 @@ const EMPTY_BREAKDOWN = {
 
 describe(StatSummary, () => {
 	it('formats every total for the active language', () => {
-		render(
+		renderWithI18n(
 			<StatSummary
 				botStatus={EMPTY_BREAKDOWN}
 				language="de"
@@ -969,7 +987,7 @@ describe(StatSummary, () => {
 	// The field name says the opposite of what the number means, so the caveat
 	// is visible text rather than a tooltip.
 	it('states the per-day caveat next to the visitor figure', () => {
-		render(
+		renderWithI18n(
 			<StatSummary
 				botStatus={EMPTY_BREAKDOWN}
 				language="en"
@@ -981,7 +999,7 @@ describe(StatSummary, () => {
 	});
 
 	it('shows each binary split with its share', () => {
-		render(
+		renderWithI18n(
 			<StatSummary
 				botStatus={{
 					other_clicks: 0,
@@ -1004,7 +1022,7 @@ describe(StatSummary, () => {
 	// A link with no QR clicks has one value, not two. Assuming a pair is the
 	// easiest way to crash this component on real data.
 	it('renders a split that holds only one value', () => {
-		render(
+		renderWithI18n(
 			<StatSummary
 				botStatus={EMPTY_BREAKDOWN}
 				language="en"
@@ -1022,7 +1040,7 @@ describe(StatSummary, () => {
 	});
 
 	it('says so when a split has no values at all', () => {
-		render(
+		renderWithI18n(
 			<StatSummary
 				botStatus={EMPTY_BREAKDOWN}
 				language="en"
@@ -1124,7 +1142,25 @@ And into `de.json`:
 
 - [ ] **Step 2: Write the failing test**
 
-Create `apps/web/src/components/stat-series-chart.test.tsx`:
+Create `apps/web/src/components/stat-series-chart.test.tsx`. Every component test in this plan needs the i18n provider — `useTranslation` finds no instance without one. Define this helper at the top of the test file, matching the pattern `link-form.test.tsx` already uses, and call it instead of `render`:
+
+```tsx
+/**
+ * @param ui - The element under test.
+ * @param language - Which catalogue to load; the provider's language drives `t()`, while a component's own `language` prop drives number and date formatting.
+ * @returns Testing Library's render result.
+ */
+function renderWithI18n(
+	ui: React.ReactElement,
+	language: Language = 'en',
+): ReturnType<typeof render> {
+	return render(<I18nextProvider i18n={createI18n(language)}>{ui}</I18nextProvider>);
+}
+```
+
+Imports: `import { I18nextProvider } from 'react-i18next';` and `import { createI18n } from '../i18n';` (from a route test, `'../../i18n'`).
+
+The tests:
 
 ```tsx
 import { render, screen } from '@testing-library/react';
@@ -1143,30 +1179,40 @@ describe(StatSeriesChart, () => {
 	// The chart is a picture. This table is the data, and it is the only part
 	// a screen reader can read at all.
 	it('exposes every day as a table row', () => {
-		render(<StatSeriesChart from="2026-09-16" language="en" series={SERIES} to="2026-09-18" />);
+		renderWithI18n(
+			<StatSeriesChart from="2026-09-16" language="en" series={SERIES} to="2026-09-18" />,
+		);
 		const table = screen.getByRole('table');
 		// Three days plus the header row.
 		expect(within(table).getAllByRole('row')).toHaveLength(4);
 	});
 
 	it('keeps a zero day as a real zero rather than dropping it', () => {
-		render(<StatSeriesChart from="2026-09-16" language="en" series={SERIES} to="2026-09-18" />);
+		renderWithI18n(
+			<StatSeriesChart from="2026-09-16" language="en" series={SERIES} to="2026-09-18" />,
+		);
 		expect(screen.getByRole('table')).toHaveTextContent('17 Sept 2026');
 	});
 
 	it('names the window and the totals in the chart image label', () => {
-		render(<StatSeriesChart from="2026-09-16" language="en" series={SERIES} to="2026-09-18" />);
+		renderWithI18n(
+			<StatSeriesChart from="2026-09-16" language="en" series={SERIES} to="2026-09-18" />,
+		);
 		expect(screen.getByRole('img')).toHaveAccessibleName(/14 clicks/u);
 	});
 
 	it('starts with the bot toggle off', () => {
-		render(<StatSeriesChart from="2026-09-16" language="en" series={SERIES} to="2026-09-18" />);
+		renderWithI18n(
+			<StatSeriesChart from="2026-09-16" language="en" series={SERIES} to="2026-09-18" />,
+		);
 		expect(screen.getByRole('checkbox', { name: 'Show bot share' })).not.toBeChecked();
 	});
 
 	it('adds the human columns to the table when the toggle goes on', async () => {
 		const user = userEvent.setup();
-		render(<StatSeriesChart from="2026-09-16" language="en" series={SERIES} to="2026-09-18" />);
+		renderWithI18n(
+			<StatSeriesChart from="2026-09-16" language="en" series={SERIES} to="2026-09-18" />,
+		);
 		expect(screen.queryByRole('columnheader', { name: 'Human clicks' })).not.toBeInTheDocument();
 
 		await user.click(screen.getByRole('checkbox', { name: 'Show bot share' }));
@@ -1175,7 +1221,7 @@ describe(StatSeriesChart, () => {
 	});
 
 	it('renders an empty series without throwing', () => {
-		render(<StatSeriesChart from="2026-09-16" language="en" series={[]} to="2026-09-18" />);
+		renderWithI18n(<StatSeriesChart from="2026-09-16" language="en" series={[]} to="2026-09-18" />);
 		expect(screen.getByRole('table')).toBeInTheDocument();
 	});
 });
@@ -1289,7 +1335,25 @@ And in `de.json`:
 
 - [ ] **Step 2: Write the failing test**
 
-Create `apps/web/src/components/stat-breakdown-card.test.tsx`:
+Create `apps/web/src/components/stat-breakdown-card.test.tsx`. Every component test in this plan needs the i18n provider — `useTranslation` finds no instance without one. Define this helper at the top of the test file, matching the pattern `link-form.test.tsx` already uses, and call it instead of `render`:
+
+```tsx
+/**
+ * @param ui - The element under test.
+ * @param language - Which catalogue to load; the provider's language drives `t()`, while a component's own `language` prop drives number and date formatting.
+ * @returns Testing Library's render result.
+ */
+function renderWithI18n(
+	ui: React.ReactElement,
+	language: Language = 'en',
+): ReturnType<typeof render> {
+	return render(<I18nextProvider i18n={createI18n(language)}>{ui}</I18nextProvider>);
+}
+```
+
+Imports: `import { I18nextProvider } from 'react-i18next';` and `import { createI18n } from '../i18n';` (from a route test, `'../../i18n'`).
+
+The tests:
 
 ```tsx
 import { render, screen } from '@testing-library/react';
@@ -1309,7 +1373,7 @@ const FULL = {
 
 describe(StatBreakdownCard, () => {
 	it('lists every value with its click count', () => {
-		render(<StatBreakdownCard breakdown={FULL} language="en" title="Browser" />);
+		renderWithI18n(<StatBreakdownCard breakdown={FULL} language="en" title="Browser" />);
 		expect(screen.getByText('Chrome')).toBeInTheDocument();
 		expect(screen.getByText('80')).toBeInTheDocument();
 	});
@@ -1317,7 +1381,7 @@ describe(StatBreakdownCard, () => {
 	// Without this row a list capped at ten silently misstates its own
 	// dimension's total, which is the whole reason the API returns other_*.
 	it('reports the values it left out', () => {
-		render(
+		renderWithI18n(
 			<StatBreakdownCard
 				breakdown={{ ...FULL, other_clicks: 7, other_unique_visitors: 5, other_values: 3 }}
 				language="en"
@@ -1328,12 +1392,12 @@ describe(StatBreakdownCard, () => {
 	});
 
 	it('omits the row entirely when nothing was left out', () => {
-		render(<StatBreakdownCard breakdown={FULL} language="en" title="Browser" />);
+		renderWithI18n(<StatBreakdownCard breakdown={FULL} language="en" title="Browser" />);
 		expect(screen.queryByText(/further value/u)).not.toBeInTheDocument();
 	});
 
 	it('uses the singular for exactly one further value', () => {
-		render(
+		renderWithI18n(
 			<StatBreakdownCard
 				breakdown={{ ...FULL, other_clicks: 2, other_unique_visitors: 1, other_values: 1 }}
 				language="en"
@@ -1344,7 +1408,7 @@ describe(StatBreakdownCard, () => {
 	});
 
 	it('says so when the dimension recorded nothing', () => {
-		render(
+		renderWithI18n(
 			<StatBreakdownCard
 				breakdown={{ other_clicks: 0, other_unique_visitors: 0, other_values: 0, values: null }}
 				language="en"
@@ -1358,7 +1422,7 @@ describe(StatBreakdownCard, () => {
 	// bytes by the API and otherwise arbitrary. They render as text, never as
 	// something the page will fetch or link to.
 	it('renders a URL-shaped value as plain text', () => {
-		render(
+		renderWithI18n(
 			<StatBreakdownCard
 				breakdown={{
 					other_clicks: 0,
@@ -1462,7 +1526,25 @@ And in `de.json`:
 
 - [ ] **Step 2: Write the failing test**
 
-Create `apps/web/src/components/stat-range-picker.test.tsx`:
+Create `apps/web/src/components/stat-range-picker.test.tsx`. Every component test in this plan needs the i18n provider — `useTranslation` finds no instance without one. Define this helper at the top of the test file, matching the pattern `link-form.test.tsx` already uses, and call it instead of `render`:
+
+```tsx
+/**
+ * @param ui - The element under test.
+ * @param language - Which catalogue to load; the provider's language drives `t()`, while a component's own `language` prop drives number and date formatting.
+ * @returns Testing Library's render result.
+ */
+function renderWithI18n(
+	ui: React.ReactElement,
+	language: Language = 'en',
+): ReturnType<typeof render> {
+	return render(<I18nextProvider i18n={createI18n(language)}>{ui}</I18nextProvider>);
+}
+```
+
+Imports: `import { I18nextProvider } from 'react-i18next';` and `import { createI18n } from '../i18n';` (from a route test, `'../../i18n'`).
+
+The tests:
 
 ```tsx
 import { render, screen } from '@testing-library/react';
@@ -1476,13 +1558,15 @@ const THIRTY_DAYS = { from: '2026-08-20', to: '2026-09-18' };
 
 describe(StatRangePicker, () => {
 	it('marks the preset that matches the current window', () => {
-		render(<StatRangePicker language="en" onChange={vi.fn()} today={TODAY} window={THIRTY_DAYS} />);
+		renderWithI18n(
+			<StatRangePicker language="en" onChange={vi.fn()} today={TODAY} window={THIRTY_DAYS} />,
+		);
 		expect(screen.getByRole('button', { name: '30 days' })).toHaveAttribute('aria-pressed', 'true');
 		expect(screen.getByRole('button', { name: '7 days' })).toHaveAttribute('aria-pressed', 'false');
 	});
 
 	it('marks no preset for a hand-picked window', () => {
-		render(
+		renderWithI18n(
 			<StatRangePicker
 				language="en"
 				onChange={vi.fn()}
@@ -1498,7 +1582,7 @@ describe(StatRangePicker, () => {
 	it('reports the window a preset stands for', async () => {
 		const onChange = vi.fn();
 		const user = userEvent.setup();
-		render(
+		renderWithI18n(
 			<StatRangePicker language="en" onChange={onChange} today={TODAY} window={THIRTY_DAYS} />,
 		);
 
@@ -1510,7 +1594,7 @@ describe(StatRangePicker, () => {
 	// The window shown is the one the endpoint reported, which is not always
 	// the one that was asked for — it clamps to the retention floor silently.
 	it('displays the window it was given rather than a preset it inferred', () => {
-		render(
+		renderWithI18n(
 			<StatRangePicker
 				language="en"
 				onChange={vi.fn()}
@@ -1522,7 +1606,9 @@ describe(StatRangePicker, () => {
 	});
 
 	it('states how long statistics are kept', () => {
-		render(<StatRangePicker language="en" onChange={vi.fn()} today={TODAY} window={THIRTY_DAYS} />);
+		renderWithI18n(
+			<StatRangePicker language="en" onChange={vi.fn()} today={TODAY} window={THIRTY_DAYS} />,
+		);
 		expect(screen.getByText('Statistics are kept for 90 days.')).toBeInTheDocument();
 	});
 });
