@@ -245,6 +245,10 @@ export type LinkStats = {
     from: string;
     link_id: string;
     /**
+     * The first and last day this link has statistics for, whatever window was requested — absent when it has none. Bounded by the same 90-day retention floor the window is, so a range reported here can always be requested. This is what is still stored, not what ever happened: rows older than the floor are deleted nightly, and a link whose clicks have all aged out is indistinguishable from one that was never clicked.
+     */
+    recorded?: StatRange;
+    /**
      * One entry per day of the window, including days with no clicks. At most 90 entries.
      */
     series: Array<StatDay> | null;
@@ -414,6 +418,11 @@ export type StatDay = {
      * Distinct visitors on this day. Summed over several days this counts a returning person once per day.
      */
     unique_visitors: number;
+};
+
+export type StatRange = {
+    from: string;
+    to: string;
 };
 
 export type StatValue = {
@@ -673,6 +682,10 @@ export type LinkStatsWritable = {
      */
     from: string;
     link_id: string;
+    /**
+     * The first and last day this link has statistics for, whatever window was requested — absent when it has none. Bounded by the same 90-day retention floor the window is, so a range reported here can always be requested. This is what is still stored, not what ever happened: rows older than the floor are deleted nightly, and a link whose clicks have all aged out is indistinguishable from one that was never clicked.
+     */
+    recorded?: StatRange;
     /**
      * One entry per day of the window, including days with no clicks. At most 90 entries.
      */
