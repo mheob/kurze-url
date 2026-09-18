@@ -484,7 +484,10 @@ export const getLinkStatsFn = createServerFn({ method: 'GET' })
  *
  * @param linkId - The link to report on.
  * @param window - The bounds, which may be empty.
- * @returns Query options for the loader and for useSuspenseQuery.
+ * @returns Query options for `loadStats` to spread into the loader's
+ *   `queryClient.query()` call; the statistics route reads the result back
+ *   through `Route.useLoaderData()`, not `useSuspenseQuery` — unlike the
+ *   sibling `linksQueryOptions`, whose docstring this one used to copy.
  */
 // Same reason as `linksQueryOptions` above: `queryOptions`'s own return type
 // can't be written out by hand without losing the specific query-key tuple

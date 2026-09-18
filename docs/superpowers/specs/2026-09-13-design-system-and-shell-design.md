@@ -108,6 +108,8 @@ For a sequential series this is correct and even preferable. The analytics endpo
 
 Nothing in this spec renders a chart, so nothing here is blocked. The problem is recorded so the analytics spec inherits it as a stated open question rather than rediscovering it. Direct labelling instead of a colour legend is the obvious first answer; a separate categorical palette alongside the sequential ramp is the second.
 
+**Answered 2026-09-18.** The question above was whether five lightnesses of one hue separate well enough to carry eight categorical dimensions; the answer is that they do not, and measuring the ramp to answer it found a second, more urgent defect underneath: the ramp was also failing WCAG 1.4.11's 3:1 floor outright, in both themes, for the same root cause as the `--ring` defect this spec fixed above — Theme=Indigo had left `--chart-1` through `--chart-5` at the base preset's values in both blocks. Neither of the two answers proposed above is what shipped: the series chart instead carries the metric on colour and the population on stroke style, two channels doing what one hue cannot. Full reasoning and the measured before/after numbers: `docs/superpowers/specs/2026-09-18-link-analytics-page-design.md` and `docs/superpowers/plans/2026-09-18-analytics-contrast.md`.
+
 ## One axis now, two later
 
 Dark and light already travel as a `dark` class on `<html>`, written from a cookie the server reads so the first paint is correct (`readTheme`, `themeClassName`, `src/lib/preferences.ts`). A user settings page offering a choice of colour theme is planned, which makes colour a **second, independent axis**: colour theme × light/dark.
