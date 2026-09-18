@@ -3,6 +3,7 @@
    are not marked readonly. That file is Task 3's tested interface, not this task's to edit, and
    its own tests pin its exact shape — adding readonly there is out of scope here. */
 
+import { parseISO } from 'date-fns';
 import { useState } from 'react';
 import type { DateRange } from 'react-day-picker';
 import { useTranslation } from 'react-i18next';
@@ -52,6 +53,15 @@ const PRESETS = [
  * runtime's UTC offset for anyone west of Greenwich. Reading the same local
  * components back out is what makes this the inverse of how the cell's
  * `Date` was built, regardless of timezone.
+ *
+ * `parseISO` (below, from `date-fns`) is this function's own inverse: it
+ * turns a date-only ISO string into a `Date` at *local* midnight for that
+ * calendar day, the same local components this function reads back out — so
+ * `isoDayFromCalendarDate(parseISO(day)) === day` in any timezone. The two
+ * used to disagree: every ISO→`Date` conversion below built a UTC instant
+ * instead (`new Date(`${day}T00:00:00Z`)`), which this function's own read
+ * then shifts by the runtime's UTC offset — one calendar day earlier for
+ * anyone west of Greenwich.
  *
  * @param date - A calendar day as `Calendar`'s `onSelect` reports it.
  * @returns The same calendar day as YYYY-MM-DD.
@@ -132,8 +142,8 @@ export function StatRangePicker({
 	const [pendingRange, setPendingRange] = useState<DateRange | undefined>(undefined);
 
 	const selectedRange: DateRange = pendingRange ?? {
-		from: new Date(`${window.from}T00:00:00Z`),
-		to: new Date(`${window.to}T00:00:00Z`),
+		from: parseISO(window.from),
+		to: parseISO(window.to),
 	};
 
 	return (
@@ -180,7 +190,7 @@ export function StatRangePicker({
 						    rather than adding a new one: the two describe the same thing. */}
 						<PopoverTitle>{t('stats.customRange')}</PopoverTitle>
 						<Calendar
-							disabled={{ after: today, before: new Date(`${retentionFloor(today)}T00:00:00Z`) }}
+							disabled={{ after: today, before: parseISO(retentionFloor(today)) }}
 							mode="range"
 							onSelect={(range) => {
 								setPendingRange(range);

@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { I18nextProvider } from 'react-i18next';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createI18n } from '../i18n';
 import type { Language } from '../lib/preferences';
@@ -39,7 +39,35 @@ function getDayButton(isoDay: string): HTMLElement {
 	return button;
 }
 
-describe(StatRangePicker, () => {
+/**
+ * Correctness item 2 (final review): every ISO→`Date` conversion this
+ * component makes has to round-trip through `isoDayFromCalendarDate` (which
+ * reads back *local* year/month/day) regardless of which timezone the
+ * process itself is running in. The reproduction that found the bug ran
+ * this whole file under `TZ=America/New_York` from the shell; running it
+ * again here, inside the suite itself, is what keeps a regression from
+ * only failing in a CI job nobody remembers to run under a UTC-negative
+ * zone. `vi.stubEnv`/`vi.unstubAllEnvs` — Vitest's own env-mocking pair,
+ * already used by `server/teams.test.ts` and `server/supabase.test.ts` —
+ * is the mechanism used: Node/V8 re-resolves `Date`'s local components
+ * from `process.env.TZ` on every call, with no process restart needed, so
+ * stubbing it before each test and restoring it after is enough to run the
+ * exact same assertions under a second timezone.
+ */
+const TIMEZONE_CASES = [
+	['the environment default', undefined],
+	['America/New_York', 'America/New_York'],
+] as const;
+
+describe.each(TIMEZONE_CASES)('the range picker under %s', (_label, timezone) => {
+	beforeEach(() => {
+		if (timezone !== undefined) vi.stubEnv('TZ', timezone);
+	});
+
+	afterEach(() => {
+		vi.unstubAllEnvs();
+	});
+
 	it('marks the preset that matches the current window', () => {
 		renderWithI18n(
 			<StatRangePicker
