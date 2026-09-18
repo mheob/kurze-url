@@ -91,8 +91,9 @@ function splitValueLabel(t: TFunction, value: string): string {
  * top-ten breakdown layout: a split holds at most a couple of values (and,
  * for `qr_vs_regular` on a link with no scans yet, only one), so a plain
  * list of label-and-share rows is the whole shape, with no "other" row —
- * `other_clicks` is folded into `splitTotal`'s denominator instead of
- * getting a row of its own.
+ * `other_clicks` is always 0 for these closed, two-value dimensions (see
+ * `splitValuesTotal`'s own docstring), so there is never a remainder that
+ * would need one.
  *
  * @param props - The component's props.
  * @param props.breakdown - The split to render.
