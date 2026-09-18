@@ -4,30 +4,18 @@ import {
 	createRootRoute,
 	createRoute,
 	createRouter,
-	Link as RouterLink,
 	RouterProvider,
 } from '@tanstack/react-router';
 import { render, screen } from '@testing-library/react';
 import axe from 'axe-core';
-import { I18nextProvider, useTranslation } from 'react-i18next';
+import { I18nextProvider } from 'react-i18next';
 import { describe, expect, it, vi } from 'vitest';
 
 import { AuthedShell } from '../../components/authed-shell';
-import { StatBreakdownCard } from '../../components/stat-breakdown-card';
-import { StatRangePicker } from '../../components/stat-range-picker';
-import { StatSeriesChart } from '../../components/stat-series-chart';
-import { StatSummary } from '../../components/stat-summary';
-import {
-	Empty,
-	EmptyContent,
-	EmptyDescription,
-	EmptyHeader,
-	EmptyTitle,
-} from '../../components/ui/empty';
 import { createI18n } from '../../i18n';
 import type { StatsWindow } from '../../lib/stats-window';
 import type { Membership } from '../_authed';
-import { statsView } from './teams.$teamSlug.links.$linkId_.stats.tsx';
+import { StatsPageBody } from './teams.$teamSlug.links.$linkId_.stats.tsx';
 
 /* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding below traces to
    `@kurze-url/api-client`'s generated `Link`/`LinkStats`/`StatBreakdown`/`StatDay` types, whose
@@ -175,124 +163,19 @@ const EMPTY_STATS: LinkStats = {
 };
 
 /**
- * Stands in for `RouteComponent` in `teams.$teamSlug.links.$linkId_.stats.tsx`,
- * which isn't exported — Task 11 only consumes that route, it doesn't modify
- * it, so this reproduces its exact composition for the state under test
- * instead of exporting it just to make this test possible. Real components
- * throughout, nothing mocked or stubbed.
+ * Renders the real `StatsPageBody` (exported from
+ * `teams.$teamSlug.links.$linkId_.stats.tsx` for exactly this reason) inside
+ * the real, composed `AuthedShell` — exactly how `_authed.tsx` nests every
+ * route's content inside `SidebarInset`, whose own `<main>` is the page's
+ * only landmark; the same reason `authed-shell.a11y.test.tsx` renders the
+ * real shell rather than a bare fragment. Testing the page body on its own,
+ * with no shell around it, would report a missing landmark for a reason
+ * that has nothing to do with this page.
  *
- * @param props - The component's props.
- * @param props.link - The link the statistics belong to.
- * @param props.stats - The statistics document.
- * @param props.teamSlug - The team slug, for the "back to link" route params.
- * @returns The rendered page body, exactly as the route composes it.
- */
-function StatsPageBody({
-	link,
-	stats,
-	teamSlug,
-}: {
-	readonly link: Link;
-	readonly stats: LinkStats;
-	readonly teamSlug: string;
-}): React.JSX.Element {
-	const { t } = useTranslation();
-	const view = statsView(stats);
-	const series = stats.series ?? [];
-
-	return (
-		<>
-			<h1>{link.short_url}</h1>
-			{/* oxlint-disable-next-line react/forbid-component-props -- plain navigational link, same as the route's own. */}
-			<RouterLink params={{ linkId: link.id, teamSlug }} to="/teams/$teamSlug/links/$linkId">
-				{t('stats.backToLink')}
-			</RouterLink>
-
-			<StatRangePicker
-				language="en"
-				onChange={vi.fn<(window: Readonly<StatsWindow>) => void>()}
-				today={new Date('2026-09-18T00:00:00Z')}
-				window={{ from: stats.from, to: stats.to }}
-			/>
-
-			{view === 'disabled' ? (
-				<Empty>
-					<EmptyHeader>
-						<EmptyTitle>{t('stats.disabledTitle')}</EmptyTitle>
-						<EmptyDescription>{t('stats.disabledBody')}</EmptyDescription>
-					</EmptyHeader>
-					<EmptyContent>
-						<RouterLink params={{ linkId: link.id, teamSlug }} to="/teams/$teamSlug/links/$linkId">
-							{t('stats.disabledAction')}
-						</RouterLink>
-					</EmptyContent>
-				</Empty>
-			) : null}
-
-			{view === 'empty' ? (
-				<Empty>
-					<EmptyHeader>
-						<EmptyTitle>{t('stats.noClicksTitle')}</EmptyTitle>
-						<EmptyDescription>{t('stats.noClicksBody')}</EmptyDescription>
-					</EmptyHeader>
-				</Empty>
-			) : null}
-
-			{view === 'data' ? (
-				<>
-					<StatSummary
-						botStatus={stats.breakdowns.bot_status}
-						language="en"
-						qrVsRegular={stats.breakdowns.qr_vs_regular}
-						totals={stats.totals}
-					/>
-					<StatSeriesChart from={stats.from} language="en" series={series} to={stats.to} />
-					<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-						<StatBreakdownCard
-							breakdown={stats.breakdowns.browser}
-							language="en"
-							title={t('stats.browser')}
-						/>
-						<StatBreakdownCard
-							breakdown={stats.breakdowns.os}
-							language="en"
-							title={t('stats.os')}
-						/>
-						<StatBreakdownCard
-							breakdown={stats.breakdowns.device}
-							language="en"
-							title={t('stats.device')}
-						/>
-						<StatBreakdownCard
-							breakdown={stats.breakdowns.country}
-							language="en"
-							title={t('stats.country')}
-						/>
-						<StatBreakdownCard
-							breakdown={stats.breakdowns.referrer}
-							language="en"
-							title={t('stats.referrer')}
-						/>
-						<StatBreakdownCard
-							breakdown={stats.breakdowns.utm_source}
-							language="en"
-							title={t('stats.utmSource')}
-						/>
-					</div>
-				</>
-			) : null}
-		</>
-	);
-}
-
-/**
- * Renders the composed page body inside the real, composed `AuthedShell` —
- * exactly how `_authed.tsx` nests every route's content inside
- * `SidebarInset`, whose own `<main>` is the page's only landmark; the same
- * reason `authed-shell.a11y.test.tsx` renders the real shell rather than a
- * bare fragment. Testing the page body on its own, with no shell around it,
- * would report a missing landmark for a reason that has nothing to do with
- * this page.
+ * Rendering `StatsPageBody` itself, rather than a local stand-in, is what
+ * makes this suite react to a real composition change in the page: the
+ * route's own `RouteComponent` renders this exact component too, so nothing
+ * here can drift out from under what production actually ships.
  *
  * @param stats - The statistics document to render the page body for.
  * @returns The rendered test utilities from Testing Library's `render`.
@@ -308,7 +191,14 @@ function renderComposedPage(stats: LinkStats): ReturnType<typeof render> {
 				signingOut={false}
 				theme="light"
 			>
-				<StatsPageBody link={LINK} stats={stats} teamSlug="verein-a" />
+				<StatsPageBody
+					language="en"
+					link={LINK}
+					onWindowChange={vi.fn<(window: Readonly<StatsWindow>) => void>()}
+					stats={stats}
+					teamSlug="verein-a"
+					today={new Date('2026-09-18T00:00:00Z')}
+				/>
 			</AuthedShell>
 		),
 	});

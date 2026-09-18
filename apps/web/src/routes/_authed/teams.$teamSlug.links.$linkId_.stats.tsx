@@ -1,7 +1,7 @@
-import type { LinkStats } from '@kurze-url/api-client';
+import type { Link, LinkStats } from '@kurze-url/api-client';
 import {
 	createFileRoute,
-	Link,
+	Link as RouterLink,
 	Navigate,
 	notFound,
 	type SearchSchemaInput,
@@ -21,7 +21,8 @@ import {
 } from '../../components/ui/empty';
 import { classifyApiError, type ApiFailure } from '../../lib/api-errors';
 import { reportUnexpected } from '../../lib/observability';
-import { parseStatsSearch, type StatsSearch } from '../../lib/stats-window';
+import type { Language } from '../../lib/preferences';
+import { parseStatsSearch, type StatsSearch, type StatsWindow } from '../../lib/stats-window';
 import { usePreferences } from '../../lib/use-preferences';
 import { getLinkFn, linkStatsQueryOptions } from '../../server/links';
 import { requireTeamId } from '../_authed';
@@ -160,11 +161,50 @@ export function StatsError({ error }: { readonly error: unknown }): React.JSX.El
 	return <p role="alert">{t(`errors.${key}`)}</p>;
 }
 
-function RouteComponent(): React.JSX.Element {
-	const { teamSlug } = Route.useParams();
-	const { link, stats } = Route.useLoaderData();
-	const { language } = usePreferences();
-	const navigate = Route.useNavigate();
+export interface StatsPageBodyProps {
+	readonly language: Language;
+	readonly link: Link;
+	readonly onWindowChange: (window: StatsWindow) => void;
+	readonly stats: LinkStats;
+	readonly teamSlug: string;
+	// Injected rather than read from the clock, same reasoning as
+	// `StatRangePicker`'s own `today` prop: it is what lets this render the
+	// same way on every call, in Storybook, in the a11y suite and here.
+	readonly today: Date;
+}
+
+/**
+ * The presentational body of a link's statistics page — pure and
+ * prop-driven, the same idiom `LinkList`/`LinkForm`/`AuthedShell` already
+ * use so a route's router/mutation wiring can be tested separately from what
+ * it renders. `RouteComponent` below owns that wiring (`Route.useParams`,
+ * `Route.useLoaderData`, `usePreferences`, `Route.useNavigate`) and passes
+ * plain data and a callback in here.
+ *
+ * `teams.$teamSlug.links.$linkId_.stats.a11y.test.tsx` renders this exact
+ * component, with no router loader or query client involved — so a
+ * composition change made here (a heading level, a dropped back-link, a
+ * reordered breakdown) is caught by that suite in the same place production
+ * renders it, rather than against a second, hand-kept copy that could drift
+ * out from under it unnoticed.
+ *
+ * @param props - The component's props.
+ * @param props.language - The active language, for number and date formatting.
+ * @param props.link - The link the statistics belong to.
+ * @param props.onWindowChange - Called with the newly chosen window, from `StatRangePicker`.
+ * @param props.stats - The statistics document.
+ * @param props.teamSlug - The team slug, for the "back to link" route params.
+ * @param props.today - The current instant, injected for testability.
+ * @returns The rendered page body.
+ */
+export function StatsPageBody({
+	language,
+	link,
+	onWindowChange,
+	stats,
+	teamSlug,
+	today,
+}: StatsPageBodyProps): React.JSX.Element {
 	const { t } = useTranslation();
 	const view = statsView(stats);
 	const series = stats.series ?? [];
@@ -174,16 +214,14 @@ function RouteComponent(): React.JSX.Element {
 			<h1>{link.short_url}</h1>
 			{/* oxlint-disable-next-line react/forbid-component-props -- no className here; this is
 			    a plain navigational link back to the link's own detail page. */}
-			<Link params={{ linkId: link.id, teamSlug }} to="/teams/$teamSlug/links/$linkId">
+			<RouterLink params={{ linkId: link.id, teamSlug }} to="/teams/$teamSlug/links/$linkId">
 				{t('stats.backToLink')}
-			</Link>
+			</RouterLink>
 
 			<StatRangePicker
 				language={language}
-				onChange={(next) => {
-					void navigate({ search: next });
-				}}
-				today={new Date()}
+				onChange={onWindowChange}
+				today={today}
 				window={{ from: stats.from, to: stats.to }}
 			/>
 
@@ -194,9 +232,9 @@ function RouteComponent(): React.JSX.Element {
 						<EmptyDescription>{t('stats.disabledBody')}</EmptyDescription>
 					</EmptyHeader>
 					<EmptyContent>
-						<Link params={{ linkId: link.id, teamSlug }} to="/teams/$teamSlug/links/$linkId">
+						<RouterLink params={{ linkId: link.id, teamSlug }} to="/teams/$teamSlug/links/$linkId">
 							{t('stats.disabledAction')}
-						</Link>
+						</RouterLink>
 					</EmptyContent>
 				</Empty>
 			) : null}
@@ -254,5 +292,25 @@ function RouteComponent(): React.JSX.Element {
 				</>
 			) : null}
 		</>
+	);
+}
+
+function RouteComponent(): React.JSX.Element {
+	const { teamSlug } = Route.useParams();
+	const { link, stats } = Route.useLoaderData();
+	const { language } = usePreferences();
+	const navigate = Route.useNavigate();
+
+	return (
+		<StatsPageBody
+			language={language}
+			link={link}
+			onWindowChange={(next) => {
+				void navigate({ search: next });
+			}}
+			stats={stats}
+			teamSlug={teamSlug}
+			today={new Date()}
+		/>
 	);
 }
