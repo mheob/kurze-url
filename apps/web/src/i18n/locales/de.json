@@ -169,7 +169,12 @@
 		"visitorsNote": "Pro Tag gezählt — wer an drei Tagen wiederkommt, zählt dreimal.",
 		"botStatus": "Mensch oder Bot",
 		"qrVsRegular": "QR oder direkt",
-		"noValue": "Noch keine Daten"
+		"noValue": "Noch keine Daten",
+		"seriesHeading": "Zeitlicher Verlauf",
+		"showBots": "Bot-Anteil zeigen",
+		"seriesTableCaption": "Dieselben Zahlen als Tabelle",
+		"columnDate": "Datum",
+		"chartLabel": "Klicks und Besucher vom {{from}} bis {{to}}: {{clicks}} Klicks, {{visitors}} Besucher"
 	},
 	"errors": {
 		"rateLimited": "Gerade wurden zu viele Links erstellt. Warte eine Minute und versuch es dann noch mal.",
