@@ -172,6 +172,18 @@ const DISABLED_WITH_HISTORY_STATS: LinkStats = {
 	analytics_enabled: false,
 };
 
+const RECORDED_ELSEWHERE = { from: '2026-06-12', to: '2026-07-03' };
+
+const EMPTY_WITH_HISTORY_STATS: LinkStats = {
+	...EMPTY_STATS,
+	recorded: RECORDED_ELSEWHERE,
+};
+
+const DISABLED_WITH_ELSEWHERE_STATS: LinkStats = {
+	...DISABLED_STATS,
+	recorded: RECORDED_ELSEWHERE,
+};
+
 /**
  * Renders the real `StatsPageBody` (exported from
  * `teams.$teamSlug.links.$linkId_.stats.tsx` for exactly this reason) inside
@@ -281,17 +293,20 @@ describe('the statistics page', () => {
 	});
 
 	// Residual finding 1: `totals.clicks` is window-scoped, so a link switched
-	// off a month ago falls into this same state under the default 30-day
-	// window while a 90-day window still holds data — the old copy asserted
-	// nothing was ever recorded, which is only true for the window being
-	// viewed, not for the link's whole history.
-	it('points the disabled-with-no-history state at a longer window', async () => {
+	// off a month ago and still holding data in a wider window used to render
+	// the same body copy as one that never recorded anything at all. `stats.
+	// recorded` (Task 2) is what closes that gap now: `DISABLED_STATS` carries
+	// no `recorded` key, which is what a link with no statistics anywhere
+	// reports, so the plain body copy below is correct rather than a guess —
+	// see the "empty views and the recorded range" suite below for the case
+	// where `recorded` is present instead.
+	it('shows the plain disabled body when there truly is nothing to point to', async () => {
 		renderComposedPage(DISABLED_STATS);
 		await screen.findByRole('heading', { level: 2, name: 'Click counting is off for this link' });
 
 		expect(
 			screen.getByText(
-				'Nothing is recorded while it is off, so this is not the same as a link nobody clicked. If counting was only switched off recently, try a longer window — it may still hold data from before then.',
+				'Nothing is recorded while it is off, so this is not the same as a link nobody clicked.',
 			),
 		).toBeInTheDocument();
 	});
@@ -313,5 +328,53 @@ describe('the statistics page', () => {
 
 		const results = await axe.run(document.body);
 		expect(results.violations).toStrictEqual([]);
+	});
+});
+
+describe('the empty views and the recorded range', () => {
+	// Every test here awaits the state's own heading first, the same idiom
+	// the suite above already uses (e.g. "has no axe violations … for the
+	// disabled state"): `RouterProvider`'s initial match resolves
+	// asynchronously, so a synchronous `getByRole`/`getByText` right after
+	// `renderComposedPage` can run before anything has committed.
+	it('offers the recorded window when counting is on and the window is empty', async () => {
+		renderComposedPage(EMPTY_WITH_HISTORY_STATS);
+		await screen.findByRole('heading', { level: 2, name: 'No clicks in this window' });
+
+		expect(
+			screen.getByRole('button', { name: 'Show Jun 12, 2026 – Jul 3, 2026' }),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText('This link has statistics outside the window you are looking at.'),
+		).toBeInTheDocument();
+	});
+
+	it('offers it when counting is off and data was recorded before that', async () => {
+		renderComposedPage(DISABLED_WITH_ELSEWHERE_STATS);
+		await screen.findByRole('heading', { level: 2, name: 'Click counting is off for this link' });
+
+		expect(
+			screen.getByRole('button', { name: 'Show Jun 12, 2026 – Jul 3, 2026' }),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				'Counting is off now, but statistics recorded before it was switched off are still here.',
+			),
+		).toBeInTheDocument();
+	});
+
+	it('says so plainly when there is nothing anywhere', async () => {
+		renderComposedPage(EMPTY_STATS);
+		await screen.findByRole('heading', { level: 2, name: 'No clicks in this window' });
+
+		expect(screen.queryByRole('button', { name: /^Show /u })).not.toBeInTheDocument();
+		expect(screen.getByText('Nothing has been recorded for this link.')).toBeInTheDocument();
+	});
+
+	it('leaves the disabled view without advice when there is nothing anywhere', async () => {
+		renderComposedPage(DISABLED_STATS);
+		await screen.findByRole('heading', { level: 2, name: 'Click counting is off for this link' });
+
+		expect(screen.queryByRole('button', { name: /^Show /u })).not.toBeInTheDocument();
 	});
 });
