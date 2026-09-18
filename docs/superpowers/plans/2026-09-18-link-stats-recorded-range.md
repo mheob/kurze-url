@@ -12,11 +12,11 @@
 
 ## Global Constraints
 
-- The new field is `Recorded *StatRange` with the tag `json:"recorded"` and **no `omitempty`**. That combination is what makes the generated TypeScript `recorded: StatRange | null` (required, nullable) rather than `recorded?: StatRange | null`. `Link.ExpiresAt` is the proven precedent.
+- The new field is `Recorded *StatRange` with the tag `json:"recorded,omitempty"`, which reaches TypeScript as `recorded?: StatRange`. Huma cannot express a nullable object — it panics on `nullable:"true"` over an object ref — so absence carries "no statistics" instead of null. What the contract must never become is `recorded?: StatRange | null`: optional _and_ nullable is the two-check form this design rejects.
 - The new query filters by the **retention floor**, never by the requested window. Clamping a computed result instead is the rejected approach — it produces an inverted range when every row is below the floor.
-- `recorded` is `null` exactly when the link has no rows at or above the floor.
+- `recorded` is absent exactly when the link has no rows at or above the floor.
 - The retention floor has one definition in Go after this change: `retentionFloor(now time.Time) time.Time`. `statsWindow` and the handler both call it. Never re-derive `today.AddDate(0, 0, -(RetentionDays - 1))` anywhere else.
-- The button's render condition is `recorded !== null` and nothing else. An overlap check against the requested window is dead code; the reason belongs in a comment, not in a test.
+- The button's render condition is `recorded !== undefined` and nothing else. An overlap check against the requested window is dead code; the reason belongs in a comment, not in a test.
 - No new translation string names the retention window as a number. `stats.rangeRetentionNote` already says "90 days" and the range picker renders it on the same page.
 - **Commits** follow Conventional Commits, max 50 characters including type and scope. No co-author line and no generator footer, ever.
 - **All git writes go through GitButler (`but`)** — never `git add`, `git commit`, `git checkout`. The lane for this work is `feat/stats-recorded-range`, which already carries the spec commit.
@@ -227,11 +227,16 @@ type StatRange struct {
 and add to `LinkStats`, after `AnalyticsEnabled`:
 
 ```go
-	// A pointer with no omitempty, so the field is always present and reaches
-	// TypeScript as `StatRange | null` rather than as an optional. Link.ExpiresAt
-	// is the same shape for the same reason: one null check on the client,
-	// instead of one for absence and one for null.
-	Recorded *StatRange `json:"recorded" doc:"The first and last day this link has statistics for, whatever window was requested — null when it has none. Bounded by the same 90-day retention floor the window is, so a range reported here can always be requested. This is what is still stored, not what ever happened: rows older than the floor are deleted nightly, and a link whose clicks have all aged out is indistinguishable from one that was never clicked."`
+	// Absent rather than null when the link has no statistics, and that is a
+	// concession to the schema generator rather than a preference. Huma refuses
+	// a nullable object outright — `nullable:"true"` on a field whose ref is an
+	// object panics, and automatic nullability covers only scalars — so a
+	// required `$ref` answered with `null` would document a shape the endpoint
+	// does not send. `omitempty` on a pointer makes Huma mark the property
+	// optional and non-nullable, which is what the handler actually does: Go
+	// omits the key. A reader still makes one check and still cannot meet a
+	// half-populated range.
+	Recorded *StatRange `json:"recorded,omitempty" doc:"The first and last day this link has statistics for, whatever window was requested — null when it has none. Bounded by the same 90-day retention floor the window is, so a range reported here can always be requested. This is what is still stored, not what ever happened: rows older than the floor are deleted nightly, and a link whose clicks have all aged out is indistinguishable from one that was never clicked."`
 ```
 
 - [ ] **Step 8: Call the query from the handler**
@@ -342,41 +347,21 @@ This runs `go run ./cmd/openapi > openapi.json`, regenerates `packages/api-clien
 
 Run: `grep -n "recorded" packages/api-client/src/generated/types.gen.ts`
 
-Expected: a line reading `recorded: StatRange | null;` — no `?`.
+Expected: a line reading `recorded?: StatRange;` — optional, and **not** followed by `| null`.
 
-**A `recorded?:` means the contract is the one the spec rejected.** The cause would be an `omitempty` on the Go tag; remove it, rerun Task 1's Go gate and this step. Do not proceed with an optional field and a second check on the client.
+**A `recorded?: StatRange | null` means the contract is the one the spec rejects**, because optional and nullable together is the two-check form. Stop and report it rather than building on it.
 
 Also confirm `StatRange` itself is exported:
 
 Run: `grep -n "export type StatRange" packages/api-client/src/generated/types.gen.ts`
 
-- [ ] **Step 3: Run typecheck and watch it fail**
+- [ ] **Step 3: Run typecheck**
 
 Run from the repository root: `pnpm run typecheck`
 
-Expected: FAIL. `recorded` is required, and three files build `LinkStats` values without it.
+Expected: PASS, with no fixture changes anywhere. This follows from the ruling that made the field optional, and it is worth confirming rather than assuming: an optional property costs existing `LinkStats` literals nothing, where a required one would have broken every fixture in three files. If typecheck fails here, the generated field is not optional and Step 2's check was misread.
 
-- [ ] **Step 4: Add `recorded` to every fixture**
-
-These are fixtures for tests about other things; they take the null case, which is what a link with no rows reports.
-
-In `apps/web/src/routes/_authed/teams.$teamSlug.links.$linkId_.stats.test.tsx`, add to `STATS_FIXTURE`:
-
-```ts
-	recorded: null,
-```
-
-In `apps/web/src/routes/_authed/teams.$teamSlug.links.$linkId_.stats.a11y.test.tsx`, add `recorded: null,` to every `LinkStats` literal. Find them with:
-
-```bash
-grep -n "analytics_enabled:" apps/web/src/routes/_authed/teams.\$teamSlug.links.\$linkId_.stats.a11y.test.tsx
-```
-
-`DISABLED_WITH_HISTORY_STATS` spreads `DATA_STATS` and needs nothing of its own.
-
-In `apps/web/src/server/links.test.ts`, add `recorded: null,` to each mocked stats response body inside `describe('getLinkStatsFor')`.
-
-- [ ] **Step 5: Run the gate**
+- [ ] **Step 4: Run the gate**
 
 Run from the repository root:
 
@@ -386,7 +371,7 @@ pnpm run typecheck && pnpm run lint && pnpm run test
 
 Expected: all pass.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 pnpm format
@@ -754,7 +739,7 @@ describe('the empty views and the recorded range', () => {
 });
 ```
 
-`EMPTY_STATS` and `DISABLED_STATS` already exist in this file and carry `recorded: null` from Task 2.
+`EMPTY_STATS` and `DISABLED_STATS` already exist in this file and carry no `recorded` at all, which is what a link with no statistics reports.
 
 - [ ] **Step 2: Run them and watch them fail**
 
@@ -779,7 +764,7 @@ Inside `StatsPageBody`, above the `return`, add:
 // `total` row (`analytics.Dimensions.Rows` always emits one) and the
 // upsert only ever adds a positive count — so a servable row inside the
 // requested window would have made the totals positive and neither empty
-// view would be on screen. In an empty view a non-null `recorded` is
+// view would be on screen. In an empty view a present `recorded` is
 // therefore always outside the window, and an overlap check here would
 // guard a state the data model cannot produce.
 const recorded = stats.recorded;
@@ -789,11 +774,11 @@ Replace the `disabled` block's `EmptyDescription` and `EmptyContent` with:
 
 ```tsx
 					<EmptyDescription>
-						{t(recorded === null ? 'stats.disabledBody' : 'stats.disabledElsewhere')}
+						{t(recorded === undefined ? 'stats.disabledBody' : 'stats.disabledElsewhere')}
 					</EmptyDescription>
 				</EmptyHeader>
 				<EmptyContent>
-					{recorded === null ? null : (
+					{recorded === undefined ? null : (
 						<StatRecordedJump language={language} onSelect={onWindowChange} recorded={recorded} />
 					)}
 					<RouterLink params={{ linkId: link.id, teamSlug }} to="/teams/$teamSlug/links/$linkId">
@@ -806,10 +791,10 @@ and give the `empty` block a description that switches and an `EmptyContent` it 
 
 ```tsx
 					<EmptyDescription>
-						{t(recorded === null ? 'stats.noClicksBody' : 'stats.noClicksElsewhere')}
+						{t(recorded === undefined ? 'stats.noClicksBody' : 'stats.noClicksElsewhere')}
 					</EmptyDescription>
 				</EmptyHeader>
-				{recorded === null ? null : (
+				{recorded === undefined ? null : (
 					<EmptyContent>
 						<StatRecordedJump language={language} onSelect={onWindowChange} recorded={recorded} />
 					</EmptyContent>
@@ -962,5 +947,5 @@ Open the pull request with the `create-pr` skill against `main`. The branch is `
 
 Two things belong in the pull request body because a reviewer cannot see them in the diff:
 
-- The generated `recorded: StatRange | null` was verified rather than assumed, and why the optional form would have been a different contract.
+- The contract's shape was decided by measurement, not by the spec's first guess: Huma cannot express a nullable object, so `recorded` is optional and absent rather than required and null. The generated type was read before anything was built on it.
 - `apps/api/openapi.json` and `packages/api-client/src/generated/**` are `pnpm generate:api` output, not hand edits.

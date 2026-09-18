@@ -85,10 +85,14 @@ type StatRange struct {
 and on `LinkStats`:
 
 ```go
-Recorded *StatRange `json:"recorded" doc:"The first and last day this link has statistics for, whatever window was requested — null when it has none. Bounded by the same 90-day retention floor the window is, so a range reported here can always be requested. This is what is still stored, not what ever happened: rows older than the floor are deleted nightly, and a link whose clicks have all aged out is indistinguishable from one that was never clicked."`
+Recorded *StatRange `json:"recorded,omitempty" doc:"The first and last day this link has statistics for, whatever window was requested — null when it has none. Bounded by the same 90-day retention floor the window is, so a range reported here can always be requested. This is what is still stored, not what ever happened: rows older than the floor are deleted nightly, and a link whose clicks have all aged out is indistinguishable from one that was never clicked."`
 ```
 
-A pointer with **no** `omitempty`. That combination is already proven in this codebase: `Link.ExpiresAt` is `*time.Time` with a bare `json:"expires_at"`, and `packages/api-client`'s generated `types.gen.ts` renders it as `expires_at: string | null` — required, nullable. The field is therefore always present and the frontend makes one check, which is the reason this shape was chosen over two nullable top-level days. The implementation confirms the generated type reads `recorded: StatRange | null` before building on it; if `omitempty` creeps in, the generated type becomes `recorded?: StatRange | null` and the contract has quietly become the one this design rejected.
+**Absence, not null — and that is a concession to the schema generator, decided during implementation.** This design first specified a pointer with no `omitempty`, reasoning from `Link.ExpiresAt`, which is `*time.Time` with a bare tag and reaches TypeScript as `expires_at: string | null`. That reasoning does not survive the jump from a scalar to an object. Huma v2.39.1 applies automatic nullability only to `TypeBoolean`, `TypeInteger`, `TypeNumber` and `TypeString`, and `nullable:"true"` on a field whose ref is an object panics outright: "Nullability is only supported for scalar types for now. Objects are much more complicated." A required `$ref` answered with `null` would therefore have published a shape the endpoint does not send.
+
+`omitempty` on the pointer is what makes the schema and the wire agree: Huma marks the property optional and non-nullable (its own comment on that branch reads "will never get `null` sent over the wire"), and Go omits the key rather than writing null. The generated type is `recorded?: StatRange`.
+
+Both properties this shape was chosen for survive intact. A reader still makes **one** check, and a half-populated range is still unrepresentable. Only the way absence travels changed, from `null` to a missing key. What this design must not become is `recorded?: StatRange | null` — optional _and_ nullable is the two-check form, and it is still rejected. The implementation verifies the generated type rather than assuming it.
 
 The inner names repeat `from`/`to`. Inside `recorded` they are unambiguous, and inventing a second vocabulary for "a range of days" in the same document would be the larger cost.
 
