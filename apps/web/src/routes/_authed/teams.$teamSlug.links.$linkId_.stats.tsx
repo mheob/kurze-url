@@ -1,5 +1,11 @@
 import type { LinkStats } from '@kurze-url/api-client';
-import { createFileRoute, Link, Navigate, type SearchSchemaInput } from '@tanstack/react-router';
+import {
+	createFileRoute,
+	Link,
+	Navigate,
+	notFound,
+	type SearchSchemaInput,
+} from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 
 import { StatBreakdownCard } from '../../components/stat-breakdown-card';
@@ -40,6 +46,68 @@ export function statsView(stats: LinkStats): 'data' | 'disabled' | 'empty' {
 	return stats.totals.clicks > 0 ? 'data' : 'empty';
 }
 
+/**
+ * The one method `loadStats` below reaches through — a real `QueryClient`
+ * satisfies this structurally via `query()`, so the loader needs no cast,
+ * and this route's own test can pass a hand-built fake instead of a real
+ * `QueryClient` (which cannot run directly under Vitest — same reasoning as
+ * `LinkFetcher` in the sibling detail route). `query()`, not `ensureQueryData`:
+ * the latter is `@deprecated` in the installed `@tanstack/query-core` in
+ * favour of exactly this replacement, `query({ ...options, staleTime: 'static' })`
+ * — see `loadStats`'s own docstring for why `staleTime` has to travel with it.
+ */
+interface StatsDataSource {
+	readonly query: (
+		options: ReturnType<typeof linkStatsQueryOptions> & { staleTime: 'static' },
+	) => Promise<LinkStats>;
+}
+
+/**
+ * `GET /v1/links/{id}/stats` carries the same `authz.LinkViewerScope` as
+ * `GET /v1/links/{id}` (see `loadLink`, the sibling detail route), so a link
+ * that doesn't exist or belongs to another team 404s from either endpoint.
+ * Without this, whichever of the two `Promise.all` calls in the loader below
+ * happens to reject first decided which page the visitor saw for the exact
+ * same condition: this route's own bare "Not found." paragraph, still inside
+ * the sidebar, if the stats fetch lost the race — or the root `NotFound`
+ * page, via `loadLink`'s own handling, if the link fetch did. Normalizing
+ * both to the router's `notFound()` here picks the second outcome
+ * unconditionally, matching what already happens when only the link fetch
+ * 404s — a missing/foreign link is one condition, and both fetches now agree
+ * on the one page it renders.
+ *
+ * `query()`'s own default `staleTime` is `0` — every fetch through it would
+ * be stale the instant it lands, unlike the deprecated `ensureQueryData`
+ * this replaces (whose own default came from `linkStatsQueryOptions`, which
+ * sets none, so it fell through to the client's global default of `0` too;
+ * `'static'` is what the deprecation notice itself names as the
+ * like-for-like replacement, and it is what keeps this loader's fetch from
+ * being immediately eligible for a second, silent refetch the moment
+ * anything else reads the same query key).
+ *
+ * @param queryClient - The query client to fetch through; only needs `query`.
+ * @param linkId - The link's id, from the route's own path parameter.
+ * @param window - The `from`/`to` bounds to request the statistics for.
+ * @returns The fetched statistics document.
+ */
+export async function loadStats(
+	queryClient: StatsDataSource,
+	linkId: string,
+	window: StatsSearch,
+): Promise<LinkStats> {
+	try {
+		return await queryClient.query({
+			...linkStatsQueryOptions(linkId, window),
+			staleTime: 'static',
+		});
+	} catch (error) {
+		const classified = classifyApiError(error);
+		// oxlint-disable-next-line typescript/only-throw-error -- TanStack Router signals navigation by throwing; `notFound()` is its control flow, not an Error.
+		if (classified.kind === 'notFound') throw notFound();
+		throw error;
+	}
+}
+
 // oxlint-disable-next-line sort-keys -- `validateSearch` has to stay declared before `loaderDeps`/`loader`: see the comment on it below.
 export const Route = createFileRoute('/_authed/teams/$teamSlug/links/$linkId_/stats')({
 	// Declared before loaderDeps/loader, not for readability: loaderDeps's own
@@ -55,10 +123,10 @@ export const Route = createFileRoute('/_authed/teams/$teamSlug/links/$linkId_/st
 	loader: async ({ context, deps, params }) => {
 		// Two calls in parallel, the way `routes/index.tsx` already pairs its
 		// own: the statistics document carries `link_id` and no slug, so
-		// without the second the heading could not name the link.
+		// without the second the heading could not name the link. Both sides
+		// now agree on a 404 — see `loadStats`'s own docstring.
 		const [stats, link] = await Promise.all([
-			// oxlint-disable-next-line typescript/no-deprecated -- every other loader in this app reaches `ensureQueryData` through its own narrow `...DataSource` interface (e.g. `LinksDataSource` in `teams.$teamSlug.links.index.tsx`), which incidentally hides the method's `@deprecated` overload from the type checker; this loader calls it directly on the real `QueryClient`, so the same deprecated signature is visible here.
-			context.queryClient.ensureQueryData(linkStatsQueryOptions(params.linkId, deps)),
+			loadStats(context.queryClient, params.linkId, deps),
 			loadLink(getLinkFn, params.linkId),
 		]);
 		return { link, stats };
