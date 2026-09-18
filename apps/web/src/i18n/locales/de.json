@@ -160,6 +160,17 @@
 			"unknown": "Die Domain konnte gerade nicht geprüft werden. Versuch es noch mal."
 		}
 	},
+	"stats": {
+		"heading": "Statistik",
+		"clicks": "Klicks",
+		"uniqueVisitors": "Besucher",
+		"humanClicks": "Menschliche Klicks",
+		"humanUniqueVisitors": "Menschliche Besucher",
+		"visitorsNote": "Pro Tag gezählt — wer an drei Tagen wiederkommt, zählt dreimal.",
+		"botStatus": "Mensch oder Bot",
+		"qrVsRegular": "QR oder direkt",
+		"noValue": "Noch keine Daten"
+	},
 	"errors": {
 		"rateLimited": "Gerade wurden zu viele Links erstellt. Warte eine Minute und versuch es dann noch mal.",
 		"notFound": "Nicht gefunden.",
