@@ -66,7 +66,19 @@ test('protects a link with a password and removes it again', async ({ page, team
 	await expect(page.getByText('Password protected')).toBeVisible();
 
 	await page.getByRole('link', { name: /edit/iu }).click();
-	await page.getByRole('button', { name: /remove protection/iu }).click();
+
+	// The `goto` above resolves on `load`, so the list can be on screen before
+	// React attaches — and a click on an unhydrated `<a href>` is an ordinary
+	// browser navigation, which delivers this page server-rendered and
+	// unhydrated in turn. Clicking the button in that window moves focus to it
+	// and nothing else: no handler is attached, so the confirmation dialog
+	// never opens and the wait below runs out against a page that looks
+	// correct. Seen exactly that way in CI on 2026-09-18, with the button
+	// `[active]` and no dialog in the failure snapshot.
+	const remove = page.getByRole('button', { name: /remove protection/iu });
+	await waitForHydration(remove);
+	await remove.click();
+
 	await page.getByRole('button', { name: /yes, remove it/iu }).click();
 
 	await expect(page.getByText('This link is not protected.')).toBeVisible();
