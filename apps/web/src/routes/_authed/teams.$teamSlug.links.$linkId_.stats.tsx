@@ -163,6 +163,15 @@ export async function loadStatsPage(
 		loadStats(options.queryClient, options.linkId, options.window),
 		loadLink(options.fetchLink, options.linkId),
 	]);
+	// Read once, here, rather than left for `RouteComponent` to read at
+	// render time — that's the fix this function exists for (see the
+	// docstring above). The accepted cost: a tab left open across local
+	// midnight without navigating keeps this stale `today` until the next
+	// loader run, so the calendar disables today's own date
+	// (`stat-range-picker.tsx`'s `disabled: { after: today }`) and a preset
+	// button computes a window ending yesterday. It self-heals on the next
+	// navigation — a live clock instead would just reintroduce the
+	// server/client mismatch this was written to prevent.
 	return { link, stats, today: new Date() };
 }
 
