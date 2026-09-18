@@ -93,14 +93,22 @@ function tokenIn(selector: string, token: string): [number, number, number] {
 
 describe('the indigo chart ramp', () => {
 	const steps = [1, 2, 3, 4, 5];
+	// Read from the stylesheet itself, the same way each `chart-${step}` token
+	// is below — a hardcoded `[1, 0, 0]`/`[0.205, 0, 0]` (today's `--card`
+	// value, copied in by hand) would keep measuring against a stale
+	// background forever: change `--card` in `app.css` without touching this
+	// file and every one of the ten assertions below would stay green,
+	// contradicting this file's own claim to fail on exactly that edit.
+	const lightCard = tokenIn("[data-theme='indigo']", 'card');
+	const darkCard = tokenIn("[data-theme='indigo'].dark", 'card');
 
 	it.each(steps)('step %i clears the contrast floor against the light card', (step) => {
-		const ratio = contrast(tokenIn("[data-theme='indigo']", `chart-${step}`), [1, 0, 0]);
+		const ratio = contrast(tokenIn("[data-theme='indigo']", `chart-${step}`), lightCard);
 		expect(ratio).toBeGreaterThanOrEqual(MINIMUM_CONTRAST);
 	});
 
 	it.each(steps)('step %i clears the contrast floor against the dark card', (step) => {
-		const ratio = contrast(tokenIn("[data-theme='indigo'].dark", `chart-${step}`), [0.205, 0, 0]);
+		const ratio = contrast(tokenIn("[data-theme='indigo'].dark", `chart-${step}`), darkCard);
 		expect(ratio).toBeGreaterThanOrEqual(MINIMUM_CONTRAST);
 	});
 
