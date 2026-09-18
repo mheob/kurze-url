@@ -60,6 +60,9 @@ describe('translation catalogues', () => {
 			'brand',
 			'domains.recordTypeTxt',
 			'domains.recordTypeCname',
+			// "Browser" is the German word too — an established loanword, not a
+			// forgotten translation.
+			'stats.browser',
 		]);
 		const english = new Map(flatten(en));
 		const toCheck = flatten(de).filter(

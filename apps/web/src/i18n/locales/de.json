@@ -174,7 +174,16 @@
 		"showBots": "Bot-Anteil zeigen",
 		"seriesTableCaption": "Dieselben Zahlen als Tabelle",
 		"columnDate": "Datum",
-		"chartLabel": "Klicks und Besucher vom {{from}} bis {{to}}: {{clicks}} Klicks, {{visitors}} Besucher"
+		"chartLabel": "Klicks und Besucher vom {{from}} bis {{to}}: {{clicks}} Klicks, {{visitors}} Besucher",
+		"browser": "Browser",
+		"os": "Betriebssystem",
+		"device": "Gerät",
+		"country": "Land",
+		"referrer": "Verweis",
+		"utmSource": "Kampagnenquelle",
+		"otherValues_one": "{{count}} weiterer Wert",
+		"otherValues_other": "{{count}} weitere Werte",
+		"breakdownEmpty": "In diesem Zeitraum nichts erfasst"
 	},
 	"errors": {
 		"rateLimited": "Gerade wurden zu viele Links erstellt. Warte eine Minute und versuch es dann noch mal.",

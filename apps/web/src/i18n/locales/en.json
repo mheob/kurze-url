@@ -174,7 +174,16 @@
 		"showBots": "Show bot share",
 		"seriesTableCaption": "The same figures as a table",
 		"columnDate": "Date",
-		"chartLabel": "Clicks and visitors from {{from}} to {{to}}: {{clicks}} clicks, {{visitors}} visitors"
+		"chartLabel": "Clicks and visitors from {{from}} to {{to}}: {{clicks}} clicks, {{visitors}} visitors",
+		"browser": "Browser",
+		"os": "Operating system",
+		"device": "Device",
+		"country": "Country",
+		"referrer": "Referrer",
+		"utmSource": "Campaign source",
+		"otherValues_one": "{{count}} further value",
+		"otherValues_other": "{{count}} further values",
+		"breakdownEmpty": "Nothing recorded in this window"
 	},
 	"errors": {
 		"rateLimited": "Too many links created just now. Please wait a minute and try again.",
