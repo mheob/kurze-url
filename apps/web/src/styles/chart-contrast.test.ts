@@ -15,6 +15,7 @@ const MINIMUM_CONTRAST = 3;
 // `location` instead of the file on disk. Routing the path through a
 // variable sidesteps that rewrite so this reads the real stylesheet.
 const appCssPath = './app.css';
+// oxlint-disable-next-line node/no-sync -- module-scope fixture read in a test file: there is no event loop yet to block, and nothing concurrent to lose by waiting.
 const css = readFileSync(fileURLToPath(new URL(appCssPath, import.meta.url)), 'utf8');
 
 /**
@@ -57,8 +58,16 @@ function contrast(
 	a: readonly [number, number, number],
 	b: readonly [number, number, number],
 ): number {
-	const [high, low] = [luminance(a), luminance(b)].sort((x, y) => y - x);
-	return ((high ?? 0) + 0.05) / ((low ?? 0) + 0.05);
+	const lumA = luminance(a);
+	const lumB = luminance(b);
+	// Two values only, so pick the extremes directly rather than sorting:
+	// oxlint's `unicorn/no-array-sort` requires `.toSorted()` over `.sort()`
+	// project-wide, but `.toSorted()` is ES2023, outside apps/web/tsconfig.json's
+	// `lib` (ES2022) — the same tension apps/web/src/lib/preferences.ts documents
+	// and avoids the same way.
+	const high = Math.max(lumA, lumB);
+	const low = Math.min(lumA, lumB);
+	return (high + 0.05) / (low + 0.05);
 }
 
 /**

@@ -97,8 +97,11 @@
 	/* The preset's neutral ring, oklch(0.708 0 0), measured at 2.593:1 against
 	 * this background — short of the 3:1 that WCAG 1.4.11 requires, and the
 	 * Sera style's underline-only inputs make the ring the primary affordance
-	 * on every form, not a secondary one. This is --chart-3 (also this mode's
-	 * --sidebar-primary), which measures 6.441:1 here. See
+	 * on every form, not a secondary one. PR #75 pinned this literal value
+	 * (also this mode's --sidebar-primary) rather than tracking --chart-3, to
+	 * avoid coupling a focus ring's accessibility to a chart ramp's — the two
+	 * happened to match at the time, and 2026-09-18's chart-ramp fix moved
+	 * --chart-3 without moving this. Measures 6.441:1 here. See
 	 * docs/superpowers/plans/2026-09-13-design-system-contrast.md. */
 	--ring: oklch(0.511 0.262 276.966);
 	/* Each step clears WCAG 1.4.11's 3:1 against --card in this theme, and
@@ -122,8 +125,9 @@
 	 * against --sidebar — short of the 3:1 that WCAG 1.4.11 requires, and
 	 * `ui/sidebar.tsx` sets `outline-hidden` alongside `focus-visible:ring-2
 	 * ring-sidebar-ring`, so this is the sidebar's primary navigation's only
-	 * focus indicator. This is --chart-3 (same value as --ring above), which
-	 * measures 6.170:1 here. See
+	 * focus indicator. Pinned to the same literal as --ring above, for the
+	 * same reason — independently of --chart-3, which it also matched only
+	 * until 2026-09-18's chart-ramp fix moved. Measures 6.170:1 here. See
 	 * docs/superpowers/plans/2026-09-13-design-system-contrast.md. */
 	--sidebar-ring: oklch(0.511 0.262 276.966);
 }
@@ -149,9 +153,14 @@
 	/* Kept in the same indigo hue family as the light-mode ring above, for the
 	 * same reason — the underline-only inputs make the ring load-bearing —
 	 * even though the preset's neutral oklch(0.556 0 0) already cleared 3:1
-	 * here (4.183:1). This is --chart-2 (also this mode's --sidebar-primary),
-	 * which measures 4.324:1. Not --chart-5 (= this mode's --primary): that
-	 * would only reach 1.962:1 against this near-black background. See
+	 * here (4.183:1). PR #75 pinned this literal value (also this mode's
+	 * --sidebar-primary) rather than tracking a chart token, for the same
+	 * decoupling reason given above — it happened to equal --chart-2 at the
+	 * time, and 2026-09-18's chart-ramp fix moved --chart-2 without moving
+	 * this. Measures 4.324:1. Copying --primary straight in was rejected
+	 * instead: it measures only 1.962:1 against this near-black background.
+	 * --primary is untouched by the ramp fix; it merely stopped being
+	 * --chart-5's value too. See
 	 * docs/superpowers/plans/2026-09-13-design-system-contrast.md. */
 	--ring: oklch(0.585 0.233 277.117);
 	/* The dark ramp is not the light one reused: it runs the other way,
@@ -173,8 +182,10 @@
 	/* Kept in the same indigo hue family as --ring above, for the same
 	 * reason — `ui/sidebar.tsx` sets `outline-hidden` alongside this ring, so
 	 * it is the sidebar's only focus indicator — even though the preset's
-	 * neutral oklch(0.556 0 0) already cleared 3:1 here (3.785:1). This is
-	 * --chart-2 (same value as --ring above), which measures 3.935:1. See
+	 * neutral oklch(0.556 0 0) already cleared 3:1 here (3.785:1). Pinned to
+	 * the same literal as --ring above, for the same reason — independently
+	 * of --chart-2, which it also matched only until 2026-09-18's chart-ramp
+	 * fix moved. Measures 3.935:1. See
 	 * docs/superpowers/plans/2026-09-13-design-system-contrast.md. */
 	--sidebar-ring: oklch(0.585 0.233 277.117);
 }
