@@ -511,7 +511,6 @@
 					"from",
 					"to",
 					"analytics_enabled",
-					"recorded",
 					"totals",
 					"series",
 					"breakdowns"

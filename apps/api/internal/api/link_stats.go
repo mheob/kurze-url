@@ -127,11 +127,16 @@ type LinkStats struct {
 	From             string `json:"from" doc:"First day included, as YYYY-MM-DD in UTC. This is the window actually used, which may be narrower than the one requested."`
 	To               string `json:"to" doc:"Last day included, as YYYY-MM-DD in UTC. This is the window actually used, which may be narrower than the one requested."`
 	AnalyticsEnabled bool   `json:"analytics_enabled" doc:"False when this link's click counting is switched off. The redirect path then records nothing, so an empty document means 'not counted' rather than 'not clicked'."`
-	// A pointer with no omitempty, so the field is always present and reaches
-	// TypeScript as `StatRange | null` rather than as an optional. Link.ExpiresAt
-	// is the same shape for the same reason: one null check on the client,
-	// instead of one for absence and one for null.
-	Recorded   *StatRange          `json:"recorded" doc:"The first and last day this link has statistics for, whatever window was requested — null when it has none. Bounded by the same 90-day retention floor the window is, so a range reported here can always be requested. This is what is still stored, not what ever happened: rows older than the floor are deleted nightly, and a link whose clicks have all aged out is indistinguishable from one that was never clicked."`
+	// Absent rather than null when the link has no statistics, and that is a
+	// concession to the schema generator rather than a preference. Huma refuses
+	// a nullable object outright — `nullable:"true"` on a field whose ref is an
+	// object panics, and automatic nullability covers only scalars — so a
+	// required `$ref` answered with `null` would document a shape the endpoint
+	// does not send. `omitempty` on a pointer makes Huma mark the property
+	// optional and non-nullable, which is what the handler actually does: Go
+	// omits the key. A reader still makes one check and still cannot meet a
+	// half-populated range.
+	Recorded   *StatRange          `json:"recorded,omitempty" doc:"The first and last day this link has statistics for, whatever window was requested — null when it has none. Bounded by the same 90-day retention floor the window is, so a range reported here can always be requested. This is what is still stored, not what ever happened: rows older than the floor are deleted nightly, and a link whose clicks have all aged out is indistinguishable from one that was never clicked."`
 	Totals     StatCounts          `json:"totals"`
 	Series     []StatDay           `json:"series" doc:"One entry per day of the window, including days with no clicks. At most 90 entries."`
 	Breakdowns LinkStatsBreakdowns `json:"breakdowns"`
