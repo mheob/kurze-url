@@ -3,60 +3,29 @@
 // `import/no-named-as-default` flags a default import bound to the same name
 // as an existing named export as confusing. Same note as `shell.spec.ts`.
 import { AxeBuilder } from '@axe-core/playwright';
-import { expect, type Page } from '@playwright/test';
+import { expect } from '@playwright/test';
 
 import { test } from './fixtures/auth';
+import { createLink } from './fixtures/create-link';
 import { waitForHydration } from './fixtures/hydration';
 
 /* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding of this rule in this
- * file is Playwright's own `Page`/`Browser`/`TestInfo` (bare, or nested inside the fixture
- * argument object each `test` callback destructures); each has mutating methods (`goto`, `fill`,
- * `newContext`, ...) and none of these types are ours to edit.
+ * file is Playwright's own `Page`/`Browser`/`TestInfo`, nested inside the fixture argument object
+ * each `test` callback destructures; each has mutating methods (`goto`, `fill`, `newContext`, ...)
+ * and none of these types are ours to edit.
  */
-
-/**
- * Shared by every test below that needs a non-empty list. `LinkList`'s own
- * empty-state branch (`src/components/link-list.tsx`) returns before
- * rendering `<ShortUrlNotice>` at all, so a freshly provisioned team — which
- * starts with zero links — would make "warns that the short domain does not
- * resolve" fail for the wrong reason: there being nothing to warn about, not
- * the warning itself being broken. Creating a real link first is what makes
- * that assertion, and the accessibility scan below it, exercise the list's
- * actual populated markup rather than its empty one.
- *
- * @param page - The page to drive; must already be authenticated.
- * @param teamSlug - The team to create the link under; used to build the create-link URL.
- * @param destinationUrl - The URL the new link should redirect to.
- */
-async function createLink(page: Page, teamSlug: string, destinationUrl: string): Promise<void> {
-	await page.goto(`/teams/${teamSlug}/links/new`);
-
-	// Not decorative: `goto` resolves on `load`, which this server-rendered
-	// form reaches well before React wires it up, and a value typed in that
-	// window never reaches React's state — the form then submits empty. See
-	// `waitForHydration`.
-	const destination = page.getByLabel(/destination/iu);
-	await waitForHydration(destination);
-
-	await destination.fill(destinationUrl);
-	await page.getByRole('button', { name: /save/iu }).click();
-
-	// The create route navigates back to the list on success, so waiting for
-	// the destination to appear also confirms that redirect happened.
-	await expect(page.getByText(destinationUrl)).toBeVisible();
-}
 
 test('creates a link and shows it in the list', async ({ page, teamSlug }) => {
-	await createLink(page, teamSlug, 'https://example.org/a-page');
+	await createLink(page, teamSlug, { destinationUrl: 'https://example.org/a-page' });
 });
 
 test('warns that the short domain does not resolve', async ({ page, teamSlug }) => {
-	await createLink(page, teamSlug, 'https://example.org/a-page');
+	await createLink(page, teamSlug, { destinationUrl: 'https://example.org/a-page' });
 	await expect(page.getByRole('note')).toBeVisible();
 });
 
 test('has no accessibility violations on the list', async ({ page, teamSlug }) => {
-	await createLink(page, teamSlug, 'https://example.org/a-page');
+	await createLink(page, teamSlug, { destinationUrl: 'https://example.org/a-page' });
 
 	const results = await new AxeBuilder({ page }).analyze();
 	expect(results.violations).toEqual([]);
@@ -80,7 +49,7 @@ test('has no accessibility violations on the list', async ({ page, teamSlug }) =
  */
 test('protects a link with a password and removes it again', async ({ page, teamSlug }) => {
 	const destination = `https://example.org/password-${Date.now()}`;
-	await createLink(page, teamSlug, destination);
+	await createLink(page, teamSlug, { destinationUrl: destination });
 
 	// A fresh team's list holds exactly this one row, so `edit` resolves
 	// without scoping it to the row's own text.
@@ -114,7 +83,7 @@ test('protects a link with a password and removes it again', async ({ page, team
  * all, and the download control producing a file.
  */
 test('downloads a link’s QR code', async ({ page, teamSlug }) => {
-	await createLink(page, teamSlug, `https://example.org/qr-${Date.now()}`);
+	await createLink(page, teamSlug, { destinationUrl: `https://example.org/qr-${Date.now()}` });
 
 	await page.getByRole('link', { name: /edit/iu }).click();
 

@@ -5,6 +5,8 @@ import { createServerClient } from '@supabase/ssr';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { Client as PgClient } from 'pg';
 
+import { requireE2eEnv } from './env';
+
 /**
  * Runs against the kurze-url-preview project, never production. That
  * separation is what makes it acceptable for a service-role key — which
@@ -190,39 +192,6 @@ interface Team {
 }
 
 /**
- * Reads and validates the three environment variables authenticated e2e needs, throwing one
- * combined error naming every missing one — without them these specs would run signed out and
- * pass against the login page, the same failure the protection-bypass work fixed in September.
- *
- * @returns The validated `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` and `E2E_DATABASE_URL`.
- */
-function requireE2eEnv(): { databaseUrl: string; serviceRoleKey: string; url: string } {
-	const url = process.env.SUPABASE_URL;
-	const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-	const databaseUrl = process.env.E2E_DATABASE_URL;
-	if (
-		url === undefined ||
-		url === '' ||
-		serviceRoleKey === undefined ||
-		serviceRoleKey === '' ||
-		databaseUrl === undefined ||
-		databaseUrl === ''
-	) {
-		const missing: string[] = [];
-		if (url === undefined || url === '') missing.push('SUPABASE_URL');
-		if (serviceRoleKey === undefined || serviceRoleKey === '')
-			missing.push('SUPABASE_SERVICE_ROLE_KEY');
-		if (databaseUrl === undefined || databaseUrl === '') missing.push('E2E_DATABASE_URL');
-		throw new Error(
-			`${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} required for authenticated e2e. ` +
-				'Without them these specs would run signed out and pass against the login page — ' +
-				'the same failure the protection-bypass work fixed in September.',
-		);
-	}
-	return { databaseUrl, serviceRoleKey, url };
-}
-
-/**
  * Seeds the fixture's throwaway team and its owning membership row directly over Postgres,
  * bypassing `POST /v1/teams` — that endpoint is restricted to `MAINTAINER_USER_IDS`, a fixed
  * allowlist a freshly-minted test user can never be on (see this file's top-of-file comment).
@@ -271,7 +240,7 @@ export const test = base.extend<{
 	 * two independent reasons on one line. `max-statements`: Playwright's fixture API gives setup,
 	 * the one `use()` call and teardown exactly one shared closure (not separate hooks),
 	 * specifically so a `finally` can guarantee cleanup however far setup got — `db`, `admin`,
-	 * `userId` and `teamId` all have to be live across that whole span; `requireE2eEnv` and
+	 * `userId` and `teamId` all have to be live across that whole span; `./env`'s `requireE2eEnv` and
 	 * `seedFixtureTeam` above already carry the two pieces that don't need to share that span, and
 	 * threading the rest through further functions would be indirection, not simplification, for
 	 * what one fixture is inherently doing. `prefer-readonly-parameter-types`: Playwright's own
