@@ -63,6 +63,12 @@ describe('translation catalogues', () => {
 			// "Browser" is the German word too — an established loanword, not a
 			// forgotten translation.
 			'stats.browser',
+			// "Bot" is the German word too, same reasoning as "Browser" above.
+			'stats.dimensionValueBot',
+			// "QR" is the initialism in both languages, same reasoning as
+			// `domains.recordTypeTxt`/`recordTypeCname` above — a protocol-shaped
+			// abbreviation, not prose to translate.
+			'stats.dimensionValueQr',
 			// A formatting template — two interpolated placeholders and a
 			// typographic en dash, no actual words — not prose to translate. It
 			// still gets a key rather than a literal `–` baked into the
