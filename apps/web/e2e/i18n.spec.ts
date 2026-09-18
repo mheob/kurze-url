@@ -125,7 +125,7 @@ for (const path of PATHS) {
  * above never pays for provisioning a team it never asks for: a fixture only
  * runs for a test that destructures it.
  */
-const AUTHENTICATED_PATHS = ['links', 'links/new', 'domains'] as const;
+const AUTHENTICATED_PATHS = ['links', 'links/new', 'domains', 'stats'] as const;
 
 /**
  * What the `links` case below fills into the create form — known upfront,
@@ -168,6 +168,12 @@ for (const suffix of AUTHENTICATED_PATHS) {
 		// Same idea, populated only for `domains` below.
 		const domainStrings: string[] = [];
 
+		// Correct for every suffix except `stats`, which the `stats` branch
+		// below overwrites: a statistics page nests under a real link id
+		// (`/teams/$teamSlug/links/$linkId/stats`), and `AUTHENTICATED_PATHS`
+		// itself carries no link id to interpolate.
+		let path = `/teams/${teamSlug}/${suffix}`;
+
 		if (suffix === 'links') {
 			// A freshly provisioned team starts with zero links, and `LinkList`'s
 			// empty-state branch (src/components/link-list.tsx) never renders the
@@ -207,6 +213,60 @@ for (const suffix of AUTHENTICATED_PATHS) {
 			// oxlint-disable-next-line unicorn/prefer-dom-node-text-content
 			const shortUrl = await page.locator('a[href^="http"]').innerText();
 			linkStrings.push(I18N_CRAWL_DESTINATION_URL, shortUrl);
+		}
+
+		if (suffix === 'stats') {
+			// A statistics page belongs to one link, so this crawl needs a link
+			// to exist before it can visit its `/stats` page at all — same
+			// reasoning as the `links` branch just above, which creates its own
+			// link before either language visits a page that needs one. Each
+			// iteration of this loop gets its own freshly seeded team (the
+			// `team` fixture reruns per `test`), so there is no link left over
+			// from the `links` case to reuse even within the same file.
+			await page.goto(`/teams/${teamSlug}/links/new`);
+
+			const destination = page.getByLabel(/destination/iu);
+			await waitForHydration(destination);
+			await destination.fill(I18N_CRAWL_DESTINATION_URL);
+
+			await page.getByRole('button', { name: /save/iu }).click();
+			await expect(page.getByText(I18N_CRAWL_DESTINATION_URL)).toBeVisible();
+
+			// oxlint-disable-next-line unicorn/prefer-dom-node-text-content
+			const shortUrl = await page.locator('a[href^="http"]').innerText();
+
+			// The list page has no query parameter naming the link's id; the
+			// only place it appears at all is the per-row "Edit" link's own
+			// `href`, `/teams/$teamSlug/links/$linkId`. Reading every `href` on
+			// the page and matching that shape — rather than the edit link's
+			// own translated text — keeps this independent of which language
+			// the list happens to be rendered in right now.
+			const hrefs = await page
+				.locator('a[href]')
+				.evaluateAll((nodes) => nodes.map((node) => node.getAttribute('href') ?? ''));
+			const detailHref = hrefs.find((href) => /\/links\/(?!new$)[^/]+$/u.test(href));
+			if (detailHref === undefined) {
+				throw new Error(
+					"could not find the newly created link's own detail-page href on the links list",
+				);
+			}
+			const linkId = detailHref.split('/').pop();
+			if (linkId === undefined || linkId === '') {
+				throw new Error(`could not read a link id out of detail-page href "${detailHref}"`);
+			}
+
+			path = `/teams/${teamSlug}/links/${linkId}/stats`;
+			linkStrings.push(shortUrl);
+
+			// Guards the exact regression this branch exists to catch: this
+			// route once silently rendered the link *edit* form instead of its
+			// own statistics page — with build, lint, typecheck and every
+			// existing test still green — because its filename made it a
+			// nested child route of the link id rather than a sibling of it.
+			// The edit form has no `<h1>` naming the link's own short URL, so a
+			// re-nesting regression fails here, not just in this crawl below.
+			await page.goto(path);
+			await expect(page.getByRole('heading', { level: 1, name: shortUrl })).toBeVisible();
 		}
 
 		if (suffix === 'domains') {
@@ -253,10 +313,11 @@ for (const suffix of AUTHENTICATED_PATHS) {
 		// (any more than they would translate "Bürgerinitiative Lindenstraße
 		// e.V." into English for the English UI — it already is what it is,
 		// regardless of language). The same is true of a link's destination and
-		// short URL (`linkStrings`, above, populated only when `links` created
-		// one): a real Verein's own link would render its own destination and
-		// short URL in that exact spot, identically in both languages, for the
-		// same reason — nobody translates a URL either. `domainStrings` (above,
+		// short URL (`linkStrings`, above, populated when `links` or `stats`
+		// created one): a real Verein's own link would render its own
+		// destination and short URL in that exact spot, identically in both
+		// languages, for the same reason — nobody translates a URL either.
+		// `domainStrings` (above,
 		// populated only when `domains` claimed one) is the same story again: a
 		// hostname, its TXT challenge name, and the raw values of the two DNS
 		// records a Verein is told to create are all data a claiming team
@@ -275,7 +336,6 @@ for (const suffix of AUTHENTICATED_PATHS) {
 			...domainStrings,
 		]);
 
-		const path = `/teams/${teamSlug}/${suffix}`;
 		const english = new Set(
 			await visibleText({ baseURL, identicalByDesign, language: 'en', page, path }),
 		);
