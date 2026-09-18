@@ -3,37 +3,44 @@
    are not marked readonly. That file is Task 3's tested interface, not this task's to edit, and
    its own tests pin its exact shape — adding readonly there is out of scope here. */
 
+import { useState } from 'react';
+import type { DateRange } from 'react-day-picker';
 import { useTranslation } from 'react-i18next';
 
 import { formatDay } from '../lib/format';
 import type { Language } from '../lib/preferences';
 import {
 	matchingPreset,
+	PRESET_DAYS,
 	presetWindow,
 	retentionFloor,
-	RETENTION_DAYS,
 	type StatsWindow,
 } from '../lib/stats-window';
 import { Button } from './ui/button';
 import { Calendar } from './ui/calendar';
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from './ui/popover';
 
-/** The middle preset, in days. See `stats-window.ts` for why 7 and `RETENTION_DAYS` need no constant of their own. */
-const PRESET_MONTH_DAYS = 30;
-
 /** Read back from a calendar-cell `Date`, not `.toISOString()`'s UTC slice. */
 const ISO_PAD_LENGTH = 2;
 
 /**
- * The three preset shortcuts, in the order they render. Module scope, not
- * inside the component: the array is the same on every render, and defining
- * it inline would give `.map` a fresh array (and fresh translation-key
- * strings) each time for no benefit.
+ * The three preset shortcuts, in the order they render, paired with their
+ * translation keys. Module scope, not inside the component: the array is
+ * the same on every render, and defining it inline would give `.map` a
+ * fresh array (and fresh translation-key strings) each time for no benefit.
+ *
+ * The `days` values themselves come from `stats-window.ts`'s exported
+ * `PRESET_DAYS` — the one place that list is written down — rather than a
+ * second `[7, 30, 90]` here that could silently drift from
+ * `matchingPreset`'s own copy if the middle preset ever moved. Destructured
+ * positionally rather than zipped with `.map`, so neither array's length
+ * has to be trusted against the other's at the type level.
  */
+const [PRESET_SHORT_DAYS, PRESET_MONTH_DAYS, PRESET_RETENTION_DAYS] = PRESET_DAYS;
 const PRESETS = [
-	{ days: 7, labelKey: 'stats.preset7' },
+	{ days: PRESET_SHORT_DAYS, labelKey: 'stats.preset7' },
 	{ days: PRESET_MONTH_DAYS, labelKey: 'stats.preset30' },
-	{ days: RETENTION_DAYS, labelKey: 'stats.preset90' },
+	{ days: PRESET_RETENTION_DAYS, labelKey: 'stats.preset90' },
 ] as const;
 
 /**
@@ -91,6 +98,22 @@ export interface StatRangePickerProps {
  * half-finished range with `to` left `undefined`, and forwarding that
  * would make `from` and `to` disagree.
  *
+ * The calendar's `selected` is `window` only until the reader clicks
+ * inside it; from the first click on, it is `pendingRange`, this
+ * component's own state, not a prop. `window` is always a *complete*
+ * range, and if `selected` mirrored it on every render, react-day-picker's
+ * own `addToRange` would never see an incomplete range to build on — every
+ * single click would land on a "complete range" branch that nudges
+ * whichever endpoint of the *old* window is nearer the click, firing
+ * `onChange` immediately and never accumulating the two dates actually
+ * clicked. `resetOnSelect` is what makes the first click, made against a
+ * complete range, start a brand-new one instead of nudging it; buffering
+ * that new (initially incomplete) range in `pendingRange` is what lets the
+ * *second* click build on the first rather than re-deriving from the
+ * stale, still-complete `window` prop again. The popover's `onOpenChange`
+ * clears the buffer on every open and close, so a half-finished pick left
+ * behind by a closed popover cannot resurface the next time it opens.
+ *
  * @param props - The component's props.
  * @param props.language - The active language, for date formatting.
  * @param props.onChange - Called with the newly chosen window.
@@ -106,6 +129,12 @@ export function StatRangePicker({
 }: StatRangePickerProps): React.JSX.Element {
 	const { t } = useTranslation();
 	const activePreset = matchingPreset(window, today);
+	const [pendingRange, setPendingRange] = useState<DateRange | undefined>(undefined);
+
+	const selectedRange: DateRange = pendingRange ?? {
+		from: new Date(`${window.from}T00:00:00Z`),
+		to: new Date(`${window.to}T00:00:00Z`),
+	};
 
 	return (
 		<div>
@@ -128,7 +157,14 @@ export function StatRangePicker({
 					</Button>
 				))}
 
-				<Popover>
+				<Popover
+					onOpenChange={() => {
+						// Discard any in-progress pick, in either direction: reopening
+						// after a half-finished selection must show the actual
+						// (unchanged) `window`, not resurrect a stale single-ended one.
+						setPendingRange(undefined);
+					}}
+				>
 					{/* oxlint-disable-next-line react-perf/jsx-no-jsx-as-prop -- Base UI's `render`-prop
 					    composition idiom (`useRender`'s "Migrating from Radix UI" guide): this is the
 					    element `PopoverTrigger` clones and merges its own props onto. A stable reference
@@ -147,6 +183,7 @@ export function StatRangePicker({
 							disabled={{ after: today, before: new Date(`${retentionFloor(today)}T00:00:00Z`) }}
 							mode="range"
 							onSelect={(range) => {
+								setPendingRange(range);
 								if (range?.from !== undefined && range.to !== undefined) {
 									onChange({
 										from: isoDayFromCalendarDate(range.from),
@@ -154,10 +191,8 @@ export function StatRangePicker({
 									});
 								}
 							}}
-							selected={{
-								from: new Date(`${window.from}T00:00:00Z`),
-								to: new Date(`${window.to}T00:00:00Z`),
-							}}
+							resetOnSelect
+							selected={selectedRange}
 						/>
 					</PopoverContent>
 				</Popover>

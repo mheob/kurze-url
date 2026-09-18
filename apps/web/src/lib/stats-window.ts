@@ -35,6 +35,15 @@ function minusDays(date: Readonly<Date>, days: number): string {
  */
 export const RETENTION_DAYS = 90;
 
+/**
+ * The three preset window lengths, in days, in the order they're offered.
+ * The single source of truth for "which presets exist" — `matchingPreset`
+ * below and `StatRangePicker`'s three buttons both read this array rather
+ * than each carrying their own copy of `[7, 30, 90]`, so the two cannot
+ * silently disagree if the middle preset ever moves.
+ */
+export const PRESET_DAYS = [7, PRESET_MONTH_DAYS, RETENTION_DAYS] as const;
+
 /** A resolved window, in the YYYY-MM-DD the endpoint takes and echoes. */
 export interface StatsWindow {
 	from: string;
@@ -99,7 +108,7 @@ export function matchingPreset(
 	window: Readonly<StatsWindow>,
 	today: Readonly<Date>,
 ): number | undefined {
-	return [7, PRESET_MONTH_DAYS, RETENTION_DAYS].find((days) => {
+	return PRESET_DAYS.find((days) => {
 		const preset = presetWindow(days, today);
 		return preset.from === window.from && preset.to === window.to;
 	});

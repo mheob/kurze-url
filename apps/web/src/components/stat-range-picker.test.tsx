@@ -28,6 +28,17 @@ function renderWithI18n(
 const TODAY = new Date('2026-09-18T11:30:00Z');
 const THIRTY_DAYS = { from: '2026-08-20', to: '2026-09-18' };
 
+/**
+ * @param isoDay - The calendar day to find, as YYYY-MM-DD — react-day-picker's own `data-day`
+ * attribute on the cell, ISO-formatted regardless of locale.
+ * @returns The day's clickable button element.
+ */
+function getDayButton(isoDay: string): HTMLElement {
+	const button = document.querySelector<HTMLButtonElement>(`[data-day="${isoDay}"] button`);
+	if (button === null) throw new Error(`no calendar day button for ${isoDay}`);
+	return button;
+}
+
 describe(StatRangePicker, () => {
 	it('marks the preset that matches the current window', () => {
 		renderWithI18n(
@@ -144,5 +155,53 @@ describe(StatRangePicker, () => {
 			'true',
 		);
 		expect(document.querySelector('[data-day="2026-06-21"]')).not.toHaveAttribute('data-disabled');
+	});
+
+	it('reports two freshly clicked dates as the new range, not a nudge of the old one', async () => {
+		// Critical fix: `selected` used to always mirror the current `window`
+		// unconditionally, and `window` is always a *complete* range — so
+		// react-day-picker's own `addToRange` never started a fresh selection.
+		// It nudged whichever endpoint of the OLD range was nearer the click,
+		// which both fired `onChange` on a single click (never landing on a
+		// half-finished range) and made a second click land on some
+		// combination of the newly clicked date and the untouched old
+		// endpoint, rather than the two dates actually clicked. Both clicked
+		// dates (5 and 10 Sep) stay inside the visible month and well inside
+		// the retention window, so no month navigation or disabled-date edge
+		// is in play here — only the fresh-selection behaviour under test.
+		const onChange = vi.fn<(window: Readonly<StatsWindow>) => void>();
+		const user = userEvent.setup();
+		renderWithI18n(
+			<StatRangePicker language="en" onChange={onChange} today={TODAY} window={THIRTY_DAYS} />,
+		);
+
+		await user.click(screen.getByRole('button', { name: 'Choose dates' }));
+
+		await user.click(getDayButton('2026-09-10'));
+		// A half-finished range — one endpoint clicked, the other not yet
+		// chosen — must never reach `onChange`.
+		expect(onChange).not.toHaveBeenCalled();
+
+		await user.click(getDayButton('2026-09-05'));
+
+		expect(onChange).toHaveBeenCalledExactlyOnceWith({ from: '2026-09-05', to: '2026-09-10' });
+	});
+
+	it('leaves the window unchanged when the popover closes after only one click', async () => {
+		// The other half of the same property: a half-finished pick that never
+		// completes must not have mutated anything the caller can see.
+		const onChange = vi.fn<(window: Readonly<StatsWindow>) => void>();
+		const user = userEvent.setup();
+		renderWithI18n(
+			<StatRangePicker language="en" onChange={onChange} today={TODAY} window={THIRTY_DAYS} />,
+		);
+
+		await user.click(screen.getByRole('button', { name: 'Choose dates' }));
+		await user.click(getDayButton('2026-09-05'));
+		// Close the popover without a second click (Escape closes it without
+		// requiring a real outside-click target).
+		await user.keyboard('{Escape}');
+
+		expect(onChange).not.toHaveBeenCalled();
 	});
 });
