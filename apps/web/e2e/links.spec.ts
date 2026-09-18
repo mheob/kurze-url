@@ -118,8 +118,16 @@ test('downloads a link’s QR code', async ({ page, teamSlug }) => {
 
 	await page.getByRole('link', { name: /edit/iu }).click();
 
+	// Longer than the suite-wide fifteen seconds, because this element waits on
+	// more than one round trip. The preview is fetched client-side after
+	// hydration by a query that keeps TanStack Query's default `retry: 3` with
+	// exponential backoff, so a single failed attempt adds seven seconds of
+	// backoff and three further requests before the <img> can appear, with the
+	// loading line on screen throughout. This expectation flaked on a branch
+	// that touches nothing near the QR card, which is what the arithmetic
+	// predicts.
 	const preview = page.getByRole('img', { name: /preview of this link/iu });
-	await expect(preview).toBeVisible();
+	await expect(preview).toBeVisible({ timeout: 30_000 });
 
 	const downloadPromise = page.waitForEvent('download');
 	await page.getByRole('button', { name: /^download$/iu }).click();

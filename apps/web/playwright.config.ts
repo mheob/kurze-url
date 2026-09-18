@@ -38,11 +38,37 @@ if (
 }
 
 export default defineConfig({
+	/*
+	 * Playwright's own defaults are five seconds per expectation and thirty per
+	 * test, which are sized for an app answering from localhost. This suite runs
+	 * against a Vercel preview, where every server function is cold by
+	 * construction: nothing has warmed it, and a PR's preview is discarded
+	 * before it ever could be.
+	 *
+	 * Measured, from the trace of the run that made this necessary (i18n's
+	 * `/stats` crawl, 2026-09-18): the create POST answered in 246 ms, but the
+	 * server function the list page then re-fetched took 4.5 seconds. Click to
+	 * rendered list was about 5.1 seconds, and the assertion waiting on it gave
+	 * up at 5.0. Nothing was wrong with the app or the test — the budget was
+	 * simply smaller than one cold round trip plus change.
+	 *
+	 * Fifteen seconds is roughly three of those worst-case round trips, which
+	 * covers a page that chains two of them. Ninety for the whole test follows
+	 * from it: several assertions may each wait, and a per-expectation timeout
+	 * the test's own budget cannot reach never fires — the test dies first, on a
+	 * timeout that was never spent.
+	 *
+	 * The cost is paid only by failures: an assertion that passes returns as
+	 * soon as it is true, so a green run takes exactly as long as before. A red
+	 * one takes longer to go red, and the trace is what explains it either way.
+	 */
+	expect: { timeout: 15_000 },
 	// Runs before any spec and stops the suite when the deployment's paired API
 	// preview was never built — see the file's own docstring for why that state
 	// is invisible from inside a test.
 	globalSetup: './e2e/global-setup.ts',
 	testDir: './e2e',
+	timeout: 90_000,
 	use: {
 		baseURL,
 		// Only on failure, and only kept for one: a passing run writes nothing,
