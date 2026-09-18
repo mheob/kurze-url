@@ -63,6 +63,10 @@ interface SeedRow {
  * across the whole rendered page: totals 25/19, the human split 18/13, a
  * breakdown's leading value 15/11 and its second 10/8. A repeated figure would
  * let an assertion pass against the wrong element.
+ *
+ * `seedLinkClicks` can push all three further back through its `daysAgoOffset`
+ * option, which is how a spec places data outside the page's default 30-day
+ * window without inventing a second seed.
  */
 const DAYS: readonly DaySeed[] = [
 	{
@@ -167,27 +171,28 @@ async function withDb<T>(run: (db: PgClient) => Promise<T>): Promise<T> {
  * with each other rather than merely non-empty.
  *
  * @param day - The day to expand.
+ * @param offset - Extra days to push the bucket further back, so a spec can place data outside a default window.
  * @returns That day's rows.
  */
-function rowsForDay(day: DaySeed): SeedRow[] {
+function rowsForDay(day: DaySeed, offset: number): SeedRow[] {
 	return [
 		{
 			clicks: day.clicks,
-			daysAgo: day.daysAgo,
+			daysAgo: day.daysAgo + offset,
 			type: 'total',
 			uniqueVisitors: day.uniqueVisitors,
 			value: null,
 		},
 		{
 			clicks: day.humanClicks,
-			daysAgo: day.daysAgo,
+			daysAgo: day.daysAgo + offset,
 			type: 'bot_status',
 			uniqueVisitors: day.humanUniqueVisitors,
 			value: 'human',
 		},
 		{
 			clicks: day.clicks - day.humanClicks,
-			daysAgo: day.daysAgo,
+			daysAgo: day.daysAgo + offset,
 			type: 'bot_status',
 			uniqueVisitors: day.uniqueVisitors - day.humanUniqueVisitors,
 			value: 'bot',
@@ -195,14 +200,14 @@ function rowsForDay(day: DaySeed): SeedRow[] {
 		...DIMENSIONS.flatMap(([type, primary, secondary]) => [
 			{
 				clicks: day.primaryClicks,
-				daysAgo: day.daysAgo,
+				daysAgo: day.daysAgo + offset,
 				type,
 				uniqueVisitors: day.primaryUniqueVisitors,
 				value: primary,
 			},
 			{
 				clicks: day.clicks - day.primaryClicks,
-				daysAgo: day.daysAgo,
+				daysAgo: day.daysAgo + offset,
 				type,
 				uniqueVisitors: day.uniqueVisitors - day.primaryUniqueVisitors,
 				value: secondary,
@@ -276,10 +281,16 @@ export async function linkIdForTeam(teamId: string): Promise<string> {
  * Writes three days of rollup for one link.
  *
  * @param linkId - The link to record clicks against.
+ * @param options - Where to place the seeded days.
+ * @param options.daysAgoOffset - Extra days to push every bucket further back, so a spec can place the seeded window outside the page's default one. Defaults to 0.
  * @returns The totals and values a spec asserts on.
  */
-export async function seedLinkClicks(linkId: string): Promise<SeededClicks> {
-	const rows = DAYS.flatMap((day) => rowsForDay(day));
+export async function seedLinkClicks(
+	linkId: string,
+	options: Readonly<{ daysAgoOffset?: number }> = {},
+): Promise<SeededClicks> {
+	const offset = options.daysAgoOffset ?? 0;
+	const rows = DAYS.flatMap((day) => rowsForDay(day, offset));
 
 	await withDb(async (db) => {
 		await db.query(INSERT_ROWS, [

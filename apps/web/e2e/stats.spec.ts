@@ -123,3 +123,29 @@ test('says counting is off when the link has it disabled', async ({ page, teamId
 		page.getByRole('heading', { level: 2, name: 'Click counting is off for this link' }),
 	).toBeVisible();
 });
+
+/**
+ * The page's default window is 30 days, so data seeded 41 days back is invisible
+ * in it — the case the `recorded` field exists for. Nothing here computes a date:
+ * the button is supposed to name the window and take the reader there, so the test
+ * presses it and asserts the figures rather than asserting a URL it derived itself.
+ */
+test('offers the window that actually has data', async ({ page, teamId, teamSlug }) => {
+	await createLink(page, teamSlug, {
+		destinationUrl: `https://example.org/stats-old-${Date.now()}`,
+	});
+	const linkId = await linkIdForTeam(teamId);
+	const seeded = await seedLinkClicks(linkId, { daysAgoOffset: 40 });
+
+	await page.goto(`/teams/${teamSlug}/links/${linkId}/stats`);
+
+	await expect(
+		page.getByText('This link has statistics outside the window you are looking at.'),
+	).toBeVisible();
+
+	const jump = page.getByRole('button', { name: /^Show /u });
+	await expect(jump).toBeVisible();
+	await jump.click();
+
+	await expect(summaryFigure(page, 'Clicks')).toHaveText(String(seeded.totals.clicks));
+});
