@@ -207,7 +207,7 @@
 		"showRecorded": "Show {{from}} – {{to}}",
 		"countingOffBanner": "Click counting is currently switched off for this link — these figures are historical.",
 		"noClicksTitle": "No clicks in this window",
-		"noClicksBody": "Nothing has been recorded for this link.",
+		"noClicksBody": "There are no statistics for this link.",
 		"noClicksElsewhere": "This link has statistics outside the window you are looking at."
 	},
 	"errors": {

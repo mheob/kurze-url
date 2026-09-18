@@ -43,11 +43,12 @@ const TopValuesPerDimension = 10
 // errFromAfterTo is the one way a caller can be refused outright.
 var errFromAfterTo = errors.New("from is later than to")
 
-// retentionFloor is the oldest day this endpoint will serve, and now the only
+// retentionFloor is the oldest day this endpoint will serve, and the only
 // place that day is computed. statsWindow clamps the requested window up to it
 // and GetLinkRecordedRange filters by it; two derivations of one boundary is
 // the drift CLAUDE.md's retention note exists to prevent, and here it would
-// show as a reported range the endpoint refuses to serve.
+// show as a reported range the endpoint refuses to serve. retentionCutoff in
+// retention.go delegates to this function for the same reason.
 func retentionFloor(now time.Time) time.Time {
 	return dayOf(now).AddDate(0, 0, -(RetentionDays - 1))
 }
@@ -336,7 +337,12 @@ type LinkStatsOutput struct {
 func (d Deps) getLinkStats(ctx context.Context, in *LinkStatsInput) (*LinkStatsOutput, error) {
 	link := in.Link()
 
-	start, end, err := statsWindow(in.From, in.To, d.now())
+	// Read once and pass to both callers below: statsWindow and retentionFloor
+	// must agree on "today", and two separate d.now() calls straddling a UTC
+	// midnight would disagree by a day.
+	now := d.now()
+
+	start, end, err := statsWindow(in.From, in.To, now)
 	if err != nil {
 		if !errors.Is(err, errFromAfterTo) {
 			d.Log.Error("resolve stats window", "error", err, "link_id", link.ID)
@@ -379,7 +385,7 @@ func (d Deps) getLinkStats(ctx context.Context, in *LinkStatsInput) (*LinkStatsO
 
 	var recorded *StatRange
 	recordedRow, err := d.Queries.GetLinkRecordedRange(ctx, db.GetLinkRecordedRangeParams{
-		LinkID: link.ID, FloorDay: retentionFloor(d.now()),
+		LinkID: link.ID, FloorDay: retentionFloor(now),
 	})
 	switch {
 	// No row rather than a row of nulls: the query's `having count(*) > 0`

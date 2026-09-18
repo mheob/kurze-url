@@ -347,6 +347,9 @@ describe('the empty views and the recorded range', () => {
 		expect(
 			screen.getByText('This link has statistics outside the window you are looking at.'),
 		).toBeInTheDocument();
+
+		const results = await axe.run(document.body);
+		expect(results.violations).toStrictEqual([]);
 	});
 
 	it('offers it when counting is off and data was recorded before that', async () => {
@@ -361,6 +364,9 @@ describe('the empty views and the recorded range', () => {
 				'Counting is off now, but statistics recorded before it was switched off are still here.',
 			),
 		).toBeInTheDocument();
+
+		const results = await axe.run(document.body);
+		expect(results.violations).toStrictEqual([]);
 	});
 
 	it('says so plainly when there is nothing anywhere', async () => {
@@ -368,7 +374,7 @@ describe('the empty views and the recorded range', () => {
 		await screen.findByRole('heading', { level: 2, name: 'No clicks in this window' });
 
 		expect(screen.queryByRole('button', { name: /^Show /u })).not.toBeInTheDocument();
-		expect(screen.getByText('Nothing has been recorded for this link.')).toBeInTheDocument();
+		expect(screen.getByText('There are no statistics for this link.')).toBeInTheDocument();
 	});
 
 	it('leaves the disabled view without advice when there is nothing anywhere', async () => {

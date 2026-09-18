@@ -68,7 +68,7 @@ where link_id = sqlc.arg(link_id)
   and bucket_start >= sqlc.arg(floor_day);
 ```
 
-It runs on every request to this endpoint, not only when the window came back empty. Making it conditional would put a branch in the response's meaning — `recorded` would have to be documented as "populated only when the window is empty", which no consumer could build on — and the saving is two index seeks against `link_click_stats_link_id_bucket_start_idx`. This is a dashboard endpoint; golden rule 2 is about the redirect path.
+It runs on every request to this endpoint, not only when the window came back empty. Making it conditional would put a branch in the response's meaning — `recorded` would have to be documented as "populated only when the window is empty", which no consumer could build on — and the saving would not be the two-seek `MIN`/`MAX` index shortcut Postgres can otherwise take: `having count(*) > 0` makes the planner aggregate every matching row to know whether any exist, so what a conditional call would skip is that row-by-row scan of the index range, not two seeks. This is a dashboard endpoint; golden rule 2 is about the redirect path.
 
 `sqlc.yaml` already maps a nullable `date` to `*time.Time` (`emit_pointers_for_null_types: true` plus an explicit `date`/`nullable` override), so both columns should arrive as `*time.Time`. The implementation verifies that against the generated code rather than assuming it: an aggregate's inferred nullability is sqlc's judgement, and if either column comes back non-pointer the query needs an explicit cast to make the nullability unambiguous.
 
@@ -140,6 +140,6 @@ Dates are formatted with `formatDay` from `apps/web/src/lib/format.ts`, the same
 
 ## Consequences
 
-`openapi.json` and `packages/api-client` are regenerated through the existing `pnpm generate:api`. The change is additive: a new required-but-nullable field on a response body. No request shape changes, no field is removed or renamed, and no existing consumer breaks — `apps/web` is currently the only one, since `apps/cli` holds nothing but a `.gitkeep`.
+`openapi.json` and `packages/api-client` are regenerated through the existing `pnpm generate:api`. The change is additive: a new optional field on a response body, absent — never null — when the link has no statistics. No request shape changes, no field is removed or renamed, and no existing consumer breaks — `apps/web` is currently the only one, since `apps/cli` holds nothing but a `.gitkeep`.
 
 `CLAUDE.md` gains nothing: its API surface summary already describes `GET /links/{id}/stats` as "one document per link", which stays true.

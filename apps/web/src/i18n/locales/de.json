@@ -207,7 +207,7 @@
 		"showRecorded": "{{from}} – {{to}} anzeigen",
 		"countingOffBanner": "Die Klickzählung ist für diesen Link derzeit ausgeschaltet — diese Zahlen sind historisch.",
 		"noClicksTitle": "Keine Klicks in diesem Zeitraum",
-		"noClicksBody": "Für diesen Link wurde nichts erfasst.",
+		"noClicksBody": "Für diesen Link liegen keine Statistiken vor.",
 		"noClicksElsewhere": "Für diesen Link gibt es Zahlen außerhalb des gewählten Zeitraums."
 	},
 	"errors": {
