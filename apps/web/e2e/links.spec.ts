@@ -114,25 +114,18 @@ test('protects a link with a password and removes it again', async ({ page, team
  * all, and the download control producing a file.
  */
 test('downloads a link’s QR code', async ({ page, teamSlug }) => {
-	// The preview is fetched client-side after hydration, and its query keeps
-	// TanStack Query's default `retry: 3` with exponential backoff. So one
-	// transient failure from the API preview holds the <img> back by seven
-	// seconds of backoff plus four round trips, with the loading line on screen
-	// throughout — Playwright's default five seconds cannot cover that by
-	// construction, and this expectation duly flaked on a branch that touches
-	// nothing near the QR card. The waiting budget has to cover the query's own
-	// retries, not one request.
-	//
-	// `test.slow()` comes with it because a per-expectation timeout above the
-	// test's remaining budget never gets to fire: the test would die at 30s
-	// with a timeout that was never reached, which is the same red for a
-	// different reason.
-	test.slow();
-
 	await createLink(page, teamSlug, `https://example.org/qr-${Date.now()}`);
 
 	await page.getByRole('link', { name: /edit/iu }).click();
 
+	// Longer than the suite-wide fifteen seconds, because this element waits on
+	// more than one round trip. The preview is fetched client-side after
+	// hydration by a query that keeps TanStack Query's default `retry: 3` with
+	// exponential backoff, so a single failed attempt adds seven seconds of
+	// backoff and three further requests before the <img> can appear, with the
+	// loading line on screen throughout. This expectation flaked on a branch
+	// that touches nothing near the QR card, which is what the arithmetic
+	// predicts.
 	const preview = page.getByRole('img', { name: /preview of this link/iu });
 	await expect(preview).toBeVisible({ timeout: 30_000 });
 
