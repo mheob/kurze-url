@@ -183,7 +183,13 @@
 		"utmSource": "Kampagnenquelle",
 		"otherValues_one": "{{count}} weiterer Wert",
 		"otherValues_other": "{{count}} weitere Werte",
-		"breakdownEmpty": "In diesem Zeitraum nichts erfasst"
+		"breakdownEmpty": "In diesem Zeitraum nichts erfasst",
+		"rangeLabel": "Zeitraum",
+		"preset7": "7 Tage",
+		"preset30": "30 Tage",
+		"preset90": "90 Tage",
+		"customRange": "Zeitraum wählen",
+		"rangeRetentionNote": "Statistiken werden 90 Tage lang aufbewahrt."
 	},
 	"errors": {
 		"rateLimited": "Gerade wurden zu viele Links erstellt. Warte eine Minute und versuch es dann noch mal.",

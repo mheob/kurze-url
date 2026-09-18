@@ -183,7 +183,13 @@
 		"utmSource": "Campaign source",
 		"otherValues_one": "{{count}} further value",
 		"otherValues_other": "{{count}} further values",
-		"breakdownEmpty": "Nothing recorded in this window"
+		"breakdownEmpty": "Nothing recorded in this window",
+		"rangeLabel": "Time window",
+		"preset7": "7 days",
+		"preset30": "30 days",
+		"preset90": "90 days",
+		"customRange": "Choose dates",
+		"rangeRetentionNote": "Statistics are kept for 90 days."
 	},
 	"errors": {
 		"rateLimited": "Too many links created just now. Please wait a minute and try again.",
