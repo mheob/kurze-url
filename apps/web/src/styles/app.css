@@ -101,11 +101,16 @@
 	 * --sidebar-primary), which measures 6.441:1 here. See
 	 * docs/superpowers/plans/2026-09-13-design-system-contrast.md. */
 	--ring: oklch(0.511 0.262 276.966);
-	--chart-1: oklch(0.785 0.115 274.713);
-	--chart-2: oklch(0.585 0.233 277.117);
-	--chart-3: oklch(0.511 0.262 276.966);
-	--chart-4: oklch(0.457 0.24 277.023);
-	--chart-5: oklch(0.398 0.195 277.366);
+	/* Each step clears WCAG 1.4.11's 3:1 against --card in this theme, and
+	   every value is inside the sRGB gamut — chroma is 92% of the maximum
+	   this hue admits at that lightness, so the painted colour is the
+	   specified one rather than a silently clamped neighbour. The light ramp
+	   runs dark-to-light-limited: nothing above L 0.648 can clear white. */
+	--chart-1: oklch(0.648 0.175 277);
+	--chart-2: oklch(0.585 0.211 277);
+	--chart-3: oklch(0.511 0.256 277);
+	--chart-4: oklch(0.457 0.26 277);
+	--chart-5: oklch(0.398 0.227 277);
 	--sidebar: oklch(0.985 0 0);
 	--sidebar-foreground: oklch(0.145 0 0);
 	--sidebar-primary: oklch(0.511 0.262 276.966);
@@ -149,11 +154,15 @@
 	 * would only reach 1.962:1 against this near-black background. See
 	 * docs/superpowers/plans/2026-09-13-design-system-contrast.md. */
 	--ring: oklch(0.585 0.233 277.117);
-	--chart-1: oklch(0.785 0.115 274.713);
-	--chart-2: oklch(0.585 0.233 277.117);
-	--chart-3: oklch(0.511 0.262 276.966);
-	--chart-4: oklch(0.457 0.24 277.023);
-	--chart-5: oklch(0.398 0.195 277.366);
+	/* The dark ramp is not the light one reused: it runs the other way,
+	   because nothing below L 0.585 clears the dark card. This block existed
+	   before with the light values copied into it verbatim, which is how
+	   three of the five steps shipped below the contrast floor. */
+	--chart-1: oklch(0.585 0.211 277);
+	--chart-2: oklch(0.66 0.168 277);
+	--chart-3: oklch(0.732 0.129 277);
+	--chart-4: oklch(0.806 0.09 277);
+	--chart-5: oklch(0.88 0.054 277);
 	--sidebar: oklch(0.205 0 0);
 	--sidebar-foreground: oklch(0.985 0 0);
 	--sidebar-primary: oklch(0.585 0.233 277.117);
