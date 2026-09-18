@@ -393,7 +393,7 @@ but commit -b feat/stats-recorded-range -m "build(api-client): regenerate for re
 - Consumes: nothing.
 - Produces: the keys `stats.showRecorded`, `stats.noClicksElsewhere`, `stats.disabledElsewhere`, used by Tasks 4 and 5.
 
-Keys inside each `stats` object are sorted alphabetically; keep them that way or `pnpm run lint` will complain about the file's key order.
+Keys inside each `stats` object are **thematically grouped in the page's own reading order**, not sorted — the summary's fields first, then each split with its values, and `links` is grouped the same way. Nothing lints JSON key order, so nothing will stop you alphabetizing it; do not. That order is what a translator reads the page's structure from. Insert `disabledElsewhere` immediately after `disabledBody`, `noClicksElsewhere` immediately after `noClicksBody`, and `showRecorded` immediately after `disabledAction`, where the control both empty states share belongs.
 
 - [ ] **Step 1: Reword the two guesses and add the three new keys — English**
 
