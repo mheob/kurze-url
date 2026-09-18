@@ -23,22 +23,26 @@ interface StatSplitProps {
 }
 
 /**
- * A breakdown's percentages are computed against the sum of its own
- * `values` plus its `other_clicks` — never against `totals.clicks` — because
- * that sum is a dimension's true total. It agrees with `totals.clicks` only
- * when nothing was truncated into `other_clicks`.
+ * A split's percentages are computed against the sum of its own values'
+ * clicks — unlike `StatBreakdownCard`'s near-identical `dimensionTotal`,
+ * which also adds its dimension's `other_clicks`. That term exists there
+ * because the API caps an open dimension at its top ten values and folds
+ * the remainder into `other_clicks`. `bot_status` and `qr_vs_regular` are
+ * the only two dimensions with a closed, fixed value set of at most two
+ * values each (see `splitValueLabel`'s own docstring), so nothing is ever
+ * truncated here — `other_clicks` is always 0, and adding it would only
+ * imply a truncation case this split cannot have.
  *
  * @param breakdown - The split to size.
  * @returns The denominator every one of its values' shares is computed against.
  */
-function splitTotal(breakdown: StatBreakdown): number {
-	const valuesTotal = (breakdown.values ?? []).reduce((sum, value) => sum + value.clicks, 0);
-	return valuesTotal + breakdown.other_clicks;
+function splitValuesTotal(breakdown: StatBreakdown): number {
+	return (breakdown.values ?? []).reduce((sum, value) => sum + value.clicks, 0);
 }
 
 /**
  * @param clicks - One value's own click count.
- * @param total - The split's total, from `splitTotal`.
+ * @param total - The split's total, from `splitValuesTotal`.
  * @returns The value's share as a whole percentage, or 0 when the split has nothing to divide.
  */
 function sharePercent(clicks: number, total: number): number {
@@ -105,7 +109,7 @@ function StatSplit({
 }: StatSplitProps): React.JSX.Element {
 	const { t } = useTranslation();
 	const values = breakdown.values ?? [];
-	const total = splitTotal(breakdown);
+	const total = splitValuesTotal(breakdown);
 
 	return (
 		<div>
