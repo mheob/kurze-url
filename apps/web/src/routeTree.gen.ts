@@ -18,6 +18,7 @@ import { Route as AuthedTeamsTeamSlugDomainsRouteImport } from './routes/_authed
 import { Route as AuthedTeamsTeamSlugLinksIndexRouteImport } from './routes/_authed/teams.$teamSlug.links.index'
 import { Route as AuthedTeamsTeamSlugLinksLinkIdRouteImport } from './routes/_authed/teams.$teamSlug.links.$linkId'
 import { Route as AuthedTeamsTeamSlugLinksNewRouteImport } from './routes/_authed/teams.$teamSlug.links.new'
+import { Route as AuthedTeamsTeamSlugLinksLinkIdStatsRouteImport } from './routes/_authed/teams.$teamSlug.links.$linkId_.stats'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -67,6 +68,12 @@ const AuthedTeamsTeamSlugLinksNewRoute =
     path: '/teams/$teamSlug/links/new',
     getParentRoute: () => AuthedRoute,
   } as any)
+const AuthedTeamsTeamSlugLinksLinkIdStatsRoute =
+  AuthedTeamsTeamSlugLinksLinkIdStatsRouteImport.update({
+    id: '/teams/$teamSlug/links/$linkId_/stats',
+    path: '/teams/$teamSlug/links/$linkId/stats',
+    getParentRoute: () => AuthedRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -77,6 +84,7 @@ export interface FileRoutesByFullPath {
   '/teams/$teamSlug/links/$linkId': typeof AuthedTeamsTeamSlugLinksLinkIdRoute
   '/teams/$teamSlug/links/new': typeof AuthedTeamsTeamSlugLinksNewRoute
   '/teams/$teamSlug/links/': typeof AuthedTeamsTeamSlugLinksIndexRoute
+  '/teams/$teamSlug/links/$linkId/stats': typeof AuthedTeamsTeamSlugLinksLinkIdStatsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -87,6 +95,7 @@ export interface FileRoutesByTo {
   '/teams/$teamSlug/links/$linkId': typeof AuthedTeamsTeamSlugLinksLinkIdRoute
   '/teams/$teamSlug/links/new': typeof AuthedTeamsTeamSlugLinksNewRoute
   '/teams/$teamSlug/links': typeof AuthedTeamsTeamSlugLinksIndexRoute
+  '/teams/$teamSlug/links/$linkId/stats': typeof AuthedTeamsTeamSlugLinksLinkIdStatsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -99,6 +108,7 @@ export interface FileRoutesById {
   '/_authed/teams/$teamSlug/links/$linkId': typeof AuthedTeamsTeamSlugLinksLinkIdRoute
   '/_authed/teams/$teamSlug/links/new': typeof AuthedTeamsTeamSlugLinksNewRoute
   '/_authed/teams/$teamSlug/links/': typeof AuthedTeamsTeamSlugLinksIndexRoute
+  '/_authed/teams/$teamSlug/links/$linkId_/stats': typeof AuthedTeamsTeamSlugLinksLinkIdStatsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -111,6 +121,7 @@ export interface FileRouteTypes {
     | '/teams/$teamSlug/links/$linkId'
     | '/teams/$teamSlug/links/new'
     | '/teams/$teamSlug/links/'
+    | '/teams/$teamSlug/links/$linkId/stats'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -121,6 +132,7 @@ export interface FileRouteTypes {
     | '/teams/$teamSlug/links/$linkId'
     | '/teams/$teamSlug/links/new'
     | '/teams/$teamSlug/links'
+    | '/teams/$teamSlug/links/$linkId/stats'
   id:
     | '__root__'
     | '/'
@@ -132,6 +144,7 @@ export interface FileRouteTypes {
     | '/_authed/teams/$teamSlug/links/$linkId'
     | '/_authed/teams/$teamSlug/links/new'
     | '/_authed/teams/$teamSlug/links/'
+    | '/_authed/teams/$teamSlug/links/$linkId_/stats'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -206,6 +219,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedTeamsTeamSlugLinksNewRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/teams/$teamSlug/links/$linkId_/stats': {
+      id: '/_authed/teams/$teamSlug/links/$linkId_/stats'
+      path: '/teams/$teamSlug/links/$linkId/stats'
+      fullPath: '/teams/$teamSlug/links/$linkId/stats'
+      preLoaderRoute: typeof AuthedTeamsTeamSlugLinksLinkIdStatsRouteImport
+      parentRoute: typeof AuthedRoute
+    }
   }
 }
 
@@ -215,6 +235,7 @@ interface AuthedRouteChildren {
   AuthedTeamsTeamSlugLinksLinkIdRoute: typeof AuthedTeamsTeamSlugLinksLinkIdRoute
   AuthedTeamsTeamSlugLinksNewRoute: typeof AuthedTeamsTeamSlugLinksNewRoute
   AuthedTeamsTeamSlugLinksIndexRoute: typeof AuthedTeamsTeamSlugLinksIndexRoute
+  AuthedTeamsTeamSlugLinksLinkIdStatsRoute: typeof AuthedTeamsTeamSlugLinksLinkIdStatsRoute
 }
 
 const AuthedRouteChildren: AuthedRouteChildren = {
@@ -223,6 +244,8 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedTeamsTeamSlugLinksLinkIdRoute: AuthedTeamsTeamSlugLinksLinkIdRoute,
   AuthedTeamsTeamSlugLinksNewRoute: AuthedTeamsTeamSlugLinksNewRoute,
   AuthedTeamsTeamSlugLinksIndexRoute: AuthedTeamsTeamSlugLinksIndexRoute,
+  AuthedTeamsTeamSlugLinksLinkIdStatsRoute:
+    AuthedTeamsTeamSlugLinksLinkIdStatsRoute,
 }
 
 const AuthedRouteWithChildren =

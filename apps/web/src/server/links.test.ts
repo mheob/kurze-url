@@ -52,7 +52,14 @@ vi.mock('@tanstack/react-start/server', () => ({
  * in. `listLinksFor` takes a `Request` as a plain parameter instead, which
  * is what makes it callable here at all; see its docstring in `links.ts`.
  */
-const { createLinkFor, linkQrDownloadFor, linkQrSvgFor, listLinksFor, qrBodyBytes } =
+const {
+	createLinkFor,
+	getLinkStatsFor,
+	linkQrDownloadFor,
+	linkQrSvgFor,
+	listLinksFor,
+	qrBodyBytes,
+} =
 	/* oxlint-disable-next-line node/no-top-level-await -- this file is a Vitest test entry, never
 	 * `require(esm)`'d by anything; the dynamic import has to run after the `vi.mock` calls above
 	 * register their replacements, which a module-scope `await import` is what expresses.
@@ -426,6 +433,92 @@ describe('links', () => {
 			const query = new URLSearchParams(recordedSearch(seenSearch));
 			expect(query.get('format')).toBe('svg');
 			expect(query.has('size')).toBe(false);
+		});
+	});
+
+	describe('getLinkStatsFor', () => {
+		it('sends the window as query parameters and returns the document', async () => {
+			withSession('stats-token');
+			let seenUrl: URL | undefined;
+			server.use(
+				http.get('*/v1/links/:linkId/stats', ({ request: apiRequest }) => {
+					seenUrl = new URL(apiRequest.url);
+					return HttpResponse.json({
+						analytics_enabled: true,
+						breakdowns: {},
+						from: '2026-09-01',
+						link_id: 'link-1',
+						series: [],
+						to: '2026-09-18',
+						totals: { clicks: 3, human_clicks: 2, human_unique_visitors: 1, unique_visitors: 2 },
+					});
+				}),
+			);
+
+			const stats = await getLinkStatsFor(new Request('https://web.test/'), 'link-1', {
+				from: '2026-09-01',
+				to: '2026-09-18',
+			});
+
+			expect(seenUrl?.searchParams.get('from')).toBe('2026-09-01');
+			expect(seenUrl?.searchParams.get('to')).toBe('2026-09-18');
+			expect(stats.totals.clicks).toBe(3);
+		});
+
+		// An absent bound must not travel as an empty string: the endpoint would
+		// read that as a supplied-but-malformed value rather than as absent, and
+		// the page would lose the endpoint's own thirty-day default.
+		it('omits a bound that was not supplied', async () => {
+			withSession('stats-token');
+			let seenUrl: URL | undefined;
+			server.use(
+				http.get('*/v1/links/:linkId/stats', ({ request: apiRequest }) => {
+					seenUrl = new URL(apiRequest.url);
+					return HttpResponse.json({
+						analytics_enabled: true,
+						breakdowns: {},
+						from: '2026-08-20',
+						link_id: 'link-1',
+						series: [],
+						to: '2026-09-18',
+						totals: { clicks: 0, human_clicks: 0, human_unique_visitors: 0, unique_visitors: 0 },
+					});
+				}),
+			);
+
+			await getLinkStatsFor(new Request('https://web.test/'), 'link-1', {});
+
+			expect(seenUrl?.searchParams.has('from')).toBe(false);
+			expect(seenUrl?.searchParams.has('to')).toBe(false);
+		});
+
+		it('flushes refreshed session cookies onto the real response', async () => {
+			const appended: string[] = [];
+			mocks.getResponse.mockReturnValue({
+				headers: {
+					append: (_name: string, value: string) => {
+						appended.push(value);
+					},
+				},
+			});
+			withSession('stats-token');
+			server.use(
+				http.get('*/v1/links/:linkId/stats', () =>
+					HttpResponse.json({
+						analytics_enabled: true,
+						breakdowns: {},
+						from: '2026-09-01',
+						link_id: 'link-1',
+						series: [],
+						to: '2026-09-18',
+						totals: { clicks: 0, human_clicks: 0, human_unique_visitors: 0, unique_visitors: 0 },
+					}),
+				),
+			);
+
+			await getLinkStatsFor(new Request('https://web.test/'), 'link-1', {});
+
+			expect(appended).toContain('sb-access-token=refreshed; Path=/; HttpOnly');
 		});
 	});
 });

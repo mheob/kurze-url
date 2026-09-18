@@ -46,7 +46,9 @@ Decided 2026-09-01: accessibility is an explicit requirement, not a side effect 
 
 Target: **WCAG 2.1 AA.** This also happens to line up with Germany's Barrierefreiheitsstärkungsgesetz (BFSG, in force since June 2025), which references EN 301 549 / WCAG 2.1 AA for digital services offered to consumers — worth keeping in mind given the target audience is German Vereine, even though the exact applicability of BFSG to a non-profit community tool hasn't been separately reviewed (flagging this the same way the Safe Browsing licensing question was flagged earlier — a reasonable-fit assumption, not a legal confirmation).
 
-Base UI (the primitive layer, per the decision above) gives keyboard navigation, ARIA attributes, and focus management out of the box for interactive components — a solid foundation, but not a substitute for testing: color contrast in the final theme, form error announcements, and focus order across full pages still need explicit verification rather than being assumed from the component library alone.
+Base UI (the primitive layer, per the decision above) gives keyboard navigation, ARIA attributes, and focus management out of the box for interactive components — a solid foundation, but not a substitute for testing: colour contrast in the final theme, form error announcements, and focus order across full pages still need explicit verification rather than being assumed from the component library alone.
+
+**A chart ships with a text equivalent.** An SVG of paths carries no data to a screen reader, however well the chart itself is labelled — `role="img"` and `aria-label` announce that a chart exists, not what it shows. The link statistics page (`docs/superpowers/specs/2026-09-18-link-analytics-page-design.md`) established the pattern every chart in this project now follows: the same rows ship again as a visually hidden (`sr-only`) `<table>` immediately after the chart, with `aria-describedby` on the chart's `role="img"` wrapper pointing at that table's id — so the table, not the chart, is what a screen reader actually reads.
 
 ## Internationalization approach
 
