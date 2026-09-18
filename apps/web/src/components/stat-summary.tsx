@@ -4,6 +4,7 @@
    edited by hand. */
 
 import type { StatBreakdown, StatCounts } from '@kurze-url/api-client';
+import type { TFunction } from 'i18next';
 import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -46,6 +47,42 @@ function sharePercent(clicks: number, total: number): number {
 }
 
 /**
+ * `bot_status` and `qr_vs_regular` are the only two dimensions with a
+ * closed, fixed value set — `human`/`bot` and `regular`/`qr`
+ * (`apps/api/internal/analytics/dimensions.go`) — unlike `browser`,
+ * `country`, `referrer` and `utm_source` (rendered by `StatBreakdownCard`),
+ * which are unbounded and partly attacker-supplied text that must never be
+ * run through a translation lookup. Mirrors `statusLabel`/`reasonLabel` in
+ * `domain-list.tsx`: an unrecognised value is echoed back rather than
+ * dropped or replaced with i18next's own missing-key marker, because the
+ * API's dimension set can grow.
+ *
+ * @param t - The translation function.
+ * @param value - The split's raw value, echoed back unchanged when unrecognised.
+ * @returns The label to render for this value.
+ */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `Readonly<TFunction>` strips i18next's call signature and produces a real TS2349 "not callable"; that was tried.
+function splitValueLabel(t: TFunction, value: string): string {
+	switch (value) {
+		case 'human': {
+			return t('stats.dimensionValueHuman');
+		}
+		case 'bot': {
+			return t('stats.dimensionValueBot');
+		}
+		case 'regular': {
+			return t('stats.dimensionValueRegular');
+		}
+		case 'qr': {
+			return t('stats.dimensionValueQr');
+		}
+		default: {
+			return value;
+		}
+	}
+}
+
+/**
  * One binary split — bot status or QR-vs-regular. Deliberately not the
  * top-ten breakdown layout: a split holds at most a couple of values (and,
  * for `qr_vs_regular` on a link with no scans yet, only one), so a plain
@@ -66,6 +103,7 @@ function StatSplit({
 	language,
 	noValueLabel,
 }: StatSplitProps): React.JSX.Element {
+	const { t } = useTranslation();
 	const values = breakdown.values ?? [];
 	const total = splitTotal(breakdown);
 
@@ -78,7 +116,7 @@ function StatSplit({
 				<ul>
 					{values.map((value) => (
 						<li key={value.value}>
-							<span>{value.value}</span>{' '}
+							<span>{splitValueLabel(t, value.value)}</span>{' '}
 							<span>{`${formatCount(sharePercent(value.clicks, total), language)}%`}</span>
 						</li>
 					))}

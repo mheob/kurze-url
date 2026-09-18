@@ -81,8 +81,31 @@ describe(StatSummary, () => {
 				totals={TOTALS}
 			/>,
 		);
-		expect(screen.getByText('human')).toBeInTheDocument();
+		// The raw wire value is 'human' — `splitValueLabel` translates the
+		// closed four-token set (`human`/`bot`/`regular`/`qr`) rather than
+		// rendering it verbatim, unlike `StatBreakdownCard`'s open dimensions.
+		expect(screen.getByText('Human')).toBeInTheDocument();
 		expect(screen.getByText('75%')).toBeInTheDocument();
+	});
+
+	// Final-review finding: an unrecognised value — the API's dimension set
+	// can grow — must still render, verbatim, rather than a blank string or
+	// i18next's own missing-key marker.
+	it('renders an unrecognised split value verbatim', () => {
+		renderWithI18n(
+			<StatSummary
+				botStatus={{
+					other_clicks: 0,
+					other_unique_visitors: 0,
+					other_values: 0,
+					values: [{ clicks: 10, unique_visitors: 10, value: 'crawler' }],
+				}}
+				language="en"
+				qrVsRegular={EMPTY_BREAKDOWN}
+				totals={TOTALS}
+			/>,
+		);
+		expect(screen.getByText('crawler')).toBeInTheDocument();
 	});
 
 	// A link with no QR clicks has one value, not two. Assuming a pair is the
@@ -101,7 +124,9 @@ describe(StatSummary, () => {
 				totals={TOTALS}
 			/>,
 		);
-		expect(screen.getByText('regular')).toBeInTheDocument();
+		// The raw wire value is 'regular' — see the comment on the 'human'
+		// assertion above.
+		expect(screen.getByText('Direct')).toBeInTheDocument();
 		expect(screen.getByText('100%')).toBeInTheDocument();
 	});
 
