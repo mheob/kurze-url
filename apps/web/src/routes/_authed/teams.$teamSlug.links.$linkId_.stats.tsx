@@ -120,6 +120,52 @@ export async function loadStats(
 	}
 }
 
+/**
+ * Composes `loadStats` and `loadLink` — each independently testable, see
+ * their own docstrings — with the one instant both the server and the
+ * client render this page for. `RouteComponent` used to read that instant
+ * from `new Date()` at render time instead, and the server and the browser
+ * each call that separately: a server render landing just before midnight
+ * that hydrates just after resolves `matchingPreset` differently on each
+ * side, flipping the preset button's `aria-pressed` between the SSR markup
+ * and the first client render. Threading it through the loader's own
+ * return value — the way `format.ts` already takes its language as an
+ * argument rather than reading a global — is what makes both renders agree.
+ *
+ * Two calls in parallel, the way `routes/index.tsx` already pairs its own:
+ * the statistics document carries `link_id` and no slug, so without the
+ * second the heading could not name the link. Both sides now agree on a
+ * 404 — see `loadStats`'s own docstring.
+ *
+ * `fetchLink` stays a parameter — the same reason `loadLink`'s own
+ * `LinkFetcher` shape does in the sibling detail route — so a test can pass
+ * a fake instead of the real `getLinkFn`, whose `createServerFn` cannot run
+ * directly under Vitest. Bundled into one object rather than four positional
+ * parameters: `eslint(max-params)` caps at three, and this already has four
+ * independent things to name.
+ *
+ * @param options - The dependencies and inputs this loader composes.
+ * @param options.fetchLink - The server function to fetch the link through; only needs `loadLink`'s narrow shape.
+ * @param options.linkId - The link's id, from the route's own path parameter.
+ * @param options.queryClient - The query client to fetch the statistics through; only needs `query`.
+ * @param options.window - The `from`/`to` bounds to request the statistics for.
+ * @returns The link, its statistics, and the one instant both renders see.
+ */
+export async function loadStatsPage(
+	options: Readonly<{
+		fetchLink: Parameters<typeof loadLink>[0];
+		linkId: string;
+		queryClient: StatsDataSource;
+		window: StatsSearch;
+	}>,
+): Promise<{ link: Link; stats: LinkStats; today: Date }> {
+	const [stats, link] = await Promise.all([
+		loadStats(options.queryClient, options.linkId, options.window),
+		loadLink(options.fetchLink, options.linkId),
+	]);
+	return { link, stats, today: new Date() };
+}
+
 // oxlint-disable-next-line sort-keys -- `validateSearch` has to stay declared before `loaderDeps`/`loader`: see the comment on it below.
 export const Route = createFileRoute('/_authed/teams/$teamSlug/links/$linkId_/stats')({
 	// Declared before loaderDeps/loader, not for readability: loaderDeps's own
@@ -132,17 +178,13 @@ export const Route = createFileRoute('/_authed/teams/$teamSlug/links/$linkId_/st
 		teamId: requireTeamId(context.me.memberships, params.teamSlug),
 	}),
 	loaderDeps: ({ search }) => ({ from: search.from, to: search.to }),
-	loader: async ({ context, deps, params }) => {
-		// Two calls in parallel, the way `routes/index.tsx` already pairs its
-		// own: the statistics document carries `link_id` and no slug, so
-		// without the second the heading could not name the link. Both sides
-		// now agree on a 404 — see `loadStats`'s own docstring.
-		const [stats, link] = await Promise.all([
-			loadStats(context.queryClient, params.linkId, deps),
-			loadLink(getLinkFn, params.linkId),
-		]);
-		return { link, stats };
-	},
+	loader: async ({ context, deps, params }) =>
+		loadStatsPage({
+			fetchLink: getLinkFn,
+			linkId: params.linkId,
+			queryClient: context.queryClient,
+			window: deps,
+		}),
 	component: RouteComponent,
 	errorComponent: StatsError,
 });
@@ -335,7 +377,7 @@ export function StatsPageBody({
 
 function RouteComponent(): React.JSX.Element {
 	const { teamSlug } = Route.useParams();
-	const { link, stats } = Route.useLoaderData();
+	const { link, stats, today } = Route.useLoaderData();
 	const { language } = usePreferences();
 	const navigate = Route.useNavigate();
 
@@ -348,7 +390,7 @@ function RouteComponent(): React.JSX.Element {
 			}}
 			stats={stats}
 			teamSlug={teamSlug}
-			today={new Date()}
+			today={today}
 		/>
 	);
 }
