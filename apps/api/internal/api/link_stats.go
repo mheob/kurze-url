@@ -136,7 +136,7 @@ type LinkStats struct {
 	// optional and non-nullable, which is what the handler actually does: Go
 	// omits the key. A reader still makes one check and still cannot meet a
 	// half-populated range.
-	Recorded   *StatRange          `json:"recorded,omitempty" doc:"The first and last day this link has statistics for, whatever window was requested — null when it has none. Bounded by the same 90-day retention floor the window is, so a range reported here can always be requested. This is what is still stored, not what ever happened: rows older than the floor are deleted nightly, and a link whose clicks have all aged out is indistinguishable from one that was never clicked."`
+	Recorded   *StatRange          `json:"recorded,omitempty" doc:"The first and last day this link has statistics for, whatever window was requested — absent when it has none. Bounded by the same 90-day retention floor the window is, so a range reported here can always be requested. This is what is still stored, not what ever happened: rows older than the floor are deleted nightly, and a link whose clicks have all aged out is indistinguishable from one that was never clicked."`
 	Totals     StatCounts          `json:"totals"`
 	Series     []StatDay           `json:"series" doc:"One entry per day of the window, including days with no clicks. At most 90 entries."`
 	Breakdowns LinkStatsBreakdowns `json:"breakdowns"`
@@ -384,7 +384,8 @@ func (d Deps) getLinkStats(ctx context.Context, in *LinkStatsInput) (*LinkStatsO
 	switch {
 	// No row rather than a row of nulls: the query's `having count(*) > 0`
 	// makes "this link has nothing inside the retention window" an absent row,
-	// so recorded stays nil and the response reports null.
+	// so recorded stays nil and, with omitempty on its tag, the response omits
+	// the key entirely rather than sending it as null.
 	case errors.Is(err, pgx.ErrNoRows):
 	case err != nil:
 		d.Log.Error("read recorded range", "error", err, "link_id", link.ID)

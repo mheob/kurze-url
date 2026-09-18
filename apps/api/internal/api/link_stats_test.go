@@ -436,9 +436,9 @@ func TestLinkStatsReportsTheRecordedRangeOutsideTheWindow(t *testing.T) {
 	require.Equal(t, "2026-08-04", body.Recorded.To)
 }
 
-// TestLinkStatsReportsNoRecordedRangeForALinkNobodyClicked pins the null half
-// of the contract. The page renders a different sentence for it, so "no rows"
-// must not arrive as a zero-valued range.
+// TestLinkStatsReportsNoRecordedRangeForALinkNobodyClicked pins the absent
+// half of the contract. The page renders a different sentence for it, so "no
+// rows" must not arrive as a zero-valued range.
 func TestLinkStatsReportsNoRecordedRangeForALinkNobodyClicked(t *testing.T) {
 	f := newTenancyFixture(t)
 	pinToday(t, f, "2026-09-11")
@@ -521,4 +521,37 @@ func TestRecordedRangeUsesTheWindowsOwnFloor(t *testing.T) {
 	require.NotNil(t, body.Recorded)
 	require.Equal(t, body.From, body.Recorded.From,
 		"the oldest reportable row sits exactly on the window's own floor")
+}
+
+// TestLinkStatsOmitsTheRecordedKeyEntirely is the one assertion that can see
+// the difference between "absent" and "null", which every other test in this
+// file is blind to: decoding into a pointer leaves it nil either way. The
+// distinction is the contract. Huma cannot express a nullable object, so a
+// `recorded` that arrived as null would be a value the published schema says
+// cannot occur — and the only thing standing between here and there is the
+// `omitempty` on one struct tag.
+func TestLinkStatsOmitsTheRecordedKeyEntirely(t *testing.T) {
+	f := newTenancyFixture(t)
+	pinToday(t, f, "2026-09-11")
+	created := f.createLink(t, "keyless", "https://example.org/keyless")
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		statsPath(created.ID.String(), ""), nil)
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+
+	var raw map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &raw))
+	require.NotContains(t, raw, "recorded",
+		"a link with no statistics must omit the key, not send null")
+
+	// And the other direction, so this test fails if the key stops being sent
+	// at all rather than only when it should be.
+	seedStatRow(t, f, created.ID, "2026-09-10", "total", nil, 1, 1)
+	rec = f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		statsPath(created.ID.String(), ""), nil)
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+
+	raw = nil
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &raw))
+	require.Contains(t, raw, "recorded")
 }
