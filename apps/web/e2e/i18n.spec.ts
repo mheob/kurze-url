@@ -1,7 +1,9 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 
 import { test } from './fixtures/auth';
+import { createLink } from './fixtures/create-link';
 import { waitForHydration } from './fixtures/hydration';
+import { linkIdForTeam, seedLinkClicks } from './fixtures/seed';
 
 /* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding of this rule in this
  * file is one of two things this side of the codebase cannot change: Playwright's own `Page`
@@ -28,16 +30,20 @@ import { waitForHydration } from './fixtures/hydration';
  * not copy — nobody translates it, so it never changes with the language.
  *
  * `Bot`/`QR` (`stats.dimensionValueBot`/`stats.dimensionValueQr`, rendered by
- * `StatSummary`'s binary splits) join them for the same reason `catalogues
- * .test.ts` already allowlists those two keys: "Bot" is the established
- * German loanword and "QR" is the initialism in both languages, neither is
- * prose to translate. This crawl only reaches the statistics page in its
- * empty state today, where no split has values and neither string renders —
- * so this stays a dead entry until a spec seeds click data into that page,
- * at which point it disarms a failure that would otherwise look exactly
- * like a missing translation.
+ * `StatSummary`'s binary splits) and `BROWSER` (`stats.browser`, a breakdown
+ * card's title) join them for the same reason `catalogues.test.ts` already
+ * allowlists those three keys: "Bot" and "Browser" are the established German
+ * words too and "QR" is the initialism in both languages, none of them prose
+ * to translate. All three render only on the statistics page with data, which
+ * the `stats-data` case below reaches — without these entries that case would
+ * report three failures that look exactly like missing translations.
+ *
+ * `BROWSER` is shouted because `ui/card.tsx`'s `CardTitle` carries `uppercase`,
+ * and this crawl reads `innerText`, which is the text as rendered rather than
+ * as written. The catalogue's own value is "Browser"; it never reaches a
+ * screen in that shape, so the allowlist matches what a reader would see.
  */
-const IDENTICAL_BY_DESIGN = new Set(['kurze.url', 'TXT', 'CNAME', 'Bot', 'QR']);
+const IDENTICAL_BY_DESIGN = new Set(['kurze.url', 'TXT', 'CNAME', 'Bot', 'BROWSER', 'QR']);
 
 /**
  * `/` is a real route with real content; the 404 page is a separate render
@@ -90,6 +96,30 @@ async function visibleText({
 	// for it, not a locator workaround.
 	const title = await page.title();
 
+	// A line survives only if it says something this crawl has not already
+	// approved word by word. Two things make that distinction necessary rather
+	// than clever. `allInnerTexts()` reads every visible element, so a container
+	// is collected along with its own children: `StatSummary`'s split renders
+	// `<li><span>QR</span> <span>40%</span></li>`, and that `<li>` arrives as the
+	// single line "QR 40%" beside the two parts it is made of. And a figure is
+	// not prose — "40%" is the same in every language, which is why a
+	// digits-and-punctuation line was already dropped before this existed.
+	//
+	// Dropping a line whose every word was individually excluded cannot hide a
+	// missing translation: an untranslated string contributes at least one word
+	// that is neither a figure nor an allowlist entry, and that word keeps its
+	// line. This is the one generalisation the exclusion mechanism permits, for
+	// exactly that reason — anything looser (a shape, a prefix, "looks like a
+	// URL") would swallow real copy that merely sat next to approved text.
+	const approved = (value: string): boolean =>
+		identicalByDesign.has(value) || /^[\d\s\p{P}]+$/u.test(value);
+
+	// The whole line first, then its words: an exclusion may itself contain
+	// spaces — this run's team name is `e2e <uuid>` — and testing only the words
+	// would drop it on the floor.
+	const excluded = (value: string): boolean =>
+		approved(value) || value.split(/\s+/u).every((word) => approved(word));
+
 	return (
 		[...texts, ...labels, title]
 			// `body :visible` also matches the theme toggle's inline SVG icon (and its
@@ -99,8 +129,8 @@ async function visibleText({
 			// is filtered out below like any other content-free node.
 			.flatMap((value) => (value ?? '').split('\n'))
 			.map((value) => value.trim())
-			.filter((value) => value.length > 0 && !/^[\d\s\p{P}]+$/u.test(value))
-			.filter((value) => !identicalByDesign.has(value))
+			.filter((value) => value.length > 0)
+			.filter((value) => !excluded(value))
 	);
 }
 
@@ -135,7 +165,23 @@ for (const path of PATHS) {
  * above never pays for provisioning a team it never asks for: a fixture only
  * runs for a test that destructures it.
  */
-const AUTHENTICATED_PATHS = ['links', 'links/new', 'domains', 'stats'] as const;
+const AUTHENTICATED_PATHS = [
+	'links',
+	'links/new',
+	'domains',
+	'stats',
+	'stats-data',
+	'stats-disabled',
+] as const;
+
+/**
+ * The statistics page renders one of three mutually exclusive views, and each
+ * carries strings the other two never show — an empty window, a link whose
+ * counting is switched off, and a page with figures on it. Crawling only one
+ * of them would leave two thirds of that page's copy unchecked, so the last
+ * three entries above are three states of one route rather than three paths.
+ * `statsCase` below turns each of them into the link and the URL it needs.
+ */
 
 /**
  * What the `links` case below fills into the create form — known upfront,
@@ -161,10 +207,57 @@ async function directText(cell: Readonly<Locator>): Promise<string> {
 	return cell.evaluate((node) => node.childNodes[0]?.textContent?.trim() ?? '');
 }
 
+/**
+ * Builds one of the statistics page's three states and reports what the crawl
+ * needs to know about it.
+ *
+ * Every case creates its own link, because the page belongs to one and each
+ * iteration of the loop below gets a freshly seeded team — there is nothing
+ * left over from the `links` case to reuse, even within this file.
+ * `stats-disabled` unchecks counting in the create form, which is what makes
+ * its view the disabled one rather than the empty one; `stats-data` seeds
+ * rollup rows straight into `link_click_stats`, because the redirect path
+ * writes them asynchronously and finishes at no moment a test can wait for
+ * (see `./fixtures/seed`).
+ *
+ * @param options - The pieces the case needs.
+ * @param options.page - The page to drive; must already be authenticated.
+ * @param options.suffix - Which of the three statistics cases to build.
+ * @param options.teamId - The fixture team's id, used to look the new link's id up.
+ * @param options.teamSlug - The fixture team's slug, used to build URLs.
+ * @returns The page's path, its link's short URL, and every string on it that is data, not copy.
+ */
+async function statsCase({
+	page,
+	suffix,
+	teamId,
+	teamSlug,
+}: Readonly<{
+	page: Page;
+	suffix: string;
+	teamId: string;
+	teamSlug: string;
+}>): Promise<{ path: string; shortUrl: string; strings: string[] }> {
+	const shortUrl = await createLink(page, teamSlug, {
+		countClicks: suffix !== 'stats-disabled',
+		destinationUrl: I18N_CRAWL_DESTINATION_URL,
+	});
+	const linkId = await linkIdForTeam(teamId);
+	const strings = [shortUrl];
+
+	if (suffix === 'stats-data') {
+		const seeded = await seedLinkClicks(linkId);
+		strings.push(...seeded.dimensionValues);
+	}
+
+	return { path: `/teams/${teamSlug}/links/${linkId}/stats`, shortUrl, strings };
+}
+
 for (const suffix of AUTHENTICATED_PATHS) {
 	test(`no user-facing string is identical across languages (authenticated /${suffix})`, async ({
 		page,
 		baseURL,
+		teamId,
 		teamSlug,
 		teamName,
 	}) => {
@@ -191,82 +284,16 @@ for (const suffix of AUTHENTICATED_PATHS) {
 			// nav — all real, translated strings this crawl would otherwise miss.
 			// Created once, before either language visits the page, so both passes
 			// compare the same rendered list.
-			await page.goto(`/teams/${teamSlug}/links/new`);
-
-			// The same guard the domains branch below uses, and for the same
-			// reason: `goto` resolves on `load`, which this server-rendered form
-			// reaches before React attaches, so a value typed in that window never
-			// reaches React's state and the form submits empty. This branch went
-			// without it until 2026-09-07, when it failed in CI on exactly that —
-			// `links.spec.ts`'s own creation passed in the same run because it has
-			// always had the guard.
-			const destination = page.getByLabel(/destination/iu);
-			await waitForHydration(destination);
-			await destination.fill(I18N_CRAWL_DESTINATION_URL);
-
-			await page.getByRole('button', { name: /save/iu }).click();
-			await expect(page.getByText(I18N_CRAWL_DESTINATION_URL)).toBeVisible();
-
-			// `link-list.tsx` renders this same link's `short_url` as the visible
-			// text of a plain `<a href>` — the one element on this page whose
-			// `href` is an absolute http(s) URL; every other link here is a
-			// TanStack Router `<Link>` to an app-relative path. The slug inside it
-			// is generated server-side, so there is no formula to reconstruct it
-			// from — reading it off the page it actually rendered is the only way
-			// to get the exact value, and a locator that's supposed to match
-			// exactly one element fails loudly rather than silently if that
-			// assumption ever stops holding.
-			//
-			// `innerText`, not `textContent`: this crawl compares against `visibleText`'s own
-			// `allInnerTexts()`-based read of everything else on the page, so this one link's text
-			// has to be collected the same rendered-and-visible way, not as raw text-node content.
-			// oxlint-disable-next-line unicorn/prefer-dom-node-text-content
-			const shortUrl = await page.locator('a[href^="http"]').innerText();
+			const shortUrl = await createLink(page, teamSlug, {
+				destinationUrl: I18N_CRAWL_DESTINATION_URL,
+			});
 			linkStrings.push(I18N_CRAWL_DESTINATION_URL, shortUrl);
 		}
 
-		if (suffix === 'stats') {
-			// A statistics page belongs to one link, so this crawl needs a link
-			// to exist before it can visit its `/stats` page at all — same
-			// reasoning as the `links` branch just above, which creates its own
-			// link before either language visits a page that needs one. Each
-			// iteration of this loop gets its own freshly seeded team (the
-			// `team` fixture reruns per `test`), so there is no link left over
-			// from the `links` case to reuse even within the same file.
-			await page.goto(`/teams/${teamSlug}/links/new`);
-
-			const destination = page.getByLabel(/destination/iu);
-			await waitForHydration(destination);
-			await destination.fill(I18N_CRAWL_DESTINATION_URL);
-
-			await page.getByRole('button', { name: /save/iu }).click();
-			await expect(page.getByText(I18N_CRAWL_DESTINATION_URL)).toBeVisible();
-
-			// oxlint-disable-next-line unicorn/prefer-dom-node-text-content
-			const shortUrl = await page.locator('a[href^="http"]').innerText();
-
-			// The list page has no query parameter naming the link's id; the
-			// only place it appears at all is the per-row "Edit" link's own
-			// `href`, `/teams/$teamSlug/links/$linkId`. Reading every `href` on
-			// the page and matching that shape — rather than the edit link's
-			// own translated text — keeps this independent of which language
-			// the list happens to be rendered in right now.
-			const hrefs = await page
-				.locator('a[href]')
-				.evaluateAll((nodes) => nodes.map((node) => node.getAttribute('href') ?? ''));
-			const detailHref = hrefs.find((href) => /\/links\/(?!new$)[^/]+$/u.test(href));
-			if (detailHref === undefined) {
-				throw new Error(
-					"could not find the newly created link's own detail-page href on the links list",
-				);
-			}
-			const linkId = detailHref.split('/').pop();
-			if (linkId === undefined || linkId === '') {
-				throw new Error(`could not read a link id out of detail-page href "${detailHref}"`);
-			}
-
-			path = `/teams/${teamSlug}/links/${linkId}/stats`;
-			linkStrings.push(shortUrl);
+		if (suffix.startsWith('stats')) {
+			const stats = await statsCase({ page, suffix, teamId, teamSlug });
+			path = stats.path;
+			linkStrings.push(...stats.strings);
 
 			// Guards the exact regression this branch exists to catch: this
 			// route once silently rendered the link *edit* form instead of its
@@ -276,7 +303,7 @@ for (const suffix of AUTHENTICATED_PATHS) {
 			// The edit form has no `<h1>` naming the link's own short URL, so a
 			// re-nesting regression fails here, not just in this crawl below.
 			await page.goto(path);
-			await expect(page.getByRole('heading', { level: 1, name: shortUrl })).toBeVisible();
+			await expect(page.getByRole('heading', { level: 1, name: stats.shortUrl })).toBeVisible();
 		}
 
 		if (suffix === 'domains') {
