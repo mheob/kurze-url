@@ -3,12 +3,14 @@ import {
 	deleteLink,
 	getLink,
 	getLinkQr,
+	getLinkStats,
 	listLinks,
 	removeLinkPassword,
 	setLinkPassword,
 	updateLink,
 	type CreateLinkInputBodyWritable,
 	type Link,
+	type LinkStats,
 	type PageLink,
 	type UpdateLinkInputBodyWritable,
 } from '@kurze-url/api-client';
@@ -16,6 +18,7 @@ import { queryOptions } from '@tanstack/react-query';
 import { createServerFn, createServerOnlyFn } from '@tanstack/react-start';
 import { getRequest } from '@tanstack/react-start/server';
 
+import type { StatsSearch } from '../lib/stats-window';
 import { authedApiClient, flushSessionCookies, requireSession } from './session';
 
 /* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding of this rule in this
@@ -429,3 +432,66 @@ export const linkQrDownloadFn = createServerFn({ method: 'POST' })
 			size: data.size,
 		}),
 	);
+
+/**
+ * Same `...For`/`...Fn` split as every other operation in this file, for the
+ * same reason: `createServerFn` reaches for `getRequest()` internally and
+ * throws "No Start context found" under Vitest, so the testable half takes a
+ * `Request` as a plain parameter.
+ *
+ * `window` carries only the bounds the caller actually supplied. An absent
+ * bound is omitted from the query string rather than sent empty: the endpoint
+ * applies its own thirty-day default for an absent `from`, and sending `''`
+ * would be a supplied-but-malformed value instead. The page deliberately does
+ * not know what that default is — see stats-window.ts.
+ *
+ * @param request - The incoming request, read for its session.
+ * @param linkId - The link to report on.
+ * @param window - The `from`/`to` bounds, either, both, or neither.
+ * @returns The statistics document, whose own `from`/`to` are the window actually used.
+ */
+export const getLinkStatsFor = createServerOnlyFn(
+	async (request: Request, linkId: string, window: StatsSearch): Promise<LinkStats> => {
+		const headers = new Headers();
+		const { accessToken } = await requireSession(request, headers);
+		flushSessionCookies(headers);
+
+		const { data } = await getLinkStats({
+			client: authedApiClient(accessToken),
+			path: { link_id: linkId },
+			query: window,
+			throwOnError: true,
+		});
+		return data;
+	},
+);
+
+/** `getRequest()` inline, not inside `getLinkStatsFor`, for the same reason as `listLinksFn`. */
+export const getLinkStatsFn = createServerFn({ method: 'GET' })
+	.validator((data: { readonly linkId: string; readonly window: StatsSearch }) => data)
+	.handler(
+		async ({
+			data,
+		}: {
+			readonly data: { readonly linkId: string; readonly window: StatsSearch };
+		}) => getLinkStatsFor(getRequest(), data.linkId, data.window),
+	);
+
+/**
+ * The window is part of the key, so moving between two windows and back is
+ * served from cache rather than refetched, and a stale window's document can
+ * never be shown under a new window's heading.
+ *
+ * @param linkId - The link to report on.
+ * @param window - The bounds, which may be empty.
+ * @returns Query options for the loader and for useSuspenseQuery.
+ */
+// Same reason as `linksQueryOptions` above: `queryOptions`'s own return type
+// can't be written out by hand without losing the specific query-key tuple
+// type `useSuspenseQuery` needs downstream.
+// oxlint-disable-next-line typescript/explicit-function-return-type, typescript/explicit-module-boundary-types
+export const linkStatsQueryOptions = (linkId: string, window: StatsSearch) =>
+	queryOptions({
+		queryFn: async () => getLinkStatsFn({ data: { linkId, window } }),
+		queryKey: ['link-stats', linkId, window.from ?? '', window.to ?? ''] as const,
+	});
