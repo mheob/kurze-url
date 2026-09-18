@@ -24,25 +24,33 @@ import { Field, FieldLabel } from './ui/field';
 /** A window's totals, summed from its daily rows. */
 interface WindowTotals {
 	readonly clicks: number;
+	readonly humanClicks: number;
+	readonly humanUniqueVisitors: number;
 	readonly uniqueVisitors: number;
 }
 
 /**
  * @param series - The daily rows to sum.
- * @returns The window's total clicks and total unique visitors, each the
- *   plain sum of the daily figures. `StatSummary`'s caveat about summing
- *   `unique_visitors` across days applies here too — this helper just adds
- *   the numbers, the caveat is the caller's copy to state, not this
- *   function's to repeat.
+ * @returns The window's four running totals, each the plain sum of the
+ *   daily figures — the human two are summed here (not only clicks/visitors)
+ *   because the bot-toggle's own accessible name has to be able to name them
+ *   too. `StatSummary`'s caveat about summing `unique_visitors` across days
+ *   applies to both visitor figures here — this helper just adds the
+ *   numbers, the caveat is the caller's copy to state, not this function's
+ *   to repeat.
  */
 function windowTotals(series: readonly StatDay[]): WindowTotals {
 	let clicks = 0;
 	let uniqueVisitors = 0;
+	let humanClicks = 0;
+	let humanUniqueVisitors = 0;
 	for (const day of series) {
 		clicks += day.clicks;
 		uniqueVisitors += day.unique_visitors;
+		humanClicks += day.human_clicks;
+		humanUniqueVisitors += day.human_unique_visitors;
 	}
-	return { clicks, uniqueVisitors };
+	return { clicks, humanClicks, humanUniqueVisitors, uniqueVisitors };
 }
 
 export interface StatSeriesChartProps {
@@ -91,20 +99,47 @@ export function StatSeriesChart({
 	const tableId = useId();
 	const checkboxId = useId();
 
+	// `human_clicks`/`human_unique_visitors` get their own, longer labels here
+	// — "…Legend" keys, distinct from `stats.humanClicks`/`humanUniqueVisitors`
+	// (used verbatim by `StatSummary` and by this component's own hidden table
+	// header, neither of which draws a dashed line to explain) — because
+	// `ChartLegendContent` paints a solid swatch from `item.color` and never
+	// reads `strokeDasharray`. Without the word in the label itself, the
+	// legend has two pairs of pixel-identical swatches (clicks/human_clicks
+	// share `--chart-1`, the two visitor series share `--chart-5`) and no
+	// text anywhere ties either dashed line back to what it means — exactly
+	// what the spec's "the dashed lines are described as such in their
+	// accessible names, not only drawn that way" rules out.
 	const config = {
 		clicks: { color: 'var(--chart-1)', label: t('stats.clicks') },
-		human_clicks: { color: 'var(--chart-1)', label: t('stats.humanClicks') },
-		human_unique_visitors: { color: 'var(--chart-5)', label: t('stats.humanUniqueVisitors') },
+		human_clicks: { color: 'var(--chart-1)', label: t('stats.humanClicksLegend') },
+		human_unique_visitors: {
+			color: 'var(--chart-5)',
+			label: t('stats.humanUniqueVisitorsLegend'),
+		},
 		unique_visitors: { color: 'var(--chart-5)', label: t('stats.uniqueVisitors') },
 	} satisfies ChartConfig;
 
 	const totals = windowTotals(series);
-	const chartLabel = t('stats.chartLabel', {
-		clicks: formatCount(totals.clicks, language),
-		from: formatDay(from, language),
-		to: formatDay(to, language),
-		visitors: formatCount(totals.uniqueVisitors, language),
-	});
+	// Two keys, not one interpolated conditionally: the toggle changes which
+	// figures the image's own accessible name claims to describe, and a
+	// reader who never opens the toggle must not be told about human figures
+	// the chart isn't currently drawing.
+	const chartLabel = showBots
+		? t('stats.chartLabelWithBots', {
+				clicks: formatCount(totals.clicks, language),
+				from: formatDay(from, language),
+				humanClicks: formatCount(totals.humanClicks, language),
+				humanVisitors: formatCount(totals.humanUniqueVisitors, language),
+				to: formatDay(to, language),
+				visitors: formatCount(totals.uniqueVisitors, language),
+			})
+		: t('stats.chartLabel', {
+				clicks: formatCount(totals.clicks, language),
+				from: formatDay(from, language),
+				to: formatDay(to, language),
+				visitors: formatCount(totals.uniqueVisitors, language),
+			});
 
 	return (
 		<Card>

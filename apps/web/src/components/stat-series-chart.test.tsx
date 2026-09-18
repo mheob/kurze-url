@@ -59,6 +59,22 @@ describe(StatSeriesChart, () => {
 		expect(screen.getByRole('img')).toHaveAccessibleName(/14 clicks/u);
 	});
 
+	// Final-review finding: the label named only the window and the two
+	// whole-population totals, unconditionally — a reader who turns the bot
+	// toggle on gets no equivalent statement of the two human totals the
+	// chart is now also drawing.
+	it('mentions the human totals in the chart image label once the toggle is on', async () => {
+		const user = userEvent.setup();
+		renderWithI18n(
+			<StatSeriesChart from="2026-09-16" language="en" series={SERIES} to="2026-09-18" />,
+		);
+		expect(screen.getByRole('img')).not.toHaveAccessibleName(/human/iu);
+
+		await user.click(screen.getByRole('checkbox', { name: 'Show bot share' }));
+
+		expect(screen.getByRole('img')).toHaveAccessibleName(/12 human clicks/u);
+	});
+
 	it('starts with the bot toggle off', () => {
 		renderWithI18n(
 			<StatSeriesChart from="2026-09-16" language="en" series={SERIES} to="2026-09-18" />,
@@ -76,6 +92,25 @@ describe(StatSeriesChart, () => {
 		await user.click(screen.getByRole('checkbox', { name: 'Show bot share' }));
 
 		expect(screen.getByRole('columnheader', { name: 'Human clicks' })).toBeInTheDocument();
+	});
+
+	// Final-review finding: `clicks`/`human_clicks` share `--chart-1` and the
+	// two visitor series share `--chart-5`, and the legend's swatch is a
+	// solid square that never reads `strokeDasharray` — so the swatch alone
+	// cannot tell "Clicks" apart from "Human clicks". The text has to say it
+	// instead: this pins that the two dashed lines' own legend text names the
+	// dash, not just the metric.
+	it('names the dashed lines as dashed in the legend once the toggle is on', async () => {
+		const user = userEvent.setup();
+		renderWithI18n(
+			<StatSeriesChart from="2026-09-16" language="en" series={SERIES} to="2026-09-18" />,
+		);
+		expect(screen.queryByText(/dashed/iu)).not.toBeInTheDocument();
+
+		await user.click(screen.getByRole('checkbox', { name: 'Show bot share' }));
+
+		expect(screen.getByText('Human clicks (dashed)')).toBeInTheDocument();
+		expect(screen.getByText('Human visitors (dashed)')).toBeInTheDocument();
 	});
 
 	it('renders an empty series without throwing', () => {
