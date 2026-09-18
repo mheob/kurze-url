@@ -14,6 +14,22 @@ const counts = new Map<Language, Intl.NumberFormat>();
 const days = new Map<Language, Intl.DateTimeFormat>();
 
 /**
+ * `Language` stays the public parameter type so no caller has to change, but
+ * every Intl constructor gets a region-qualified BCP 47 tag, not the bare
+ * language. An unqualified tag ('en') lets ICU resolve the region from the
+ * runtime's own default locale — which the server and the browser are not
+ * guaranteed to agree on — and that is exactly the hydration mismatch this
+ * module exists to prevent. 'en' resolves to US month/day/year ordering on
+ * this Node build; 'en-GB' pins the day-first order this repository's own
+ * British-English prose already assumes, deterministically, everywhere this
+ * code runs.
+ */
+const LOCALE_TAGS: Record<Language, string> = {
+	de: 'de-DE',
+	en: 'en-GB',
+};
+
+/**
  * @param value - A whole number of clicks or visitors.
  * @param language - The active language.
  * @returns The number with the language's own thousands grouping.
@@ -21,7 +37,7 @@ const days = new Map<Language, Intl.DateTimeFormat>();
 export function formatCount(value: number, language: Language): string {
 	let formatter = counts.get(language);
 	if (formatter === undefined) {
-		formatter = new Intl.NumberFormat(language);
+		formatter = new Intl.NumberFormat(LOCALE_TAGS[language]);
 		counts.set(language, formatter);
 	}
 	return formatter.format(value);
@@ -39,7 +55,7 @@ export function formatDay(isoDate: string, language: Language): string {
 		// UTC, and formatting that in a negative offset renders 31 December —
 		// every point on the chart would be labelled with the wrong day for
 		// anyone west of Greenwich.
-		formatter = new Intl.DateTimeFormat(language, {
+		formatter = new Intl.DateTimeFormat(LOCALE_TAGS[language], {
 			day: 'numeric',
 			month: 'short',
 			timeZone: 'UTC',
