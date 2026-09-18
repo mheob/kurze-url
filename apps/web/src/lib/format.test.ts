@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatCount, formatDay } from './format.ts';
+import { formatCount, formatDay, LOCALE_TAGS } from './format.ts';
 
 describe(formatCount, () => {
 	it('groups thousands the English way', () => {
@@ -23,7 +23,7 @@ describe(formatCount, () => {
 
 describe(formatDay, () => {
 	it('renders a day the English way', () => {
-		expect(formatDay('2026-09-15', 'en')).toBe('15 Sept 2026');
+		expect(formatDay('2026-09-15', 'en')).toBe('Sep 15, 2026');
 	});
 
 	it('renders a day the German way', () => {
@@ -38,11 +38,14 @@ describe(formatDay, () => {
 		expect(formatDay('2026-01-01', 'en')).toContain('1');
 	});
 
-	// A bare 'en' lets ICU pick US month/day/year ordering ('Sep 15, 2026'),
-	// which does not start with the day. Region-qualifying to 'en-GB' is what
-	// makes this day-first — pinned here so a future edit back to a bare tag
-	// fails this test instead of silently reordering every date on the page.
-	it('resolves English to a region-qualified, day-first locale', () => {
-		expect(formatDay('2026-09-15', 'en').startsWith('15')).toBe(true);
+	// This guards the region binding itself, not the date order: on this Node
+	// build a bare 'en' and 'en-US' render an identical string ('Sep 15,
+	// 2026'), so no output of formatDay can tell them apart any more. Only
+	// Intl's own resolvedOptions().locale distinguishes 'en' (unqualified,
+	// left to the runtime's default region) from 'en-US' (pinned) — which is
+	// precisely the ambiguity LOCALE_TAGS exists to remove. Verified by hand
+	// that reverting LOCALE_TAGS.en to a bare 'en' turns this red.
+	it('binds English to a region-qualified locale', () => {
+		expect(new Intl.DateTimeFormat(LOCALE_TAGS.en).resolvedOptions().locale).toBe('en-US');
 	});
 });

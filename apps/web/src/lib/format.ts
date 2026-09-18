@@ -16,17 +16,19 @@ const days = new Map<Language, Intl.DateTimeFormat>();
 /**
  * `Language` stays the public parameter type so no caller has to change, but
  * every Intl constructor gets a region-qualified BCP 47 tag, not the bare
- * language. An unqualified tag ('en') lets ICU resolve the region from the
- * runtime's own default locale — which the server and the browser are not
+ * language. An unqualified tag (e.g. `'en'`) lets ICU resolve the region from
+ * the runtime's own default locale — which the server and the browser are not
  * guaranteed to agree on — and that is exactly the hydration mismatch this
- * module exists to prevent. 'en' resolves to US month/day/year ordering on
- * this Node build; 'en-GB' pins the day-first order this repository's own
- * British-English prose already assumes, deterministically, everywhere this
- * code runs.
+ * module exists to prevent. Pinning a region here removes that ambiguity
+ * deterministically, everywhere this code runs, regardless of which region
+ * happens to be chosen.
+ *
+ * Exported so `format.test.ts` can pin these exact tags rather than merely
+ * pinning the strings `formatDay` happens to produce today.
  */
-const LOCALE_TAGS: Record<Language, string> = {
+export const LOCALE_TAGS: Record<Language, string> = {
 	de: 'de-DE',
-	en: 'en-GB',
+	en: 'en-US',
 };
 
 /**
