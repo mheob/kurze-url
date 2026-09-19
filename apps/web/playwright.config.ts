@@ -84,6 +84,20 @@ export default defineConfig({
 				extraHTTPHeaders: { 'x-vercel-protection-bypass': bypassSecret },
 			}),
 	},
+	/*
+	 * `pnpm build && pnpm start` and not `pnpm dev`, and `reuseExistingServer`
+	 * is the part to know about: it hands the suite whatever already answers on
+	 * 3000 rather than running that command. So a `pnpm run dev` left open from
+	 * earlier is what the specs run against, and Vite serves a development
+	 * overlay production never has — a `<nav aria-label="Workbench
+	 * destinations">` that makes `getByLabel(/destination/iu)` match two
+	 * elements, so `createLink` fails in strict mode for a reason that has
+	 * nothing to do with the app.
+	 *
+	 * The failure names `workbench-destinations` in its own locator output,
+	 * which is the tell. Stop the dev server and let this command build, or
+	 * serve `.output/server/index.mjs` yourself on 3000.
+	 */
 	webServer:
 		process.env.BASE_URL !== undefined && process.env.BASE_URL !== ''
 			? undefined
