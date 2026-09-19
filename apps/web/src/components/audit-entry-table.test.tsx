@@ -90,4 +90,45 @@ describe(AuditEntryTable, () => {
 		expect(screen.getByRole('cell', { name: 'A former member' })).toBeInTheDocument();
 		expect(screen.getByRole('cell', { name: 'A deleted account' })).toBeInTheDocument();
 	});
+
+	// Fix-round addition: a real `link.updated` entry nests a `{from, to}`
+	// object per changed field (`apps/api/internal/api/links.go`), not the
+	// flat string the brief's own fixture above uses. `String(value)` alone
+	// would print the useless `[object Object]` for this — the single most
+	// common action in the log.
+	it('renders a nested object value instead of [object Object]', async () => {
+		renderWithI18n(
+			<AuditEntryTable
+				entries={[
+					{
+						...ENTRY,
+						metadata: { slug: { from: 'sommerfest', to: 'sommerfest-2026' } },
+					},
+				]}
+				language="en"
+				membersById={MEMBERS}
+			/>,
+		);
+
+		await userEvent.click(screen.getByRole('button', { name: /details/iu }));
+
+		expect(screen.getByText('{from: sommerfest, to: sommerfest-2026}')).toBeInTheDocument();
+		expect(screen.queryByText(/object Object/iu)).not.toBeInTheDocument();
+	});
+
+	// Fix-round addition: `link.password_set`/`_changed`/`_removed` are
+	// documented as carrying empty metadata on all three
+	// (`apps/api/internal/audit/audit.go`) — a disclosure control that opens
+	// onto nothing is worse than no control at all.
+	it('offers no details toggle when the entry has no metadata', () => {
+		renderWithI18n(
+			<AuditEntryTable
+				entries={[{ ...ENTRY, metadata: {} }]}
+				language="en"
+				membersById={MEMBERS}
+			/>,
+		);
+
+		expect(screen.queryByRole('button', { name: /details/iu })).not.toBeInTheDocument();
+	});
 });

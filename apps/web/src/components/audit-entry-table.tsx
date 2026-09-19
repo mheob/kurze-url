@@ -41,7 +41,18 @@ const actionLabelKeys: Record<string, string> = {
 	'team_member.role_changed': 'audit.actionMemberRoleChanged',
 };
 
-/** Every `entity_type` the taxonomy defines, mapped to its catalogue key. Same reasoning as `actionLabelKeys` above, and no unknown-entity fallback: `entity_type` is never absent or free-form the way `action` effectively is here. */
+/**
+ * Every `entity_type` the taxonomy defines, mapped to its catalogue key —
+ * same reasoning as `actionLabelKeys` above for using a `Record`. Unlike
+ * `action`, there is no `audit.entityUnknown` catalogue key: `EntryRow`
+ * echoes an unrecognised value back raw instead, the same fallback
+ * `domain-list.tsx`'s `statusLabel`/`reasonLabel` use for a
+ * `verification_status` their own switch doesn't cover. That can't happen
+ * for any of today's six values, but the same was true of `action` before
+ * `password_set`/`password_changed`/`password_removed` were added — the
+ * generated `entity_type: string` gives this rule no more guarantee of
+ * completeness than `action`'s does, only fewer values today.
+ */
 const entityLabelKeys: Record<string, string> = {
 	domain: 'audit.entityDomain',
 	folder: 'audit.entityFolder',
@@ -66,20 +77,48 @@ function metadataEntries(metadata: unknown): readonly (readonly [string, unknown
 }
 
 /**
- * Array values are bracketed (`[a, b]`), not just comma-joined: metadata keys
- * and values share one vocabulary — `metadata.changed` (see
+ * Recursive and generic on purpose — no per-action, per-shape rendering — so
+ * that a twenty-second action never needs a twenty-second rendering rule
+ * here. A plain object renders as its own `key: value` pairs, braced; an
+ * array renders its items the same way this function would, bracketed. That
+ * is load-bearing, not decorative: `link.updated`'s real metadata nests one
+ * object per changed field — `apps/api/internal/api/links.go` writes
+ * `metadata["slug"] = map[string]any{"from": ..., "to": ...}`, and the same
+ * shape recurs for every other field it can change plus `tags`'s `{count}`
+ * — so `String(value)` alone would print `[object Object]` for the single
+ * most common action in the log. Handling the object case explicitly, before
+ * ever falling through to `String`, is what makes that unreachable for any
+ * input.
+ *
+ * Braces and brackets are also what keep an object distinguishable from an
+ * array in the rendered text, and — for arrays specifically — what keeps a
+ * value from colliding with an unrelated key: `metadata.changed` (see
  * `apps/api/internal/audit/audit.go`) is itself a list of the other keys in
- * the same object, e.g. `{ changed: ['slug'], slug: 'sommerfest' }` — so an
- * unmarked join could render a list value that is textually identical to an
- * unrelated key elsewhere in the same entry. The bracket is a fixed,
- * key-agnostic marker of "this is a list," not a transformation of its
- * contents, so it still shows the values raw.
+ * the same object, so `{ changed: ['slug'], slug: 'sommerfest' }`'s bare-joined
+ * array value would read as exactly `slug`, identical to the sibling key of
+ * the same name. No structural fix avoids that: a `<dd>`, a nested `<li>` or
+ * a `<span>` all still produce some element whose own text is exactly
+ * `slug`, so `screen.getByText('slug')` finds two of them regardless of
+ * markup. Only changing the text content — wrapping every array (and, for
+ * the same reason, every object) in a fixed marker — resolves it.
  *
  * @param value - One metadata value, of whatever shape the action that wrote it chose.
- * @returns The value rendered as text — a bracketed, comma-joined list for an array, everything else through `String`.
+ * @returns The value rendered as text, recursively: `{...}` for a plain object, `[...]` for an array, everything else through `String`.
  */
 function metadataValueText(value: unknown): string {
-	return Array.isArray(value) ? `[${value.join(', ')}]` : String(value);
+	if (Array.isArray(value)) {
+		return `[${value.map((item) => metadataValueText(item)).join(', ')}]`;
+	}
+	if (typeof value === 'object' && value !== null) {
+		// Reuses `metadataEntries` rather than a second inline `Object.entries` —
+		// one source of truth for "how to read an object's own entries," and it
+		// already returns the readonly tuple shape this needs.
+		const pairs = metadataEntries(value).map(
+			([key, nested]) => `${key}: ${metadataValueText(nested)}`,
+		);
+		return `{${pairs.join(', ')}}`;
+	}
+	return String(value);
 }
 
 interface MetadataListProps {
@@ -162,33 +201,44 @@ function EntryRow({
 			? actor.email
 			: t(actor.kind === 'formerMember' ? 'audit.actorFormerMember' : 'audit.actorDeletedAccount');
 
+	// Some actions carry no metadata at all by design — `link.password_set`,
+	// `_changed` and `_removed` are documented as empty on all three in
+	// `apps/api/internal/audit/audit.go`, because the action name is already
+	// the whole of what happened. Offering a disclosure control that opens
+	// onto nothing is a dead affordance, worse than no control at all, so the
+	// button — and the row it would open — only render when there is
+	// something to show.
+	const hasMetadata = metadataEntries(entry.metadata).length > 0;
+
 	return (
 		<>
 			<TableRow>
 				<TableCell>
 					{when}
-					{/* Plain "Details" would give every row's button the same
-					    accessible name — `aria-label` overrides it with the action
-					    and the timestamp interpolated in, while the visible text
-					    stays the short, generic word every row shares. The visible
-					    text is still a leading substring of the accessible name, so
-					    this satisfies WCAG 2.5.3 (Label in Name). */}
-					<Button
-						aria-controls={detailsId}
-						aria-expanded={isOpen}
-						aria-label={t('audit.detailsFor', { action: actionLabel, when })}
-						onClick={onToggle}
-						type="button"
-						variant="ghost"
-					>
-						{t('audit.details')}
-					</Button>
+					{hasMetadata ? (
+						// Plain "Details" would give every row's button the same
+						// accessible name — `aria-label` overrides it with the action
+						// and the timestamp interpolated in, while the visible text
+						// stays the short, generic word every row shares. The visible
+						// text is still a leading substring of the accessible name, so
+						// this satisfies WCAG 2.5.3 (Label in Name).
+						<Button
+							aria-controls={detailsId}
+							aria-expanded={isOpen}
+							aria-label={t('audit.detailsFor', { action: actionLabel, when })}
+							onClick={onToggle}
+							type="button"
+							variant="ghost"
+						>
+							{t('audit.details')}
+						</Button>
+					) : null}
 				</TableCell>
 				<TableCell>{actorLabel}</TableCell>
 				<TableCell>{actionLabel}</TableCell>
 				<TableCell>{entityLabel}</TableCell>
 			</TableRow>
-			{isOpen ? (
+			{isOpen && hasMetadata ? (
 				<TableRow id={detailsId}>
 					<TableCell colSpan={4}>
 						<MetadataList metadata={entry.metadata} />

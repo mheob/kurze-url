@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/tanstack-react';
+import { userEvent, within } from 'storybook/test';
 
 import { AuditEntryTable } from './audit-entry-table';
 
@@ -12,10 +13,18 @@ const meta = {
 				entity_id: 'link-1',
 				entity_type: 'link',
 				id: 4,
+				// The real shape a PATCH writes (`apps/api/internal/api/links.go`):
+				// one `{from, to}` object per changed field, never a bare string —
+				// the brief's own test fixture uses a flat shape the API cannot
+				// actually emit, which is what the fix-round nested-object test in
+				// `audit-entry-table.test.tsx` guards against regressing.
 				metadata: {
 					changed: ['slug', 'destination_url'],
-					destination_url: 'https://sv-gruenwald.example/sommerfest',
-					slug: 'sommerfest',
+					destination_url: {
+						from: 'https://sv-gruenwald.example/sommerfest',
+						to: 'https://sv-gruenwald.example/sommerfest-2026',
+					},
+					slug: { from: 'sommerfest', to: 'sommerfest-2026' },
 				},
 			},
 			{
@@ -52,14 +61,40 @@ const meta = {
 		membersById: new Map([['user-a', 'anna@example.org']]),
 	},
 	component: AuditEntryTable,
-	title: 'Links/AuditEntryTable',
+	// Team-scoped, not link-scoped — `Domains/DomainList` and `Shell/*` are
+	// this repo's precedent for a per-feature namespace rather than filing
+	// every table under `Links/`.
+	title: 'Audit/AuditEntryTable',
 } satisfies Meta<typeof AuditEntryTable>;
 
 export default meta;
 
-/** Four entries, newest first, covering all three actor states and one action with rich metadata. */
+/**
+ * Four entries, newest first, covering all three actor states, one action
+ * with rich (nested-object and array) metadata, and two with none at all —
+ * the third and fourth entries render no details toggle, by design.
+ */
 export const Default: StoryObj<typeof meta> = {};
 
 export const German: StoryObj<typeof meta> = {
 	args: { language: 'de' },
+};
+
+/**
+ * Opens the `link.updated` entry's disclosure so its `<dl>` — including the
+ * nested `{from, to}` object the fix round added — is part of the DOM
+ * `test:storybook` scans with axe, not only the collapsed state every other
+ * story leaves behind. `stat-summary.tsx` records why this matters: its own
+ * `<dl>` violation was caught by exactly this mechanism.
+ *
+ * Matched by its action label ("Link changed"), not by list position: two
+ * rows have a details button, and `getAllByRole(...)[0]` would be
+ * `HTMLElement | undefined` under this repo's `noUncheckedIndexedAccess`.
+ */
+export const DetailsOpen: StoryObj<typeof meta> = {
+	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Storybook's own `play` function context type; not this codebase's to mark readonly.
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await userEvent.click(canvas.getByRole('button', { name: /link changed/iu }));
+	},
 };
