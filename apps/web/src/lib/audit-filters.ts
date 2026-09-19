@@ -1,16 +1,10 @@
 /** A calendar day exactly as the controls produce it and the URL carries it. */
 const DAY = /^\d{4}-\d{2}-\d{2}$/u;
 
-const AUDIT_ENTITY_TYPES_CONST = [
-	'domain',
-	'folder',
-	'link',
-	'tag',
-	'team',
-	'team_member',
-] as const;
+/** The entity types `GET /v1/teams/{team_id}/audit-log` accepts, as its own enum declares them. */
+const AUDIT_ENTITY_TYPES = ['domain', 'folder', 'link', 'tag', 'team', 'team_member'] as const;
 
-type AuditEntityTypeInternal = (typeof AUDIT_ENTITY_TYPES_CONST)[number];
+type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 
 /**
  * Type guard to check if a value is a valid AuditEntityType.
@@ -18,15 +12,15 @@ type AuditEntityTypeInternal = (typeof AUDIT_ENTITY_TYPES_CONST)[number];
  * @param value - The value to check.
  * @returns True if the value is a valid audit entity type.
  */
-function isAuditEntityType(value: unknown): value is AuditEntityTypeInternal {
-	return (AUDIT_ENTITY_TYPES_CONST as readonly string[]).includes(String(value));
+function isAuditEntityType(value: unknown): value is AuditEntityType {
+	return typeof value === 'string' && (AUDIT_ENTITY_TYPES as readonly string[]).includes(value);
 }
 
 /** The page's filters, exactly as they live in the route's search parameters. */
-interface AuditFiltersInternal {
+interface AuditFilters {
 	/** A user id, passed through opaquely; the API validates it and answers 422 itself. */
 	readonly actor?: string;
-	readonly entityType?: AuditEntityTypeInternal;
+	readonly entityType?: AuditEntityType;
 	/** The first day to include, as YYYY-MM-DD. */
 	readonly from?: string;
 	/** 1-based, like every other paginated list in this app. */
@@ -53,7 +47,7 @@ function parseAuditFilters(
 		page?: unknown;
 		to?: unknown;
 	}>,
-): AuditFiltersInternal {
+): AuditFilters {
 	const page =
 		typeof search.page === 'number' && Number.isInteger(search.page) && search.page >= 1
 			? search.page
@@ -88,9 +82,7 @@ function parseAuditFilters(
  * @param filters - The parsed filters.
  * @returns The `from`/`to` query values, each omitted when its day was not chosen.
  */
-function toQueryRange(
-	filters: Readonly<{ from?: string; to?: string; [key: PropertyKey]: unknown }>,
-): {
+function toQueryRange(filters: Readonly<AuditFilters>): {
 	from?: string;
 	to?: string;
 } {
@@ -100,7 +92,5 @@ function toQueryRange(
 	};
 }
 
-export const AUDIT_ENTITY_TYPES = AUDIT_ENTITY_TYPES_CONST;
-export type AuditEntityType = AuditEntityTypeInternal;
-export type AuditFilters = AuditFiltersInternal;
-export { parseAuditFilters, toQueryRange };
+export { AUDIT_ENTITY_TYPES, parseAuditFilters, toQueryRange };
+export type { AuditEntityType, AuditFilters };
