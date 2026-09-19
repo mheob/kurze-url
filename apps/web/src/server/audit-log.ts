@@ -14,7 +14,7 @@ import { authedApiClient, flushSessionCookies, requireSession } from './session'
  * wrapped. Same finding, same reason, as the top of `links.ts`.
  */
 
-/** The page size every paginated list in this app uses. */
+/** The page size this endpoint is read at; `server/members.ts` deliberately reads its own at the API's cap. */
 const PER_PAGE = 20;
 
 /**

@@ -16,7 +16,9 @@ import { authedApiClient, flushSessionCookies, requireSession } from './session'
  * The API caps `per_page` at 100. Asking for the cap is deliberate: this list
  * exists to resolve actor ids, and an actor on page two would be rendered as a
  * former member — wrong, and wrong quietly. A team large enough to need paging
- * here needs a different approach, not a second request bolted on.
+ * here needs a different approach, not a second request bolted on. Until one
+ * exists, `listMembersFor` below at least refuses to let the case stay quiet:
+ * it compares what came back against the envelope's own `total_count`.
  */
 const PER_PAGE = 100;
 
@@ -53,6 +55,25 @@ export const listMembersFor = createServerOnlyFn(
 			// throwing.
 			throwOnError: true,
 		});
+
+		// The cap above is what the reader never sees. An actor whose
+		// membership sits past it is simply missing from the map the audit log
+		// builds, and `audit-entry-table.tsx` renders missing as "a former
+		// member" — a confident sentence, in front of a board, about somebody
+		// who is still in the Verein. Nothing about the page looks wrong, which
+		// is the whole problem: this is the one condition here that produces a
+		// plausible wrong answer rather than a visible failure, so it must at
+		// least reach a log. Same channel and same reasoning as
+		// `loadVerifiedDomains`'s swallowed error
+		// (`routes/_authed/teams.$teamSlug.links.new.tsx`): a day of Vercel
+		// runtime logs is not a durable record, but it is the difference
+		// between a question somebody can answer and one nobody can.
+		if ((data.items?.length ?? 0) < data.total_count) {
+			console.error(
+				`listMembersFor: team ${teamId} has ${data.total_count} members and this read caps at ${PER_PAGE}; audit-log actors past the cap render as former members`,
+			);
+		}
+
 		return data;
 	},
 );
