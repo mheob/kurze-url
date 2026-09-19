@@ -14,6 +14,7 @@ import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthedNewTeamRouteImport } from './routes/_authed/new-team'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
+import { Route as AuthedTeamsTeamSlugAuditLogRouteImport } from './routes/_authed/teams.$teamSlug.audit-log'
 import { Route as AuthedTeamsTeamSlugDomainsRouteImport } from './routes/_authed/teams.$teamSlug.domains'
 import { Route as AuthedTeamsTeamSlugLinksIndexRouteImport } from './routes/_authed/teams.$teamSlug.links.index'
 import { Route as AuthedTeamsTeamSlugLinksLinkIdRouteImport } from './routes/_authed/teams.$teamSlug.links.$linkId'
@@ -44,6 +45,12 @@ const AuthCallbackRoute = AuthCallbackRouteImport.update({
   path: '/auth/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthedTeamsTeamSlugAuditLogRoute =
+  AuthedTeamsTeamSlugAuditLogRouteImport.update({
+    id: '/teams/$teamSlug/audit-log',
+    path: '/teams/$teamSlug/audit-log',
+    getParentRoute: () => AuthedRoute,
+  } as any)
 const AuthedTeamsTeamSlugDomainsRoute =
   AuthedTeamsTeamSlugDomainsRouteImport.update({
     id: '/teams/$teamSlug/domains',
@@ -80,6 +87,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/new-team': typeof AuthedNewTeamRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/teams/$teamSlug/audit-log': typeof AuthedTeamsTeamSlugAuditLogRoute
   '/teams/$teamSlug/domains': typeof AuthedTeamsTeamSlugDomainsRoute
   '/teams/$teamSlug/links/$linkId': typeof AuthedTeamsTeamSlugLinksLinkIdRoute
   '/teams/$teamSlug/links/new': typeof AuthedTeamsTeamSlugLinksNewRoute
@@ -91,6 +99,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/new-team': typeof AuthedNewTeamRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/teams/$teamSlug/audit-log': typeof AuthedTeamsTeamSlugAuditLogRoute
   '/teams/$teamSlug/domains': typeof AuthedTeamsTeamSlugDomainsRoute
   '/teams/$teamSlug/links/$linkId': typeof AuthedTeamsTeamSlugLinksLinkIdRoute
   '/teams/$teamSlug/links/new': typeof AuthedTeamsTeamSlugLinksNewRoute
@@ -104,6 +113,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/_authed/new-team': typeof AuthedNewTeamRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/_authed/teams/$teamSlug/audit-log': typeof AuthedTeamsTeamSlugAuditLogRoute
   '/_authed/teams/$teamSlug/domains': typeof AuthedTeamsTeamSlugDomainsRoute
   '/_authed/teams/$teamSlug/links/$linkId': typeof AuthedTeamsTeamSlugLinksLinkIdRoute
   '/_authed/teams/$teamSlug/links/new': typeof AuthedTeamsTeamSlugLinksNewRoute
@@ -117,6 +127,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/new-team'
     | '/auth/callback'
+    | '/teams/$teamSlug/audit-log'
     | '/teams/$teamSlug/domains'
     | '/teams/$teamSlug/links/$linkId'
     | '/teams/$teamSlug/links/new'
@@ -128,6 +139,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/new-team'
     | '/auth/callback'
+    | '/teams/$teamSlug/audit-log'
     | '/teams/$teamSlug/domains'
     | '/teams/$teamSlug/links/$linkId'
     | '/teams/$teamSlug/links/new'
@@ -140,6 +152,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/_authed/new-team'
     | '/auth/callback'
+    | '/_authed/teams/$teamSlug/audit-log'
     | '/_authed/teams/$teamSlug/domains'
     | '/_authed/teams/$teamSlug/links/$linkId'
     | '/_authed/teams/$teamSlug/links/new'
@@ -191,6 +204,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authed/teams/$teamSlug/audit-log': {
+      id: '/_authed/teams/$teamSlug/audit-log'
+      path: '/teams/$teamSlug/audit-log'
+      fullPath: '/teams/$teamSlug/audit-log'
+      preLoaderRoute: typeof AuthedTeamsTeamSlugAuditLogRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/teams/$teamSlug/domains': {
       id: '/_authed/teams/$teamSlug/domains'
       path: '/teams/$teamSlug/domains'
@@ -231,6 +251,7 @@ declare module '@tanstack/react-router' {
 
 interface AuthedRouteChildren {
   AuthedNewTeamRoute: typeof AuthedNewTeamRoute
+  AuthedTeamsTeamSlugAuditLogRoute: typeof AuthedTeamsTeamSlugAuditLogRoute
   AuthedTeamsTeamSlugDomainsRoute: typeof AuthedTeamsTeamSlugDomainsRoute
   AuthedTeamsTeamSlugLinksLinkIdRoute: typeof AuthedTeamsTeamSlugLinksLinkIdRoute
   AuthedTeamsTeamSlugLinksNewRoute: typeof AuthedTeamsTeamSlugLinksNewRoute
@@ -240,6 +261,7 @@ interface AuthedRouteChildren {
 
 const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedNewTeamRoute: AuthedNewTeamRoute,
+  AuthedTeamsTeamSlugAuditLogRoute: AuthedTeamsTeamSlugAuditLogRoute,
   AuthedTeamsTeamSlugDomainsRoute: AuthedTeamsTeamSlugDomainsRoute,
   AuthedTeamsTeamSlugLinksLinkIdRoute: AuthedTeamsTeamSlugLinksLinkIdRoute,
   AuthedTeamsTeamSlugLinksNewRoute: AuthedTeamsTeamSlugLinksNewRoute,
@@ -260,12 +282,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-  }
-}
