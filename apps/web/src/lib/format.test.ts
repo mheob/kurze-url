@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatCount, formatDay, LOCALE_TAGS } from './format.ts';
+import { formatCount, formatDateTime, formatDay, LOCALE_TAGS } from './format.ts';
 
 describe(formatCount, () => {
 	it('groups thousands the English way', () => {
@@ -47,5 +47,22 @@ describe(formatDay, () => {
 	// that reverting LOCALE_TAGS.en to a bare 'en' turns this red.
 	it('binds English to a region-qualified locale', () => {
 		expect(new Intl.DateTimeFormat(LOCALE_TAGS.en).resolvedOptions().locale).toBe('en-US');
+	});
+});
+
+describe(formatDateTime, () => {
+	it('renders an instant the English way', () => {
+		expect(formatDateTime('2026-03-14T09:30:00.000Z', 'en')).toBe('Mar 14, 2026, 9:30 AM');
+	});
+
+	it('renders an instant the German way', () => {
+		expect(formatDateTime('2026-03-14T09:30:00.000Z', 'de')).toBe('14.03.2026, 09:30');
+	});
+
+	// Same reasoning as formatDay's own timezone test: the API sends a full
+	// instant, and formatting it in anything but UTC would let two readers in
+	// different places disagree about when something happened.
+	it('does not shift the instant across a timezone boundary', () => {
+		expect(formatDateTime('2026-01-01T00:30:00.000Z', 'en')).toContain('Jan 1, 2026');
 	});
 });

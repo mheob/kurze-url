@@ -42,8 +42,35 @@ import { linkIdForTeam, seedLinkClicks } from './fixtures/seed';
  * and this crawl reads `innerText`, which is the text as rendered rather than
  * as written. The catalogue's own value is "Browser"; it never reaches a
  * screen in that shape, so the allowlist matches what a reader would see.
+ *
+ * `Domain` and `Link` join them for the audit log's own filter bar:
+ * `audit-filter-bar.tsx`'s entity-type `<select>` lists all six
+ * `AUDIT_ENTITY_TYPES` as options, and the German catalogue's own
+ * `audit.entityDomain`/`audit.entityLink` values are "Domain"/"Link" too — the
+ * established German words, exactly like `Bot`/`Browser` above, not a missed
+ * translation.
+ *
+ * `PERSON` is the audit log's actor filter label (`audit.filterActor`,
+ * "Person" in both catalogues — another established shared word) shouted for
+ * the same reason `BROWSER` is: `FieldLabel` (`ui/field.tsx`) renders through
+ * `Label` (`ui/label.tsx`), whose own base class carries `uppercase`, and this
+ * crawl reads the rendered text, not the catalogue's stored value.
+ *
+ * A team's one member — the fixture's own owner — is excluded separately,
+ * per test run, the same way `teamName` is below: see the `audit-log` branch
+ * further down for why a real email address cannot live in this static set.
  */
-const IDENTICAL_BY_DESIGN = new Set(['kurze.url', 'TXT', 'CNAME', 'Bot', 'BROWSER', 'QR']);
+const IDENTICAL_BY_DESIGN = new Set([
+	'kurze.url',
+	'TXT',
+	'CNAME',
+	'Bot',
+	'BROWSER',
+	'QR',
+	'Domain',
+	'Link',
+	'PERSON',
+]);
 
 /**
  * `/` is a real route with real content; the 404 page is a separate render
@@ -172,6 +199,7 @@ const AUTHENTICATED_PATHS = [
 	'stats',
 	'stats-data',
 	'stats-disabled',
+	'audit-log',
 ] as const;
 
 /**
@@ -270,6 +298,8 @@ for (const suffix of AUTHENTICATED_PATHS) {
 		const linkStrings: string[] = [];
 		// Same idea, populated only for `domains` below.
 		const domainStrings: string[] = [];
+		// Same idea, populated only for `audit-log` below.
+		const auditStrings: string[] = [];
 
 		// Correct for every suffix except `stats`, which the `stats` branch
 		// below overwrites: a statistics page nests under a real link id
@@ -342,6 +372,31 @@ for (const suffix of AUTHENTICATED_PATHS) {
 			domainStrings.push(hostname, `_kurze-url-challenge.${hostname}`, txtValue, cnameValue);
 		}
 
+		if (suffix === 'audit-log') {
+			// A fresh team has no history at all — no seeding fixture writes to
+			// `audit_log`, and `team`/`team_member` themselves are inserted directly
+			// over Postgres (`fixtures/auth.ts`), not through the audited API — so
+			// this crawl reaches `audit.emptyUnfiltered` rather than a populated
+			// table. `AuditFilterBar` still renders regardless, and its actor
+			// `<select>` always lists the fixture's own one team member: the owner
+			// this test signed in as. That member's email is real per-run data, the
+			// same story as `teamName` above, and it cannot live in the static
+			// `identicalByDesign` Set for the same reason `teamName` doesn't — a
+			// fresh address every run. Read here, once, before either language
+			// visits the page, so both passes compare the same rendered option.
+			await page.goto(path);
+			const ownerEmail = await page
+				.getByLabel(/^person$/iu)
+				.locator('option[value]:not([value=""])')
+				.first()
+				// `innerText` is the rendered, visible text, which is what this crawl compares
+				// against elsewhere (`visibleText`'s own `allInnerTexts`); `textContent` reads raw
+				// text-node content instead — same note as `create-link.ts`'s identical disable.
+				// oxlint-disable-next-line unicorn/prefer-dom-node-text-content
+				.innerText();
+			auditStrings.push(ownerEmail);
+		}
+
 		// Every authenticated page renders `AuthedShell` -> `TeamSwitcher`, which
 		// prints `membership.name` — this run's `teamName` fixture value — as
 		// plain link text. That is user data, not UI copy: a real Verein's own
@@ -358,19 +413,22 @@ for (const suffix of AUTHENTICATED_PATHS) {
 		// populated only when `domains` claimed one) is the same story again: a
 		// hostname, its TXT challenge name, and the raw values of the two DNS
 		// records a Verein is told to create are all data a claiming team
-		// supplied or that this instance generated, never copy. Allowing the
-		// *literal* strings this run's own fixture, link creation, and domain
-		// claim produced — reusing the module's own exclusion Set rather than a
-		// second mechanism — has no blind spot: a pattern-based exclusion (a
-		// UUID shape, an `e2e ` prefix, "anything that looks like a URL or
-		// hostname") would just as happily swallow a real hardcoded string that
-		// happened to sit next to one of these, which is exactly the false
-		// negative this spec exists to prevent.
+		// supplied or that this instance generated, never copy. `auditStrings`
+		// (populated only when `audit-log` read one) is the fixture's own team
+		// member email, for the same reason. Allowing the *literal* strings this
+		// run's own fixture, link creation, domain claim, and team membership
+		// produced — reusing the module's own exclusion Set rather than a second
+		// mechanism — has no blind spot: a pattern-based exclusion (a UUID shape,
+		// an `e2e ` prefix, "anything that looks like a URL, hostname or email")
+		// would just as happily swallow a real hardcoded string that happened to
+		// sit next to one of these, which is exactly the false negative this spec
+		// exists to prevent.
 		const identicalByDesign = new Set([
 			...IDENTICAL_BY_DESIGN,
 			teamName,
 			...linkStrings,
 			...domainStrings,
+			...auditStrings,
 		]);
 
 		const english = new Set(

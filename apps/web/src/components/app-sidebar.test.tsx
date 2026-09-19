@@ -146,3 +146,39 @@ describe(AppSidebar, () => {
 		).resolves.toBeInTheDocument();
 	});
 });
+
+describe('the history entry', () => {
+	const ADMIN: Membership[] = [{ name: 'Verein A', role: 'admin', slug: 'verein-a', team_id: 'a' }];
+	const EDITOR: Membership[] = [
+		{ name: 'Verein A', role: 'editor', slug: 'verein-a', team_id: 'a' },
+	];
+
+	it('offers the history to an admin', async () => {
+		renderSidebar({ memberships: ADMIN });
+
+		await expect(screen.findByRole('link', { name: 'History' })).resolves.toBeInTheDocument();
+	});
+
+	it('does not offer it to a member below admin', async () => {
+		// A hidden entry is not a permission — the route refuses too (Task 7).
+		// What this asserts is that the menu does not advertise a door the
+		// reader cannot open, which is the difference between a product that
+		// is restricted and one that looks broken.
+		renderSidebar({ memberships: EDITOR });
+
+		// `findByRole` for `Links` first settles the router before the negative
+		// assertion runs synchronously, the same pattern the suite above uses.
+		await screen.findByRole('link', { name: 'Links' });
+		expect(screen.queryByRole('link', { name: 'History' })).not.toBeInTheDocument();
+	});
+
+	it('still offers links and domains to that member', async () => {
+		// The gate must narrow one entry, not the menu. Without this, a
+		// condition accidentally wrapping the whole `SidebarMenu` would pass
+		// the test above while hiding the entire navigation.
+		renderSidebar({ memberships: EDITOR });
+
+		await expect(screen.findByRole('link', { name: 'Links' })).resolves.toBeInTheDocument();
+		expect(screen.getByRole('link', { name: 'Domains' })).toBeInTheDocument();
+	});
+});

@@ -75,6 +75,13 @@ describe('translation catalogues', () => {
 			// component, so a locale whose date-range convention differs (or an
 			// RTL one) has somewhere to change it without touching code.
 			'stats.rangeSummary',
+			// "Link" is the German word too, same reasoning as `stats.browser`.
+			'audit.entityLink',
+			// "Domain" is the German word too, same reasoning as `stats.browser`.
+			'audit.entityDomain',
+			// "Person" is spelled identically in both languages, same reasoning
+			// as `stats.browser`.
+			'audit.filterActor',
 		]);
 		const english = new Map(flatten(en));
 		const toCheck = flatten(de).filter(

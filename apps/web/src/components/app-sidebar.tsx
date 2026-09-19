@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router';
-import { GlobeIcon, LinkIcon } from 'lucide-react';
+import { GlobeIcon, HistoryIcon, LinkIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import type { Theme } from '../lib/preferences';
@@ -62,6 +62,15 @@ interface AppSidebarProps {
  * reason: with no resolved team, or a `memberships` list that doesn't
  * actually contain it, there is nowhere for either link to point.
  *
+ * The history entry carries a second, narrower gate on top of that one: it
+ * only renders for the current team's `admin`/`owner` roles, mirroring
+ * `authz.AdminScope` on the API. A hidden entry is not a permission by
+ * itself — the route it points at (Task 7) refuses a member below admin on
+ * its own — but the reverse gap matters too: advertising a door a viewer or
+ * editor cannot open reads as broken, not as restricted. The role comes from
+ * `memberships`, looked up by `currentTeamSlug`, rather than a new prop —
+ * `AppSidebar` already receives everything it needs to derive it.
+ *
  * `ThemeToggle` and `LanguageSwitcher` are rendered here, in the footer, for
  * the first time in the authenticated area — before this task, both were
  * only ever rendered by `SiteHeader` on the public pages, so a signed-in
@@ -86,6 +95,8 @@ export function AppSidebar({
 }: AppSidebarProps): React.JSX.Element {
 	const { t } = useTranslation();
 	const hasResolvedTeam = currentTeamSlug !== undefined && memberships.length > 0;
+	const currentRole = memberships.find((membership) => membership.slug === currentTeamSlug)?.role;
+	const canViewAuditLog = currentRole === 'admin' || currentRole === 'owner';
 
 	return (
 		<Sidebar>
@@ -135,6 +146,22 @@ export function AppSidebar({
 									<span>{t('nav.domains')}</span>
 								</SidebarMenuButton>
 							</SidebarMenuItem>
+							{canViewAuditLog ? (
+								<SidebarMenuItem>
+									<SidebarMenuButton
+										render={
+											// oxlint-disable-next-line react-perf/jsx-no-jsx-as-prop -- same reason as the `links` button above.
+											<Link
+												params={{ teamSlug: currentTeamSlug }}
+												to="/teams/$teamSlug/audit-log"
+											/>
+										}
+									>
+										<HistoryIcon aria-hidden />
+										<span>{t('nav.auditLog')}</span>
+									</SidebarMenuButton>
+								</SidebarMenuItem>
+							) : null}
 						</SidebarMenu>
 					</nav>
 				) : null}

@@ -12,6 +12,7 @@ import type { Language } from './preferences.ts';
  */
 const counts = new Map<Language, Intl.NumberFormat>();
 const days = new Map<Language, Intl.DateTimeFormat>();
+const dateTimes = new Map<Language, Intl.DateTimeFormat>();
 
 /**
  * `Language` stays the public parameter type so no caller has to change, but
@@ -66,4 +67,25 @@ export function formatDay(isoDate: string, language: Language): string {
 		days.set(language, formatter);
 	}
 	return formatter.format(new Date(`${isoDate}T00:00:00Z`));
+}
+
+/**
+ * @param isoInstant - A full timestamp, exactly as the API sends `created_at`.
+ * @param language - The active language.
+ * @returns The instant in the language's medium date, short time form, always in UTC.
+ */
+export function formatDateTime(isoInstant: string, language: Language): string {
+	let formatter = dateTimes.get(language);
+	if (formatter === undefined) {
+		// timeZone: 'UTC' for the same reason as formatDay: every other date in
+		// this product is UTC, and a log read by two people in different places
+		// must not disagree about when something happened.
+		formatter = new Intl.DateTimeFormat(LOCALE_TAGS[language], {
+			dateStyle: 'medium',
+			timeStyle: 'short',
+			timeZone: 'UTC',
+		});
+		dateTimes.set(language, formatter);
+	}
+	return formatter.format(new Date(isoInstant));
 }
