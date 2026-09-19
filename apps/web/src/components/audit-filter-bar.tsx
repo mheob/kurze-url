@@ -1,7 +1,12 @@
 import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { AUDIT_ENTITY_TYPES, type AuditEntityType, type AuditFilters } from '../lib/audit-filters';
+import {
+	AUDIT_ENTITY_TYPES,
+	hasActiveFilters,
+	type AuditEntityType,
+	type AuditFilters,
+} from '../lib/audit-filters';
 import { Button } from './ui/button';
 import { Field, FieldGroup, FieldLabel } from './ui/field';
 import { Input } from './ui/input';
@@ -113,11 +118,10 @@ export function AuditFilterBar({
 	const fromId = useId();
 	const toId = useId();
 
-	const hasFilters =
-		filters.actor !== undefined ||
-		filters.entityType !== undefined ||
-		filters.from !== undefined ||
-		filters.to !== undefined;
+	// Shared with the page's own choice between its two empty states — see
+	// `hasActiveFilters`'s docstring for why the two must not be separate
+	// copies of the same four-way check.
+	const hasFilters = hasActiveFilters(filters);
 
 	return (
 		<div>

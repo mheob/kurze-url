@@ -14,14 +14,8 @@ import { authedApiClient, flushSessionCookies, requireSession } from './session'
  * wrapped. Same finding, same reason, as the top of `links.ts`.
  */
 
-/**
- * The page size every paginated list in this app uses. Exported because the
- * page's own pagination arithmetic needs it: `PageAuditEntry` carries
- * `page` and `total_count`, and without the size of a page those two cannot
- * say whether another page exists. One definition, so the request and the
- * "next page" link can never disagree about how many entries a page holds.
- */
-export const AUDIT_LOG_PER_PAGE = 20;
+/** The page size every paginated list in this app uses. */
+const PER_PAGE = 20;
 
 /**
  * Takes `request` as a parameter rather than calling `getRequest()` itself,
@@ -61,7 +55,7 @@ export const listAuditLogFor = createServerOnlyFn(
 				...(filters.entityType !== undefined && { entity_type: filters.entityType }),
 				...toQueryRange(filters),
 				page: filters.page,
-				per_page: AUDIT_LOG_PER_PAGE,
+				per_page: PER_PAGE,
 			},
 			// throwOnError is required for the same reason `listLinksFor` gives:
 			// the generated client's default (false) never rejects, so a refused

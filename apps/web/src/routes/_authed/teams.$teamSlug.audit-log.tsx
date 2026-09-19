@@ -14,11 +14,11 @@ import { AuditFilterBar } from '../../components/audit-filter-bar';
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '../../components/ui/empty';
 import { Pagination, PaginationContent, PaginationItem } from '../../components/ui/pagination';
 import { classifyApiError, statusOf, type ApiFailure } from '../../lib/api-errors';
-import { parseAuditFilters, type AuditFilters } from '../../lib/audit-filters';
+import { hasActiveFilters, parseAuditFilters, type AuditFilters } from '../../lib/audit-filters';
 import { reportUnexpected } from '../../lib/observability';
 import type { Language } from '../../lib/preferences';
 import { usePreferences } from '../../lib/use-preferences';
-import { AUDIT_LOG_PER_PAGE, auditLogQueryOptions } from '../../server/audit-log';
+import { auditLogQueryOptions } from '../../server/audit-log';
 import { membersQueryOptions } from '../../server/members';
 import { requireTeamId } from '../_authed';
 
@@ -37,12 +37,13 @@ const HTTP_FORBIDDEN = 403;
  * indistinguishable, at the type level, from a team whose log is genuinely
  * empty — which is the one pair of states this page exists to tell apart.
  */
-type AuditLogPageData =
+export type AuditLogPageData =
 	| {
 			readonly entries: readonly AuditEntry[];
 			readonly forbidden: false;
 			readonly members: readonly Member[];
 			readonly page: number;
+			readonly perPage: number;
 			readonly total: number;
 	  }
 	| { readonly forbidden: true };
@@ -112,6 +113,12 @@ export async function loadAuditLogPage(
 			forbidden: false,
 			members: members.items ?? [],
 			page: log.page,
+			// Carried out of the envelope rather than read back from the
+			// constant the request was built with, the same way `link-list.tsx`
+			// takes `data.per_page`: the page size the server actually applied
+			// is the only one the arithmetic below may trust, and it is already
+			// in the payload.
+			perPage: log.per_page,
 			total: log.total_count,
 		};
 	} catch (error) {
@@ -120,29 +127,6 @@ export async function loadAuditLogPage(
 		if (classifyApiError(error).kind === 'notFound') throw notFound();
 		throw error;
 	}
-}
-
-/**
- * Whether the reader narrowed the log at all. `page` is deliberately not one
- * of these: it is where the reader is, not what they asked to see, and
- * counting it would make every second page claim to be filtered.
- *
- * `AuditFilterBar` computes the same four-way check for its own "clear the
- * filters" button and does not export it — the same trade its own
- * `isAuditEntityType` note records: repeating a one-line check is cheaper
- * than exporting one for a second caller that asks it for a different
- * reason.
- *
- * @param filters - The active filters.
- * @returns Whether any filter other than the page is set.
- */
-function hasAnyFilter(filters: Readonly<AuditFilters>): boolean {
-	return (
-		filters.actor !== undefined ||
-		filters.entityType !== undefined ||
-		filters.from !== undefined ||
-		filters.to !== undefined
-	);
 }
 
 // oxlint-disable-next-line sort-keys -- `validateSearch` has to stay declared before `loaderDeps`/`loader`: see the comment on it below.
@@ -272,6 +256,8 @@ export interface AuditLogPageBodyProps {
 	 * only the same for as long as the endpoint keeps echoing the request back.
 	 */
 	readonly page: number;
+	/** The page size the API applied, carried out of the same envelope as `page` and `total`. */
+	readonly perPage: number;
 	/** The team slug, for the pagination links' route params. */
 	readonly teamSlug: string;
 	/** How many entries match the active filters across every page. */
@@ -282,17 +268,24 @@ export interface AuditLogPageBodyProps {
  * The presentational body of a team's audit log — pure and prop-driven, the
  * same idiom `StatsPageBody`/`LinkList`/`AuthedShell` already use so a
  * route's router wiring can be tested separately from what it renders.
- * `RouteComponent` below owns that wiring (`Route.useParams`,
+ * `RouteComponent` below reads that wiring (`Route.useParams`,
  * `Route.useLoaderData`, `Route.useSearch`, `usePreferences`,
- * `Route.useNavigate`) and passes plain data and a callback in here.
+ * `Route.useNavigate`) and `AuditLogRouteView` turns it into the plain data
+ * and the one callback this component takes.
  *
  * The two empty states are not interchangeable: `audit.empty` says the
  * filters matched nothing, which in front of a reader who set no filters is
  * a small lie about a page that is simply new. `audit.emptyUnfiltered` is
- * what a team with no history yet gets.
+ * reserved for the one case that claim is true — no filter set *and* nothing
+ * matching anywhere. A page number past the end is the third way to reach an
+ * empty page (a bookmark outlives the entries it was made on, which is what
+ * keeping the page in the URL invites), and there `total` is positive: saying
+ * "nothing has happened in this team yet" over 45 real entries is the worst
+ * of the three lies available.
  *
- * The filter bar renders in both states. A reader who filtered their way to
- * nothing needs the control that got them there in order to get back out.
+ * The filter bar renders in both empty states, and the pagination renders
+ * whenever the reader is past page one — including on an empty page, which is
+ * the only way back from that stale bookmark.
  *
  * @param props - The component's props.
  * @param props.entries - The page of entries to render, newest first.
@@ -301,6 +294,7 @@ export interface AuditLogPageBodyProps {
  * @param props.members - The team's current members.
  * @param props.onFiltersChange - Called with the whole next `AuditFilters`.
  * @param props.page - The page the API answered with.
+ * @param props.perPage - The page size the API applied.
  * @param props.teamSlug - The team slug, for the pagination links' route params.
  * @param props.total - How many entries match the active filters across every page.
  * @returns The rendered page body.
@@ -312,6 +306,7 @@ export function AuditLogPageBody({
 	members,
 	onFiltersChange,
 	page,
+	perPage,
 	teamSlug,
 	total,
 }: AuditLogPageBodyProps): React.JSX.Element {
@@ -326,7 +321,7 @@ export function AuditLogPageBody({
 	);
 
 	const hasPreviousPage = page > 1;
-	const hasNextPage = page * AUDIT_LOG_PER_PAGE < total;
+	const hasNextPage = page * perPage < total;
 
 	return (
 		<>
@@ -338,60 +333,102 @@ export function AuditLogPageBody({
 			{entries.length === 0 ? (
 				<Empty>
 					<EmptyDescription>
-						{t(hasAnyFilter(filters) ? 'audit.empty' : 'audit.emptyUnfiltered')}
+						{/* `audit.emptyUnfiltered` claims nothing has ever happened here,
+						    so it needs both halves of that claim to hold: no filter, and
+						    no entry anywhere. A page past the end fails the second half
+						    while passing the first. */}
+						{t(hasActiveFilters(filters) || total > 0 ? 'audit.empty' : 'audit.emptyUnfiltered')}
 					</EmptyDescription>
 				</Empty>
 			) : (
-				<>
-					<AuditEntryTable entries={entries} language={language} membersById={membersById} />
-					{/* The pagination chrome is the same block `link-list.tsx` renders,
-					    down to its catalogue keys: "Pagination", "Previous page" and
-					    "Next page" name the control, not the thing being paged, and
-					    Task 4 shipped no `audit.*` equivalents precisely because there
-					    is nothing audit-specific to say here. */}
-					<Pagination aria-label={t('links.paginationLabel')}>
-						<PaginationContent>
-							<PaginationItem>
-								{hasPreviousPage ? (
-									<RouterLink
-										params={{ teamSlug }}
-										search={{ ...filters, page: page - 1 }}
-										to="/teams/$teamSlug/audit-log"
-									>
-										{t('links.previousPage')}
-									</RouterLink>
-								) : (
-									<span aria-disabled="true">{t('links.previousPage')}</span>
-								)}
-							</PaginationItem>
-							<PaginationItem>
-								{hasNextPage ? (
-									<RouterLink
-										params={{ teamSlug }}
-										search={{ ...filters, page: page + 1 }}
-										to="/teams/$teamSlug/audit-log"
-									>
-										{t('links.nextPage')}
-									</RouterLink>
-								) : (
-									<span aria-disabled="true">{t('links.nextPage')}</span>
-								)}
-							</PaginationItem>
-						</PaginationContent>
-					</Pagination>
-				</>
+				<AuditEntryTable entries={entries} language={language} membersById={membersById} />
 			)}
+
+			{/* Rendered on an empty page too, as long as the reader is past page
+			    one: that page has no rows to page away from, and without this
+			    block a stale bookmark would be a dead end with no link back. The
+			    chrome is the same block `link-list.tsx` renders, down to its
+			    catalogue keys — "Pagination", "Previous page" and "Next page"
+			    name the control, not the thing being paged, and Task 4 shipped no
+			    `audit.*` equivalents precisely because there is nothing
+			    audit-specific to say here. */}
+			{entries.length > 0 || hasPreviousPage ? (
+				<Pagination aria-label={t('links.paginationLabel')}>
+					<PaginationContent>
+						<PaginationItem>
+							{hasPreviousPage ? (
+								<RouterLink
+									params={{ teamSlug }}
+									search={{ ...filters, page: page - 1 }}
+									to="/teams/$teamSlug/audit-log"
+								>
+									{t('links.previousPage')}
+								</RouterLink>
+							) : (
+								<span aria-disabled="true">{t('links.previousPage')}</span>
+							)}
+						</PaginationItem>
+						<PaginationItem>
+							{hasNextPage ? (
+								<RouterLink
+									params={{ teamSlug }}
+									search={{ ...filters, page: page + 1 }}
+									to="/teams/$teamSlug/audit-log"
+								>
+									{t('links.nextPage')}
+								</RouterLink>
+							) : (
+								<span aria-disabled="true">{t('links.nextPage')}</span>
+							)}
+						</PaginationItem>
+					</PaginationContent>
+				</Pagination>
+			) : null}
 		</>
 	);
 }
 
-function RouteComponent(): React.JSX.Element {
-	const { teamSlug } = Route.useParams();
-	const data = Route.useLoaderData();
-	const filters = Route.useSearch();
-	const { language } = usePreferences();
-	const navigate = Route.useNavigate();
+export interface AuditLogRouteViewProps {
+	/** What the loader returned: either the page of data, or the admin refusal. */
+	readonly data: AuditLogPageData;
+	/** The filters as they currently live in the route's search parameters. */
+	readonly filters: AuditFilters;
+	/** The active language, for date formatting. */
+	readonly language: Language;
+	/** The route's own `navigate`; the only thing this component does imperatively. */
+	readonly navigate: (options: Readonly<{ search: AuditFilters }>) => Promise<void>;
+	/** The team slug, from the route's path parameter. */
+	readonly teamSlug: string;
+}
 
+/**
+ * The route's choice of view, and its one imperative navigation: a chosen
+ * filter goes into the URL rather than into component state, which is what
+ * makes a narrowed view something a reader can bookmark, back-button out of,
+ * or send to another admin.
+ *
+ * Split out of `RouteComponent` below so that line can be driven by a test.
+ * `RouteComponent`'s hooks — `Route.useLoaderData` and its siblings — are
+ * bound to this file's generated route id and resolve only inside the real
+ * route tree, so anything left inside it cannot be reached from a hand-built
+ * memory router. `new-team.tsx` exports its own `RouteComponent` directly
+ * instead; that one reads no route context, so it needed no split.
+ *
+ * @param props - The component's props.
+ * @param props.data - What the loader returned.
+ * @param props.filters - The filters as they currently live in the route's search parameters.
+ * @param props.language - The active language, for date formatting.
+ * @param props.navigate - The route's own `navigate`.
+ * @param props.teamSlug - The team slug, from the route's path parameter.
+ * @returns The refusal, or the page body wired to the router.
+ */
+export function AuditLogRouteView({
+	data,
+	filters,
+	language,
+	navigate,
+	teamSlug,
+}: AuditLogRouteViewProps): React.JSX.Element {
 	if (data.forbidden) return <AuditLogForbidden />;
 
 	return (
@@ -404,8 +441,27 @@ function RouteComponent(): React.JSX.Element {
 				void navigate({ search: next });
 			}}
 			page={data.page}
+			perPage={data.perPage}
 			teamSlug={teamSlug}
 			total={data.total}
+		/>
+	);
+}
+
+function RouteComponent(): React.JSX.Element {
+	const { teamSlug } = Route.useParams();
+	const data = Route.useLoaderData();
+	const filters = Route.useSearch();
+	const { language } = usePreferences();
+	const navigate = Route.useNavigate();
+
+	return (
+		<AuditLogRouteView
+			data={data}
+			filters={filters}
+			language={language}
+			navigate={navigate}
+			teamSlug={teamSlug}
 		/>
 	);
 }

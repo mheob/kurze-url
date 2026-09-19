@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseAuditFilters, toQueryRange } from './audit-filters.ts';
+import { hasActiveFilters, parseAuditFilters, toQueryRange } from './audit-filters.ts';
 
 describe(parseAuditFilters, () => {
 	it('defaults to the first page and no filters', () => {
@@ -56,5 +56,28 @@ describe(toQueryRange, () => {
 		expect(toQueryRange({ page: 1, to: '2026-03-31' })).toStrictEqual({
 			to: '2026-03-31T23:59:59.999Z',
 		});
+	});
+});
+
+describe(hasActiveFilters, () => {
+	it('reports no filters for a bare page', () => {
+		expect(hasActiveFilters({ page: 1 })).toBe(false);
+	});
+
+	/**
+	 * The page is where the reader is, not what they asked to see. Counting it
+	 * would put the filter bar's "clear the filters" button on every page after
+	 * the first, and would make the page tell a reader who filtered nothing
+	 * that no changes match their filters.
+	 */
+	it('does not count the page as a filter', () => {
+		expect(hasActiveFilters({ page: 7 })).toBe(false);
+	});
+
+	it('reports a filter for each of the four that exist', () => {
+		expect(hasActiveFilters({ actor: 'user-a', page: 1 })).toBe(true);
+		expect(hasActiveFilters({ entityType: 'link', page: 1 })).toBe(true);
+		expect(hasActiveFilters({ from: '2026-03-01', page: 1 })).toBe(true);
+		expect(hasActiveFilters({ page: 1, to: '2026-03-31' })).toBe(true);
 	});
 });

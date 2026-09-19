@@ -66,6 +66,32 @@ function parseAuditFilters(
 }
 
 /**
+ * Whether the reader narrowed the log at all.
+ *
+ * `page` is deliberately not one of these: it is where the reader is, not
+ * what they asked to see, and counting it would make every page after the
+ * first claim to be filtered.
+ *
+ * It lives here, next to the type it reads, because two places ask it for
+ * two different reasons and neither may drift from the other: the filter bar
+ * shows its "clear the filters" button on it, and the page chooses between
+ * its two empty states on it. A reader who cleared every filter and still saw
+ * "no changes match these filters" — or the reverse — would be looking at
+ * exactly that drift.
+ *
+ * @param filters - The active filters.
+ * @returns Whether any filter other than the page is set.
+ */
+function hasActiveFilters(filters: Readonly<AuditFilters>): boolean {
+	return (
+		filters.actor !== undefined ||
+		filters.entityType !== undefined ||
+		filters.from !== undefined ||
+		filters.to !== undefined
+	);
+}
+
+/**
  * Turns the two chosen days into the instants the endpoint filters on.
  *
  * `to` becomes the **last** millisecond of its day, not its first. The endpoint
@@ -92,5 +118,5 @@ function toQueryRange(filters: Readonly<AuditFilters>): {
 	};
 }
 
-export { AUDIT_ENTITY_TYPES, parseAuditFilters, toQueryRange };
+export { AUDIT_ENTITY_TYPES, hasActiveFilters, parseAuditFilters, toQueryRange };
 export type { AuditEntityType, AuditFilters };

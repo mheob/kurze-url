@@ -146,6 +146,9 @@ function renderComposedPage(children: React.ReactNode): ReturnType<typeof render
 	);
 }
 
+/** The page size the API applies to this endpoint, as its envelope reports it. */
+const PER_PAGE = 20;
+
 /**
  * @param props - The page body's props worth varying between these cases.
  * @param props.entries - The entries to render; an empty array reaches an empty state.
@@ -166,6 +169,7 @@ function pageBody({
 			members={MEMBERS}
 			onFiltersChange={vi.fn<(next: AuditFilters) => void>()}
 			page={filters.page}
+			perPage={PER_PAGE}
 			teamSlug="verein-a"
 			total={total}
 		/>
@@ -194,6 +198,12 @@ describe('the audit log page', () => {
 	it('has no axe violations under the default ruleset for the empty state', async () => {
 		renderComposedPage(pageBody({ entries: [], filters: NO_FILTERS, total: 0 }));
 		await screen.findByRole('heading', { level: 1, name: 'History' });
+
+		// Asserted before the scan for the same reason the populated case
+		// asserts its table cell: an empty branch that rendered nothing at all
+		// would have no violations either, and this test would pass on it.
+		expect(screen.getByText('Nothing has happened in this team yet.')).toBeInTheDocument();
+		expect(screen.getByLabelText('Entity')).toBeInTheDocument();
 
 		const results = await axe.run(document.body);
 		expect(results.violations).toStrictEqual([]);
@@ -242,6 +252,26 @@ describe('the pagination', () => {
 			'href',
 			'/teams/verein-a/audit-log?entityType=link&from=2026-09-01&page=2',
 		);
+	});
+
+	/**
+	 * A page number outlives the entries it was made on — that is the cost of
+	 * putting the page in the URL, and a bookmark or a shared link is how a
+	 * reader gets here. Without the pagination rendering on an empty page this
+	 * would be a dead end: no rows, and nothing to click back to.
+	 */
+	it('still offers a way back from a page past the end', async () => {
+		renderComposedPage(pageBody({ entries: [], filters: { page: 3 }, total: 45 }));
+		await screen.findByRole('heading', { level: 1, name: 'History' });
+
+		expect(screen.getByRole('link', { name: 'Previous page' })).toHaveAttribute(
+			'href',
+			'/teams/verein-a/audit-log?page=2',
+		);
+		// …and not the copy that claims the team has no history at all, which
+		// would be a plain falsehood over 45 real entries.
+		expect(screen.queryByText('Nothing has happened in this team yet.')).not.toBeInTheDocument();
+		expect(screen.getByText('No changes match these filters.')).toBeInTheDocument();
 	});
 
 	it('offers no next page once the last one is on screen', async () => {
