@@ -51,6 +51,9 @@ interface SeedRow {
 	readonly value: string | null;
 }
 
+/** The four values `team_member.role` may hold, as the initial migration's own check constraint lists them. */
+type TeamRole = 'admin' | 'editor' | 'owner' | 'viewer';
+
 /**
  * Three days, deliberately none of them the database's own today.
  *
@@ -318,4 +321,40 @@ export async function seedLinkClicks(
 			uniqueVisitors: total((day) => day.uniqueVisitors),
 		},
 	};
+}
+
+/**
+ * Rewrites the role of the fixture team's one membership.
+ *
+ * `./auth`'s `team` fixture seeds its user as `owner` and every other spec's
+ * session rests on that, so a spec needing a lesser role changes the row for
+ * itself rather than parameterising the shared fixture — the alternative
+ * would make one spec's requirement everyone else's default.
+ *
+ * The team id alone identifies the row: each test provisions a fresh team
+ * with exactly one member. That assumption is checked rather than assumed,
+ * because the failure it guards against is silent — an update matching no
+ * row would leave the session an owner, and a spec asserting an entry is
+ * *absent* would then pass for the wrong reason.
+ *
+ * Call it before the first `goto` that must see the new role. `GET /v1/me`
+ * is read once per server render, and both gates this exists to exercise —
+ * the sidebar entry and the endpoint's own `authz.AdminScope` — are decided
+ * from that read and from the row itself.
+ *
+ * @param teamId - The fixture team whose membership to rewrite.
+ * @param role - The role its user should have from now on.
+ */
+export async function setFixtureTeamRole(teamId: string, role: TeamRole): Promise<void> {
+	await withDb(async (db) => {
+		const result = await db.query('update team_member set role = $2 where team_id = $1', [
+			teamId,
+			role,
+		]);
+		if (result.rowCount !== 1) {
+			throw new Error(
+				`expected the fixture team to have exactly one membership, updated ${result.rowCount}`,
+			);
+		}
+	});
 }

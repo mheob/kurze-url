@@ -3,6 +3,7 @@ import { expect } from '@playwright/test';
 import { test } from './fixtures/auth';
 import { createLink } from './fixtures/create-link';
 import { waitForHydration } from './fixtures/hydration';
+import { setFixtureTeamRole } from './fixtures/seed';
 
 /* oxlint-disable typescript/prefer-readonly-parameter-types -- Playwright's own `Page`, nested
  * inside the fixture argument object each `test` callback destructures; it has many mutating
@@ -51,4 +52,46 @@ test('discloses an entry’s details on request', async ({ page, teamSlug }) => 
 	// own `link.created` row carries this exact destination as its
 	// `destination_url` metadata value (`apps/api/internal/api/links.go:551-556`).
 	await expect(page.getByText(destinationUrl)).toBeVisible();
+});
+
+/**
+ * Both gates, against the real API, for the one role that has to meet them:
+ * a member of the team who is below admin.
+ *
+ * Neither half is reachable from a unit test. The sidebar's gate
+ * (`app-sidebar.tsx`) is the only reader of `Membership.role` in the whole
+ * app, and `Membership.role` is typed `string` — every unit test and every
+ * Storybook fixture hands it a role literal written by hand, so nothing
+ * anywhere proves that what `GET /v1/me` actually emits still matches the
+ * `'admin'`/`'owner'` this comparison is written against. It does today
+ * (`me.go` serialises `authz.Role`'s own constants), but a rename on the Go
+ * side would hide the entry for every admin in every Verein with no test,
+ * type or build failing. This case is the only thing that would notice.
+ *
+ * The refusal is the second half and is asserted here for a related reason:
+ * every other test of that state feeds the loader a mocked error, so the
+ * 403 that produces it — `authz.AdminScope`, which answers a non-member 404
+ * and a member below admin 403 — is otherwise taken on trust. Were it a 404
+ * instead, an editor would land on "page not found" for a team they are
+ * looking at, and `statusOf(error) === 403` in `loadAuditLogPage` would be
+ * dead code that still typechecks.
+ *
+ * The visible "Links" entry is not decoration either: without it, a sidebar
+ * that failed to render at all would satisfy the absence assertion below
+ * perfectly.
+ */
+test('hides the history from a member below admin', async ({ page, teamId, teamSlug }) => {
+	await setFixtureTeamRole(teamId, 'editor');
+
+	await page.goto(`/teams/${teamSlug}/links`);
+
+	const sections = page.getByRole('navigation', { name: 'Sections' });
+	await expect(sections.getByRole('link', { name: 'Links' })).toBeVisible();
+	await expect(sections.getByRole('link', { name: 'History' })).toHaveCount(0);
+
+	await page.goto(`/teams/${teamSlug}/audit-log`);
+
+	await expect(
+		page.getByRole('heading', { level: 2, name: 'This part of the team is for admins' }),
+	).toBeVisible();
 });
