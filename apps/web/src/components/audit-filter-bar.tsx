@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import {
 	AUDIT_ENTITY_TYPES,
 	hasActiveFilters,
+	isAuditEntityType,
 	type AuditEntityType,
 	type AuditFilters,
 } from '../lib/audit-filters';
@@ -29,22 +30,6 @@ const entityLabelKeys: Record<AuditEntityType, string> = {
 	team: 'audit.entityTeam',
 	team_member: 'audit.entityTeamMember',
 };
-
-/**
- * Narrows a native `<select>`'s raw string value to `AuditEntityType`.
- * `audit-filters.ts` has its own version of this check but doesn't export
- * it — that one guards against an arbitrary search-parameter value, while
- * this one only ever sees a value this component put there itself, via the
- * options built from `AUDIT_ENTITY_TYPES` below. Duplicating the one-line
- * check is cheaper than exporting a guard for a second, differently-trusted
- * caller.
- *
- * @param value - The select's raw value.
- * @returns Whether it is one of the known entity types.
- */
-function isAuditEntityType(value: string): value is AuditEntityType {
-	return (AUDIT_ENTITY_TYPES as readonly string[]).includes(value);
-}
 
 /**
  * Applies one changed field on top of the current filters, always resetting

@@ -7,10 +7,17 @@ const AUDIT_ENTITY_TYPES = ['domain', 'folder', 'link', 'tag', 'team', 'team_mem
 type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 
 /**
- * Type guard to check if a value is a valid AuditEntityType.
+ * Takes `unknown` rather than `string` because its harder caller has nothing
+ * better to offer: `parseAuditFilters` below is handed whatever a bookmark or
+ * a hand-edited URL put in the search parameters, and narrowing that to the
+ * union in one place is what keeps every reader of `AuditFilters.entityType`
+ * from having to re-check it. `audit-filter-bar.tsx` calls the same guard on
+ * its own `<select>`'s value — a value it put there itself, so the check is
+ * redundant there, but a second copy of a list-membership test is how the two
+ * come to disagree the day a seventh entity type is added.
  *
  * @param value - The value to check.
- * @returns True if the value is a valid audit entity type.
+ * @returns Whether it is one of the entity types the endpoint accepts.
  */
 function isAuditEntityType(value: unknown): value is AuditEntityType {
 	return typeof value === 'string' && (AUDIT_ENTITY_TYPES as readonly string[]).includes(value);
@@ -55,10 +62,9 @@ function parseAuditFilters(
 
 	return {
 		...(typeof search.actor === 'string' && search.actor !== '' && { actor: search.actor }),
-		...(typeof search.entityType === 'string' &&
-			isAuditEntityType(search.entityType) && {
-				entityType: search.entityType,
-			}),
+		...(isAuditEntityType(search.entityType) && {
+			entityType: search.entityType,
+		}),
 		...(typeof search.from === 'string' && DAY.test(search.from) && { from: search.from }),
 		page,
 		...(typeof search.to === 'string' && DAY.test(search.to) && { to: search.to }),
@@ -118,5 +124,5 @@ function toQueryRange(filters: Readonly<AuditFilters>): {
 	};
 }
 
-export { AUDIT_ENTITY_TYPES, hasActiveFilters, parseAuditFilters, toQueryRange };
+export { AUDIT_ENTITY_TYPES, hasActiveFilters, isAuditEntityType, parseAuditFilters, toQueryRange };
 export type { AuditEntityType, AuditFilters };
