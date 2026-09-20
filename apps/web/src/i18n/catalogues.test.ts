@@ -82,6 +82,9 @@ describe('translation catalogues', () => {
 			// "Person" is spelled identically in both languages, same reasoning
 			// as `stats.browser`.
 			'audit.filterActor',
+			// "Admin" is the German word too — an established loanword, the same
+			// reasoning as `stats.browser`. The other three roles are translated.
+			'members.roleAdmin',
 		]);
 		const english = new Map(flatten(en));
 		const toCheck = flatten(de).filter(
