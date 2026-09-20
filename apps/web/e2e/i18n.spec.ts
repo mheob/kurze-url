@@ -56,6 +56,20 @@ import { linkIdForTeam, seedLinkClicks } from './fixtures/seed';
  * `Label` (`ui/label.tsx`), whose own base class carries `uppercase`, and this
  * crawl reads the rendered text, not the catalogue's stored value.
  *
+ * `Admin` joins them for the members page's own role `<select>`s:
+ * `MemberInviteForm`'s role picker and `MemberList`'s per-row role select both
+ * list all four `TEAM_ROLES` as options — including the row select on the
+ * team's sole owner, which `MemberList` renders disabled rather than omitted —
+ * and the German catalogue's own `members.roleAdmin` value is "Admin" too, the
+ * established German word, exactly like `Bot`/`Browser` above and not a
+ * missed translation. `catalogues.test.ts` allowlists the same
+ * `members.roleAdmin` key for the same reason, so the two lists agree. Unlike
+ * `BROWSER`/`PERSON` above, it is not shouted: an `<option>` carries none of
+ * `CardTitle`/`Label`'s `uppercase` styling, so the rendered text is plain
+ * "Admin", the same case the catalogue itself stores it in. The other three
+ * roles (`roleViewer`/`roleEditor`/`roleOwner`) are translated and do not
+ * collide — this is the members page's only one.
+ *
  * `destination_url`, `hostname`, `redirect_type` and `slug` are
  * `audit-entry-table.tsx`'s `MetadataList` own `<dt>` keys — the exact four
  * `createLink` writes into a `link.created` row's metadata
@@ -82,6 +96,7 @@ const IDENTICAL_BY_DESIGN = new Set([
 	'Domain',
 	'Link',
 	'PERSON',
+	'Admin',
 	'destination_url',
 	'hostname',
 	'redirect_type',
@@ -224,6 +239,7 @@ const AUTHENTICATED_PATHS = [
 	'stats-data',
 	'stats-disabled',
 	'audit-log',
+	'members',
 ] as const;
 
 /**

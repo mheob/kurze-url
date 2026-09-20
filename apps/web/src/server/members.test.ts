@@ -52,7 +52,7 @@ vi.mock('@tanstack/react-start/server', () => ({
  * `getRequest()` internally, which throws "No Start context found" outside a
  * real request — which is exactly what Vitest is.
  */
-const { listMembersFor } =
+const { addMemberFor, listMembersFor, removeMemberFor, updateMemberRoleFor } =
 	/* oxlint-disable-next-line node/no-top-level-await -- this file is a Vitest test entry, never
 	 * `require(esm)`'d by anything; the dynamic import has to run after the `vi.mock` call above
 	 * registers its replacement, which a module-scope `await import` is what expresses.
@@ -135,5 +135,89 @@ describe('listMembersFor', () => {
 
 		expect(consoleError).not.toHaveBeenCalled();
 		consoleError.mockRestore();
+	});
+});
+
+describe('addMemberFor', () => {
+	it('sends the invite and reports whether an email went out', async () => {
+		withSession('tok');
+		server.use(
+			http.post('*/v1/teams/:teamId/members', () =>
+				HttpResponse.json(
+					{
+						created_at: '2026-09-20T09:00:00Z',
+						email: 'neu@verein.test',
+						invited: false,
+						role: 'editor',
+						user_id: 'u2',
+					},
+					{ status: 201 },
+				),
+			),
+		);
+
+		const added = await addMemberFor(new Request('https://web.test/'), 'team-1', {
+			email: 'neu@verein.test',
+			role: 'editor',
+		});
+
+		expect(added.invited).toBe(false);
+		expect(added.user_id).toBe('u2');
+	});
+
+	/**
+	 * The assertion that matters here: without `throwOnError: true` the
+	 * generated client resolves to `{ data: undefined, error }` instead of
+	 * rejecting, and the page would report a refused invitation as a success.
+	 */
+	it('throws rather than resolving when the invite is refused', async () => {
+		withSession('tok');
+		server.use(
+			http.post('*/v1/teams/:teamId/members', () =>
+				HttpResponse.json({ detail: 'already a member' }, { status: 409 }),
+			),
+		);
+
+		await expect(
+			addMemberFor(new Request('https://web.test/'), 'team-1', {
+				email: 'neu@verein.test',
+				role: 'editor',
+			}),
+		).rejects.toThrow();
+	});
+});
+
+describe('updateMemberRoleFor', () => {
+	it('resolves with nothing when a role change succeeds', async () => {
+		withSession('tok');
+		server.use(
+			http.patch(
+				'*/v1/teams/:teamId/members/:userId',
+				() => new HttpResponse(null, { status: 204 }),
+			),
+		);
+
+		await expect(
+			updateMemberRoleFor(new Request('https://web.test/'), 'team-1', {
+				role: 'admin',
+				userId: 'u2',
+			}),
+		).resolves.toBeUndefined();
+	});
+});
+
+describe('removeMemberFor', () => {
+	it('resolves with nothing when a removal succeeds', async () => {
+		withSession('tok');
+		server.use(
+			http.delete(
+				'*/v1/teams/:teamId/members/:userId',
+				() => new HttpResponse(null, { status: 204 }),
+			),
+		);
+
+		await expect(
+			removeMemberFor(new Request('https://web.test/'), 'team-1', 'u2'),
+		).resolves.toBeUndefined();
 	});
 });
