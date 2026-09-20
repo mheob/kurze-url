@@ -42,8 +42,51 @@ import { linkIdForTeam, seedLinkClicks } from './fixtures/seed';
  * and this crawl reads `innerText`, which is the text as rendered rather than
  * as written. The catalogue's own value is "Browser"; it never reaches a
  * screen in that shape, so the allowlist matches what a reader would see.
+ *
+ * `Domain` and `Link` join them for the audit log's own filter bar:
+ * `audit-filter-bar.tsx`'s entity-type `<select>` lists all six
+ * `AUDIT_ENTITY_TYPES` as options, and the German catalogue's own
+ * `audit.entityDomain`/`audit.entityLink` values are "Domain"/"Link" too — the
+ * established German words, exactly like `Bot`/`Browser` above, not a missed
+ * translation.
+ *
+ * `PERSON` is the audit log's actor filter label (`audit.filterActor`,
+ * "Person" in both catalogues — another established shared word) shouted for
+ * the same reason `BROWSER` is: `FieldLabel` (`ui/field.tsx`) renders through
+ * `Label` (`ui/label.tsx`), whose own base class carries `uppercase`, and this
+ * crawl reads the rendered text, not the catalogue's stored value.
+ *
+ * `destination_url`, `hostname`, `redirect_type` and `slug` are
+ * `audit-entry-table.tsx`'s `MetadataList` own `<dt>` keys — the exact four
+ * `createLink` writes into a `link.created` row's metadata
+ * (`apps/api/internal/api/links.go:551-556`), and the only ones the
+ * `audit-log` case below ever discloses. A metadata key renders exactly as
+ * written, never through a translation lookup — the same reasoning as
+ * `TXT`/`CNAME` above, protocol vocabulary rather than prose. No other
+ * action's metadata keys join this set, because no other action's row is
+ * ever disclosed here.
+ *
+ * A team's one member's email, and this entry's own `slug`/`hostname`/
+ * `destination_url` *values* (as opposed to the fixed key literals just
+ * above), are excluded separately, per test run, the same way `teamName` is
+ * below: see the `audit-log` branch further down for why real per-run data
+ * cannot live in this static set.
  */
-const IDENTICAL_BY_DESIGN = new Set(['kurze.url', 'TXT', 'CNAME', 'Bot', 'BROWSER', 'QR']);
+const IDENTICAL_BY_DESIGN = new Set([
+	'kurze.url',
+	'TXT',
+	'CNAME',
+	'Bot',
+	'BROWSER',
+	'QR',
+	'Domain',
+	'Link',
+	'PERSON',
+	'destination_url',
+	'hostname',
+	'redirect_type',
+	'slug',
+]);
 
 /**
  * `/` is a real route with real content; the 404 page is a separate render
@@ -64,6 +107,11 @@ const PATHS = ['/', '/this-page-does-not-exist'] as const;
  * @param options.path - The path to visit.
  * @param options.identicalByDesign - Strings expected to render identically in both languages;
  * excluded from the returned crawl.
+ * @param options.afterGoto - Run immediately after navigating, before the DOM is read. For state
+ * that lives in a client-side `useState` rather than the server or the URL — the audit log's own
+ * disclosure toggle, in particular — nothing else has a chance to reproduce it: a full `page.goto`
+ * resets it, so it has to be redone after every navigation this function itself performs, not once
+ * by the caller.
  * @returns Every visible string this render produced, one exclusion pass already applied.
  */
 async function visibleText({
@@ -72,12 +120,14 @@ async function visibleText({
 	language,
 	path,
 	identicalByDesign = IDENTICAL_BY_DESIGN,
+	afterGoto,
 }: Readonly<{
 	page: Page;
 	baseURL: string;
 	language: string;
 	path: string;
 	identicalByDesign?: ReadonlySet<string>;
+	afterGoto?: (page: Page) => Promise<void>;
 }>): Promise<string[]> {
 	// Playwright derives a cookie's domain from `url`, not from wherever
 	// `page.goto` later navigates — it has to be the fixture's `baseURL`, the
@@ -86,6 +136,7 @@ async function visibleText({
 	// preview host.
 	await page.context().addCookies([{ name: 'lang', url: baseURL, value: language }]);
 	await page.goto(path);
+	if (afterGoto !== undefined) await afterGoto(page);
 
 	const texts = await page.locator('body :visible').allInnerTexts();
 	const labels = await page
@@ -172,6 +223,7 @@ const AUTHENTICATED_PATHS = [
 	'stats',
 	'stats-data',
 	'stats-disabled',
+	'audit-log',
 ] as const;
 
 /**
@@ -270,6 +322,12 @@ for (const suffix of AUTHENTICATED_PATHS) {
 		const linkStrings: string[] = [];
 		// Same idea, populated only for `domains` below.
 		const domainStrings: string[] = [];
+		// Same idea, populated only for `audit-log` below.
+		const auditStrings: string[] = [];
+		// Set only for `audit-log` below: re-opens that page's one disclosure
+		// row after each language's own navigation, since that state lives in
+		// client-side `useState` and a fresh `page.goto` resets it.
+		let afterGoto: ((crawlPage: Page) => Promise<void>) | undefined = undefined;
 
 		// Correct for every suffix except `stats`, which the `stats` branch
 		// below overwrites: a statistics page nests under a real link id
@@ -342,6 +400,77 @@ for (const suffix of AUTHENTICATED_PATHS) {
 			domainStrings.push(hostname, `_kurze-url-challenge.${hostname}`, txtValue, cnameValue);
 		}
 
+		if (suffix === 'audit-log') {
+			// A fresh team has no history at all — no seeding fixture writes to
+			// `audit_log`, and `team`/`team_member` themselves are inserted directly
+			// over Postgres (`fixtures/auth.ts`), not through the audited API — so
+			// without a link, this crawl would only ever reach `audit.emptyUnfiltered`.
+			// `AuditEntryTable` itself is gated on `entries.length > 0`
+			// (`AuditLogPageBody`), so an empty team never mounts it at all — the
+			// four column headings and the entry's own action label, the largest
+			// body of new copy this page adds, would go completely uncovered.
+			// `createLink` writes a real `link.created` row, the same as the
+			// `links` case above, so the table actually renders.
+			const shortUrl = await createLink(page, teamSlug, {
+				destinationUrl: I18N_CRAWL_DESTINATION_URL,
+			});
+			// `createLink`'s own `link.created` row carries exactly four metadata
+			// keys (`apps/api/internal/api/links.go:551-556`) — the static
+			// `destination_url`/`hostname`/`redirect_type`/`slug` entries above are
+			// those keys; these are their *values* for this run. `redirect_type`'s
+			// value is digits only, already caught by the digits-and-punctuation
+			// rule above, but `slug` and `hostname` are letters (a generated slug
+			// draws from `23456789abcdefghijkmnpqrstuvwxyz`, and the shared
+			// hostname is `short.invalid` on Preview) and cannot be assumed away —
+			// both are read back off the short URL itself, the one place this test
+			// already has them, rather than guessed at.
+			const shortUrlParts = new URL(shortUrl);
+			auditStrings.push(
+				I18N_CRAWL_DESTINATION_URL,
+				shortUrlParts.host,
+				shortUrlParts.pathname.slice(1),
+			);
+
+			await page.goto(path);
+
+			// `AuditFilterBar`'s actor `<select>` always lists the fixture's own
+			// one team member — the owner this test signed in as, and the same
+			// person `createLink` just wrote the entry as. That email is real
+			// per-run data, the same story as `teamName` above, and it cannot live
+			// in the static `identicalByDesign` Set for the same reason `teamName`
+			// doesn't — a fresh address every run. Read here, once, before either
+			// language visits the page, so both passes compare the same rendered
+			// option.
+			const ownerEmail = await page
+				.getByLabel(/^person$/iu)
+				.locator('option[value]:not([value=""])')
+				.first()
+				// `innerText` is the rendered, visible text, which is what this crawl compares
+				// against elsewhere (`visibleText`'s own `allInnerTexts`); `textContent` reads raw
+				// text-node content instead — same note as `create-link.ts`'s identical disable.
+				// oxlint-disable-next-line unicorn/prefer-dom-node-text-content
+				.innerText();
+			auditStrings.push(ownerEmail);
+
+			// Opens the one entry's disclosure so its raw metadata keys/values and
+			// the "Link created" action label are actually on screen — without
+			// this, seeding the link above would render the table but never its
+			// most detailed copy. Set as a callback rather than done once here:
+			// `isOpen` lives in `AuditEntryTable`'s own `useState`, which a fresh
+			// `page.goto` resets, so `visibleText` has to redo this after each of
+			// its own two navigations, not just after this one. A structural
+			// locator, not `getByRole('button', { name: /^Details/u })`: that
+			// button's visible text is `t('audit.details')`, which is "Details" in
+			// English and "Einzelheiten" in German, so a fixed English pattern
+			// would only ever find it on one of the two passes.
+			afterGoto = async (crawlPage) => {
+				const toggle = crawlPage.locator('table tbody tr').first().getByRole('button');
+				await waitForHydration(toggle);
+				await toggle.click();
+				await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+			};
+		}
+
 		// Every authenticated page renders `AuthedShell` -> `TeamSwitcher`, which
 		// prints `membership.name` — this run's `teamName` fixture value — as
 		// plain link text. That is user data, not UI copy: a real Verein's own
@@ -358,25 +487,37 @@ for (const suffix of AUTHENTICATED_PATHS) {
 		// populated only when `domains` claimed one) is the same story again: a
 		// hostname, its TXT challenge name, and the raw values of the two DNS
 		// records a Verein is told to create are all data a claiming team
-		// supplied or that this instance generated, never copy. Allowing the
-		// *literal* strings this run's own fixture, link creation, and domain
-		// claim produced — reusing the module's own exclusion Set rather than a
-		// second mechanism — has no blind spot: a pattern-based exclusion (a
-		// UUID shape, an `e2e ` prefix, "anything that looks like a URL or
-		// hostname") would just as happily swallow a real hardcoded string that
-		// happened to sit next to one of these, which is exactly the false
-		// negative this spec exists to prevent.
+		// supplied or that this instance generated, never copy. `auditStrings`
+		// (populated only when `audit-log` seeded and read one) is the same
+		// story again: the fixture's own team member email, and the `slug`/
+		// `hostname`/`destination_url` values that link's own `link.created` row
+		// disclosed. Allowing the *literal* strings this run's own fixture, link
+		// creation, domain claim, and team membership produced — reusing the
+		// module's own exclusion Set rather than a second mechanism — has no
+		// blind spot: a pattern-based exclusion (a UUID shape, an `e2e ` prefix,
+		// "anything that looks like a URL, hostname or email") would just as
+		// happily swallow a real hardcoded string that happened to sit next to
+		// one of these, which is exactly the false negative this spec exists to
+		// prevent.
 		const identicalByDesign = new Set([
 			...IDENTICAL_BY_DESIGN,
 			teamName,
 			...linkStrings,
 			...domainStrings,
+			...auditStrings,
 		]);
 
 		const english = new Set(
-			await visibleText({ baseURL, identicalByDesign, language: 'en', page, path }),
+			await visibleText({ afterGoto, baseURL, identicalByDesign, language: 'en', page, path }),
 		);
-		const german = await visibleText({ baseURL, identicalByDesign, language: 'de', page, path });
+		const german = await visibleText({
+			afterGoto,
+			baseURL,
+			identicalByDesign,
+			language: 'de',
+			page,
+			path,
+		});
 
 		const untranslated = german.filter((value) => english.has(value));
 
