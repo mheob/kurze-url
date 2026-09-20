@@ -156,7 +156,7 @@ func TestCreateLinkClearsANegativeCacheEntry(t *testing.T) {
 		map[string]any{"destination_url": "https://example.org/s", "slug": "sommerfest"})
 	require.Equal(t, http.StatusCreated, rec.Code, "body: %s", rec.Body.String())
 
-	_, err := f.deps.Cache.Raw().Get(ctx, cacheKey).Result()
+	_, err := f.deps.Cache.Raw().Get(ctx, f.deps.Cache.Key(cacheKey)).Result()
 	require.Error(t, err, "the not-found sentinel must be gone after the link is created")
 }
 
@@ -370,7 +370,7 @@ func TestUpdateLinkChangesTheDestinationAndInvalidatesTheCache(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
 	require.Equal(t, "https://example.org/neu", decode[linkBody](t, rec).DestinationURL)
 
-	_, err := f.deps.Cache.Raw().Get(ctx, cacheKey).Result()
+	_, err := f.deps.Cache.Raw().Get(ctx, f.deps.Cache.Key(cacheKey)).Result()
 	require.Error(t, err,
 		"a 302 promises destination changes take effect immediately, not after LinkCacheTTL")
 }
@@ -390,9 +390,9 @@ func TestUpdateLinkChangingTheSlugInvalidatesBothKeys(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
 	require.Equal(t, "neu", decode[linkBody](t, rec).Slug)
 
-	_, err := f.deps.Cache.Raw().Get(ctx, oldKey).Result()
+	_, err := f.deps.Cache.Raw().Get(ctx, f.deps.Cache.Key(oldKey)).Result()
 	require.Error(t, err, "the old slug must stop resolving")
-	_, err = f.deps.Cache.Raw().Get(ctx, newKey).Result()
+	_, err = f.deps.Cache.Raw().Get(ctx, f.deps.Cache.Key(newKey)).Result()
 	require.Error(t, err, "the new slug's cached not-found sentinel must be cleared too")
 }
 
@@ -523,7 +523,7 @@ func TestDeleteLinkRemovesItAndTheCacheEntry(t *testing.T) {
 	require.Equal(t, http.StatusNotFound,
 		f.do(t, f.members[authz.RoleViewer], http.MethodGet, "/v1/links/"+created.ID.String(), nil).Code)
 
-	_, err := f.deps.Cache.Raw().Get(ctx, cacheKey).Result()
+	_, err := f.deps.Cache.Raw().Get(ctx, f.deps.Cache.Key(cacheKey)).Result()
 	require.Error(t, err, "a deleted link must stop resolving immediately")
 
 	var count int
@@ -876,7 +876,7 @@ func TestUpdateLinkChangingOnlyFolderOrTagsLeavesTheRedirectCacheAlone(t *testin
 		})
 	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
 
-	_, err := f.deps.Cache.Raw().Get(ctx, cacheKey).Result()
+	_, err := f.deps.Cache.Raw().Get(ctx, f.deps.Cache.Key(cacheKey)).Result()
 	require.NoError(t, err,
 		"an organizational-only change must not invalidate the redirect cache")
 }

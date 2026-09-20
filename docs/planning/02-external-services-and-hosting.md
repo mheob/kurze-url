@@ -38,7 +38,7 @@ Status: draft, reflecting decisions made through 2026-09-01. Intended to be refi
 - 256 MB storage.
 - 500K commands/month (~16.7K/day).
 - 10 GB bandwidth/month.
-- Up to 10 free databases (unclaimed databases are deleted after 3 days — claim into the account promptly).
+- **One database on the free tier.** Corrected 2026-09-20, from the dialog Upstash now shows on a second creation attempt: "You can create 1 database in free tier — add a payment method to upgrade your plan and create more databases." The August 2026 figure recorded here was ten, so this changed under the project. The consequence is not academic: **preview and production share one Redis instance**, with no second one to point preview at. They are held apart by a key prefix derived from `VERCEL_ENV` instead (`apps/api/internal/cache`), where only the literal `production` gets the unprefixed keyspace. The 500K commands a month are shared along with it, so preview's e2e traffic spends production's budget — small in practice, and it belongs to the usage-alerting item still open in `CLAUDE.md`.
 
 **Vercel — chosen hosting platform**
 

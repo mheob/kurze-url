@@ -55,7 +55,7 @@ func tenancyCache(t *testing.T) *cache.Client {
 			tenancyCacheErr = err
 			return
 		}
-		tenancyCacheClient, tenancyCacheErr = cache.New(url)
+		tenancyCacheClient, tenancyCacheErr = cache.New(url, "test")
 	})
 
 	if tenancyCacheErr != nil {

@@ -110,7 +110,7 @@ func TestSetLinkPasswordRateLimitFailsClosed(t *testing.T) {
 	f := newTenancyFixture(t)
 	created := f.createLink(t, "brokenredis", "https://example.org/brokenredis")
 
-	broken, err := cache.New("redis://127.0.0.1:1/0")
+	broken, err := cache.New("redis://127.0.0.1:1/0", "test")
 	require.NoError(t, err)
 	f.deps.Cache = broken
 	f.rebuildRouter()

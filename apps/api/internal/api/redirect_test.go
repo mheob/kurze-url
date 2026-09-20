@@ -254,10 +254,10 @@ func TestRedirectCaseFoldingSharesOneCacheEntry(t *testing.T) {
 	// The uppercase request must have populated the lowercase key, not a
 	// second one: two cache entries for one link would double the hot path's
 	// memory and let them disagree after an update.
-	value, err := f.deps.Cache.Raw().Get(ctx, link.CacheKey(f.hostname, "hello")).Result()
+	value, err := f.deps.Cache.Raw().Get(ctx, f.deps.Cache.Key(link.CacheKey(f.hostname, "hello"))).Result()
 	require.NoError(t, err, "the lowercase key must be the one that got populated")
 	require.NotEmpty(t, value)
 
-	_, err = f.deps.Cache.Raw().Get(ctx, link.CacheKey(f.hostname, "HELLO")).Result()
+	_, err = f.deps.Cache.Raw().Get(ctx, f.deps.Cache.Key(link.CacheKey(f.hostname, "HELLO"))).Result()
 	require.Error(t, err, "no uppercase key may exist")
 }

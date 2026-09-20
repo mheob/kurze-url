@@ -41,17 +41,56 @@ var redirectLookupScript = redis.NewScript(redirectLookupSource)
 // the free tier's 500K/month ceiling is the binding constraint on this project,
 // so that cost is part of each method's contract.
 type Client struct {
-	rdb *redis.Client
+	prefix string
+	rdb    *redis.Client
 }
 
-// New dials Redis from a redis:// or rediss:// URL.
-func New(redisURL string) (*Client, error) {
+// productionEnvironment is the single VERCEL_ENV value that gets the
+// unprefixed keyspace. Every other value, and an absent one, gets its own.
+const productionEnvironment = "production"
+
+// New dials Redis from a redis:// or rediss:// URL and scopes every key this
+// client touches to environment, which is config.Config.Environment — that
+// is, VERCEL_ENV, defaulted to "development".
+//
+// The scoping exists because preview and production share one Upstash
+// database: the free tier allows exactly one, so there is no second instance
+// to point preview at. Without a prefix, a preview deployment — which by
+// definition runs code nobody has reviewed yet — writes into the keyspace
+// production serves redirects from, and `rl:invite:global`, the one key
+// carrying neither a hostname nor a UUID, is spent by both at once.
+//
+// Only the literal "production" opens the bare keyspace. A misspelling, a
+// new Vercel environment name, or a VERCEL_ENV that never arrived because
+// the project stopped exposing system environment variables all land
+// somewhere else instead. That direction is the point: the failure to avoid
+// is a non-production deployment silently writing production's keys, and
+// nothing outside this function can notice that happening.
+func New(redisURL, environment string) (*Client, error) {
 	opts, err := redis.ParseURL(redisURL)
 	if err != nil {
 		return nil, fmt.Errorf("cache: parse redis url: %w", err)
 	}
-	return &Client{rdb: redis.NewClient(opts)}, nil
+	return &Client{prefix: keyPrefix(environment), rdb: redis.NewClient(opts)}, nil
 }
+
+// keyPrefix maps an environment to the prefix every key of this client
+// carries. An empty environment is deliberately not production; see New.
+func keyPrefix(environment string) string {
+	switch environment {
+	case productionEnvironment:
+		return ""
+	case "":
+		return "unknown:"
+	default:
+		return environment + ":"
+	}
+}
+
+// Key reports the actual Redis key this client uses for a logical key. Every
+// method below applies it already; this exists for the two callers that go
+// around them — Raw() in tests asserting on exact keys, and nothing else.
+func (c *Client) Key(key string) string { return c.prefix + key }
 
 // Close releases the underlying Redis connection pool.
 func (c *Client) Close() error {
@@ -59,7 +98,9 @@ func (c *Client) Close() error {
 }
 
 // Raw exposes the underlying client. It exists for tests that need to assert
-// on exact keys; handlers must use the methods above.
+// on exact keys, and for the health check's PING; handlers must use the
+// methods above. A caller reaching a key through here gets no prefix — pass
+// it through Key first, or the read looks in production's keyspace.
 func (c *Client) Raw() *redis.Client { return c.rdb }
 
 // Allow applies a sliding-window rate limit to key. Costs one Redis command
@@ -77,7 +118,7 @@ func (c *Client) Raw() *redis.Client { return c.rdb }
 // there refuses every invitation, which is why it has no guard.
 func (c *Client) Allow(ctx context.Context, key string, limit int, window time.Duration) (bool, int, error) {
 	res, err := rateLimitScript.Run(ctx, c.rdb,
-		[]string{key},
+		[]string{c.Key(key)},
 		limit,
 		int(window.Seconds()),
 		time.Now().UnixMilli(),
@@ -106,7 +147,7 @@ func (c *Client) WithinLimit(
 	ctx context.Context, key string, limit int, window time.Duration,
 ) (bool, error) {
 	res, err := rateLimitPeekScript.Run(ctx, c.rdb,
-		[]string{key},
+		[]string{c.Key(key)},
 		limit,
 		int(window.Seconds()),
 		time.Now().UnixMilli(),
@@ -121,7 +162,7 @@ func (c *Client) WithinLimit(
 // WithinLimit reads. Two Redis commands.
 func (c *Client) Increment(ctx context.Context, key string, window time.Duration) error {
 	if err := rateLimitCountScript.Run(ctx, c.rdb,
-		[]string{key},
+		[]string{c.Key(key)},
 		int(window.Seconds()),
 		time.Now().UnixMilli(),
 	).Err(); err != nil {
@@ -152,8 +193,12 @@ func (c *Client) LookupForRedirect(
 	uniqueTTL time.Duration,
 ) (Lookup, error) {
 	res, err := redirectLookupScript.Run(ctx, c.rdb,
-		[]string{cacheKey},
-		link.UniqueSetPrefix,
+		[]string{c.Key(cacheKey)},
+		// Prefixed too: the script concatenates this with the link id and the
+		// day to build the unique-visitor set key itself, so leaving it bare
+		// while MarkUniqueVisit prefixes would put the two paths in different
+		// sets and count every returning visitor as new — with no error.
+		c.Key(link.UniqueSetPrefix),
 		visitorHash,
 		day,
 		int(uniqueTTL.Seconds()),
@@ -206,7 +251,7 @@ func (c *Client) PutLink(ctx context.Context, cacheKey string, l link.Cached, tt
 		hasPassword = "1"
 	}
 	value := l.ID.String() + "|" + hasPassword + "|" + string(payload)
-	if err := c.rdb.Set(ctx, cacheKey, value, ttl).Err(); err != nil {
+	if err := c.rdb.Set(ctx, c.Key(cacheKey), value, ttl).Err(); err != nil {
 		return fmt.Errorf("cache: put link: %w", err)
 	}
 	return nil
@@ -214,7 +259,7 @@ func (c *Client) PutLink(ctx context.Context, cacheKey string, l link.Cached, tt
 
 // PutNotFound negatively caches an unresolvable key for a short TTL.
 func (c *Client) PutNotFound(ctx context.Context, cacheKey string, ttl time.Duration) error {
-	if err := c.rdb.Set(ctx, cacheKey, link.NotFoundSentinel, ttl).Err(); err != nil {
+	if err := c.rdb.Set(ctx, c.Key(cacheKey), link.NotFoundSentinel, ttl).Err(); err != nil {
 		return fmt.Errorf("cache: put not-found: %w", err)
 	}
 	return nil
@@ -227,7 +272,7 @@ func (c *Client) MarkUniqueVisit(
 	linkID, day, visitorHash string,
 	ttl time.Duration,
 ) (bool, error) {
-	key := link.UniqueSetPrefix + linkID + ":" + day
+	key := c.Key(link.UniqueSetPrefix + linkID + ":" + day)
 	added, err := c.rdb.SAdd(ctx, key, visitorHash).Result()
 	if err != nil {
 		return false, fmt.Errorf("cache: mark unique visit: %w", err)
@@ -244,7 +289,7 @@ func (c *Client) MarkUniqueVisit(
 // call this, or a 302's "destination changes take effect immediately" promise
 // is only true after LinkCacheTTL elapses.
 func (c *Client) InvalidateLink(ctx context.Context, cacheKey string) error {
-	if err := c.rdb.Del(ctx, cacheKey).Err(); err != nil {
+	if err := c.rdb.Del(ctx, c.Key(cacheKey)).Err(); err != nil {
 		return fmt.Errorf("cache: invalidate link: %w", err)
 	}
 	return nil
