@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { classifyApiError, statusOf } from './api-errors';
+import { classifyApiError, inviteRateLimitTokenOf, statusOf } from './api-errors';
 
 /**
  * Shapes copied from what Huma/the generated client actually produce, not
@@ -322,5 +322,44 @@ describe('a rejected link password', () => {
 		const failure = classifyApiError(problem(422, [{ location: 'body.password' }]));
 
 		expect(failure).toStrictEqual({ kind: 'passwordRejected', reason: 'rejected' });
+	});
+});
+
+describe(inviteRateLimitTokenOf, () => {
+	// `allowInvite` (apps/api/internal/api/members.go) attaches this exact
+	// shape via `&huma.ErrorDetail{Location: "path.team_id", Value:
+	// "team_hourly"}` — the typed value, not any digit or word inside
+	// `detail`'s prose, which stays free to reword.
+	it('reads the team-hourly token off path.team_id', () => {
+		expect(
+			inviteRateLimitTokenOf(problem(429, [{ location: 'path.team_id', value: 'team_hourly' }])),
+		).toBe('team_hourly');
+	});
+
+	it('reads the instance-monthly token off path.team_id', () => {
+		expect(
+			inviteRateLimitTokenOf(
+				problem(429, [{ location: 'path.team_id', value: 'instance_monthly' }]),
+			),
+		).toBe('instance_monthly');
+	});
+
+	it('returns undefined for a 429 with no detail at all', () => {
+		expect(inviteRateLimitTokenOf(problem(429))).toBeUndefined();
+	});
+
+	// A server ahead of this build could send a token this build's union
+	// doesn't (yet) list; that must not be passed through as if it were one
+	// of the two known ones.
+	it('returns undefined for a token this build does not recognize', () => {
+		expect(
+			inviteRateLimitTokenOf(problem(429, [{ location: 'path.team_id', value: 'something_else' }])),
+		).toBeUndefined();
+	});
+
+	it('ignores a detail at an unrelated location', () => {
+		expect(
+			inviteRateLimitTokenOf(problem(429, [{ location: 'body.email', value: 'team_hourly' }])),
+		).toBeUndefined();
 	});
 });

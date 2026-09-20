@@ -6,7 +6,12 @@ import { useTranslation } from 'react-i18next';
 
 import { MemberInviteForm, type InviteFailureKind } from '../../components/member-invite-form';
 import { MemberList } from '../../components/member-list';
-import { classifyApiError, statusOf, type ApiFailure } from '../../lib/api-errors';
+import {
+	classifyApiError,
+	inviteRateLimitTokenOf,
+	statusOf,
+	type ApiFailure,
+} from '../../lib/api-errors';
 import { reportUnexpected } from '../../lib/observability';
 import { rolesAssignableBy, type TeamRole } from '../../lib/team-roles';
 import {
@@ -33,60 +38,23 @@ const HTTP_FORBIDDEN = 403;
 const HTTP_NOT_FOUND = 404;
 
 /**
- * The `ErrorDetail.location` `allowInvite` (`apps/api/internal/api/members.go`)
- * attaches its rate-limit token to — this operation's only path parameter,
- * the same convention `deleteDomain`'s blocking link count and `createTeam`'s
- * taken slug use one level over (see `lib/api-errors.ts`'s own
- * `blockingLinkCountOf`/`isSlugConflict`).
- */
-const INVITE_RATE_LIMIT_LOCATION = 'path.team_id';
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === 'object' && value !== null;
-}
-
-/**
- * Reads the `ErrorDetail.value` a 429 from `addMember` carries —
- * `'team_hourly'` or `'instance_monthly'` — the same technique
- * `lib/api-errors.ts`'s own `blockingLinkCountOf` uses for `deleteDomain`'s
- * 409, reimplemented here because that module exposes no generic
- * detail-value reader and this is the only caller that needs one.
- *
- * @param error - Whatever the failed `addMember` call threw.
- * @returns The rate-limit token, or `undefined` when the 429 carried none this build recognizes.
- */
-function inviteRateLimitTokenOf(error: unknown): string | undefined {
-	if (!isRecord(error)) return undefined;
-	const { errors } = error;
-	if (!Array.isArray(errors)) return undefined;
-
-	for (const entry of errors) {
-		if (
-			isRecord(entry) &&
-			entry.location === INVITE_RATE_LIMIT_LOCATION &&
-			typeof entry.value === 'string'
-		) {
-			return entry.value;
-		}
-	}
-
-	return undefined;
-}
-
-/**
  * Every reason `addMember` can refuse an invite, read from the raw status
- * (and, for a 429, its typed detail) before ever asking `classifyApiError` —
- * that function deliberately collapses every 429 into one `rateLimited` kind
- * and 403/404 into one `notFound` kind, both of which throw away exactly what
+ * (and, for a 429, its typed detail, via `lib/api-errors.ts`'s own
+ * `inviteRateLimitTokenOf`) before ever asking `classifyApiError` — that
+ * function deliberately collapses every 429 into one `rateLimited` kind and
+ * 403/404 into one `notFound` kind, both of which throw away exactly what
  * this form needs to say something true. `unauthenticated` is not a case
  * here: the mutation's own `onError` intercepts it and navigates before this
  * is ever called, the same split `classifyVerifyFailure`
  * (`teams.$teamSlug.domains.tsx`) makes for its own mutation.
  *
+ * Exported for its own direct test coverage — `teams.$teamSlug.members.test.tsx`
+ * — the same reason `loadMembers` is exported.
+ *
  * @param error - Whatever the failed `addMember` call threw.
  * @returns The reason the invite failed, or was silently not sent.
  */
-function classifyInviteFailure(error: unknown): InviteFailureKind {
+export function classifyInviteFailure(error: unknown): InviteFailureKind {
 	const status = statusOf(error);
 
 	if (status === HTTP_CONFLICT) return 'alreadyMember';
@@ -107,7 +75,7 @@ function classifyInviteFailure(error: unknown): InviteFailureKind {
 }
 
 /** Every reason a role-change or remove call can fail, once `unauthenticated` is peeled off for the redirect it gets instead. */
-type MutationFailureKind = 'raced' | 'unknown';
+export type MutationFailureKind = 'raced' | 'unknown';
 
 /**
  * `updateMember`/`removeMember` (`apps/api/internal/api/members.go`) answer a
@@ -118,10 +86,13 @@ type MutationFailureKind = 'raced' | 'unknown';
  * else removed this member, or demoted the caller), not a door that was
  * always closed.
  *
+ * Exported for its own direct test coverage, the same reason
+ * `classifyInviteFailure` above is.
+ *
  * @param error - Whatever the failed role-change or remove call threw.
  * @returns `'raced'` for a 403/404, `'unknown'` for anything else.
  */
-function classifyMutationFailure(error: unknown): MutationFailureKind {
+export function classifyMutationFailure(error: unknown): MutationFailureKind {
 	const status = statusOf(error);
 	return status === HTTP_FORBIDDEN || status === HTTP_NOT_FOUND ? 'raced' : 'unknown';
 }

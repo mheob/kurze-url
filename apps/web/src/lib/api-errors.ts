@@ -274,6 +274,31 @@ function validationKind(error: unknown): ApiFailure | undefined {
 export type QrRejectionReason = 'invalid_color' | 'low_contrast' | 'size_requires_png';
 
 /**
+ * `allowInvite` (`apps/api/internal/api/members.go`) attaches this exact
+ * shape via `&huma.ErrorDetail{Location: "path.team_id", Value: "team_hourly"}`
+ * (or `"instance_monthly"`) to both of the 429s it can answer `addMember`
+ * with — `path.team_id` is that operation's only path parameter, the same
+ * convention `blockingLinkCountOf`'s `path.domain_id` and `isSlugConflict`'s
+ * `body.slug` use one level over. Reading the typed value here, rather than
+ * parsing it out of the free-text `detail`, means a reworded message can
+ * never silently turn one refusal into the other: the per-team burst and the
+ * instance-wide monthly budget mean "wait a while" and "ask the maintainer",
+ * which are different instructions, and `detail`'s prose is free to reword
+ * (see `blockingLinkCountOf`'s own doc comment for why that prose is never
+ * the thing this reads).
+ *
+ * @param error - Whatever the failed `addMember` call threw.
+ * @returns The rate-limit token, or `undefined` when the 429 carried none this build recognizes.
+ */
+export function inviteRateLimitTokenOf(
+	error: unknown,
+): 'instance_monthly' | 'team_hourly' | undefined {
+	const detail = problemDetailsOf(error).find((entry) => entry.location === 'path.team_id');
+	if (detail?.value === 'team_hourly' || detail?.value === 'instance_monthly') return detail.value;
+	return undefined;
+}
+
+/**
  * Turns whatever a failed API call throws into something a route or form can
  * act on, without either of them needing to know Huma's wire format.
  *

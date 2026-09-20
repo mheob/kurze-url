@@ -2,7 +2,11 @@ import type { PageMember } from '@kurze-url/api-client';
 import { isRedirect } from '@tanstack/react-router';
 import { describe, expect, it } from 'vitest';
 
-import { loadMembers } from './teams.$teamSlug.members';
+import {
+	classifyInviteFailure,
+	classifyMutationFailure,
+	loadMembers,
+} from './teams.$teamSlug.members';
 
 /** The one method `loadMembers` reaches through on `context.queryClient`. */
 interface FakeQueryClient {
@@ -97,5 +101,67 @@ describe(loadMembers, () => {
 		});
 
 		await expect(loadMembers(queryClient, 'team-1')).rejects.toBe(boom);
+	});
+});
+
+describe(classifyInviteFailure, () => {
+	it('maps 409 to alreadyMember', () => {
+		expect(classifyInviteFailure({ status: 409 })).toBe('alreadyMember');
+	});
+
+	it('maps 502 to mailFailed', () => {
+		expect(classifyInviteFailure({ status: 502 })).toBe('mailFailed');
+	});
+
+	it('maps 503 to notConfigured', () => {
+		expect(classifyInviteFailure({ status: 503 })).toBe('notConfigured');
+	});
+
+	it('maps a 429 carrying the team-hourly token to teamBurst', () => {
+		const error = { errors: [{ location: 'path.team_id', value: 'team_hourly' }], status: 429 };
+		expect(classifyInviteFailure(error)).toBe('teamBurst');
+	});
+
+	it('maps a 429 carrying the instance-monthly token to instanceBudget', () => {
+		const error = {
+			errors: [{ location: 'path.team_id', value: 'instance_monthly' }],
+			status: 429,
+		};
+		expect(classifyInviteFailure(error)).toBe('instanceBudget');
+	});
+
+	/**
+	 * This is the case a wire change breaks silently: if the API ever stops
+	 * sending a token this build recognizes, a Verein must be told something
+	 * generic rather than a specific reason that happens to be wrong (a
+	 * `teamBurst` message — "wait an hour" — when the real answer might be
+	 * `instanceBudget` — "ask the maintainer").
+	 */
+	it('falls back to unknown for a 429 carrying no usable detail', () => {
+		expect(classifyInviteFailure({ status: 429 })).toBe('unknown');
+	});
+
+	it('maps a 403 to raced, the same as a 404', () => {
+		expect(classifyInviteFailure({ status: 403 })).toBe('raced');
+		expect(classifyInviteFailure({ status: 404 })).toBe('raced');
+	});
+
+	it('falls back to unknown for anything else', () => {
+		expect(classifyInviteFailure(new Error('network'))).toBe('unknown');
+	});
+});
+
+describe(classifyMutationFailure, () => {
+	it('maps 403 to raced', () => {
+		expect(classifyMutationFailure({ status: 403 })).toBe('raced');
+	});
+
+	it('maps 404 to raced', () => {
+		expect(classifyMutationFailure({ status: 404 })).toBe('raced');
+	});
+
+	it('maps anything else to unknown', () => {
+		expect(classifyMutationFailure({ status: 500 })).toBe('unknown');
+		expect(classifyMutationFailure(new Error('network'))).toBe('unknown');
 	});
 });
