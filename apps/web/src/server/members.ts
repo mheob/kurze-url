@@ -124,7 +124,8 @@ export const membersQueryOptions = (teamId: string) =>
  * `body: CreateLinkInputBodyWritable` parameter, rather than passed as two
  * positional `email`/`role` parameters: `eslint(max-params)` caps at three
  * and this already has four independent things to name (`request`, `teamId`,
- * `email`, `role`), the same reasoning `getLinkStatsFor`'s docstring and
+ * `email`, `role`), the same reasoning `loadStatsPage`'s docstring
+ * (`routes/_authed/teams.$teamSlug.links.$linkId_.stats.tsx`) and
  * `completeQrDownload`'s give for their own bundling.
  *
  * `body.role` is typed as `TeamRole` (`lib/team-roles.ts`), not `string`: the
