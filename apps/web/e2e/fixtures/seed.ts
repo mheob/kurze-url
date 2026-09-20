@@ -1,3 +1,6 @@
+import { randomUUID } from 'node:crypto';
+
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { Client as PgClient } from 'pg';
 
 import { requireE2eEnv } from './env';
@@ -229,6 +232,45 @@ function total(pick: (day: DaySeed) => number): number {
 	return DAYS.reduce((sum, day) => sum + pick(day), 0);
 }
 
+/**
+ * Inserts the second member's `team_member` row, split out of
+ * `seedSecondMember` so that function's own statement count stays within
+ * this file's lint budget.
+ *
+ * @param options - The pieces needed to insert the row.
+ * @param options.admin - The Supabase Admin API client, reused here to delete the user if the insert fails.
+ * @param options.teamId - The team the membership row belongs to.
+ * @param options.userId - The already-created user the membership row is for.
+ * @param options.role - The role to grant.
+ */
+async function insertSecondMemberRow({
+	admin,
+	teamId,
+	userId,
+	role,
+}: Readonly<{
+	admin: SupabaseClient;
+	teamId: string;
+	userId: string;
+	role: TeamRole;
+}>): Promise<void> {
+	try {
+		await withDb(async (db) => {
+			await db.query('insert into team_member (team_id, user_id, role) values ($1, $2, $3)', [
+				teamId,
+				userId,
+				role,
+			]);
+		});
+	} catch (error) {
+		// The membership insert is what makes this user useful; a user left
+		// behind by a failure here would leak exactly the way cleanup exists to
+		// prevent.
+		await admin.auth.admin.deleteUser(userId);
+		throw error;
+	}
+}
+
 /** What a spec needs back: the figures to assert, and the raw values the i18n crawl must exclude. */
 export interface SeededClicks {
 	/**
@@ -357,4 +399,57 @@ export async function setFixtureTeamRole(teamId: string, role: TeamRole): Promis
 			);
 		}
 	});
+}
+
+/**
+ * Adds a second person to the fixture team: a confirmed auth user plus its
+ * membership row.
+ *
+ * `team_member.user_id` references `auth.users`, so a bare SQL insert cannot
+ * do this on its own — the user has to exist first, which is why this reaches
+ * for the Admin API the way `./auth`'s own fixture does.
+ *
+ * **Run the returned `cleanup` in a `finally`.** The `team` fixture's teardown
+ * deletes the team and then *its own* user; it knows nothing about a second
+ * one. The membership row does disappear on its own — `team_member.user_id`
+ * is `on delete cascade` from `auth.users`
+ * (`supabase/migrations/20260902075125_initial_schema.sql:17`) — but nothing
+ * deletes the user, and a leaked row accumulates in the Preview Supabase
+ * project on every run.
+ *
+ * A plain helper rather than a Playwright fixture on purpose: a fixture runs
+ * before the test body, which would leave the team with two memberships
+ * before `setFixtureTeamRole` could ever see exactly one, and that helper
+ * refuses anything else.
+ *
+ * @param teamId - The fixture team to add the person to.
+ * @param role - The role the second member should hold.
+ * @returns The new member's address and id, and the cleanup its caller owes.
+ */
+export async function seedSecondMember(
+	teamId: string,
+	role: TeamRole,
+): Promise<{ cleanup: () => Promise<void>; email: string; userId: string }> {
+	const { serviceRoleKey, url } = requireE2eEnv();
+	const admin = createClient(url, serviceRoleKey);
+	const email = `e2e-second-${randomUUID()}@example.com`;
+
+	const { data: created, error: createUserError } = await admin.auth.admin.createUser({
+		email,
+		email_confirm: true,
+	});
+	if (createUserError) {
+		throw new Error(`could not create the second e2e member: ${createUserError.message}`);
+	}
+	const userId = created.user.id;
+
+	await insertSecondMemberRow({ admin, role, teamId, userId });
+
+	return {
+		cleanup: async () => {
+			await admin.auth.admin.deleteUser(userId);
+		},
+		email,
+		userId,
+	};
 }
