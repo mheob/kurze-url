@@ -19,7 +19,8 @@ Other scripts (run from `apps/web`, or via `pnpm --filter @kurze-url/web <script
 | `test:storybook` | Vitest, `storybook` project — every story rendered in real Chromium via `@storybook/addon-vitest`, gated on accessibility |
 | `test:watch` | `test`, in watch mode |
 | `storybook` / `build-storybook` | Storybook dev server (port 6006) / static build |
-| `generate-routes` | Regenerates `src/routeTree.gen.ts` from `src/routes/**` (also runs automatically via the Vite plugin during `dev`/`build`) |
+
+`src/routeTree.gen.ts` has no script of its own. TanStack Start's Vite plugin regenerates it during `dev` and `build`, and that is the only generator that also writes the file's `declare module '@tanstack/react-start'` block — TanStack Router's own CLI (`tsr generate`) drops it silently, with nothing failing to say so. See the root `CLAUDE.md`.
 
 The root also has `pnpm format`, `pnpm lint`, `pnpm typecheck`, all of which cover this package (oxfmt/oxlint, not Prettier/ESLint — see the root `CLAUDE.md`). Playwright is invoked directly, not through a package.json script: `pnpm --filter @kurze-url/web exec playwright test`.
 

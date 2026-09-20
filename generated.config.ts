@@ -14,8 +14,8 @@ export const generatedFiles = [
 	// Written by @hey-api/openapi-ts from apps/api/openapi.json, including its
 	// vendored request runtime.
 	'packages/api-client/src/generated/**',
-	// Written by TanStack Router (`tsr generate` and the Vite plugin) from the
-	// files under apps/web/src/routes/. Its own header says not to edit it.
+	// Written by TanStack Start's Vite plugin from the files under
+	// apps/web/src/routes/. Its own header says not to edit it.
 	'apps/web/src/routeTree.gen.ts',
 	// Written by `shadcn add`, from the primitive layer (`base-sera`) recorded
 	// in apps/web/components.json. Regenerated wholesale on every `add`; never
