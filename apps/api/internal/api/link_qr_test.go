@@ -198,7 +198,7 @@ func TestLinkQRSurvivesAnUnreachableCache(t *testing.T) {
 
 	// Port 1 refuses immediately on every platform this runs on, so the
 	// limiter's error path is reached without a dial timeout.
-	dead, err := cache.New("redis://127.0.0.1:1")
+	dead, err := cache.New("redis://127.0.0.1:1", "test")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = dead.Close() })
 	f.deps.Cache = dead

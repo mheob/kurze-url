@@ -70,7 +70,7 @@ func testCache(t *testing.T) *cache.Client {
 	url, err := container.ConnectionString(ctx)
 	require.NoError(t, err)
 
-	client, err := cache.New(url)
+	client, err := cache.New(url, "test")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = client.Close() })
 

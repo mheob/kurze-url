@@ -167,7 +167,7 @@ func run(log *slog.Logger) (*slog.Logger, func(), error) {
 	}
 	defer pool.Close()
 
-	redis, err := cache.New(cfg.RedisURL)
+	redis, err := cache.New(cfg.RedisURL, cfg.Environment)
 	if err != nil {
 		return log, flushSentry, err
 	}
