@@ -195,10 +195,17 @@ Two fixture facts constrain how those cases may be written, and both bite silent
 **There is no second account to work with.** `e2e/fixtures/auth.ts` creates exactly one user per test — `e2e-<uuid>@example.com`, through `admin.auth.admin.createUser` — and provisions a fresh team with that user as its only member. Every case above except the first needs a second person, so this design adds one helper to `e2e/fixtures/seed.ts`:
 
 ```ts
-seedSecondMember(teamId: string, role: TeamRole): Promise<{ email: string; userId: string }>
+seedSecondMember(
+	teamId: string,
+	role: TeamRole,
+): Promise<{ cleanup: () => Promise<void>; email: string; userId: string }>
 ```
 
-It creates a confirmed auth user the same way the auth fixture does — the `team_member` row has a foreign key into `auth.users`, so a bare SQL insert is not enough — and then inserts the membership. It returns the address, which the invite case needs in order to target an account that already exists.
+It creates a confirmed auth user the way the auth fixture does — `team_member.user_id` references `auth.users`, so a bare SQL insert is not enough — then inserts the membership. It returns the address, which the invite case needs in order to target an account that already exists.
+
+**It returns its own `cleanup`, and every caller must run it in a `finally`.** The `team` fixture's teardown deletes the team and then _its own_ user; it has no way to know about a second one. The membership row does go on its own — `team_member.user_id` is `on delete cascade` from `auth.users` (`supabase/migrations/20260902075125_initial_schema.sql:17`), so deleting the user is enough — but nothing deletes the user, and a leaked `auth.users` row accumulates in the Preview Supabase project on every run.
+
+The ordering rule below is the other reason this is a plain helper rather than a Playwright fixture: a fixture runs before the test body, which would put a second membership in place before `setFixtureTeamRole` could ever see exactly one.
 
 **`setFixtureTeamRole` throws unless the team has exactly one membership.** Its own docstring pins that: it identifies the row by team id alone, and it checks `rowCount === 1` rather than assuming, because an update matching no row would silently leave the session an owner and let a spec asserting something is _absent_ pass for the wrong reason. This page is the first screen whose tests deliberately create a second membership, so the two helpers now interact: **call `setFixtureTeamRole` first, while one membership still exists, and `seedSecondMember` after it.** The reverse order throws. The viewer case needs both, in that order.
 
