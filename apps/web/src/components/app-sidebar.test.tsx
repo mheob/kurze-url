@@ -182,3 +182,15 @@ describe('the history entry', () => {
 		expect(screen.getByRole('link', { name: 'Domains' })).toBeInTheDocument();
 	});
 });
+
+describe('the members entry', () => {
+	it('shows the members link to a viewer, unlike the audit log', async () => {
+		const VIEWER: Membership[] = [
+			{ name: 'Verein A', role: 'viewer', slug: 'verein-a', team_id: 'a' },
+		];
+		renderSidebar({ memberships: VIEWER });
+
+		await expect(screen.findByRole('link', { name: 'People' })).resolves.toBeInTheDocument();
+		expect(screen.queryByRole('link', { name: 'History' })).not.toBeInTheDocument();
+	});
+});
