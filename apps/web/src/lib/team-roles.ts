@@ -5,12 +5,12 @@
  * `authz.Role` in the API. Kept as one list so the select, the permission
  * rules and their tests cannot drift from each other.
  */
-const TEAM_ROLES_INTERNAL = ['viewer', 'editor', 'admin', 'owner'] as const;
+const TEAM_ROLES = ['viewer', 'editor', 'admin', 'owner'] as const;
 
-type TeamRoleInternal = (typeof TEAM_ROLES_INTERNAL)[number];
+type TeamRole = (typeof TEAM_ROLES)[number];
 
 /** The minimum a member needs before any of the controls on this page exist. */
-const ADMIN_RANK = TEAM_ROLES_INTERNAL.indexOf('admin');
+const ADMIN_RANK = TEAM_ROLES.indexOf('admin');
 
 /** Anything with a `role` the rules below have to read — a `Member` satisfies it structurally. */
 interface RoleBearer {
@@ -26,8 +26,8 @@ interface RoleBearer {
  * @param value - The role as the API spelled it.
  * @returns True when it is one of the four known roles.
  */
-function isTeamRole(value: string): value is TeamRoleInternal {
-	return (TEAM_ROLES_INTERNAL as readonly string[]).includes(value);
+function isTeamRole(value: string): value is TeamRole {
+	return (TEAM_ROLES as readonly string[]).includes(value);
 }
 
 /**
@@ -39,12 +39,10 @@ function isTeamRole(value: string): value is TeamRoleInternal {
  * @param actorRole - The signed-in member's own role.
  * @returns The assignable roles, ascending, or an empty list below admin.
  */
-function rolesAssignableBy(actorRole: string): readonly TeamRoleInternal[] {
+function rolesAssignableBy(actorRole: string): readonly TeamRole[] {
 	if (!isTeamRole(actorRole)) return [];
-	if (TEAM_ROLES_INTERNAL.indexOf(actorRole) < ADMIN_RANK) return [];
-	return actorRole === 'owner'
-		? TEAM_ROLES_INTERNAL
-		: TEAM_ROLES_INTERNAL.slice(0, TEAM_ROLES_INTERNAL.indexOf('owner'));
+	if (TEAM_ROLES.indexOf(actorRole) < ADMIN_RANK) return [];
+	return actorRole === 'owner' ? TEAM_ROLES : TEAM_ROLES.slice(0, TEAM_ROLES.indexOf('owner'));
 }
 
 /**
@@ -58,7 +56,7 @@ function rolesAssignableBy(actorRole: string): readonly TeamRoleInternal[] {
  */
 function canManageMember(actorRole: string, targetRole: string): boolean {
 	if (!isTeamRole(actorRole) || !isTeamRole(targetRole)) return false;
-	if (TEAM_ROLES_INTERNAL.indexOf(actorRole) < ADMIN_RANK) return false;
+	if (TEAM_ROLES.indexOf(actorRole) < ADMIN_RANK) return false;
 	return targetRole !== 'owner' || actorRole === 'owner';
 }
 
@@ -80,6 +78,5 @@ function isSoleOwner(members: readonly RoleBearer[], userId: string): boolean {
 	return owners.length === 1 && owners[0]?.user_id === userId;
 }
 
-export const TEAM_ROLES = TEAM_ROLES_INTERNAL;
-export type TeamRole = TeamRoleInternal;
-export { canManageMember, isTeamRole, isSoleOwner, rolesAssignableBy };
+export { TEAM_ROLES, canManageMember, isTeamRole, isSoleOwner, rolesAssignableBy };
+export type { TeamRole };
