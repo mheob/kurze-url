@@ -162,9 +162,6 @@ importers:
       '@tanstack/nitro-v2-vite-plugin':
         specifier: ^1.155.2
         version: 1.155.2(better-sqlite3@12.11.1)(oxc-parser@0.127.0)(rolldown@1.2.8)(srvx@0.11.22)(supports-color@10.2.2)(vite@8.3.0(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(yaml@2.9.0))
-      '@tanstack/router-cli':
-        specifier: ^1.167.35
-        version: 1.167.35(supports-color@10.2.2)
       '@testing-library/jest-dom':
         specifier: ^7.0.1
         version: 7.0.1(@testing-library/dom@10.4.1)(vitest@5.0.0)
@@ -2579,11 +2576,6 @@ packages:
     peerDependencies:
       react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
       react-dom: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
-
-  '@tanstack/router-cli@1.167.35':
-    resolution: {integrity: sha512-ciAWfn1f45iCXkdKr9dZb6xNiRj8D7CmP6ZRjOBjARkzO8uGuGBWh2UiRIiQ57docyx3+jP9DslaG5y6pEF0SA==}
-    engines: {node: '>=20.19'}
-    hasBin: true
 
   '@tanstack/router-core@1.171.29':
     resolution: {integrity: sha512-tBXJrU4rDl+UsfTvP/WM1pcQ+fXk4rb2uuK/FMw29JNHEkFdEbptA0yvk8vkNjooTF7DAiTUrZMf2H4X7eGt4g==}
@@ -8599,14 +8591,6 @@ snapshots:
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)
       use-sync-external-store: 1.6.0(react@19.3.0)
-
-  '@tanstack/router-cli@1.167.35(supports-color@10.2.2)':
-    dependencies:
-      '@tanstack/router-generator': 1.167.35(supports-color@10.2.2)
-      chokidar: 5.0.0
-      yargs: 17.7.3
-    transitivePeerDependencies:
-      - supports-color
 
   '@tanstack/router-core@1.171.29':
     dependencies:
