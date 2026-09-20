@@ -3,6 +3,7 @@ package api_test
 import (
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -89,9 +90,12 @@ func TestAddMemberAddsAnExistingAccountWithoutSendingEmail(t *testing.T) {
 		map[string]string{"email": existing.email, "role": "editor"})
 
 	require.Equal(t, http.StatusCreated, rec.Code, "body: %s", rec.Body.String())
-	added := decode[api.Member](t, rec)
+	added := decode[api.AddedMember](t, rec)
 	require.Equal(t, existing.id, added.UserID)
 	require.Equal(t, "editor", added.Role)
+	require.False(t, added.Invited,
+		"an address that already has an account is added silently; the caller has to be told "+
+			"nobody was notified")
 	require.Empty(t, f.invites.calls,
 		"an address that already has an account gets a membership, not an invitation")
 
@@ -114,6 +118,8 @@ func TestAddMemberInvitesAnUnknownAddress(t *testing.T) {
 		map[string]string{"email": "invited@verein.test", "role": "viewer"})
 
 	require.Equal(t, http.StatusCreated, rec.Code, "body: %s", rec.Body.String())
+	require.True(t, decode[api.AddedMember](t, rec).Invited,
+		"an unknown address is invited by email, and the caller may say so")
 	require.Equal(t, []string{"invited@verein.test"}, f.invites.calls)
 	require.Equal(t, []map[string]any{{"team_id": f.teamID.String(), "role": "viewer"}}, f.invites.metadata,
 		"the invitation must carry the team and the granted role so Supabase records it")
@@ -186,6 +192,18 @@ func TestAddMemberIsRateLimited(t *testing.T) {
 	require.Contains(t, second.Body.String(), "too many invitations for this team",
 		"the team's own cap must refuse before the instance-wide one is consulted, "+
 			"so a team that hammers the endpoint never spends instance budget")
+
+	body := decode[struct {
+		Errors []struct {
+			Location string `json:"location"`
+			Value    string `json:"value"`
+		} `json:"errors"`
+	}](t, second)
+	require.Len(t, body.Errors, 1)
+	require.Equal(t, "path.team_id", body.Errors[0].Location)
+	require.Equal(t, "team_hourly", body.Errors[0].Value,
+		"the frontend tells the two 429s apart by this token, not by the message, "+
+			"which stays free to reword")
 }
 
 // TestAddMemberIsRateLimitedInstanceWide pins the second half of allowInvite.
@@ -212,7 +230,7 @@ func TestAddMemberIsRateLimitedInstanceWide(t *testing.T) {
 	// because resolving it is what would send the mail. It also keeps the
 	// test off the invitation path entirely, so nothing here depends on how
 	// the Supabase stand-in mints users.
-	var refusal string
+	var refusal *httptest.ResponseRecorder
 	for _, role := range []authz.Role{
 		authz.RoleOwner, authz.RoleAdmin, authz.RoleEditor, authz.RoleViewer,
 	} {
@@ -220,15 +238,25 @@ func TestAddMemberIsRateLimitedInstanceWide(t *testing.T) {
 			"/v1/teams/"+f.teamID.String()+"/members",
 			map[string]string{"email": f.members[role].email, "role": "viewer"})
 		if rec.Code == http.StatusTooManyRequests {
-			refusal = rec.Body.String()
+			refusal = rec
 			break
 		}
 		require.Equal(t, http.StatusConflict, rec.Code, "body: %s", rec.Body.String())
 	}
 
-	require.Contains(t, refusal, "monthly invitation limit",
+	require.NotNil(t, refusal, "a budget of three must refuse the fourth invitation")
+	require.Contains(t, refusal.Body.String(), "monthly invitation limit",
 		"a budget of three must refuse the fourth invitation, and must say the "+
 			"instance is out of mail rather than pointing at the team")
+
+	body := decode[struct {
+		Errors []struct {
+			Location string `json:"location"`
+			Value    string `json:"value"`
+		} `json:"errors"`
+	}](t, refusal)
+	require.Len(t, body.Errors, 1)
+	require.Equal(t, "instance_monthly", body.Errors[0].Value)
 }
 
 func memberPath(f *tenancyFixture, user testUser) string {

@@ -19,6 +19,21 @@ export type AddMemberInputBody = {
     role: 'viewer' | 'editor' | 'admin' | 'owner';
 };
 
+export type AddedMember = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    created_at: string;
+    email: string;
+    /**
+     * True when an invitation email was sent; false when the address already had an account and was added directly, without any notification.
+     */
+    invited: boolean;
+    role: string;
+    user_id: string;
+};
+
 export type AuditEntry = {
     action: string;
     actor_user_id?: string;
@@ -282,10 +297,6 @@ export type MeOutputBody = {
 };
 
 export type Member = {
-    /**
-     * A URL to the JSON Schema for this object.
-     */
-    readonly $schema?: string;
     created_at: string;
     email: string;
     role: string;
@@ -536,6 +547,17 @@ export type AddMemberInputBodyWritable = {
     role: 'viewer' | 'editor' | 'admin' | 'owner';
 };
 
+export type AddedMemberWritable = {
+    created_at: string;
+    email: string;
+    /**
+     * True when an invitation email was sent; false when the address already had an account and was added directly, without any notification.
+     */
+    invited: boolean;
+    role: string;
+    user_id: string;
+};
+
 export type CreateDomainInputBodyWritable = {
     /**
      * A subdomain you control, e.g. links.verein.de. Not an apex.
@@ -704,13 +726,6 @@ export type MeOutputBodyWritable = {
     user_id: string;
 };
 
-export type MemberWritable = {
-    created_at: string;
-    email: string;
-    role: string;
-    user_id: string;
-};
-
 export type PageAuditEntryWritable = {
     items: Array<AuditEntry> | null;
     page: number;
@@ -740,7 +755,7 @@ export type PageLinkWritable = {
 };
 
 export type PageMemberWritable = {
-    items: Array<MemberWritable> | null;
+    items: Array<Member> | null;
     page: number;
     per_page: number;
     total_count: number;
@@ -1791,7 +1806,7 @@ export type AddTeamMemberResponses = {
     /**
      * Created
      */
-    201: Member;
+    201: AddedMember;
 };
 
 export type AddTeamMemberResponse = AddTeamMemberResponses[keyof AddTeamMemberResponses];

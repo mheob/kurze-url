@@ -48,9 +48,21 @@ type AddMemberInput struct {
 	}
 }
 
-// MemberOutput is the body shared by every single-member operation.
-type MemberOutput struct {
-	Body Member
+// AddedMember is the membership plus whether creating it sent an email.
+//
+// Not a field on Member: that type is also what listMembers returns, where
+// "was an email sent" has no meaning. The distinction matters to the caller
+// because the two paths through addMember differ in a way nobody else will
+// mention — an address that already had an account is added with no
+// notification at all, and the person finds out on their next login.
+type AddedMember struct {
+	Member
+	Invited bool `json:"invited" doc:"True when an invitation email was sent; false when the address already had an account and was added directly, without any notification."`
+}
+
+// AddMemberOutput is the body of POST /v1/teams/{team_id}/members.
+type AddMemberOutput struct {
+	Body AddedMember
 }
 
 // UpdateMemberInput is PATCH /v1/teams/{team_id}/members/{user_id}. Changing
@@ -155,7 +167,7 @@ func (d Deps) listMembers(ctx context.Context, in *ListMembersInput) (*ListMembe
 // the team directly, with no email — that person simply sees the new team
 // on next login. There is no notification for that second path; that is a
 // known gap, not a bug, because there is no notification system yet.
-func (d Deps) addMember(ctx context.Context, in *AddMemberInput) (*MemberOutput, error) {
+func (d Deps) addMember(ctx context.Context, in *AddMemberInput) (*AddMemberOutput, error) {
 	actor := in.Member()
 
 	role, err := authz.ParseRole(in.Body.Role)
@@ -217,11 +229,14 @@ func (d Deps) addMember(ctx context.Context, in *AddMemberInput) (*MemberOutput,
 		return nil, huma.Error500InternalServerError("could not add the member")
 	}
 
-	return &MemberOutput{Body: Member{
-		UserID:    userID,
-		Email:     in.Body.Email,
-		Role:      role.String(),
-		CreatedAt: createdAt,
+	return &AddMemberOutput{Body: AddedMember{
+		Member: Member{
+			UserID:    userID,
+			Email:     in.Body.Email,
+			Role:      role.String(),
+			CreatedAt: createdAt,
+		},
+		Invited: invited,
 	}}, nil
 }
 
@@ -251,7 +266,16 @@ func (d Deps) allowInvite(ctx context.Context, teamID uuid.UUID) error {
 		return huma.Error500InternalServerError("could not check the invitation rate limit")
 	}
 	if !allowed {
-		return huma.Error429TooManyRequests("too many invitations for this team; try again later")
+		// The token, not the message, is what apps/web reads to tell this
+		// refusal from the instance-wide one below — they mean "wait a while"
+		// and "ask the maintainer", which are different instructions. Location
+		// is "path.team_id" because it is this operation's only path
+		// parameter, which is what makes it a stable key; the same
+		// ErrorDetail.Value escape hatch deleteDomain uses for its blocking
+		// link count.
+		return huma.Error429TooManyRequests(
+			"too many invitations for this team; try again later",
+			&huma.ErrorDetail{Location: "path.team_id", Value: "team_hourly"})
 	}
 
 	allowed, _, err = d.Cache.Allow(ctx, "rl:invite:global",
@@ -269,7 +293,8 @@ func (d Deps) allowInvite(ctx context.Context, teamID uuid.UUID) error {
 		d.Log.Error("instance-wide invitation budget exhausted",
 			"limit", d.Config.InviteGlobalRateLimitPerMonth, "team_id", teamID)
 		return huma.Error429TooManyRequests(
-			"this instance has reached its monthly invitation limit; ask the maintainer")
+			"this instance has reached its monthly invitation limit; ask the maintainer",
+			&huma.ErrorDetail{Location: "path.team_id", Value: "instance_monthly"})
 	}
 
 	return nil
