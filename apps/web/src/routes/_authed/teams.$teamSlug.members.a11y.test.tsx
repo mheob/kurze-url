@@ -131,6 +131,7 @@ describe('the members page', () => {
 			<MembersPageBody
 				currentRole="owner"
 				currentUserId="user-a"
+				failedUserId={null}
 				inviteFailure={null}
 				invitePending={false}
 				inviteResult={null}
@@ -168,6 +169,7 @@ describe('the members page', () => {
 			<MembersPageBody
 				currentRole="owner"
 				currentUserId="user-a"
+				failedUserId={null}
 				inviteFailure={null}
 				invitePending={false}
 				inviteResult={null}

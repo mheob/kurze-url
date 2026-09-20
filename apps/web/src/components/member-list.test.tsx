@@ -58,6 +58,7 @@ describe(MemberList, () => {
 			<MemberList
 				actorRole="viewer"
 				currentUserId="u9"
+				failedUserId={null}
 				failure={null}
 				members={[member({ role: 'owner', user_id: 'u1' })]}
 				onRemove={noop}
@@ -73,6 +74,7 @@ describe(MemberList, () => {
 			<MemberList
 				actorRole="viewer"
 				currentUserId="u9"
+				failedUserId={null}
 				failure={null}
 				members={[member()]}
 				onRemove={noop}
@@ -89,6 +91,7 @@ describe(MemberList, () => {
 			<MemberList
 				actorRole="admin"
 				currentUserId="u1"
+				failedUserId={null}
 				failure={null}
 				members={[member()]}
 				onRemove={noop}
@@ -104,6 +107,7 @@ describe(MemberList, () => {
 			<MemberList
 				actorRole="admin"
 				currentUserId="u9"
+				failedUserId={null}
 				failure={null}
 				members={[member({ email: '' })]}
 				onRemove={noop}
@@ -120,6 +124,7 @@ describe(MemberList, () => {
 			<MemberList
 				actorRole="admin"
 				currentUserId="u9"
+				failedUserId={null}
 				failure={null}
 				members={[member()]}
 				onRemove={noop}
@@ -138,6 +143,7 @@ describe(MemberList, () => {
 			<MemberList
 				actorRole="admin"
 				currentUserId="u9"
+				failedUserId={null}
 				failure={null}
 				members={[member({ role: 'owner' })]}
 				onRemove={noop}
@@ -149,6 +155,30 @@ describe(MemberList, () => {
 		expect(screen.queryByRole('button', { name: 'Remove' })).not.toBeInTheDocument();
 	});
 
+	// The design spec (`docs/superpowers/specs/2026-09-20-members-page-design.md`,
+	// "What stays untyped, and why") leans on the role select never offering
+	// `owner` to anyone below owner: `MemberInviteForm` already restricts its
+	// own role list to `rolesAssignableBy(currentRole)`, and this pins that
+	// `MemberList`'s row select does the same, rather than mapping the full
+	// `TEAM_ROLES`. Without it, an admin picking "Owner" on a manageable row
+	// gets a 403 the UI never explains, reported as a generic "list changed"
+	// race that never happened.
+	it('does not offer an admin the owner role on a manageable row', () => {
+		renderWithI18n(
+			<MemberList
+				actorRole="admin"
+				currentUserId="u9"
+				failedUserId={null}
+				failure={null}
+				members={[member()]}
+				onRemove={noop}
+				onRoleChange={noop}
+				pendingUserId={null}
+			/>,
+		);
+		expect(screen.queryByRole('option', { name: 'Owner' })).not.toBeInTheDocument();
+	});
+
 	// The server holds the lock; this only avoids offering a control that is
 	// certain to be refused.
 	it('locks the only owner even for another owner', () => {
@@ -156,6 +186,7 @@ describe(MemberList, () => {
 			<MemberList
 				actorRole="owner"
 				currentUserId="u9"
+				failedUserId={null}
 				failure={null}
 				members={[
 					member({ role: 'owner', user_id: 'u1' }),
@@ -170,7 +201,14 @@ describe(MemberList, () => {
 		const ownerRow = screen.getByText('a@verein.test').closest('tr');
 		expect(ownerRow).not.toBeNull();
 		assertElement(ownerRow);
-		expect(within(ownerRow).getByLabelText('Role for a@verein.test')).toBeDisabled();
+		const ownerSelect = within(ownerRow).getByLabelText('Role for a@verein.test');
+		expect(ownerSelect).toBeDisabled();
+		// Pins that deriving the select's options from `rolesAssignableBy`
+		// rather than the full `TEAM_ROLES` list did not lose the one case that
+		// still needs `owner` in it: an owner viewing the team's sole owner
+		// still sees that row's own role selected, because `rolesAssignableBy`
+		// for an owner returns every role.
+		expect(ownerSelect).toHaveValue('owner');
 		expect(
 			within(ownerRow).getByText('A team must always have at least one owner.'),
 		).toBeInTheDocument();
@@ -182,6 +220,7 @@ describe(MemberList, () => {
 			<MemberList
 				actorRole="admin"
 				currentUserId="u9"
+				failedUserId={null}
 				failure={null}
 				members={[member()]}
 				onRemove={onRemove}
@@ -197,16 +236,25 @@ describe(MemberList, () => {
 		expect(onRemove).toHaveBeenCalledWith('u1');
 	});
 
-	it('shows a failure against the row it happened on', () => {
+	it('shows a failure against the row it happened on, and leaves it usable', () => {
+		// `pendingUserId={null}` alongside `failedUserId="u2"` is the point of
+		// this test: an earlier version correlated both the alert and the
+		// disabled state to one `pendingUserId` slot, which left a failed row
+		// stuck disabled with no way to retry it until a different row was
+		// touched or the page reloaded. The route now clears `pendingUserId` in
+		// `onError` and sets `failedUserId` instead, so this state — failed,
+		// but not pending — is the real one a caller sees right after a
+		// role-change or remove request comes back refused.
 		renderWithI18n(
 			<MemberList
 				actorRole="admin"
 				currentUserId="u9"
+				failedUserId="u2"
 				failure="raced"
 				members={[member(), member({ email: 'b@verein.test', user_id: 'u2' })]}
 				onRemove={noop}
 				onRoleChange={noop}
-				pendingUserId="u2"
+				pendingUserId={null}
 			/>,
 		);
 
@@ -214,5 +262,6 @@ describe(MemberList, () => {
 		expect(row).not.toBeNull();
 		assertElement(row);
 		expect(within(row).getByRole('alert')).toHaveTextContent('list changed');
+		expect(within(row).getByRole('combobox')).toBeEnabled();
 	});
 });

@@ -106,6 +106,72 @@ describe(MemberInviteForm, () => {
 		expect(screen.getByRole('status')).toHaveTextContent('Invitation sent');
 	});
 
+	// Without this, the address stays in the field under the success banner
+	// and the button re-enables, so an accidental second click spends another
+	// unit of the instance's own invitation budget on a guaranteed 409 — see
+	// `RATE_LIMIT_INVITE_GLOBAL_PER_MONTH` in `apps/api/.env.example`.
+	it('resets the address and role after a successful add', async () => {
+		const onSubmit = vi.fn<(values: InviteValues) => void>();
+		const { rerender } = renderForm({
+			failure: null,
+			onSubmit,
+			pending: false,
+			result: null,
+			roles,
+		});
+
+		await userEvent.type(screen.getByLabelText('Email address'), 'neu@verein.test');
+		await userEvent.selectOptions(screen.getByLabelText('Role'), 'editor');
+
+		// Simulates the route's own `onSuccess`: `result` flips from `null` to
+		// the successful add, the same transition `clearStatusSlots` and
+		// `inviteMutation.onSuccess` produce together in the real page.
+		rerender(
+			<I18nextProvider i18n={createI18n('en')}>
+				<MemberInviteForm
+					failure={null}
+					onSubmit={onSubmit}
+					pending={false}
+					roles={roles}
+					result={{ email: 'neu@verein.test', invited: true }}
+				/>
+			</I18nextProvider>,
+		);
+
+		expect(screen.getByLabelText('Email address')).toHaveValue('');
+		expect(screen.getByLabelText('Role')).toHaveValue('viewer');
+	});
+
+	it('does not reset the address after a refused add', async () => {
+		const onSubmit = vi.fn<(values: InviteValues) => void>();
+		const { rerender } = renderForm({
+			failure: null,
+			onSubmit,
+			pending: false,
+			result: null,
+			roles,
+		});
+
+		await userEvent.type(screen.getByLabelText('Email address'), 'neu@verein.test');
+
+		// Simulates the route's own `onError`: `result` stays `null`, only
+		// `failure` changes — the address must survive so the caller does not
+		// have to retype it while fixing whatever the failure was about.
+		rerender(
+			<I18nextProvider i18n={createI18n('en')}>
+				<MemberInviteForm
+					failure="alreadyMember"
+					onSubmit={onSubmit}
+					pending={false}
+					roles={roles}
+					result={null}
+				/>
+			</I18nextProvider>,
+		);
+
+		expect(screen.getByLabelText('Email address')).toHaveValue('neu@verein.test');
+	});
+
 	it('tells the two rate limits apart', () => {
 		const { rerender } = renderForm({
 			failure: 'teamBurst',

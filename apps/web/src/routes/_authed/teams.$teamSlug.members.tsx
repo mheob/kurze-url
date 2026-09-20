@@ -178,6 +178,8 @@ export interface MembersPageBodyProps {
 	readonly currentRole: string;
 	/** The signed-in person's own user id, from `GET /v1/me`. */
 	readonly currentUserId: string;
+	/** The row the last role-change or remove failure happened on, or `null` — separate from `pendingUserId` so a failed row does not stay disabled. */
+	readonly failedUserId: string | null;
 	/** The reason the last invite failed, or `null`. */
 	readonly inviteFailure: InviteFailureKind | null;
 	/** Disables the invite form's submit button while the invite is in flight. */
@@ -186,14 +188,14 @@ export interface MembersPageBodyProps {
 	readonly inviteResult: { readonly email: string; readonly invited: boolean } | null;
 	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `Member` is the generated `@kurze-url/api-client` type; see the file-level disable above.
 	readonly members: readonly Member[];
-	/** Set only for the row `pendingUserId` names — shared by the role-change and remove mutations, exactly as `MemberList` expects. */
+	/** The kind of the last role-change or remove failure, shown against the row `failedUserId` names. */
 	readonly mutationFailure: MutationFailureKind | null;
 	readonly onInvite: (values: { readonly email: string; readonly role: TeamRole }) => void;
 	readonly onRemove: (userId: string) => void;
 	readonly onRoleChange: (userId: string, role: TeamRole) => void;
-	/** The id of the member a role-change or remove mutation is in flight (or just settled) for. */
+	/** The id of the member a role-change or remove mutation is currently in flight for. */
 	readonly pendingUserId: string | null;
-	/** The address of the member the last successful removal took out, for `members.removed`. */
+	/** The address of the member the last successful removal took out, for `members.removed`; `''` for an account with no address on file. */
 	readonly removedEmail: string | null;
 	/** Whether the last role-change mutation succeeded, for `members.roleChanged`. */
 	readonly roleChanged: boolean;
@@ -215,15 +217,16 @@ export interface MembersPageBodyProps {
  * @param props - The component's props.
  * @param props.currentRole - The signed-in member's own role on this team.
  * @param props.currentUserId - The signed-in person's own user id.
+ * @param props.failedUserId - The row the last role-change or remove failure happened on, or `null`.
  * @param props.inviteFailure - The reason the last invite failed, or `null`.
  * @param props.invitePending - Disables the invite form's submit button while in flight.
  * @param props.inviteResult - The last successful add.
  * @param props.members - The team's members, already fetched by the caller.
- * @param props.mutationFailure - Set only for the row `pendingUserId` names.
+ * @param props.mutationFailure - The kind of the last failure, shown against the row `failedUserId` names.
  * @param props.onInvite - Submits an invite with the given address and role.
  * @param props.onRemove - Removes the member with the given user id.
  * @param props.onRoleChange - Changes the member with the given user id to the given role.
- * @param props.pendingUserId - The id of the member a mutation is in flight (or just settled) for.
+ * @param props.pendingUserId - The id of the member a mutation is currently in flight for.
  * @param props.removedEmail - The address the last successful removal took out.
  * @param props.roleChanged - Whether the last role-change mutation succeeded.
  * @returns The rendered page body.
@@ -231,6 +234,7 @@ export interface MembersPageBodyProps {
 export function MembersPageBody({
 	currentRole,
 	currentUserId,
+	failedUserId,
 	inviteFailure,
 	invitePending,
 	inviteResult,
@@ -258,6 +262,7 @@ export function MembersPageBody({
 			<MemberList
 				actorRole={currentRole}
 				currentUserId={currentUserId}
+				failedUserId={failedUserId}
 				failure={mutationFailure}
 				members={members}
 				onRemove={onRemove}
@@ -266,7 +271,11 @@ export function MembersPageBody({
 			/>
 			{roleChanged ? <output>{t('members.roleChanged')}</output> : null}
 			{removedEmail === null ? null : (
-				<output>{t('members.removed', { email: removedEmail })}</output>
+				<output>
+					{t('members.removed', {
+						email: removedEmail === '' ? t('members.unknownAddress') : removedEmail,
+					})}
+				</output>
 			)}
 		</>
 	);
@@ -291,15 +300,39 @@ function RouteComponent(): React.JSX.Element {
 		readonly invited: boolean;
 	} | null>(null);
 
-	// One shared pair for both the role-change and the remove mutation,
-	// mirroring `MemberList`'s own one-slot correlation
-	// (`pendingUserId`/`failure`): only one of the two is ever in flight for a
-	// given row at a time, so there is nothing a second pair of slots would
-	// let this page say that this one cannot.
+	// `pendingUserId` and `failedUserId` answer two different questions about
+	// the same row-scoped mutation pair (role-change and remove share both,
+	// mirroring `MemberList`'s own split): `pendingUserId` is "which row has a
+	// request in flight right now" and is cleared in both `onError` and
+	// `onSuccess`, so a failed row is never stuck disabled; `failedUserId` is
+	// "which row did the last failure happen on" and is cleared only by
+	// `clearStatusSlots` below, at the start of the next mutation, so the
+	// failed row keeps its alert until something new is attempted. Only one of
+	// the two mutations is ever in flight for a given row at a time, so there
+	// is nothing a second pair of slots per mutation would let this page say
+	// that this one cannot.
 	const [pendingUserId, setPendingUserId] = useState<string | null>(null);
+	const [failedUserId, setFailedUserId] = useState<string | null>(null);
 	const [mutationFailure, setMutationFailure] = useState<MutationFailureKind | null>(null);
 	const [roleChanged, setRoleChanged] = useState(false);
 	const [removedEmail, setRemovedEmail] = useState<string | null>(null);
+
+	/**
+	 * Clears every banner and row-failure slot this page owns — invite's own
+	 * two, and the role-change/remove pair's three — so that starting a new
+	 * action of any kind never leaves a stale result from a different action
+	 * standing. Deliberately not `pendingUserId`: that slot belongs to
+	 * whichever mutation is about to start, which sets it itself right after
+	 * calling this.
+	 */
+	function clearStatusSlots(): void {
+		setInviteFailure(null);
+		setInviteResult(null);
+		setMutationFailure(null);
+		setFailedUserId(null);
+		setRoleChanged(false);
+		setRemovedEmail(null);
+	}
 
 	const inviteMutation = useMutation({
 		mutationFn: async (values: { readonly email: string; readonly role: TeamRole }) =>
@@ -323,13 +356,19 @@ function RouteComponent(): React.JSX.Element {
 	const roleMutation = useMutation({
 		mutationFn: async (input: { readonly role: TeamRole; readonly userId: string }) =>
 			updateMemberRoleFn({ data: { role: input.role, teamId, userId: input.userId } }),
-		onError: (error: unknown) => {
+		onError: (error: unknown, variables) => {
 			if (classifyApiError(error).kind === 'unauthenticated') {
 				void router.navigate({ to: '/login' });
 				return;
 			}
 			const kind = classifyMutationFailure(error);
 			setMutationFailure(kind);
+			setFailedUserId(variables.userId);
+			// Clearing this here, not only in `onSuccess`, is the fix for a
+			// failed row getting stuck disabled with no way to retry it: the
+			// disabling and the alert now come from two different slots, and
+			// this one belongs to "in flight", not "failed".
+			setPendingUserId(null);
 			// A raced 403/404 means the row this page is showing is already
 			// stale — refetching is what makes "the member list changed while
 			// you were working" (`members.errorRaced`) true rather than a
@@ -340,6 +379,7 @@ function RouteComponent(): React.JSX.Element {
 		},
 		onSuccess: async () => {
 			setMutationFailure(null);
+			setFailedUserId(null);
 			setPendingUserId(null);
 			setRoleChanged(true);
 			await queryClient.invalidateQueries({ queryKey: membersQueryOptions(teamId).queryKey });
@@ -349,19 +389,22 @@ function RouteComponent(): React.JSX.Element {
 	const removeMutation = useMutation({
 		mutationFn: async (input: { readonly email: string; readonly userId: string }) =>
 			removeMemberFn({ data: { teamId, userId: input.userId } }),
-		onError: (error: unknown) => {
+		onError: (error: unknown, variables) => {
 			if (classifyApiError(error).kind === 'unauthenticated') {
 				void router.navigate({ to: '/login' });
 				return;
 			}
 			const kind = classifyMutationFailure(error);
 			setMutationFailure(kind);
+			setFailedUserId(variables.userId);
+			setPendingUserId(null);
 			if (kind === 'raced') {
 				void queryClient.invalidateQueries({ queryKey: membersQueryOptions(teamId).queryKey });
 			}
 		},
 		onSuccess: async (_data, variables) => {
 			setMutationFailure(null);
+			setFailedUserId(null);
 			setPendingUserId(null);
 			setRemovedEmail(variables.email);
 			await queryClient.invalidateQueries({ queryKey: membersQueryOptions(teamId).queryKey });
@@ -369,24 +412,20 @@ function RouteComponent(): React.JSX.Element {
 	});
 
 	function handleInvite(values: { readonly email: string; readonly role: TeamRole }): void {
-		setInviteFailure(null);
+		clearStatusSlots();
 		inviteMutation.mutate(values);
 	}
 
 	function handleRoleChange(userId: string, role: TeamRole): void {
+		clearStatusSlots();
 		setPendingUserId(userId);
-		setMutationFailure(null);
-		setRoleChanged(false);
-		setRemovedEmail(null);
 		roleMutation.mutate({ role, userId });
 	}
 
 	function handleRemove(userId: string): void {
 		const email = items.find((member) => member.user_id === userId)?.email ?? '';
+		clearStatusSlots();
 		setPendingUserId(userId);
-		setMutationFailure(null);
-		setRoleChanged(false);
-		setRemovedEmail(null);
 		removeMutation.mutate({ email, userId });
 	}
 
@@ -394,6 +433,7 @@ function RouteComponent(): React.JSX.Element {
 		<MembersPageBody
 			currentRole={currentRole}
 			currentUserId={me.user_id}
+			failedUserId={failedUserId}
 			inviteFailure={inviteFailure}
 			invitePending={inviteMutation.isPending}
 			inviteResult={inviteResult}

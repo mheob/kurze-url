@@ -23,9 +23,10 @@ function member(overrides: Partial<Member> = {}): Member {
 }
 
 const meta = {
-	// Shared across every story below: no mutation in flight unless a story says otherwise.
+	// Shared across every story below: no mutation in flight and no failure unless a story says otherwise.
 	args: {
 		currentUserId: 'u9',
+		failedUserId: null,
 		failure: null,
 		onRemove: fn<(userId: string) => void>(),
 		onRoleChange: fn<(userId: string, role: TeamRole) => void>(),
@@ -86,16 +87,22 @@ export const SoleOwner: StoryObj<typeof meta> = {
 	},
 };
 
-/** A role change lost the race with someone else's edit: the failure renders against the row it happened on. */
+/**
+ * A role change lost the race with someone else's edit: the failure renders
+ * against the row it happened on, and that row stays usable — `pendingUserId`
+ * is `null` here on purpose, since the mutation has already settled by the
+ * time a failure exists to show.
+ */
 export const RacedFailure: StoryObj<typeof meta> = {
 	args: {
 		actorRole: 'admin',
 		currentUserId: 'u9',
+		failedUserId: 'u2',
 		failure: 'raced',
 		members: [
 			member({ role: 'owner', user_id: 'u1' }),
 			member({ email: 'b@verein.test', role: 'editor', user_id: 'u2' }),
 		],
-		pendingUserId: 'u2',
+		pendingUserId: null,
 	},
 };

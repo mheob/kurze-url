@@ -1,11 +1,16 @@
 import type { PageMember } from '@kurze-url/api-client';
 import { isRedirect } from '@tanstack/react-router';
-import { describe, expect, it } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import { I18nextProvider } from 'react-i18next';
+import { describe, expect, it, vi } from 'vitest';
 
+import { createI18n } from '../../i18n';
+import type { TeamRole } from '../../lib/team-roles';
 import {
 	classifyInviteFailure,
 	classifyMutationFailure,
 	loadMembers,
+	MembersPageBody,
 } from './teams.$teamSlug.members';
 
 /** The one method `loadMembers` reaches through on `context.queryClient`. */
@@ -163,5 +168,40 @@ describe(classifyMutationFailure, () => {
 	it('maps anything else to unknown', () => {
 		expect(classifyMutationFailure({ status: 500 })).toBe('unknown');
 		expect(classifyMutationFailure(new Error('network'))).toBe('unknown');
+	});
+});
+
+describe(MembersPageBody, () => {
+	/**
+	 * `auth.users.email` is nullable for a phone-only account, and the API
+	 * flattens that to `''` on the wire. `MemberList`'s own table cell already
+	 * falls back to `members.unknownAddress` for it (`displayEmail`); this
+	 * pins that the "was removed" banner does the same, rather than
+	 * interpolating the empty string and rendering the bare sentence
+	 * `handleRemove`'s own `?? ''` would otherwise produce.
+	 */
+	it('falls back to the same "no address" sentence the table uses when a removed member had none', () => {
+		render(
+			<I18nextProvider i18n={createI18n('en')}>
+				<MembersPageBody
+					currentRole="owner"
+					currentUserId="user-a"
+					failedUserId={null}
+					inviteFailure={null}
+					invitePending={false}
+					inviteResult={null}
+					members={[]}
+					mutationFailure={null}
+					onInvite={vi.fn<(values: { readonly email: string; readonly role: TeamRole }) => void>()}
+					onRemove={vi.fn<(userId: string) => void>()}
+					onRoleChange={vi.fn<(userId: string, role: string) => void>()}
+					pendingUserId={null}
+					removedEmail=""
+					roleChanged={false}
+				/>
+			</I18nextProvider>,
+		);
+
+		expect(screen.getByText('No address on file was removed.')).toBeInTheDocument();
 	});
 });

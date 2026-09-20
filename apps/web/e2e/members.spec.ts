@@ -47,7 +47,14 @@ test('adds an existing account and says nobody was notified', async ({
 		await page.getByRole('button', { name: 'Add to team' }).click();
 
 		await expect(page.getByRole('status')).toContainText('are not notified');
-		await expect(page.getByText(second.email)).toBeVisible();
+		// Not `getByText(second.email)`: `members.invitedAddedSilently`'s own
+		// banner text contains the address too ("{{email}} is in the team
+		// now..."), so a bare text match can resolve against the banner alone —
+		// passing before the refetch ever puts a row in the table, which is not
+		// what this case claims to prove. Scoping to a table row, the same way
+		// `removes a member` below locates the row it acts on, asks the actual
+		// question: did the member land in the table.
+		await expect(page.getByRole('row').filter({ hasText: second.email })).toHaveCount(1);
 	} finally {
 		await second.cleanup();
 	}
@@ -84,7 +91,16 @@ test('removes a member', async ({ page, teamId, teamSlug }) => {
 		await remove.click();
 		await page.getByRole('button', { name: 'Yes, remove them' }).click();
 
-		await expect(page.getByText(second.email)).toBeHidden();
+		// Not `getByText(second.email)`: on a successful removal the route
+		// renders `<output>{t('members.removed', { email })}</output>`, whose
+		// English value ("{{email}} was removed.") contains the address too —
+		// a bare text match resolves against that banner as well as the row it
+		// briefly coexists with, a strict-mode violation, and once the
+		// invalidating refetch lands the banner alone still matches, so the
+		// assertion never settles on "hidden". `row` already names the table
+		// row this test acted on; asking whether it is gone is the actual
+		// question "removes a member" claims to answer.
+		await expect(row).toHaveCount(0);
 	} finally {
 		await second.cleanup();
 	}

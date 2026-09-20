@@ -6,7 +6,7 @@
    parameter explicitly as a `Readonly<{...}>` instead, the same as that file does. */
 
 import { useForm } from '@tanstack/react-form';
-import { useId } from 'react';
+import { useEffect, useId } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { isTeamRole, type TeamRole } from '../lib/team-roles';
@@ -147,6 +147,22 @@ export function MemberInviteForm({
 			onSubmit({ email: value.email.trim(), role: value.role });
 		},
 	});
+
+	// Resets the address and role back to their defaults after a successful
+	// add: `result` only ever flips from `null` to a value on success (a
+	// refused invite leaves it `null` — see `clearStatusSlots` in the route),
+	// so this never fires for a rejection and a caller fixing a typo does not
+	// lose what they typed. Without it, the address stays in the field under
+	// the "Invitation sent" banner and the button re-enables, so a second,
+	// accidental click spends another unit of the instance's own invitation
+	// budget (`RATE_LIMIT_INVITE_GLOBAL_PER_MONTH`) on a guaranteed 409.
+	// `link-form.tsx` gets away without this only because its route navigates
+	// away on success; this form's route does not.
+	useEffect(() => {
+		if (result !== null) form.reset();
+		// `form` is safe to list: `useForm` memoises the object it returns for
+		// this component's lifetime, so including it never causes an extra run.
+	}, [form, result]);
 
 	if (roles.length === 0) return null;
 
