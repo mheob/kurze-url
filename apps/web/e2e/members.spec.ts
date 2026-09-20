@@ -1,6 +1,7 @@
 import { expect } from '@playwright/test';
 
 import { test } from './fixtures/auth';
+import { waitForHydration } from './fixtures/hydration';
 import { removeMembershipOnly, seedSecondMember, setFixtureTeamRole } from './fixtures/seed';
 
 /* oxlint-disable typescript/prefer-readonly-parameter-types -- Playwright's own `Page`, nested
@@ -12,7 +13,17 @@ import { removeMembershipOnly, seedSecondMember, setFixtureTeamRole } from './fi
 test('lists the team members', async ({ page, teamSlug }) => {
 	await page.goto(`/teams/${teamSlug}/members`);
 	await expect(page.getByRole('heading', { name: 'Who has access' })).toBeVisible();
-	await expect(page.getByText('Owner')).toBeVisible();
+	// Not `getByText('Owner')`: the fixture team's one member is its sole owner,
+	// so `member-list.tsx` renders that row's role as a *disabled* select
+	// (`<option value="owner">Owner</option>`) plus the sibling sentence "A team
+	// must always have at least one owner." — both contain "Owner" as a
+	// case-insensitive substring, so a text match resolves to two elements and
+	// fails strict mode. Worse, the sentence alone would satisfy a text match
+	// even if role rendering were broken outright. Scoping to the table's own
+	// combobox and reading its actual value proves the row rendered the wire
+	// role instead: `MemberInviteForm`'s role select sits outside the table, so
+	// this is the table's only one.
+	await expect(page.getByRole('table').getByRole('combobox')).toHaveValue('owner');
 });
 
 test('adds an existing account and says nobody was notified', async ({
@@ -27,7 +38,12 @@ test('adds an existing account and says nobody was notified', async ({
 		await removeMembershipOnly(teamId, second.userId);
 
 		await page.goto(`/teams/${teamSlug}/members`);
-		await page.getByLabel('Email address').fill(second.email);
+		// Not decorative: `goto` resolves before React hydrates this
+		// `@tanstack/react-form` field — see `waitForHydration` and
+		// `create-link.ts`'s identical wait on its own destination field.
+		const email = page.getByLabel('Email address');
+		await waitForHydration(email);
+		await email.fill(second.email);
 		await page.getByRole('button', { name: 'Add to team' }).click();
 
 		await expect(page.getByRole('status')).toContainText('are not notified');
@@ -41,7 +57,13 @@ test('changes a member role', async ({ page, teamId, teamSlug }) => {
 	const second = await seedSecondMember(teamId, 'viewer');
 	try {
 		await page.goto(`/teams/${teamSlug}/members`);
-		await page.getByLabel(`Role for ${second.email}`).selectOption('editor');
+		// Not decorative: `goto` resolves before React hydrates this row's native
+		// select — see `waitForHydration`. `selectOption` dispatches a native
+		// `change` event the same way `fill` dispatches `input`, so it is just as
+		// silent when nothing is listening yet.
+		const roleSelect = page.getByLabel(`Role for ${second.email}`);
+		await waitForHydration(roleSelect);
+		await roleSelect.selectOption('editor');
 		await expect(page.getByRole('status')).toContainText('Role updated');
 	} finally {
 		await second.cleanup();
@@ -53,7 +75,13 @@ test('removes a member', async ({ page, teamId, teamSlug }) => {
 	try {
 		await page.goto(`/teams/${teamSlug}/members`);
 		const row = page.getByRole('row').filter({ hasText: second.email });
-		await row.getByRole('button', { name: 'Remove' }).click();
+		// Not decorative: `goto` resolves before React hydrates this button — see
+		// `waitForHydration` and `links.spec.ts`'s identical wait on its own
+		// remove button. A click in that window lands on a handler nothing has
+		// attached yet.
+		const remove = row.getByRole('button', { name: 'Remove' });
+		await waitForHydration(remove);
+		await remove.click();
 		await page.getByRole('button', { name: 'Yes, remove them' }).click();
 
 		await expect(page.getByText(second.email)).toBeHidden();
