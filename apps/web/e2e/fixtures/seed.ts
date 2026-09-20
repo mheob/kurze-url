@@ -453,3 +453,19 @@ export async function seedSecondMember(
 		userId,
 	};
 }
+
+/**
+ * Deletes one membership, leaving its auth user in place — so a spec can have
+ * an address that already has an account but is not yet in the team, which is
+ * the only safe shape for testing the invite path: an unknown address would
+ * make Supabase send real mail.
+ *
+ * @param teamId - The team to remove the membership from.
+ * @param userId - The member to remove.
+ * @returns Nothing; it resolves once the row is gone.
+ */
+export async function removeMembershipOnly(teamId: string, userId: string): Promise<void> {
+	await withDb(async (db) => {
+		await db.query('delete from team_member where team_id = $1 and user_id = $2', [teamId, userId]);
+	});
+}

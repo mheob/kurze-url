@@ -224,6 +224,7 @@ const AUTHENTICATED_PATHS = [
 	'stats-data',
 	'stats-disabled',
 	'audit-log',
+	'members',
 ] as const;
 
 /**
