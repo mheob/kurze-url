@@ -3,11 +3,6 @@
 	"extends": ["github>mheob/renovate-config"],
 	"packageRules": [
 		{
-			"description": "One weekly window for every update. The preset schedules dependencies, devDependencies and the package manager separately, and its non-major group puts dependencies and devDependencies in one branch; together with the two-hour Wednesday window this file used to set, not one pull request opened between 2026-09-01 and 2026-09-25.",
-			"matchPackageNames": ["*"],
-			"schedule": ["before 6am on monday"]
-		},
-		{
 			"description": "packages/api-client pins TypeScript 6 for its generator, which crashes on 7 (CLAUDE.md). CI never runs the generator, so a bump would pass every check and break the next regeneration.",
 			"matchFileNames": ["packages/api-client/package.json"],
 			"matchPackageNames": ["typescript"],
