@@ -112,6 +112,31 @@ function rejectingFetchLinkWith(
 	};
 }
 
+/**
+ * A `query` fake that always resolves with `STATS_FIXTURE` — the resolving
+ * counterpart of `rejectingQueryWith`, kept at module level for the same
+ * reason. Three tests used to declare this stub inline, each with its own copy
+ * of the suppression it carries, and oxlint 1.85's `consistent-function-scoping`
+ * began flagging those copies as closures that capture nothing.
+ *
+ * @returns The fixture statistics.
+ */
+// oxlint-disable-next-line typescript/require-await -- must satisfy `StatsDataSource.query`, which returns a `Promise<LinkStats>`; nothing here needs an `await`.
+async function resolveStats(): Promise<LinkStats> {
+	return STATS_FIXTURE;
+}
+
+/**
+ * A `fetchLink` fake that always resolves with the default `link()` — same
+ * reasoning as `resolveStats` above, for `loadLink`'s own parameter shape.
+ *
+ * @returns The fixture link.
+ */
+// oxlint-disable-next-line typescript/require-await -- must satisfy `loadLink`'s `LinkFetcher`-shaped parameter; nothing here needs an `await`.
+async function resolveLink(): Promise<Link> {
+	return link();
+}
+
 describe(statsView, () => {
 	// The single easiest thing to get wrong on this page. An empty document
 	// from a link with counting off means "not counted", not "not clicked",
@@ -182,10 +207,7 @@ describe(statsView, () => {
 
 describe(loadStats, () => {
 	it('returns the fetched stats when the API call succeeds', async () => {
-		// oxlint-disable-next-line typescript/require-await -- must satisfy `StatsDataSource.query`, which returns a `Promise<LinkStats>`; nothing here needs an `await`.
-		const query = async (): Promise<LinkStats> => STATS_FIXTURE;
-
-		await expect(loadStats({ query }, 'link-a', {})).resolves.toBe(STATS_FIXTURE);
+		await expect(loadStats({ query: resolveStats }, 'link-a', {})).resolves.toBe(STATS_FIXTURE);
 	});
 
 	/**
@@ -254,15 +276,10 @@ describe('a missing link 404s the same way regardless of which fetch reports it'
 
 describe(loadStatsPage, () => {
 	it('reports the loaded link together with its statistics', async () => {
-		// oxlint-disable-next-line typescript/require-await -- must satisfy `StatsDataSource.query`, which returns a `Promise<LinkStats>`; nothing here needs an `await`.
-		const query = async (): Promise<LinkStats> => STATS_FIXTURE;
-		// oxlint-disable-next-line typescript/require-await -- must satisfy `loadLink`'s `LinkFetcher`-shaped parameter; nothing here needs an `await`.
-		const fetchLink = async (): Promise<Link> => link();
-
 		const result = await loadStatsPage({
-			fetchLink,
+			fetchLink: resolveLink,
 			linkId: 'link-a',
-			queryClient: { query },
+			queryClient: { query: resolveStats },
 			window: {},
 		});
 
@@ -283,15 +300,11 @@ describe(loadStatsPage, () => {
 	 */
 	it('returns the instant it ran at, not one the caller has to supply', async () => {
 		const before = Date.now();
-		// oxlint-disable-next-line typescript/require-await -- must satisfy `StatsDataSource.query`, which returns a `Promise<LinkStats>`; nothing here needs an `await`.
-		const query = async (): Promise<LinkStats> => STATS_FIXTURE;
-		// oxlint-disable-next-line typescript/require-await -- must satisfy `loadLink`'s `LinkFetcher`-shaped parameter; nothing here needs an `await`.
-		const fetchLink = async (): Promise<Link> => link();
 
 		const { today } = await loadStatsPage({
-			fetchLink,
+			fetchLink: resolveLink,
 			linkId: 'link-a',
-			queryClient: { query },
+			queryClient: { query: resolveStats },
 			window: {},
 		});
 		const after = Date.now();

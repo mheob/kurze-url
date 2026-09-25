@@ -191,7 +191,13 @@ export function StatSeriesChart({
 								content={
 									// oxlint-disable-next-line react-perf/jsx-no-jsx-as-prop -- Recharts' own `content` render-prop idiom: `ChartTooltip`/`ChartLegend` clone and merge their own props onto this element. A stable reference would need a `useMemo` around a one-line static element per chart.
 									<ChartTooltipContent
-										labelFormatter={(value) => formatDay(String(value), language)}
+										labelFormatter={(value) =>
+											// Recharts types the label as `ReactNode`, which admits objects — and, in
+											// React 19, promises — so a bare `String()` could print `[object Object]`.
+											// Here it is always the X axis' ISO day; anything else has no meaning for
+											// this chart and renders no label.
+											typeof value === 'string' ? formatDay(value, language) : null
+										}
 									/>
 								}
 							/>
