@@ -1,5 +1,32 @@
 {
 	"$schema": "https://docs.renovatebot.com/renovate-schema.json",
 	"extends": ["github>mheob/renovate-config"],
-	"schedule": ["before 2am on Wednesday"]
+	"packageRules": [
+		{
+			"description": "One weekly window for every update. The preset schedules dependencies, devDependencies and the package manager separately, and its non-major group puts dependencies and devDependencies in one branch; together with the two-hour Wednesday window this file used to set, not one pull request opened between 2026-09-01 and 2026-09-25.",
+			"matchPackageNames": ["*"],
+			"schedule": ["before 6am on monday"]
+		},
+		{
+			"description": "Kodiak merges every pull request whose checks pass — require_automerge_label is false in mheob/.github's .github/.kodiak.toml — so a major would land unreviewed. It never merges a draft, and CI still runs on one: marking the pull request ready for review is the decision to merge.",
+			"matchUpdateTypes": ["major"],
+			"draftPR": true
+		},
+		{
+			"description": "packages/api-client pins TypeScript 6 for its generator, which crashes on 7 (CLAUDE.md). CI never runs the generator, so a bump would pass every check and break the next regeneration.",
+			"matchFileNames": ["packages/api-client/package.json"],
+			"matchPackageNames": ["typescript"],
+			"allowedVersions": "<7"
+		},
+		{
+			"description": "Held at the versions #91 pinned. router-core 1.171.30 changed interpolatePath's signature in a patch release and @storybook/tanstack-react 10.6.0 still calls the old form, so every story fails. Fixed by storybookjs/storybook#36333, in no release as of 2026-09-25. Remove this rule once Renovate proposes a @storybook/tanstack-react release that carries it, and move the four packages together.",
+			"matchPackageNames": [
+				"@tanstack/react-router",
+				"@tanstack/react-router-devtools",
+				"@tanstack/react-router-ssr-query",
+				"@tanstack/react-start"
+			],
+			"enabled": false
+		}
+	]
 }
