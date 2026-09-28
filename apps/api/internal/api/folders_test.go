@@ -231,3 +231,42 @@ func TestDeleteFolderRecordsWhichFolderWentInTheAuditRow(t *testing.T) {
 	require.Equal(t, "Sommerfest 2026", name,
 		"the audit row must name the folder, with its case intact")
 }
+
+func TestCreateFolderRejectsADuplicateNameIgnoringCase(t *testing.T) {
+	f := newTenancyFixture(t)
+	f.createFolder(t, "Sommerfest")
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPost,
+		"/v1/teams/"+f.teamID.String()+"/folders", map[string]any{"name": "SOMMERFEST"})
+
+	require.Equal(t, http.StatusConflict, rec.Code, "body: %s", rec.Body.String())
+}
+
+func TestUpdateFolderRejectsAnotherFoldersNameIgnoringCase(t *testing.T) {
+	f := newTenancyFixture(t)
+	f.createFolder(t, "Sommerfest")
+	other := f.createFolder(t, "Newsletter")
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPatch,
+		"/v1/folders/"+other.ID.String(), map[string]any{"name": "sommerfest"})
+
+	require.Equal(t, http.StatusConflict, rec.Code, "body: %s", rec.Body.String())
+}
+
+func TestUpdateFolderAllowsRecasingItsOwnName(t *testing.T) {
+	f := newTenancyFixture(t)
+	folder := f.createFolder(t, "sommerfest")
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPatch,
+		"/v1/folders/"+folder.ID.String(), map[string]any{"name": "Sommerfest"})
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+}
+
+func TestFolderNamesMayRepeatAcrossTeams(t *testing.T) {
+	f := newTenancyFixture(t)
+	other := newTenancyFixture(t)
+	f.createFolder(t, "Sommerfest")
+
+	other.createFolder(t, "Sommerfest") // createFolder itself requires 201
+}

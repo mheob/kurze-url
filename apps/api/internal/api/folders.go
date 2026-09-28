@@ -164,6 +164,10 @@ func (d Deps) createFolder(ctx context.Context, in *CreateFolderInput) (*FolderO
 	case errors.Is(err, errFolderCapReached):
 		return nil, huma.Error422UnprocessableEntity(
 			fmt.Sprintf("a team may have at most %d folders", maxFoldersPerTeam))
+	case isUniqueViolation(err):
+		// The index folds case, so this fires for "SOMMERFEST" against an
+		// existing "Sommerfest" as well as for an exact repeat.
+		return nil, huma.Error409Conflict("a folder with that name already exists")
 	case err != nil:
 		d.Log.Error("create folder", "error", err, "team_id", member.TeamID)
 		return nil, huma.Error500InternalServerError("could not create the folder")
@@ -249,6 +253,10 @@ func (d Deps) updateFolder(ctx context.Context, in *UpdateFolderInput) (*FolderO
 	})
 
 	switch {
+	case isUniqueViolation(err):
+		// The index folds case, so this fires for "SOMMERFEST" against an
+		// existing "Sommerfest" as well as for an exact repeat.
+		return nil, huma.Error409Conflict("a folder with that name already exists")
 	case errors.Is(err, pgx.ErrNoRows):
 		return nil, huma.Error404NotFound("folder not found")
 	case err != nil:
