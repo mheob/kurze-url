@@ -85,6 +85,11 @@ describe('translation catalogues', () => {
 			// "Admin" is the German word too — an established loanword, the same
 			// reasoning as `stats.browser`. The other three roles are translated.
 			'members.roleAdmin',
+			// A typographic en dash, the same reasoning as `stats.rangeSummary`
+			// above — not a word to translate, and given its own key rather than
+			// a literal in `link-list.tsx` only because `react/jsx-no-literals`
+			// is error-level project-wide (see the file's own comment on it).
+			'links.folderNoneMark',
 		]);
 		const english = new Map(flatten(en));
 		const toCheck = flatten(de).filter(

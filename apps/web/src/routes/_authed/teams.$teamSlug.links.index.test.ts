@@ -2,7 +2,7 @@ import type { PageLink } from '@kurze-url/api-client';
 import { isRedirect } from '@tanstack/react-router';
 import { describe, expect, it } from 'vitest';
 
-import { loadLinks } from './teams.$teamSlug.links.index';
+import { folderChangeSearch, loadLinks, parseLinksSearch } from './teams.$teamSlug.links.index';
 
 /** The one method `loadLinks` reaches through on `context.queryClient`. */
 interface FakeQueryClient {
@@ -16,6 +16,47 @@ function page(overrides: Readonly<Partial<PageLink>> = {}): PageLink {
 
 function fakeQueryClient(ensureQueryData: FakeQueryClient['ensureQueryData']): FakeQueryClient {
 	return { ensureQueryData };
+}
+
+/**
+ * Narrows the options `loadLinks` hands `ensureQueryData` down to its
+ * `queryKey`, or `undefined` if it somehow has none — a type guard rather
+ * than an `as` assertion, since oxlint's `no-unsafe-type-assertion` is
+ * error-level and this is all "asks for the requested filter's query key"
+ * needs to know about the shape. The `if` lives here rather than inside that
+ * test's own callback for a second reason: oxlint's
+ * `vitest/no-conditional-in-test` is error-level too, and this function is
+ * declared outside every `it(...)` block.
+ *
+ * @param value - Whatever the fake `ensureQueryData` received.
+ * @returns The `queryKey` property, or `undefined`.
+ */
+function queryKeyOf(value: unknown): unknown {
+	if (typeof value === 'object' && value !== null && 'queryKey' in value) return value.queryKey;
+	return undefined;
+}
+
+/**
+ * Builds a fake `ensureQueryData` alongside a way to read back the
+ * `queryKey` it was last called with — a closure variable, not a mutable
+ * parameter a test would otherwise have to pass in, so there is nothing for
+ * `typescript/prefer-readonly-parameter-types` (error-level) to catch either.
+ *
+ * @returns The fake to hand `fakeQueryClient`, and `capturedKey`, which reads back what it was called with.
+ */
+function capturingEnsureQueryData(): {
+	readonly capturedKey: () => unknown;
+	readonly ensureQueryData: FakeQueryClient['ensureQueryData'];
+} {
+	let key: unknown;
+	return {
+		capturedKey: () => key,
+		// oxlint-disable-next-line typescript/require-await -- stands in for `FakeQueryClient.ensureQueryData`, which `loadLinks` awaits; the fake has nothing to await itself.
+		ensureQueryData: async (options: unknown) => {
+			key = queryKeyOf(options);
+			return page();
+		},
+	};
 }
 
 /**
@@ -66,7 +107,32 @@ describe(loadLinks, () => {
 		// oxlint-disable-next-line typescript/require-await -- stands in for `FakeQueryClient.ensureQueryData`, which `loadLinks` awaits; the fake has nothing to await itself.
 		const queryClient = fakeQueryClient(async () => data);
 
-		await expect(loadLinks(queryClient, 'team-a', 1)).resolves.toBe(data);
+		await expect(
+			loadLinks(queryClient, 'team-a', { filter: { kind: 'all' }, page: 1 }),
+		).resolves.toBe(data);
+	});
+
+	/**
+	 * `loadLinks` gained a `filter` (Task 7) so the folder filter reaches the
+	 * same query the loader warms — two definitions of "which links this page
+	 * needs" would drift, the same reasoning `linksQueryOptions`'s own
+	 * docstring gives for keying on `filter` at all. This pins that the filter
+	 * actually reaches the query key, not only that `loadLinks` accepts it
+	 * without using it.
+	 *
+	 * `capturingEnsureQueryData` is what actually reads `options.queryKey`;
+	 * this test only ever reads the plain `capturedKey.value` property it
+	 * wrote, so there is no `if`/`as` in the test's own callback for
+	 * `vitest/no-conditional-in-test` or `typescript/no-unsafe-type-assertion`
+	 * (both error-level) to catch.
+	 */
+	it("asks for the requested filter's query key", async () => {
+		const { capturedKey, ensureQueryData } = capturingEnsureQueryData();
+		const queryClient = fakeQueryClient(ensureQueryData);
+
+		await loadLinks(queryClient, 'team-a', { filter: { kind: 'unfiled' }, page: 1 });
+
+		expect(capturedKey()).toStrictEqual(['links', 'team-a', 1, { kind: 'unfiled' }]);
 	});
 
 	/**
@@ -87,7 +153,9 @@ describe(loadLinks, () => {
 			throw { status: 401 };
 		});
 
-		const error = await rejected(async () => loadLinks(queryClient, 'team-a', 1));
+		const error = await rejected(async () =>
+			loadLinks(queryClient, 'team-a', { filter: { kind: 'all' }, page: 1 }),
+		);
 
 		expect(isRedirect(error)).toBe(true);
 		expect(redirectTarget(error)).toBe('/login');
@@ -107,6 +175,32 @@ describe(loadLinks, () => {
 			throw boom;
 		});
 
-		await expect(loadLinks(queryClient, 'team-a', 1)).rejects.toBe(boom);
+		await expect(
+			loadLinks(queryClient, 'team-a', { filter: { kind: 'all' }, page: 1 }),
+		).rejects.toBe(boom);
+	});
+});
+
+describe(parseLinksSearch, () => {
+	it('parses folder and page together', () => {
+		expect(parseLinksSearch({ folder: 'none', page: '2' })).toStrictEqual({
+			folder: 'none',
+			page: 2,
+		});
+	});
+
+	it('drops an invalid folder and falls back to page 1', () => {
+		expect(parseLinksSearch({ folder: 'garbage' })).toStrictEqual({ folder: undefined, page: 1 });
+	});
+});
+
+describe(folderChangeSearch, () => {
+	/** Pins Review Focus 5: a new filter always starts at page 1, even if the reader was deep in an old filter's pagination. */
+	it('resets to page 1 for a chosen folder', () => {
+		expect(folderChangeSearch('f1')).toStrictEqual({ folder: 'f1', page: 1 });
+	});
+
+	it('resets to page 1 for "all folders"', () => {
+		expect(folderChangeSearch(undefined)).toStrictEqual({ folder: undefined, page: 1 });
 	});
 });
