@@ -2,6 +2,7 @@ import type { PageFolder } from '@kurze-url/api-client';
 import { http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { statusOf } from '../lib/api-errors';
 import { server } from '../test/msw';
 
 /* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding of this rule in this
@@ -138,9 +139,19 @@ describe('folder server functions', () => {
 			),
 		);
 
-		await expect(
-			createFolderFor(new Request('http://localhost/'), 'team-a', 'Sommerfest'),
-		).rejects.toBeDefined();
+		// The status, not just "something was thrown": folderFailureOf
+		// (lib/folders.ts) reads it straight off the rejection with statusOf,
+		// so a rejection that resolved with the wrong shape would leave every
+		// folder write misclassified as unknown rather than "name taken", and
+		// `rejects.toBeDefined()` alone would not have caught that.
+		let caught: unknown;
+		try {
+			await createFolderFor(new Request('http://localhost/'), 'team-a', 'Sommerfest');
+		} catch (error) {
+			caught = error;
+		}
+
+		expect(statusOf(caught)).toBe(409);
 	});
 });
 

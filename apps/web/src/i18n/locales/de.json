@@ -191,7 +191,7 @@
 		"deleteLabel": "Ordner {{name}} löschen",
 		"deleteQuestion": "Ordner „{{name}}“ löschen? Die Links darin bleiben erhalten und sind danach ohne Ordner.",
 		"nameTaken": "Einen Ordner mit diesem Namen gibt es schon.",
-		"capReached": "Ein Team kann höchstens 100 Ordner haben.",
+		"capReached": "Ein Verein kann höchstens 100 Ordner haben.",
 		"nameInvalid": "Gib einen Namen mit 1 bis 60 Zeichen ein.",
 		"notFound": "Diesen Ordner gibt es nicht mehr."
 	},

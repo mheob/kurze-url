@@ -65,7 +65,16 @@ test('files a link into a folder, filters by it, renames and deletes it', async 
 	// make that preselection look correct for the wrong reason.
 	const destination = page.getByLabel(/destination/iu);
 	await waitForHydration(destination);
-	await expect(page.getByRole('combobox', { name: 'Folder' })).toHaveValue(/.+/u);
+	// The preselected *option*, not merely "some value": `toHaveValue` alone
+	// would still pass if the select silently fell back to its first option
+	// while the underlying id stayed something else (the exact "DOM says one
+	// thing, state says another" failure `initialFolderId`'s own review found
+	// in the link form's folder field) — asserting the selected option's own
+	// text against the created folder's name is what proves the right folder
+	// actually got picked, not just that something is selected.
+	await expect(page.getByRole('combobox', { name: 'Folder' }).locator('option:checked')).toHaveText(
+		name,
+	);
 
 	const destinationUrl = `https://example.org/folders-${Date.now()}`;
 	await destination.fill(destinationUrl);
@@ -85,6 +94,12 @@ test('files a link into a folder, filters by it, renames and deletes it', async 
 
 	const filteredResults = await new AxeBuilder({ page }).analyze();
 	expect(filteredResults.violations).toEqual([]);
+
+	// Spec step 3's other half — "then to 'No folder'" — exercised through the
+	// same filter select, not only by URL at the very end: the link created
+	// above is filed into the new folder, so it must not appear here yet.
+	await filter.selectOption({ label: 'No folder' });
+	await expect(page.getByText(destinationUrl)).not.toBeVisible();
 
 	await page.goto(`/teams/${teamSlug}/folders`);
 	await waitForHydration(page.getByLabel('Folder name'));
@@ -106,8 +121,11 @@ test('files a link into a folder, filters by it, renames and deletes it', async 
 	await expect(page.getByRole('link', { name: renamed })).toHaveCount(0);
 
 	// Deleting a folder keeps its links, unfiled (`folders.deleteQuestion`) —
-	// the link this test created above should now show up under "no folder"
-	// rather than disappearing.
+	// the link this test created above should now show up filtered to "no
+	// folder", where it was deliberately absent earlier in this same test.
+	// Asserted by its own destination URL, not a generic "No folder" cell:
+	// this suite runs against a shared preview database, where some other
+	// link could easily also be unfiled and match a loose text search first.
 	await page.goto(`/teams/${teamSlug}/links?folder=none`);
-	await expect(page.getByRole('cell', { name: 'No folder' }).first()).toBeAttached();
+	await expect(page.getByText(destinationUrl)).toBeVisible();
 });
