@@ -486,7 +486,6 @@
 					"expires_at",
 					"has_password",
 					"analytics_enabled",
-					"folder_id",
 					"tags",
 					"created_by",
 					"created_at",
@@ -2708,6 +2707,16 @@
 						"schema": {
 							"description": "Restrict to links carrying one tag, as a UUID.",
 							"type": "string"
+						}
+					},
+					{
+						"description": "Only links without a folder. Cannot be combined with folder_id.",
+						"explode": false,
+						"in": "query",
+						"name": "unfiled",
+						"schema": {
+							"description": "Only links without a folder. Cannot be combined with folder_id.",
+							"type": "boolean"
 						}
 					},
 					{

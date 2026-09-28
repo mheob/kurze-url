@@ -42,11 +42,14 @@ type Link struct {
 	ExpiresAt        *time.Time `json:"expires_at"`
 	HasPassword      bool       `json:"has_password"`
 	AnalyticsEnabled bool       `json:"analytics_enabled"`
-	FolderID         *uuid.UUID `json:"folder_id"`
-	Tags             []Tag      `json:"tags"`
-	CreatedBy        uuid.UUID  `json:"created_by"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
+	// omitempty, not a bare tag: uuid.UUID is not a scalar to Huma, so without
+	// it the schema promised a required string while the wire sent null
+	// (CLAUDE.md, Huma nullability).
+	FolderID  *uuid.UUID `json:"folder_id,omitempty"`
+	Tags      []Tag      `json:"tags"`
+	CreatedBy uuid.UUID  `json:"created_by"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
 }
 
 // linkRow is the shape every link query returns. sqlc generates a distinct Go
@@ -267,8 +270,10 @@ func (d Deps) resolveFolderRef(
 		TeamID: teamID, ID: *folderID,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, huma.Error422UnprocessableEntity(
-			fmt.Sprintf("no folder %s in this team", folderID))
+		message := fmt.Sprintf("no folder %s in this team", folderID)
+		return nil, huma.Error422UnprocessableEntity(message, &huma.ErrorDetail{
+			Location: "body.folder_id", Message: message, Value: folderID.String(),
+		})
 	}
 	if err != nil {
 		return nil, fmt.Errorf("resolve folder reference: %w", err)
@@ -637,6 +642,7 @@ type ListLinksInput struct {
 	DomainID string `query:"domain_id" doc:"Restrict to one domain, as a UUID."`
 	FolderID string `query:"folder_id" doc:"Restrict to one folder, as a UUID."`
 	TagID    string `query:"tag_id" doc:"Restrict to links carrying one tag, as a UUID."`
+	Unfiled  bool   `query:"unfiled" doc:"Only links without a folder. Cannot be combined with folder_id."`
 	Sort     string `query:"sort" enum:"created_at,-created_at" default:"-created_at" doc:"Newest first by default."`
 }
 
@@ -669,6 +675,10 @@ func (d Deps) listLinks(ctx context.Context, in *ListLinksInput) (*ListLinksOutp
 		}
 		params.DomainID, countParams.DomainID = &domainID, &domainID
 	}
+	if in.Unfiled && in.FolderID != "" {
+		return nil, huma.Error422UnprocessableEntity("unfiled cannot be combined with folder_id")
+	}
+	params.Unfiled, countParams.Unfiled = in.Unfiled, in.Unfiled
 	if in.FolderID != "" {
 		folderID, err := uuid.Parse(in.FolderID)
 		if err != nil {

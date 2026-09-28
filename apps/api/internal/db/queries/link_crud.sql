@@ -57,6 +57,7 @@ where l.team_id = sqlc.arg('team_id')
        or l.slug ilike '%' || sqlc.narg('q')::text || '%'
        or l.destination_url ilike '%' || sqlc.narg('q')::text || '%')
   and (sqlc.narg('folder_id')::uuid is null or l.folder_id = sqlc.narg('folder_id')::uuid)
+  and (not sqlc.arg('unfiled')::boolean or l.folder_id is null)
   and (sqlc.narg('tag_id')::uuid is null or exists (
         select 1 from link_tag lt
         where lt.link_id = l.id and lt.tag_id = sqlc.narg('tag_id')::uuid))
@@ -79,6 +80,7 @@ where l.team_id = sqlc.arg('team_id')
        or l.slug ilike '%' || sqlc.narg('q')::text || '%'
        or l.destination_url ilike '%' || sqlc.narg('q')::text || '%')
   and (sqlc.narg('folder_id')::uuid is null or l.folder_id = sqlc.narg('folder_id')::uuid)
+  and (not sqlc.arg('unfiled')::boolean or l.folder_id is null)
   and (sqlc.narg('tag_id')::uuid is null or exists (
         select 1 from link_tag lt
         where lt.link_id = l.id and lt.tag_id = sqlc.narg('tag_id')::uuid));

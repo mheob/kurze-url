@@ -23,9 +23,10 @@ where l.team_id = $1
        or l.slug ilike '%' || $4::text || '%'
        or l.destination_url ilike '%' || $4::text || '%')
   and ($5::uuid is null or l.folder_id = $5::uuid)
-  and ($6::uuid is null or exists (
+  and (not $6::boolean or l.folder_id is null)
+  and ($7::uuid is null or exists (
         select 1 from link_tag lt
-        where lt.link_id = l.id and lt.tag_id = $6::uuid))
+        where lt.link_id = l.id and lt.tag_id = $7::uuid))
 `
 
 type CountLinksForTeamParams struct {
@@ -34,6 +35,7 @@ type CountLinksForTeamParams struct {
 	DomainID *uuid.UUID
 	Q        *string
 	FolderID *uuid.UUID
+	Unfiled  bool
 	TagID    *uuid.UUID
 }
 
@@ -46,6 +48,7 @@ func (q *Queries) CountLinksForTeam(ctx context.Context, arg CountLinksForTeamPa
 		arg.DomainID,
 		arg.Q,
 		arg.FolderID,
+		arg.Unfiled,
 		arg.TagID,
 	)
 	var count int64
@@ -257,14 +260,15 @@ where l.team_id = $1
        or l.slug ilike '%' || $4::text || '%'
        or l.destination_url ilike '%' || $4::text || '%')
   and ($5::uuid is null or l.folder_id = $5::uuid)
-  and ($6::uuid is null or exists (
+  and (not $6::boolean or l.folder_id is null)
+  and ($7::uuid is null or exists (
         select 1 from link_tag lt
-        where lt.link_id = l.id and lt.tag_id = $6::uuid))
+        where lt.link_id = l.id and lt.tag_id = $7::uuid))
 order by
-  case when $7::boolean then l.created_at end asc,
-  case when not $7::boolean then l.created_at end desc,
+  case when $8::boolean then l.created_at end asc,
+  case when not $8::boolean then l.created_at end desc,
   l.id
-limit $9 offset $8
+limit $10 offset $9
 `
 
 type ListLinksForTeamParams struct {
@@ -273,6 +277,7 @@ type ListLinksForTeamParams struct {
 	DomainID *uuid.UUID
 	Q        *string
 	FolderID *uuid.UUID
+	Unfiled  bool
 	TagID    *uuid.UUID
 	SortAsc  bool
 	Offset   int32
@@ -310,6 +315,7 @@ func (q *Queries) ListLinksForTeam(ctx context.Context, arg ListLinksForTeamPara
 		arg.DomainID,
 		arg.Q,
 		arg.FolderID,
+		arg.Unfiled,
 		arg.TagID,
 		arg.SortAsc,
 		arg.Offset,
