@@ -35,6 +35,7 @@
 	"nav": {
 		"label": "Sections",
 		"links": "Links",
+		"folders": "Folders",
 		"domains": "Domains",
 		"auditLog": "History",
 		"members": "People",
@@ -161,6 +162,24 @@
 			"rateLimited": "Too many checks just now. Please wait a while before trying again.",
 			"unknown": "Could not check this domain right now. Please try again."
 		}
+	},
+	"folders": {
+		"heading": "Folders",
+		"intro": "Group your links. A link is in at most one folder.",
+		"empty": "No folders yet.",
+		"emptyEditorHint": "Create the first one above.",
+		"name": "Folder name",
+		"create": "Create folder",
+		"rename": "Rename",
+		"renameLabel": "Rename folder {{name}}",
+		"save": "Save",
+		"cancel": "Cancel",
+		"deleteLabel": "Delete folder {{name}}",
+		"deleteQuestion": "Delete folder \"{{name}}\"? The links in it are kept and will have no folder.",
+		"nameTaken": "A folder with this name already exists.",
+		"capReached": "A team can have at most 100 folders.",
+		"nameInvalid": "Enter a name of 1 to 60 characters.",
+		"notFound": "This folder no longer exists."
 	},
 	"audit": {
 		"heading": "History",

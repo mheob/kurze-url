@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next';
 
 import { LinkList } from '../../components/link-list';
 import { classifyApiError, type ApiFailure } from '../../lib/api-errors';
+import { parseFolderSearch } from '../../lib/folders';
 import { reportUnexpected } from '../../lib/observability';
 import { linksQueryOptions } from '../../server/links';
 import { requireTeamId } from '../_authed';
@@ -94,9 +95,18 @@ export const Route = createFileRoute('/_authed/teams/$teamSlug/links/')({
 	// `validateSearch`'s return type, and moving this later made that
 	// inference fall back to `{}`, failing `deps.page` below with "Property
 	// 'page' does not exist" — confirmed by moving it back and forth.
-	validateSearch: (search: { page?: number | string } & SearchSchemaInput): { page: number } => {
+	// `folder` is a stub for now: Task 7 declares the loader/query side of this
+	// filter and wires `deps`/`loader` through it. Parsed here already so that
+	// `FolderList`'s `search={{ folder: folder.id }}` typechecks against this
+	// route's own search schema in the meantime.
+	validateSearch: (
+		search: { folder?: unknown; page?: number | string } & SearchSchemaInput,
+	): { folder?: string; page: number } => {
 		const page = Number(search.page ?? 1);
-		return { page: Number.isFinite(page) && page > 0 ? page : 1 };
+		const folder = parseFolderSearch(search.folder);
+		return folder === undefined
+			? { page: Number.isFinite(page) && page > 0 ? page : 1 }
+			: { folder, page: Number.isFinite(page) && page > 0 ? page : 1 };
 	},
 	beforeLoad: ({ context, params }) => ({
 		teamId: requireTeamId(context.me.memberships, params.teamSlug),

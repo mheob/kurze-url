@@ -35,6 +35,7 @@
 	"nav": {
 		"label": "Bereiche",
 		"links": "Kurzlinks",
+		"folders": "Ordner",
 		"domains": "Eigene Domains",
 		"auditLog": "Verlauf",
 		"members": "Mitglieder",
@@ -161,6 +162,24 @@
 			"rateLimited": "Gerade wurden zu viele Prüfungen ausgelöst. Warte eine Weile und versuch es dann noch mal.",
 			"unknown": "Die Domain konnte gerade nicht geprüft werden. Versuch es noch mal."
 		}
+	},
+	"folders": {
+		"heading": "Ordner",
+		"intro": "Ordne deine Links. Ein Link liegt in höchstens einem Ordner.",
+		"empty": "Noch keine Ordner.",
+		"emptyEditorHint": "Lege oben den ersten an.",
+		"name": "Ordnername",
+		"create": "Ordner anlegen",
+		"rename": "Umbenennen",
+		"renameLabel": "Ordner {{name}} umbenennen",
+		"save": "Speichern",
+		"cancel": "Abbrechen",
+		"deleteLabel": "Ordner {{name}} löschen",
+		"deleteQuestion": "Ordner „{{name}}“ löschen? Die Links darin bleiben erhalten und sind danach ohne Ordner.",
+		"nameTaken": "Einen Ordner mit diesem Namen gibt es schon.",
+		"capReached": "Ein Team kann höchstens 100 Ordner haben.",
+		"nameInvalid": "Gib einen Namen mit 1 bis 60 Zeichen ein.",
+		"notFound": "Diesen Ordner gibt es nicht mehr."
 	},
 	"audit": {
 		"heading": "Verlauf",
