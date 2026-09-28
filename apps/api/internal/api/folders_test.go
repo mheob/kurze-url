@@ -42,11 +42,11 @@ func (f *tenancyFixture) createFolder(t *testing.T, name string) folderBody {
 	return decode[folderBody](t, rec)
 }
 
-// createLinkInFolder seeds a link already filed into folderID, by inserting
-// directly rather than going through the create-link endpoint: that endpoint
-// does not accept folder_id yet (a later plan wires folders into link
-// create/update), so the only way to get a link into a folder today is the
-// way the fixture seeds its own initial link — a raw insert.
+// createLinkInFolder seeds a link already filed into folderID. It inserts
+// directly rather than going through the create-link endpoint (which does
+// accept folder_id): the raw insert is simply the fixture's way to seed a
+// filed link without going through the endpoint, the same way the fixture
+// seeds its own initial link.
 func (f *tenancyFixture) createLinkInFolder(t *testing.T, dest string, folderID uuid.UUID) uuid.UUID {
 	t.Helper()
 	var id uuid.UUID

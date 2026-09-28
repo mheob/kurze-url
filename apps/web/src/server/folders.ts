@@ -110,10 +110,13 @@ export const foldersQueryOptions = (teamId: string) =>
  * link form with no folder options is still a usable link form, unlike one
  * with no domains or no link at all. Every failure is swallowed and logged,
  * the same fallback `loadVerifiedDomains` uses and for the same reason:
- * Vercel Hobby only retains runtime logs for an hour, so this is not this
- * failure's durable record, but it is what turns "the folder select quietly
- * offers only 'No folder'" from a mystery someone notices downstream into
- * something a `runtime-logs`/Sentry search on this route actually surfaces.
+ * Vercel Pro retains runtime logs for a day (CLAUDE.md), so this is not this
+ * failure's durable record — and it never reaches Sentry either, since a
+ * bare `console.error` is not routed through `lib/observability`'s own
+ * `reportUnexpected` — but a day is still enough for "the folder select
+ * quietly offers only 'No folder'" to turn from a mystery someone notices
+ * downstream into something a `runtime-logs` search on this route can
+ * actually surface.
  *
  * @param queryClient - The query client to prefetch through; only needs `ensureQueryData`.
  * @param teamId - The team's id, already resolved from its slug.

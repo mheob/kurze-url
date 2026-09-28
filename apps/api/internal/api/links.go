@@ -42,9 +42,13 @@ type Link struct {
 	ExpiresAt        *time.Time `json:"expires_at"`
 	HasPassword      bool       `json:"has_password"`
 	AnalyticsEnabled bool       `json:"analytics_enabled"`
-	// omitempty, not a bare tag: uuid.UUID is not a scalar to Huma, so without
-	// it the schema promised a required string while the wire sent null
-	// (CLAUDE.md, Huma nullability).
+	// omitempty, not a bare tag: a bare tag's automatic nullability only
+	// covers Huma's TypeBoolean/TypeInteger/TypeNumber/TypeString scalars
+	// (CLAUDE.md, Huma nullability) and does not extend to this field on its
+	// own. uuid.UUID is itself a Huma scalar — nullable:"true" works on it
+	// without panicking, as UpdateLinkInput's own Body.FolderID below shows —
+	// but a read response omits an unset folder rather than sending null, so
+	// omitempty is the right tool here, not nullable.
 	FolderID  *uuid.UUID `json:"folder_id,omitempty"`
 	Tags      []Tag      `json:"tags"`
 	CreatedBy uuid.UUID  `json:"created_by"`
