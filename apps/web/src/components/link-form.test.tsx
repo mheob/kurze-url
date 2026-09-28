@@ -223,4 +223,43 @@ describe(LinkForm, () => {
 		renderForm({ onSubmit: vi.fn<(values: LinkFormValues) => void>() });
 		expect(screen.queryByRole('combobox', { name: 'Folder' })).not.toBeInTheDocument();
 	});
+
+	it('renders a deleted folder as its own option and lets "No folder" be chosen for real', async () => {
+		// The finding this fixes: a folder_id the refetched `folders` no longer
+		// carries used to leave the select *showing* "No folder" (DOM
+		// selectedIndex 0) while `field.state.value` still held the stale id —
+		// so Save resent the same id, and choosing "No folder" fired no change
+		// event at all, since the select already looked selected on that
+		// option. Asserting the select's own value (not just its rendered
+		// options) is what proves the DOM and the form state now agree.
+		const onSubmit = vi.fn<(values: LinkFormValues) => void>();
+		renderForm({
+			folders: [{ id: 'f1', name: 'Sommerfest' }],
+			initial: { folder_id: 'f0' },
+			onSubmit,
+		});
+		const select = screen.getByRole('combobox', { name: 'Folder' });
+		expect(select).toHaveValue('f0');
+		expect(
+			within(select)
+				.getAllByRole('option')
+				// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `HTMLElement` is a DOM lib type, not one this codebase declares.
+				.map((option) => option.textContent),
+		).toStrictEqual(['No folder', 'Deleted folder', 'Sommerfest']);
+
+		await userEvent.selectOptions(select, 'No folder');
+		await userEvent.type(screen.getByLabelText(/destination|ziel/iu), 'https://example.org/');
+		await userEvent.click(screen.getByRole('button', { name: /save/iu }));
+
+		expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ folder_id: '' }));
+	});
+
+	it('does not add a "Deleted folder" option when the current value is a real folder', () => {
+		renderForm({
+			folders: [{ id: 'f1', name: 'Sommerfest' }],
+			initial: { folder_id: 'f1' },
+			onSubmit: vi.fn<(values: LinkFormValues) => void>(),
+		});
+		expect(screen.queryByText('Deleted folder')).not.toBeInTheDocument();
+	});
 });

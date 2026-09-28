@@ -94,6 +94,7 @@
 		"folderNoneYet": "Noch keine Ordner. Lege sie auf der Seite „Ordner“ an.",
 		"folderGone": "Diesen Ordner gibt es nicht mehr.",
 		"folderMissing": "Diesen Ordner gibt es nicht (mehr).",
+		"folderUnknown": "Gelöschter Ordner",
 		"inFolder": "Ordner: {{name}}",
 		"showAllLinks": "Alle Links anzeigen",
 		"save": "Speichern",

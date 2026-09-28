@@ -94,6 +94,7 @@
 		"folderNoneYet": "No folders yet. Create them on the Folders page.",
 		"folderGone": "This folder no longer exists.",
 		"folderMissing": "This folder does not exist (any more).",
+		"folderUnknown": "Deleted folder",
 		"inFolder": "Folder: {{name}}",
 		"showAllLinks": "Show all links",
 		"save": "Save",

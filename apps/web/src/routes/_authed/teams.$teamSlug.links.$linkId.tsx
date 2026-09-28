@@ -17,6 +17,7 @@ import { LinkQRCard } from '../../components/link-qr-card';
 import { buttonVariants } from '../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { classifyApiError, type ApiFailure, type QrRejectionReason } from '../../lib/api-errors';
+import { remapFolderGoneFailure } from '../../lib/folders';
 import type { LinkPasswordContext, LinkPasswordReason } from '../../lib/link-password';
 import { foldersQueryOptions, prefetchFolders } from '../../server/folders';
 import {
@@ -580,15 +581,13 @@ function RouteComponent(): React.JSX.Element {
 			// deleted since this page loaded gets a message a board member can
 			// act on, and the stale `['folders', teamId]` entry is refetched so a
 			// retry doesn't keep offering the gone folder.
-			if (classified.kind === 'fields' && classified.fields.folder_id !== undefined) {
-				setFailure({
-					...classified,
-					fields: { ...classified.fields, folder_id: t('links.folderGone') },
-				});
-				void queryClient.invalidateQueries({ queryKey: ['folders', teamId] });
-				return;
-			}
-			setFailure(classified);
+			setFailure(
+				remapFolderGoneFailure(classified, {
+					folderGoneMessage: t('links.folderGone'),
+					queryClient,
+					teamId,
+				}),
+			);
 		},
 		onSuccess: async () => {
 			setFailure(null);

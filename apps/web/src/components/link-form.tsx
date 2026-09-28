@@ -367,6 +367,23 @@ export function LinkForm({
 					<form.Field name="folder_id">
 						{(field) => {
 							const errorMessage = fieldErrors?.folder_id;
+							const currentFolderId = field.state.value;
+							// A folder deleted between loading this form and the folders
+							// refetch that follows a "folder gone" 422: the value the form
+							// still holds is no longer among `folders`, and a controlled
+							// `<select>` with no matching option silently falls back to its
+							// first one ("No folder") while `field.state.value` keeps the
+							// stale id — the select then *shows* "No folder" while the form
+							// still *holds* the deleted id, so Save resends the same 422 and
+							// picking "No folder" for real fires no change event at all,
+							// since the select already looked selected on that option. Adding
+							// this option one time keeps the visible selection and the form
+							// state in agreement, so choosing "No folder" becomes a real
+							// change again. Never auto-cleared: on the edit route, a folders
+							// fetch that merely failed (not a deletion) would otherwise
+							// silently unfile the link on save.
+							const currentFolderIsUnknown =
+								currentFolderId !== '' && !folders.some((folder) => folder.id === currentFolderId);
 							return (
 								<Field data-invalid={errorMessage !== undefined}>
 									<FieldLabel htmlFor={field.name}>{t('links.folder')}</FieldLabel>
@@ -381,6 +398,11 @@ export function LinkForm({
 										value={field.state.value}
 									>
 										<NativeSelectOption value="">{t('links.folderNone')}</NativeSelectOption>
+										{currentFolderIsUnknown ? (
+											<NativeSelectOption value={currentFolderId}>
+												{t('links.folderUnknown')}
+											</NativeSelectOption>
+										) : null}
 										{folders.map((folder) => (
 											<NativeSelectOption key={folder.id} value={folder.id}>
 												{folder.name}

@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 
 import { LinkForm, type LinkFormValues } from '../../components/link-form';
 import { classifyApiError, type ApiFailure } from '../../lib/api-errors';
-import { parseFolderIdSearch } from '../../lib/folders';
+import { parseFolderIdSearch, remapFolderGoneFailure } from '../../lib/folders';
 import { domainsQueryOptions } from '../../server/domains';
 import { foldersQueryOptions, prefetchFolders } from '../../server/folders';
 import { createLinkFn } from '../../server/links';
@@ -236,16 +236,14 @@ function RouteComponent(): React.JSX.Element {
 			// generic API message ("body.folder_id: ...") means nothing to a
 			// Verein board member, and the stale entry in `['folders', teamId]`
 			// is what would keep offering the gone folder on a retry without the
-			// refetch below.
-			if (classified.kind === 'fields' && classified.fields.folder_id !== undefined) {
-				setFailure({
-					...classified,
-					fields: { ...classified.fields, folder_id: t('links.folderGone') },
-				});
-				void queryClient.invalidateQueries({ queryKey: ['folders', teamId] });
-				return;
-			}
-			setFailure(classified);
+			// refetch `remapFolderGoneFailure` triggers.
+			setFailure(
+				remapFolderGoneFailure(classified, {
+					folderGoneMessage: t('links.folderGone'),
+					queryClient,
+					teamId,
+				}),
+			);
 		},
 		onSuccess: async () => {
 			setFailure(null);

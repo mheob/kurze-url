@@ -1,4 +1,4 @@
-import { classifyApiError, statusOf } from './api-errors';
+import { classifyApiError, statusOf, type ApiFailure } from './api-errors';
 
 // FolderFilter/UNFILED_SEARCH_VALUE/FOLDERS_PER_TEAM stay here, ahead of the
 // exports block below, even though that leaves these flagged by
@@ -139,4 +139,56 @@ export function folderFailureOf(error: unknown, atCap: boolean): FolderFailure {
 	const { kind } = classifyApiError(error);
 	if (kind === 'unauthenticated' || kind === 'notFound' || kind === 'rateLimited') return kind;
 	return 'unknown';
+}
+
+/**
+ * The one `queryClient` method `remapFolderGoneFailure` needs — the same
+ * narrowing every other injected `queryClient` dependency in this codebase
+ * uses (e.g. `InvalidatableQueryClient` in `teams.$teamSlug.links.new.tsx`),
+ * so a real `QueryClient` satisfies it structurally and a test can pass a
+ * hand-built fake instead of standing up a real one.
+ */
+export interface FolderGoneQueryClient {
+	readonly invalidateQueries: (
+		filters: Readonly<{ queryKey: readonly unknown[] }>,
+	) => Promise<void>;
+}
+
+/**
+ * Grouped rather than three separate parameters, to keep
+ * `remapFolderGoneFailure` under `max-params`' limit of two meaningful
+ * arguments — the same reason `QrDownloadDeps`/`PasswordErrorHandlers` group
+ * their own dependencies in `teams.$teamSlug.links.$linkId.tsx`.
+ */
+export interface FolderGoneRemapDeps {
+	/** The translated message to show on the folder field — `t('links.folderGone')`. */
+	readonly folderGoneMessage: string;
+	/** Invalidated when `classified` names `folder_id`, so a retry does not keep offering the gone folder. */
+	readonly queryClient: FolderGoneQueryClient;
+	/** The team whose folders cache to refetch. */
+	readonly teamId: string;
+}
+
+/**
+ * Remaps a "folder deleted meanwhile" 422 (`body.folder_id`) into a message a
+ * board member can act on, and refetches the team's stale folders cache
+ * (the `['folders', teamId]` query key). Both the create and edit link
+ * routes' own mutation `onError` handlers carried this exact check
+ * (`teams.$teamSlug.links.new.tsx`, `teams.$teamSlug.links.$linkId.tsx`) —
+ * one implementation is what keeps the two from drifting apart. Every other
+ * failure passes through unchanged, and nothing is refetched for it.
+ *
+ * @param classified - The failure `classifyApiError` already produced.
+ * @param deps - The message to show, and the query client/team to refetch through.
+ * @returns `classified`, with `folder_id` reworded when it was present.
+ */
+export function remapFolderGoneFailure(
+	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `ApiFailure`'s `fields` variant nests a plain, mutable `Record<string, string>` (api-errors.ts); `Readonly<>` is shallow and cannot reach it, the same reason `teams.$teamSlug.links.$linkId.tsx`'s own file-level disable gives for this exact type.
+	classified: ApiFailure,
+	deps: FolderGoneRemapDeps,
+): ApiFailure {
+	if (classified.kind !== 'fields' || classified.fields.folder_id === undefined) return classified;
+
+	void deps.queryClient.invalidateQueries({ queryKey: ['folders', deps.teamId] });
+	return { ...classified, fields: { ...classified.fields, folder_id: deps.folderGoneMessage } };
 }
