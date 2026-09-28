@@ -8,12 +8,13 @@ import {
 } from '@tanstack/react-router';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
 import { I18nextProvider } from 'react-i18next';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createI18n } from '../i18n';
 import { FolderForm } from './folder-form';
-import { FolderList } from './folder-list';
+import { FolderList, type FolderRowError } from './folder-list';
 
 const folders: Folder[] = [
 	{ created_at: '2026-09-26T00:00:00Z', id: 'f1', name: 'Newsletter', team_id: 'team-a' },
@@ -23,8 +24,9 @@ const folders: Folder[] = [
 interface RenderListOptions {
 	readonly canEdit?: boolean;
 	readonly onDelete?: (folderId: string) => void;
+	readonly onDismissError?: (folderId: string) => void;
 	readonly onRename?: (folderId: string, name: string) => Promise<boolean>;
-	readonly rowError?: Readonly<{ folderId: string; message: string }> | null;
+	readonly rowError?: FolderRowError | null;
 }
 
 /**
@@ -42,6 +44,7 @@ function renderList(overrides: RenderListOptions = {}): ReturnType<typeof render
 				canEdit={overrides.canEdit ?? false}
 				folders={folders}
 				onDelete={overrides.onDelete ?? vi.fn<(folderId: string) => void>()}
+				onDismissError={overrides.onDismissError ?? vi.fn<(folderId: string) => void>()}
 				onRename={
 					overrides.onRename ??
 					// oxlint-disable-next-line typescript/require-await -- stands in for a rename call `FolderList` awaits; the fake has nothing to await itself.
@@ -112,7 +115,11 @@ describe(FolderList, () => {
 			canEdit: true,
 			// oxlint-disable-next-line typescript/require-await -- stands in for a rename call `FolderList` awaits; the fake has nothing to await itself.
 			onRename: vi.fn<(folderId: string, name: string) => Promise<boolean>>(async () => false),
-			rowError: { folderId: 'f2', message: 'A folder with this name already exists.' },
+			rowError: {
+				action: 'rename',
+				folderId: 'f2',
+				message: 'A folder with this name already exists.',
+			},
 		});
 		await screen.findByRole('link', { name: 'Sommerfest' });
 		await userEvent.click(screen.getByRole('button', { name: 'Rename folder Sommerfest' }));
@@ -129,6 +136,110 @@ describe(FolderList, () => {
 		expect(onDelete).not.toHaveBeenCalled();
 		await userEvent.click(screen.getByRole('button', { name: /yes, delete it/iu }));
 		expect(onDelete).toHaveBeenCalledWith('f2');
+	});
+});
+
+/**
+ * Wraps `FolderList` in a small shell that plays the route's own part: it
+ * moves `rowError` after `onRename`/`onDelete` resolve, and clears it on
+ * `onDismissError` — the same round trip `teams.$teamSlug.folders.tsx`'s
+ * `RouteComponent` drives for real (`dismissRowError`, the rename/delete
+ * mutations' own `onError`). Every other test above treats `rowError` as a
+ * fixed prop, which is enough when nothing needs to react to it changing;
+ * the two tests below are specifically about that reaction — Important 2 of
+ * the folders-frontend final review — so they need the real round trip, not
+ * a snapshot of one step in it.
+ *
+ * @param overrides - The failure each mutation should record, and the action it is tagged with.
+ * @returns The rendered test utilities from Testing Library's `render`.
+ */
+function renderListWithLiveRowError(
+	overrides: Readonly<{ deleteMessage?: string; renameMessage?: string }> = {},
+): ReturnType<typeof render> {
+	function Shell(): React.JSX.Element {
+		const [rowError, setRowError] = useState<FolderRowError | null>(null);
+		return (
+			<FolderList
+				canEdit
+				folders={folders}
+				onDelete={(folderId) => {
+					setRowError({
+						action: 'delete',
+						folderId,
+						message: overrides.deleteMessage ?? 'Could not delete this folder.',
+					});
+				}}
+				onDismissError={(folderId) => {
+					setRowError((current) => (current?.folderId === folderId ? null : current));
+				}}
+				// oxlint-disable-next-line typescript/require-await -- stands in for a rename call `FolderList` awaits; the fake has nothing to await itself.
+				onRename={async (folderId) => {
+					setRowError({
+						action: 'rename',
+						folderId,
+						message: overrides.renameMessage ?? 'A folder with this name already exists.',
+					});
+					return false;
+				}}
+				rowError={rowError}
+				teamSlug="verein"
+			/>
+		);
+	}
+
+	const rootRoute = createRootRoute({ component: () => <Shell /> });
+	const linksRoute = createRoute({
+		component: () => null,
+		getParentRoute: () => rootRoute,
+		path: '/teams/$teamSlug/links',
+	});
+	const router = createRouter({
+		history: createMemoryHistory({ initialEntries: ['/'] }),
+		routeTree: rootRoute.addChildren([linksRoute]),
+	});
+
+	return render(
+		<I18nextProvider i18n={createI18n('en')}>
+			<RouterProvider router={router} />
+		</I18nextProvider>,
+	);
+}
+
+describe('row error clearing (folders-frontend final review, Important 2)', () => {
+	it('leaves no stale alert once Escape cancels a failed rename, and does not resurface it on reopening', async () => {
+		renderListWithLiveRowError();
+		await screen.findByRole('link', { name: 'Sommerfest' });
+		await userEvent.click(screen.getByRole('button', { name: 'Rename folder Sommerfest' }));
+		await userEvent.type(screen.getByRole('textbox', { name: 'Folder name' }), 'x{Enter}');
+		await expect(
+			screen.findByText('A folder with this name already exists.'),
+		).resolves.toBeVisible();
+
+		await userEvent.keyboard('{Escape}');
+
+		// Not just invisible while the form is closed (action-tagging alone
+		// would already achieve that): gone from the row's own error state, so
+		// it cannot come back the moment Rename is opened again either.
+		expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+		expect(screen.queryByText('A folder with this name already exists.')).not.toBeInTheDocument();
+
+		await userEvent.click(screen.getByRole('button', { name: 'Rename folder Sommerfest' }));
+		expect(screen.queryByText('A folder with this name already exists.')).not.toBeInTheDocument();
+	});
+
+	it('never shows a delete error inside the rename field', async () => {
+		renderListWithLiveRowError();
+		await screen.findByRole('link', { name: 'Sommerfest' });
+		await userEvent.click(screen.getByRole('button', { name: 'Delete folder Sommerfest' }));
+		await userEvent.click(screen.getByRole('button', { name: /yes, delete it/iu }));
+		await expect(screen.findByRole('alert')).resolves.toHaveTextContent(
+			'Could not delete this folder.',
+		);
+
+		await userEvent.click(screen.getByRole('button', { name: 'Rename folder Sommerfest' }));
+
+		expect(screen.queryByText('Could not delete this folder.')).not.toBeInTheDocument();
+		expect(screen.getByRole('textbox', { name: 'Folder name' })).toHaveValue('Sommerfest');
 	});
 });
 

@@ -11,8 +11,10 @@ interface FolderListProps {
 	readonly canEdit: boolean;
 	readonly folders: readonly Folder[];
 	readonly onDelete: (folderId: string) => void;
+	/** Clears this folder's row error — called when its rename form is cancelled and when it is opened again, so a stale error from a previous attempt never lingers or reappears under the wrong action. */
+	readonly onDismissError: (folderId: string) => void;
 	readonly onRename: (folderId: string, name: string) => Promise<boolean>;
-	readonly rowError: Readonly<{ folderId: string; message: string }> | null;
+	readonly rowError: FolderRowError | null;
 	readonly teamSlug: string;
 }
 
@@ -25,6 +27,7 @@ function FolderRow({
 	canEdit,
 	folder,
 	onDelete,
+	onDismissError,
 	onRename,
 	rowError,
 	teamSlug,
@@ -38,7 +41,14 @@ function FolderRow({
 	// and mutating a ref instead is what this row needs anyway, since nothing
 	// here should re-render off this flag alone.
 	const restoreFocus = useRef(false);
-	const error = rowError?.folderId === folder.id ? rowError.message : undefined;
+	// Tagged by action, not shown interchangeably: a rename failure belongs on
+	// the open form (below), a delete failure on the closed row's own alert
+	// (further down) — see `FolderRowError`'s own docstring for why matching by
+	// `folderId` alone used to let one bleed into the other's slot.
+	const renameError =
+		rowError?.folderId === folder.id && rowError.action === 'rename' ? rowError.message : undefined;
+	const deleteError =
+		rowError?.folderId === folder.id && rowError.action === 'delete' ? rowError.message : undefined;
 
 	// Focus returns to the row's own Rename button once the inline form closes,
 	// so a keyboard user is not dropped at the top of the page.
@@ -52,6 +62,11 @@ function FolderRow({
 	const close = (): void => {
 		restoreFocus.current = true;
 		setEditing(false);
+		// Otherwise a failed rename's own error outlives the form it belongs
+		// to: Escape (or the Cancel button) used to leave that message
+		// rendered as a stale `role="alert"` next to the now-closed row, since
+		// nothing before this call ever cleared `rowError` itself.
+		onDismissError(folder.id);
 	};
 
 	return (
@@ -65,7 +80,7 @@ function FolderRow({
 					// from the native DOM attribute it actually guards against.
 					// oxlint-disable-next-line jsx-a11y/no-autofocus
 					autoFocus
-					error={error}
+					error={renameError}
 					initialName={folder.name}
 					label={t('folders.name')}
 					onCancel={close}
@@ -87,6 +102,13 @@ function FolderRow({
 							<Button
 								aria-label={t('folders.renameLabel', { name: folder.name })}
 								onClick={() => {
+									// Clears a leftover error before the form opens — otherwise
+									// a delete failure from an earlier action on this same row
+									// would still match `folder.id` and render inside the
+									// rename field the instant it opens, and a previous rename
+									// failure would reappear on a fresh attempt that hasn't
+									// failed yet.
+									onDismissError(folder.id);
 									setEditing(true);
 								}}
 								ref={renameButton}
@@ -103,7 +125,7 @@ function FolderRow({
 							/>
 						</>
 					) : null}
-					{error === undefined ? null : <p role="alert">{error}</p>}
+					{deleteError === undefined ? null : <p role="alert">{deleteError}</p>}
 				</>
 			)}
 		</li>
@@ -119,8 +141,9 @@ function FolderRow({
  * @param props.canEdit - Whether the caller may rename and delete.
  * @param props.folders - The team's folders.
  * @param props.onDelete - Deletes the folder with the given id.
+ * @param props.onDismissError - Clears a row's error; called when its rename form is cancelled and when it is opened again.
  * @param props.onRename - Renames a folder; resolves true on success, which closes the inline form.
- * @param props.rowError - The last failure and the row it happened on.
+ * @param props.rowError - The last failure, the row it happened on, and which action produced it.
  * @param props.teamSlug - The team's slug, for the links into the filtered list.
  * @returns The list.
  */
@@ -129,6 +152,7 @@ export function FolderList({
 	canEdit,
 	folders,
 	onDelete,
+	onDismissError,
 	onRename,
 	rowError,
 	teamSlug,
@@ -152,6 +176,7 @@ export function FolderList({
 					folder={folder}
 					key={folder.id}
 					onDelete={onDelete}
+					onDismissError={onDismissError}
 					onRename={onRename}
 					rowError={rowError}
 					teamSlug={teamSlug}
@@ -159,4 +184,26 @@ export function FolderList({
 			))}
 		</ul>
 	);
+}
+
+/**
+ * A row-scoped failure, tagged with which action produced it: a rename
+ * failure belongs on the open rename form, and a delete failure belongs on
+ * the closed row's own alert — the two must never show through the other's
+ * slot. Before this tag existed, `rowError` matched by `folderId` alone, so a
+ * delete failure rendered inside the rename field the moment that row's
+ * rename form was opened afterwards, and a rename failure survived Escape as
+ * a stale `role="alert"` next to the closed row.
+ *
+ * Declared at the bottom, not beside `FolderListProps` above which uses it:
+ * `import/exports-last` requires every export contiguous at the end of the
+ * file, and a type-only interface has no runtime evaluation order to
+ * respect — TypeScript hoists it — so there is no cost to moving it here,
+ * the same tradeoff `lib/folders.ts` documents for its own top-of-file
+ * exports.
+ */
+export interface FolderRowError {
+	readonly action: 'delete' | 'rename';
+	readonly folderId: string;
+	readonly message: string;
 }

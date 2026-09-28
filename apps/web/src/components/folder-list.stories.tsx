@@ -27,6 +27,7 @@ const meta = {
 	args: {
 		canEdit: true,
 		onDelete: fn<(folderId: string) => void>(),
+		onDismissError: fn<(folderId: string) => void>(),
 		// oxlint-disable-next-line typescript/require-await -- stands in for a rename call the real route awaits; the fixture has nothing to await itself.
 		onRename: fn<(folderId: string, name: string) => Promise<boolean>>(async () => true),
 		rowError: null,
@@ -59,12 +60,22 @@ export const Viewer: StoryObj<typeof meta> = {
 	},
 };
 
-/** A rename that failed server-side keeps the inline form open, showing the row's own error. */
+/**
+ * A delete that failed shows the row's own alert, with the row left in
+ * place — the closed-row branch this story actually renders, since nothing
+ * here opens the rename form. A rename failure instead renders inside the
+ * open rename form itself (`FolderRowError`'s own docstring), which a static
+ * story can't show without user interaction to open that form first.
+ */
 export const RowError: StoryObj<typeof meta> = {
 	args: {
 		canEdit: true,
 		folders: [folder(), folder({ id: 'f2', name: 'Sommerfest' })],
-		rowError: { folderId: 'f2', message: 'A folder with this name already exists.' },
+		rowError: {
+			action: 'delete',
+			folderId: 'f2',
+			message: 'A folder with this name already exists.',
+		},
 	},
 };
 
