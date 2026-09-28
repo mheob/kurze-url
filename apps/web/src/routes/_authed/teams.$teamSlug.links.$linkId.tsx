@@ -1,5 +1,5 @@
 import type { Link, PageLink, UpdateLinkInputBodyWritable } from '@kurze-url/api-client';
-import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
 	createFileRoute,
 	Link as RouterLink,
@@ -18,7 +18,7 @@ import { buttonVariants } from '../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { classifyApiError, type ApiFailure, type QrRejectionReason } from '../../lib/api-errors';
 import type { LinkPasswordContext, LinkPasswordReason } from '../../lib/link-password';
-import { foldersQueryOptions } from '../../server/folders';
+import { foldersQueryOptions, prefetchFolders } from '../../server/folders';
 import {
 	deleteLinkFn,
 	getLinkFn,
@@ -29,7 +29,6 @@ import {
 	updateLinkFn,
 } from '../../server/links';
 import { requireTeamId } from '../_authed';
-import { loadFolders } from './teams.$teamSlug.folders';
 
 /* oxlint-disable typescript/prefer-readonly-parameter-types -- every parameter this rule flags
    below is typed by something this file does not own: TanStack Router's own `beforeLoad`/`loader`
@@ -224,7 +223,7 @@ export const Route = createFileRoute('/_authed/teams/$teamSlug/links/$linkId')({
 	loader: async ({ context, params }) => {
 		const [link] = await Promise.all([
 			loadLink(getLinkFn, params.linkId),
-			loadFolders(context.queryClient, context.teamId),
+			prefetchFolders(context.queryClient, context.teamId),
 		]);
 		return link;
 	},
@@ -508,11 +507,18 @@ function RouteComponent(): React.JSX.Element {
 		LinkPasswordReason | 'rejected' | undefined
 	>();
 	const [qrRejection, setQrRejection] = useState<QrRejectionReason | 'rejected' | undefined>();
-	// The loader's own `ensureQueryData` already filled this — `useSuspenseQuery`
-	// reads the same `['folders', teamId]` cache rather than fetching again,
-	// the same "one definition, two readers" reasoning `foldersQueryOptions`'s
-	// own docstring gives.
-	const { data: folderPage } = useSuspenseQuery(foldersQueryOptions(teamId));
+	// Non-suspense, deliberately: the loader's own `prefetchFolders` already
+	// warmed this cache on the happy path, so this resolves from it
+	// immediately, but a prefetch failure must not take the whole edit page
+	// down with it — see `prefetchFolders`'s own docstring. `data` stays
+	// `undefined` while pending or failed, and `?? []` below is what keeps
+	// the select rendering with only "No folder" either way; saving stays
+	// safe regardless, since `toUpdateBody` only ever sends `folder_id` when
+	// it differs from the link's own. This is also what makes the 422
+	// "folder gone" refetch (`invalidateQueries(['folders', teamId])` in
+	// `onError` below) actually visible: a suspended, loader-time snapshot
+	// would never update after that refetch resolves.
+	const { data: folderPage } = useQuery(foldersQueryOptions(teamId));
 
 	// One fetch per link, for the whole life of the card, refetched only when
 	// the matrix itself could differ. The matrix depends on the slug and the
@@ -688,7 +694,7 @@ function RouteComponent(): React.JSX.Element {
 								{t('links.folderNoneYet')}
 							</RouterLink>
 						}
-						folders={folderPage.items ?? []}
+						folders={folderPage?.items ?? []}
 						initial={toFormValues(link)}
 						key={`form-${linkId}`}
 						onSubmit={(values) => {

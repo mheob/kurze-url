@@ -1,5 +1,5 @@
 import type { CreateLinkInputBodyWritable, PageDomain } from '@kurze-url/api-client';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, Link, useRouter, type SearchSchemaInput } from '@tanstack/react-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -8,9 +8,9 @@ import { LinkForm, type LinkFormValues } from '../../components/link-form';
 import { classifyApiError, type ApiFailure } from '../../lib/api-errors';
 import { parseFolderIdSearch } from '../../lib/folders';
 import { domainsQueryOptions } from '../../server/domains';
+import { foldersQueryOptions, prefetchFolders } from '../../server/folders';
 import { createLinkFn } from '../../server/links';
 import { requireTeamId } from '../_authed';
-import { loadFolders } from './teams.$teamSlug.folders';
 
 /* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding below is typed by
    something this file doesn't own: TanStack Query's own `domainsQueryOptions` return type,
@@ -80,11 +80,16 @@ export const Route = createFileRoute('/_authed/teams/$teamSlug/links/new')({
 	}),
 	component: RouteComponent,
 	loader: async ({ context }) => {
-		const [domains, folders] = await Promise.all([
+		// Only `domains` is returned: the folders fetch is a prefetch, not a
+		// dependency this loader's own result carries — see `prefetchFolders`'s
+		// own docstring for why the two are not symmetric. The component reads
+		// folders back out of the same `['folders', teamId]` cache with a plain
+		// `useQuery`.
+		const [domains] = await Promise.all([
 			loadVerifiedDomains(context.queryClient, context.teamId),
-			loadFolders(context.queryClient, context.teamId),
+			prefetchFolders(context.queryClient, context.teamId),
 		]);
-		return { domains, folders: folders.items ?? [] };
+		return domains;
 	},
 });
 
@@ -196,12 +201,23 @@ export async function afterCreate(
 function RouteComponent(): React.JSX.Element {
 	const { teamSlug } = Route.useParams();
 	const { teamId } = Route.useRouteContext();
-	const { domains, folders } = Route.useLoaderData();
+	const domains = Route.useLoaderData();
 	const search = Route.useSearch();
 	const { t } = useTranslation();
 	const router = useRouter();
 	const queryClient = useQueryClient();
 	const [failure, setFailure] = useState<ApiFailure | null>(null);
+	// Non-suspense: the loader's own `prefetchFolders` already warmed this
+	// cache on the happy path, so this resolves from cache immediately, but a
+	// prefetch failure must not take the whole create page down with it — see
+	// `prefetchFolders`'s own docstring. `data` stays `undefined` while
+	// pending or failed, and `?? []` below is what keeps the select rendering
+	// with only "No folder" in either case. This is also what makes the 422
+	// "folder gone" refetch (`invalidateQueries(['folders', teamId])` in
+	// `onError` below) actually visible: a loader-time snapshot would never
+	// update after that refetch resolves.
+	const { data: folderPage } = useQuery(foldersQueryOptions(teamId));
+	const folders = folderPage?.items ?? [];
 
 	const mutation = useMutation({
 		mutationFn: async (values: LinkFormValues) =>

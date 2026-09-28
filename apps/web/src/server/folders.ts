@@ -21,6 +21,26 @@ import { authedApiClient, flushSessionCookies, requireSession } from './session'
  */
 
 /**
+ * The one method `prefetchFolders` below reaches through — same reasoning as
+ * `loadVerifiedDomains`'s own `DomainsDataSource` (`teams.$teamSlug.links.new.tsx`):
+ * a real `QueryClient` satisfies this structurally, so callers need no cast,
+ * and — unlike calling `context.queryClient.ensureQueryData` directly — a
+ * fresh, separately declared interface method carries none of the real
+ * `QueryClient.ensureQueryData`'s own `@deprecated` doc comment, so
+ * `typescript/no-deprecated` has nothing to fire on. Declared here, ahead of
+ * every export in this file (including `foldersQueryOptions`, whose return
+ * type it names): `import/exports-last` requires every export to be
+ * contiguous at the end of the file, and a type-only interface has no
+ * runtime evaluation order to respect, so there is no cost to moving it
+ * ahead of the value it types.
+ */
+interface FoldersDataSource {
+	readonly ensureQueryData: (
+		options: ReturnType<typeof foldersQueryOptions>,
+	) => Promise<PageFolder>;
+}
+
+/**
  * Same `...For`/`...Fn` split as `server/links.ts` and `server/domains.ts`,
  * for the same reason: `listFoldersFn`'s `createServerFn` can't be called
  * directly under Vitest ("No Start context found"), so the testable half
@@ -82,6 +102,35 @@ export const foldersQueryOptions = (teamId: string) =>
 		queryFn: async () => listFoldersFn({ data: { teamId } }),
 		queryKey: ['folders', teamId] as const,
 	});
+
+/**
+ * Warms `['folders', teamId]` ahead of the link create/edit routes' own
+ * component-level `useQuery` read, without making either route's *loader* —
+ * and therefore the whole page — depend on the folders fetch succeeding: a
+ * link form with no folder options is still a usable link form, unlike one
+ * with no domains or no link at all. Every failure is swallowed and logged,
+ * the same fallback `loadVerifiedDomains` uses and for the same reason:
+ * Vercel Hobby only retains runtime logs for an hour, so this is not this
+ * failure's durable record, but it is what turns "the folder select quietly
+ * offers only 'No folder'" from a mystery someone notices downstream into
+ * something a `runtime-logs`/Sentry search on this route actually surfaces.
+ *
+ * @param queryClient - The query client to prefetch through; only needs `ensureQueryData`.
+ * @param teamId - The team's id, already resolved from its slug.
+ * @returns Nothing — callers read the result back out of the query cache, via `useQuery`.
+ */
+export async function prefetchFolders(
+	queryClient: FoldersDataSource,
+	teamId: string,
+): Promise<void> {
+	try {
+		await queryClient.ensureQueryData(foldersQueryOptions(teamId));
+	} catch (error) {
+		// See `loadVerifiedDomains`'s identical comment: silent to the visitor,
+		// not to every possible observer.
+		console.error('prefetchFolders: leaving the folder select unfilled', error);
+	}
+}
 
 /**
  * Same `...For`/`...Fn` split, same reason as `listFoldersFor` above.
