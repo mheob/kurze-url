@@ -1,14 +1,16 @@
 import type { CreateLinkInputBodyWritable, PageDomain } from '@kurze-url/api-client';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { createFileRoute, useRouter } from '@tanstack/react-router';
+import { createFileRoute, Link, useRouter, type SearchSchemaInput } from '@tanstack/react-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { LinkForm, type LinkFormValues } from '../../components/link-form';
 import { classifyApiError, type ApiFailure } from '../../lib/api-errors';
+import { parseFolderIdSearch } from '../../lib/folders';
 import { domainsQueryOptions } from '../../server/domains';
 import { createLinkFn } from '../../server/links';
 import { requireTeamId } from '../_authed';
+import { loadFolders } from './teams.$teamSlug.folders';
 
 /* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding below is typed by
    something this file doesn't own: TanStack Query's own `domainsQueryOptions` return type,
@@ -62,12 +64,28 @@ export async function loadVerifiedDomains(
 	}
 }
 
+// oxlint-disable-next-line sort-keys -- `validateSearch` is declared first, out of alphabetical order, for the same type-inference reason `teams.$teamSlug.links.index.tsx` gives for its own identical placement.
 export const Route = createFileRoute('/_authed/teams/$teamSlug/links/new')({
+	// Declared before `loader`, the same reason `teams.$teamSlug.links.index.tsx`
+	// gives for its own `validateSearch`: moving it later risks the same
+	// inference fallback to `{}` for anything downstream that reads this
+	// route's own search type. `folder` preselects a folder on the create form
+	// (below); an invalid or malformed value is dropped, not surfaced, same as
+	// `parseFolderSearch`'s handling of the list route's own filter.
+	validateSearch: (search: { folder?: unknown } & SearchSchemaInput): { folder?: string } => ({
+		folder: parseFolderIdSearch(search.folder),
+	}),
 	beforeLoad: ({ context, params }) => ({
 		teamId: requireTeamId(context.me.memberships, params.teamSlug),
 	}),
 	component: RouteComponent,
-	loader: async ({ context }) => loadVerifiedDomains(context.queryClient, context.teamId),
+	loader: async ({ context }) => {
+		const [domains, folders] = await Promise.all([
+			loadVerifiedDomains(context.queryClient, context.teamId),
+			loadFolders(context.queryClient, context.teamId),
+		]);
+		return { domains, folders: folders.items ?? [] };
+	},
 });
 
 /**
@@ -104,10 +122,34 @@ export function toRequestBody(values: LinkFormValues): CreateLinkInputBodyWritab
 		destination_url: values.destination_url,
 		domain_id: values.domain_id === '' ? undefined : values.domain_id,
 		expires_at: values.expires_at === '' ? undefined : new Date(values.expires_at).toISOString(),
+		folder_id: values.folder_id === '' ? undefined : values.folder_id,
 		redirect_type:
 			values.redirect_type === REDIRECT_PERMANENT ? REDIRECT_PERMANENT : REDIRECT_TEMPORARY,
 		slug: values.slug === '' ? undefined : values.slug,
 	};
+}
+
+/**
+ * Preselects the folder named by the create route's own `folder` search
+ * parameter (`?folder=<id>`, e.g. from the link list's "New link" button
+ * while a folder filter is active) — but only when the team actually has
+ * that folder. A stale or foreign id (the folder was deleted, or belongs to
+ * another team the caller once switched from) must not pin the form onto a
+ * value the picker cannot render; falling back to `''` ("No folder") is the
+ * same "ignore, don't invent" treatment `parseFolderIdSearch` already gives
+ * a malformed value.
+ *
+ * @param requested - The `folder` search parameter, already validated as a well-formed UUID by `parseFolderIdSearch`.
+ * @param folders - The team's own folders, as loaded for the picker.
+ * @returns `requested` when the team has that folder, `''` otherwise.
+ */
+export function initialFolderId(
+	requested: string | undefined,
+	folders: readonly Readonly<{ id: string; name: string }>[],
+): string {
+	return requested !== undefined && folders.some((folder) => folder.id === requested)
+		? requested
+		: '';
 }
 
 /**
@@ -154,7 +196,8 @@ export async function afterCreate(
 function RouteComponent(): React.JSX.Element {
 	const { teamSlug } = Route.useParams();
 	const { teamId } = Route.useRouteContext();
-	const domains = Route.useLoaderData();
+	const { domains, folders } = Route.useLoaderData();
+	const search = Route.useSearch();
 	const { t } = useTranslation();
 	const router = useRouter();
 	const queryClient = useQueryClient();
@@ -171,6 +214,19 @@ function RouteComponent(): React.JSX.Element {
 			// render. `router.navigate` is the imperative call for exactly that.
 			if (classified.kind === 'unauthenticated') {
 				void router.navigate({ to: '/login' });
+				return;
+			}
+			// A folder deleted between loading this page and submitting: the
+			// generic API message ("body.folder_id: ...") means nothing to a
+			// Verein board member, and the stale entry in `['folders', teamId]`
+			// is what would keep offering the gone folder on a retry without the
+			// refetch below.
+			if (classified.kind === 'fields' && classified.fields.folder_id !== undefined) {
+				setFailure({
+					...classified,
+					fields: { ...classified.fields, folder_id: t('links.folderGone') },
+				});
+				void queryClient.invalidateQueries({ queryKey: ['folders', teamId] });
 				return;
 			}
 			setFailure(classified);
@@ -200,6 +256,14 @@ function RouteComponent(): React.JSX.Element {
 			<LinkForm
 				domains={domains}
 				fieldErrors={fieldErrors}
+				folderHint={
+					// oxlint-disable-next-line react-perf/jsx-no-jsx-as-prop -- one static, one-line link rendered once per page visit; a stable reference would need a `useMemo` around an element that never changes across this component's own re-renders.
+					<Link params={{ teamSlug }} to="/teams/$teamSlug/folders">
+						{t('links.folderNoneYet')}
+					</Link>
+				}
+				folders={folders}
+				initial={{ folder_id: initialFolderId(search.folder, folders) }}
 				onSubmit={(values) => {
 					mutation.mutate(values);
 				}}

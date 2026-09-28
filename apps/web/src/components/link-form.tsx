@@ -18,6 +18,7 @@ const defaultValues: LinkFormValues = {
 	destination_url: '',
 	domain_id: '',
 	expires_at: '',
+	folder_id: '',
 	redirect_type: 302,
 	slug: '',
 };
@@ -37,6 +38,7 @@ const KNOWN_FIELD_NAMES: ReadonlySet<string> = new Set([
 	'destination_url',
 	'domain_id',
 	'expires_at',
+	'folder_id',
 	'redirect_type',
 	'slug',
 ]);
@@ -48,6 +50,11 @@ interface LinkFormProps {
 	// choice.
 	readonly domains?: readonly Readonly<{ id: string; hostname: string }>[];
 	readonly fieldErrors?: Readonly<Record<string, string>>;
+	readonly folderHint?: React.ReactNode;
+	// Unlike `domains` above, this renders whenever the prop is passed at all
+	// — even an empty list still offers "No folder", the one option that lets
+	// an already-filed link be unfiled, so there is no furniture-check here.
+	readonly folders?: readonly Readonly<{ id: string; name: string }>[];
 	readonly initial?: Partial<LinkFormValues>;
 	readonly onSubmit: (values: LinkFormValues) => void;
 }
@@ -57,6 +64,7 @@ export interface LinkFormValues {
 	readonly destination_url: string;
 	readonly domain_id: string;
 	readonly expires_at: string;
+	readonly folder_id: string;
 	readonly redirect_type: number;
 	readonly slug: string;
 }
@@ -79,6 +87,8 @@ export interface LinkFormValues {
  * @param props - The component's props.
  * @param props.domains - The team's verified domains; the domain picker renders nothing when this is empty or undefined.
  * @param props.fieldErrors - Server-reported field errors, keyed by field name.
+ * @param props.folderHint - Shown under the folder field when the team has no folders yet, e.g. a link to the folders page.
+ * @param props.folders - The team's folders; the folder field renders whenever this is passed, even empty.
  * @param props.initial - Initial values to seed the form from, for the edit route.
  * @param props.onSubmit - Called with the form's values on submit.
  * @returns The rendered form.
@@ -86,6 +96,8 @@ export interface LinkFormValues {
 export function LinkForm({
 	domains,
 	fieldErrors,
+	folderHint,
+	folders,
 	initial,
 	onSubmit,
 }: LinkFormProps): React.JSX.Element {
@@ -100,6 +112,7 @@ export function LinkForm({
 	const destinationUrlErrorId = useId();
 	const domainErrorId = useId();
 	const expiresAtErrorId = useId();
+	const folderErrorId = useId();
 	const redirectTypeErrorId = useId();
 	const slugErrorId = useId();
 
@@ -349,6 +362,42 @@ export function LinkForm({
 						}}
 					</form.Field>
 				) : null}
+
+				{folders === undefined ? null : (
+					<form.Field name="folder_id">
+						{(field) => {
+							const errorMessage = fieldErrors?.folder_id;
+							return (
+								<Field data-invalid={errorMessage !== undefined}>
+									<FieldLabel htmlFor={field.name}>{t('links.folder')}</FieldLabel>
+									<NativeSelect
+										aria-describedby={errorMessage !== undefined ? folderErrorId : undefined}
+										aria-invalid={errorMessage !== undefined ? true : undefined}
+										id={field.name}
+										name={field.name}
+										onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
+											field.handleChange(event.target.value);
+										}}
+										value={field.state.value}
+									>
+										<NativeSelectOption value="">{t('links.folderNone')}</NativeSelectOption>
+										{folders.map((folder) => (
+											<NativeSelectOption key={folder.id} value={folder.id}>
+												{folder.name}
+											</NativeSelectOption>
+										))}
+									</NativeSelect>
+									{folders.length === 0 && folderHint !== undefined ? (
+										<FieldDescription>{folderHint}</FieldDescription>
+									) : null}
+									{errorMessage === undefined ? null : (
+										<FieldError id={folderErrorId}>{errorMessage}</FieldError>
+									)}
+								</Field>
+							);
+						}}
+					</form.Field>
+				)}
 			</FieldGroup>
 
 			<Button type="submit">{t('links.save')}</Button>

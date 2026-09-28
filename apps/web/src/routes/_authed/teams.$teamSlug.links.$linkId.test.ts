@@ -3,6 +3,7 @@ import { isNotFound, isRedirect } from '@tanstack/react-router';
 import type { MockInstance } from 'vitest';
 import { describe, expect, it, vi } from 'vitest';
 
+import type { LinkFormValues } from '../../components/link-form';
 import {
 	afterMutation,
 	applyPasswordSuccess,
@@ -13,6 +14,7 @@ import {
 	saveQrDownload,
 	toDateTimeLocal,
 	toPasswordContext,
+	toUpdateBody,
 } from './teams.$teamSlug.links.$linkId';
 
 /* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding below is a type this
@@ -156,6 +158,34 @@ describe(toDateTimeLocal, () => {
 	 */
 	it('leaves the field empty for a link with no expiry', () => {
 		expect(toDateTimeLocal(null)).toBe('');
+	});
+});
+
+/**
+ * The property this task's own instructions call out (plan Review Focus 2):
+ * editing a link without touching the folder field must not send `folder_id`
+ * at all, so a folder missing from the loaded list — deleted meanwhile, or
+ * never fetched — is never unfiled as a side effect of saving some other
+ * field.
+ */
+const base: LinkFormValues = {
+	analytics_enabled: true,
+	destination_url: 'https://example.org',
+	domain_id: 'd1',
+	expires_at: '',
+	folder_id: 'f1',
+	redirect_type: 302,
+	slug: 'x',
+};
+
+describe(toUpdateBody, () => {
+	it('omits folder_id when unchanged, so a folder missing from the list is never unfiled by accident', () => {
+		expect(toUpdateBody(base, 'f1')).not.toHaveProperty('folder_id');
+	});
+
+	it('sends null to unfile and the id to refile', () => {
+		expect(toUpdateBody({ ...base, folder_id: '' }, 'f1')).toMatchObject({ folder_id: null });
+		expect(toUpdateBody({ ...base, folder_id: 'f2' }, 'f1')).toMatchObject({ folder_id: 'f2' });
 	});
 });
 

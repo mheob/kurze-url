@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { I18nextProvider } from 'react-i18next';
 import { describe, expect, it, vi } from 'vitest';
@@ -17,9 +17,12 @@ import { LinkForm, type LinkFormValues } from './link-form';
  * @param props - The props to render `LinkForm` with.
  * @returns The rendered test utilities from Testing Library's `render`.
  */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `React.ReactNode` is React's own type; not a declaration this file can edit.
 function renderForm(props: {
 	readonly domains?: readonly Readonly<{ id: string; hostname: string }>[];
 	readonly fieldErrors?: Readonly<Record<string, string>>;
+	readonly folderHint?: React.ReactNode;
+	readonly folders?: readonly Readonly<{ id: string; name: string }>[];
 	readonly initial?: Partial<LinkFormValues>;
 	readonly onSubmit: (values: LinkFormValues) => void;
 }): ReturnType<typeof render> {
@@ -176,5 +179,48 @@ describe(LinkForm, () => {
 		// about domains must keep getting today's furniture-free form.
 		renderForm({ onSubmit: vi.fn<(values: LinkFormValues) => void>() });
 		expect(screen.queryByLabelText(/domain/iu)).not.toBeInTheDocument();
+	});
+
+	it('offers "No folder" first, then the folders, and hands back the chosen id', async () => {
+		const onSubmit = vi.fn<(values: LinkFormValues) => void>();
+		renderForm({ folders: [{ id: 'f1', name: 'Sommerfest' }], onSubmit });
+		const select = screen.getByRole('combobox', { name: 'Folder' });
+		expect(
+			within(select)
+				.getAllByRole('option')
+				// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `HTMLElement` is a DOM lib type, not one this codebase declares.
+				.map((option) => option.textContent),
+		).toStrictEqual(['No folder', 'Sommerfest']);
+
+		await userEvent.selectOptions(select, 'f1');
+		await userEvent.type(screen.getByLabelText(/destination|ziel/iu), 'https://example.org/');
+		await userEvent.click(screen.getByRole('button', { name: /save/iu }));
+
+		expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ folder_id: 'f1' }));
+	});
+
+	it('shows the hint when the team has no folders', () => {
+		renderForm({
+			folderHint: 'No folders yet. Create them on the Folders page.',
+			folders: [],
+			onSubmit: vi.fn<(values: LinkFormValues) => void>(),
+		});
+		expect(screen.getByText('No folders yet. Create them on the Folders page.')).toBeVisible();
+	});
+
+	it('shows a folder_id field error on the folder field', () => {
+		renderForm({
+			fieldErrors: { folder_id: 'This folder no longer exists.' },
+			folders: [{ id: 'f1', name: 'Sommerfest' }],
+			onSubmit: vi.fn<(values: LinkFormValues) => void>(),
+		});
+		expect(screen.getByRole('combobox', { name: 'Folder' })).toHaveAccessibleDescription(
+			'This folder no longer exists.',
+		);
+	});
+
+	it('omits the folder field when no folders prop is passed at all', () => {
+		renderForm({ onSubmit: vi.fn<(values: LinkFormValues) => void>() });
+		expect(screen.queryByRole('combobox', { name: 'Folder' })).not.toBeInTheDocument();
 	});
 });

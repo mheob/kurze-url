@@ -1,5 +1,5 @@
 import type { Link, PageLink, UpdateLinkInputBodyWritable } from '@kurze-url/api-client';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from '@tanstack/react-query';
 import {
 	createFileRoute,
 	Link as RouterLink,
@@ -18,6 +18,7 @@ import { buttonVariants } from '../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { classifyApiError, type ApiFailure, type QrRejectionReason } from '../../lib/api-errors';
 import type { LinkPasswordContext, LinkPasswordReason } from '../../lib/link-password';
+import { foldersQueryOptions } from '../../server/folders';
 import {
 	deleteLinkFn,
 	getLinkFn,
@@ -28,6 +29,7 @@ import {
 	updateLinkFn,
 } from '../../server/links';
 import { requireTeamId } from '../_authed';
+import { loadFolders } from './teams.$teamSlug.folders';
 
 /* oxlint-disable typescript/prefer-readonly-parameter-types -- every parameter this rule flags
    below is typed by something this file does not own: TanStack Router's own `beforeLoad`/`loader`
@@ -138,6 +140,7 @@ function toFormValues(link: Link): LinkFormValues {
 		destination_url: link.destination_url,
 		domain_id: link.domain_id,
 		expires_at: toDateTimeLocal(link.expires_at),
+		folder_id: link.folder_id ?? '',
 		redirect_type: link.redirect_type,
 		slug: link.slug,
 	};
@@ -152,14 +155,23 @@ function toFormValues(link: Link): LinkFormValues {
  * `folder_id`'s explicit `null`-to-unfile) rather than the create form's
  * "generate one" — inherited from reusing the same `<LinkForm>` unmodified.
  *
+ * `folder_id` is omitted entirely when it did not change: omitting an
+ * unchanged folder means a folder missing from the loaded list (deleted
+ * meanwhile, or never fetched) is never unfiled as a side effect of saving
+ * some other field.
+ *
  * @param values - The form's values, as `LinkForm` hands them back.
+ * @param initialFolderId - The link's folder id when the form was seeded, `''` for unfiled — `link.folder_id ?? ''`.
  * @returns The API request body, with empty optional fields mapped to `undefined`.
  */
 /** The two redirect status codes a link can use; see CLAUDE.md's "301 vs 302" note for why 302 is the default. */
 const REDIRECT_PERMANENT = 301;
 const REDIRECT_TEMPORARY = 302;
 
-function toUpdateBody(values: LinkFormValues): UpdateLinkInputBodyWritable {
+export function toUpdateBody(
+	values: LinkFormValues,
+	initialFolderId: string,
+): UpdateLinkInputBodyWritable {
 	return {
 		analytics_enabled: values.analytics_enabled,
 		destination_url: values.destination_url,
@@ -167,6 +179,9 @@ function toUpdateBody(values: LinkFormValues): UpdateLinkInputBodyWritable {
 		redirect_type:
 			values.redirect_type === REDIRECT_PERMANENT ? REDIRECT_PERMANENT : REDIRECT_TEMPORARY,
 		slug: values.slug === '' ? undefined : values.slug,
+		...(values.folder_id === initialFolderId
+			? {}
+			: { folder_id: values.folder_id === '' ? null : values.folder_id }),
 	};
 }
 
@@ -206,7 +221,13 @@ export const Route = createFileRoute('/_authed/teams/$teamSlug/links/$linkId')({
 		teamId: requireTeamId(context.me.memberships, params.teamSlug),
 	}),
 	component: RouteComponent,
-	loader: async ({ params }) => loadLink(getLinkFn, params.linkId),
+	loader: async ({ context, params }) => {
+		const [link] = await Promise.all([
+			loadLink(getLinkFn, params.linkId),
+			loadFolders(context.queryClient, context.teamId),
+		]);
+		return link;
+	},
 });
 
 /**
@@ -487,6 +508,11 @@ function RouteComponent(): React.JSX.Element {
 		LinkPasswordReason | 'rejected' | undefined
 	>();
 	const [qrRejection, setQrRejection] = useState<QrRejectionReason | 'rejected' | undefined>();
+	// The loader's own `ensureQueryData` already filled this — `useSuspenseQuery`
+	// reads the same `['folders', teamId]` cache rather than fetching again,
+	// the same "one definition, two readers" reasoning `foldersQueryOptions`'s
+	// own docstring gives.
+	const { data: folderPage } = useSuspenseQuery(foldersQueryOptions(teamId));
 
 	// One fetch per link, for the whole life of the card, refetched only when
 	// the matrix itself could differ. The matrix depends on the slug and the
@@ -533,13 +559,27 @@ function RouteComponent(): React.JSX.Element {
 
 	const updateMutation = useMutation({
 		mutationFn: async (values: LinkFormValues) =>
-			updateLinkFn({ data: { body: toUpdateBody(values), linkId } }),
+			updateLinkFn({
+				data: { body: toUpdateBody(values, link.folder_id ?? ''), linkId },
+			}),
 		onError: (error: unknown) => {
 			const classified = classifyApiError(error);
 			// See `link.new.tsx`'s identical branch: a render can't throw a
 			// redirect, and this is further still, an event-handler callback.
 			if (classified.kind === 'unauthenticated') {
 				void router.navigate({ to: '/login' });
+				return;
+			}
+			// Same reasoning as `link.new.tsx`'s identical branch: a folder
+			// deleted since this page loaded gets a message a board member can
+			// act on, and the stale `['folders', teamId]` entry is refetched so a
+			// retry doesn't keep offering the gone folder.
+			if (classified.kind === 'fields' && classified.fields.folder_id !== undefined) {
+				setFailure({
+					...classified,
+					fields: { ...classified.fields, folder_id: t('links.folderGone') },
+				});
+				void queryClient.invalidateQueries({ queryKey: ['folders', teamId] });
 				return;
 			}
 			setFailure(classified);
@@ -642,6 +682,13 @@ function RouteComponent(): React.JSX.Element {
 				<CardContent>
 					<LinkForm
 						fieldErrors={fieldErrors}
+						folderHint={
+							// oxlint-disable-next-line react-perf/jsx-no-jsx-as-prop -- one static, one-line link rendered once per page visit; a stable reference would need a `useMemo` around an element that never changes across this component's own re-renders.
+							<RouterLink params={{ teamSlug }} to="/teams/$teamSlug/folders">
+								{t('links.folderNoneYet')}
+							</RouterLink>
+						}
+						folders={folderPage.items ?? []}
 						initial={toFormValues(link)}
 						key={`form-${linkId}`}
 						onSubmit={(values) => {

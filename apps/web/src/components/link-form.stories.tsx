@@ -40,6 +40,30 @@ export const WithDomainPicker: StoryObj<typeof meta> = {
 	},
 };
 
+/** A team with folders to choose from — the folder field's `<select>`/`<label>` pairing in front of the a11y addon. */
+export const WithFolders: StoryObj<typeof meta> = {
+	args: {
+		folders: [
+			{ id: 'f1', name: 'Sommerfest' },
+			{ id: 'f2', name: 'Vorstand' },
+		],
+		onSubmit: fn<(values: LinkFormValues) => void>(),
+	},
+};
+
+/**
+ * No folders yet: the select offers only "No folder", and the hint below it
+ * points at the folders page — plain text here, since the real `<Link>` needs
+ * a router this story doesn't set up.
+ */
+export const NoFoldersYet: StoryObj<typeof meta> = {
+	args: {
+		folderHint: 'No folders yet. Create them on the Folders page.',
+		folders: [],
+		onSubmit: fn<(values: LinkFormValues) => void>(),
+	},
+};
+
 // The theme toolbar global defaults to `light`, and `test:storybook` runs every
 // story at its defaults — so without this story the dark palette is never
 // checked by anything, only viewable by hand.
