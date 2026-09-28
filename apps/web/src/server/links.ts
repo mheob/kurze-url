@@ -66,13 +66,17 @@ import { authedApiClient, flushSessionCookies, requireSession } from './session'
  * identity function under Vitest, so `links.test.ts` calling it directly is
  * unaffected), and conventions.md's rule is the documented, defended
  * default for this shape — see task-9-report.md for this divergence.
+ *
+ * `page` and `filter` are bundled into `query`, for the same
+ * `eslint(max-params)` reason `addMemberFor` and `updateMemberRoleFor` give
+ * in `server/members.ts`: `teamId` stays positional, and `query` groups the
+ * two things that shape the page of links being asked for.
  */
 export const listLinksFor = createServerOnlyFn(
 	async (
 		request: Request,
 		teamId: string,
-		page: number,
-		filter: FolderFilter,
+		query: { readonly filter: FolderFilter; readonly page: number },
 	): Promise<PageLink> => {
 		const headers = new Headers();
 		const { accessToken } = await requireSession(request, headers);
@@ -87,7 +91,7 @@ export const listLinksFor = createServerOnlyFn(
 			// rendering an empty list rather than the loud failure this list is
 			// deliberately built to show. `classifyApiError` (Task 8) is written
 			// against exactly this thrown shape.
-			query: { page, per_page: 20, ...folderQueryOf(filter) },
+			query: { page: query.page, per_page: 20, ...folderQueryOf(query.filter) },
 			throwOnError: true,
 		});
 		return data;
@@ -118,7 +122,7 @@ export const listLinksFn = createServerFn({ method: 'GET' })
 				readonly teamId: string;
 				readonly page: number;
 			};
-		}) => listLinksFor(getRequest(), data.teamId, data.page, data.filter),
+		}) => listLinksFor(getRequest(), data.teamId, { filter: data.filter, page: data.page }),
 	);
 
 /**

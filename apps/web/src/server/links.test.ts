@@ -168,7 +168,7 @@ describe('links', () => {
 				}),
 			);
 
-			const result = await listLinksFor(request, 'team-a', 1, { kind: 'all' });
+			const result = await listLinksFor(request, 'team-a', { filter: { kind: 'all' }, page: 1 });
 
 			expect(seenAuth).toBe('Bearer tok');
 			expect(seenQuery).toBe('?page=1&per_page=20');
@@ -209,7 +209,7 @@ describe('links', () => {
 				},
 			});
 
-			await listLinksFor(request, 'team-a', 1, { kind: 'all' });
+			await listLinksFor(request, 'team-a', { filter: { kind: 'all' }, page: 1 });
 
 			expect(appended).toStrictEqual(['set-cookie: sb-access-token=refreshed; Path=/; HttpOnly']);
 		});
@@ -226,9 +226,12 @@ describe('links', () => {
 				}),
 			);
 
-			await listLinksFor(request, 'team-a', 1, { kind: 'unfiled' });
-			await listLinksFor(request, 'team-a', 1, { folderId: 'f1', kind: 'folder' });
-			await listLinksFor(request, 'team-a', 1, { kind: 'all' });
+			await listLinksFor(request, 'team-a', { filter: { kind: 'unfiled' }, page: 1 });
+			await listLinksFor(request, 'team-a', {
+				filter: { folderId: 'f1', kind: 'folder' },
+				page: 1,
+			});
+			await listLinksFor(request, 'team-a', { filter: { kind: 'all' }, page: 1 });
 
 			expect(seenQueries).toStrictEqual([
 				'?page=1&per_page=20&unfiled=true',
