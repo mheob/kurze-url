@@ -62,7 +62,7 @@ export async function loadLinks(
 	page: number,
 ): Promise<PageLink> {
 	try {
-		return await queryClient.ensureQueryData(linksQueryOptions(teamId, page));
+		return await queryClient.ensureQueryData(linksQueryOptions(teamId, page, { kind: 'all' }));
 	} catch (error) {
 		// oxlint-disable-next-line typescript/only-throw-error -- TanStack Router signals navigation by throwing; `redirect()` is its control flow, not an Error.
 		if (classifyApiError(error).kind === 'unauthenticated') throw redirect({ to: '/login' });
@@ -166,7 +166,7 @@ function RouteComponent(): React.JSX.Element {
 	const { teamSlug } = Route.useParams();
 	const { teamId } = Route.useRouteContext();
 	const { page } = Route.useSearch();
-	const { data } = useSuspenseQuery(linksQueryOptions(teamId, page));
+	const { data } = useSuspenseQuery(linksQueryOptions(teamId, page, { kind: 'all' }));
 
 	return <LinkList data={data} page={page} teamSlug={teamSlug} />;
 }

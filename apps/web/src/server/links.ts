@@ -18,6 +18,7 @@ import { queryOptions } from '@tanstack/react-query';
 import { createServerFn, createServerOnlyFn } from '@tanstack/react-start';
 import { getRequest } from '@tanstack/react-start/server';
 
+import { folderQueryOf, type FolderFilter } from '../lib/folders';
 import type { StatsSearch } from '../lib/stats-window';
 import { authedApiClient, flushSessionCookies, requireSession } from './session';
 
@@ -67,7 +68,12 @@ import { authedApiClient, flushSessionCookies, requireSession } from './session'
  * default for this shape — see task-9-report.md for this divergence.
  */
 export const listLinksFor = createServerOnlyFn(
-	async (request: Request, teamId: string, page: number): Promise<PageLink> => {
+	async (
+		request: Request,
+		teamId: string,
+		page: number,
+		filter: FolderFilter,
+	): Promise<PageLink> => {
 		const headers = new Headers();
 		const { accessToken } = await requireSession(request, headers);
 		flushSessionCookies(headers);
@@ -81,7 +87,7 @@ export const listLinksFor = createServerOnlyFn(
 			// rendering an empty list rather than the loud failure this list is
 			// deliberately built to show. `classifyApiError` (Task 8) is written
 			// against exactly this thrown shape.
-			query: { page, per_page: 20 },
+			query: { page, per_page: 20, ...folderQueryOf(filter) },
 			throwOnError: true,
 		});
 		return data;
@@ -99,10 +105,20 @@ export const listLinksFor = createServerOnlyFn(
  * `server/auth.ts`.
  */
 export const listLinksFn = createServerFn({ method: 'GET' })
-	.validator((data: { readonly teamId: string; readonly page: number }) => data)
+	.validator(
+		(data: { readonly filter: FolderFilter; readonly teamId: string; readonly page: number }) =>
+			data,
+	)
 	.handler(
-		async ({ data }: { readonly data: { readonly teamId: string; readonly page: number } }) =>
-			listLinksFor(getRequest(), data.teamId, data.page),
+		async ({
+			data,
+		}: {
+			readonly data: {
+				readonly filter: FolderFilter;
+				readonly teamId: string;
+				readonly page: number;
+			};
+		}) => listLinksFor(getRequest(), data.teamId, data.page, data.filter),
 	);
 
 /**
@@ -113,23 +129,25 @@ export const listLinksFn = createServerFn({ method: 'GET' })
  *
  * @param teamId - The team whose links to list.
  * @param page - The 1-based page number.
- * @returns Query options for `useSuspenseQuery`/`ensureQueryData`, keyed on `['links', teamId, page]`.
+ * @param filter - Which folder to scope the list to.
+ * @returns Query options for `useSuspenseQuery`/`ensureQueryData`, keyed on
+ *   `['links', teamId, page, filter]`.
  */
 // oxlint's typescript(explicit-function-return-type) is error-level, but
 // `queryOptions`'s own return type (`UseQueryOptions<...> &
 // QueryKeyWithDataTag<...>`, generic over the query key's own literal tuple
 // type) can't be written out by hand without either losing the specific
-// `['links', teamId, page]` tuple type `useSuspenseQuery` needs downstream
-// or fighting a `ReturnType<typeof queryOptions<PageLink>>` annotation that
-// silently widens the key back to `readonly unknown[]` and breaks
-// `pnpm typecheck` two call sites away — confirmed by trying it. Same reason
-// covers `explicit-module-boundary-types` below: it's the same missing
-// annotation this exported function can't be given either.
+// `['links', teamId, page, filter]` tuple type `useSuspenseQuery` needs
+// downstream or fighting a `ReturnType<typeof queryOptions<PageLink>>`
+// annotation that silently widens the key back to `readonly unknown[]` and
+// breaks `pnpm typecheck` two call sites away — confirmed by trying it. Same
+// reason covers `explicit-module-boundary-types` below: it's the same
+// missing annotation this exported function can't be given either.
 // oxlint-disable-next-line typescript/explicit-function-return-type, typescript/explicit-module-boundary-types
-export const linksQueryOptions = (teamId: string, page: number) =>
+export const linksQueryOptions = (teamId: string, page: number, filter: FolderFilter) =>
 	queryOptions({
-		queryFn: async () => listLinksFn({ data: { page, teamId } }),
-		queryKey: ['links', teamId, page] as const,
+		queryFn: async () => listLinksFn({ data: { filter, page, teamId } }),
+		queryKey: ['links', teamId, page, filter] as const,
 	});
 
 /**
