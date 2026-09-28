@@ -1019,3 +1019,79 @@ func TestGetLinkReturnsItsTags(t *testing.T) {
 	require.Len(t, body.Tags, 1)
 	require.Equal(t, "Presse", body.Tags[0].Name)
 }
+
+func TestListLinksFiltersToUnfiledLinks(t *testing.T) {
+	f := newTenancyFixture(t)
+	folder := f.createFolder(t, "Sommerfest")
+	f.createLinkInFolder(t, "https://example.org/in", folder.ID)
+	loose := f.createLink(t, "ohne-ordner", "https://example.org/out")
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		"/v1/teams/"+f.teamID.String()+"/links?unfiled=true&per_page=100", nil)
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	page := decode[linkPage](t, rec)
+	var ids []uuid.UUID
+	for _, item := range page.Items {
+		require.Nil(t, item.FolderID, "an unfiled filter must return no filed link")
+		ids = append(ids, item.ID)
+	}
+	require.Contains(t, ids, loose.ID)
+	require.Equal(t, len(page.Items), page.TotalCount, "the count must respect the filter")
+}
+
+func TestListLinksRejectsUnfiledTogetherWithAFolder(t *testing.T) {
+	f := newTenancyFixture(t)
+	folder := f.createFolder(t, "Sommerfest")
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		"/v1/teams/"+f.teamID.String()+"/links?unfiled=true&folder_id="+folder.ID.String(), nil)
+
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+}
+
+func TestListLinksUnfiledNeverShowsAnotherTeamsLinks(t *testing.T) {
+	f := newTenancyFixture(t)
+	other := newTenancyFixture(t)
+	other.createLink(t, "geheim-lose", "https://example.org/geheim")
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet,
+		"/v1/teams/"+f.teamID.String()+"/links?unfiled=true&per_page=100", nil)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	for _, item := range decode[linkPage](t, rec).Items {
+		require.Equal(t, f.teamID, item.TeamID)
+		require.NotEqual(t, "geheim-lose", item.Slug)
+	}
+}
+
+func TestLinkOmitsFolderIDWhenUnfiled(t *testing.T) {
+	f := newTenancyFixture(t)
+	loose := f.createLink(t, "ohne-feld", "https://example.org/x")
+
+	rec := f.do(t, f.members[authz.RoleViewer], http.MethodGet, "/v1/links/"+loose.ID.String(), nil)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var raw map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &raw))
+	_, present := raw["folder_id"]
+	require.False(t, present, "a null folder must be absent, as the schema says")
+}
+
+func TestCreateLinkNamesTheFolderFieldForAnUnknownFolder(t *testing.T) {
+	f := newTenancyFixture(t)
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPost,
+		"/v1/teams/"+f.teamID.String()+"/links",
+		map[string]any{"destination_url": "https://example.org/y", "folder_id": uuid.NewString()})
+
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+	var problem struct {
+		Errors []struct {
+			Location string `json:"location"`
+		} `json:"errors"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &problem))
+	require.NotEmpty(t, problem.Errors)
+	require.Equal(t, "body.folder_id", problem.Errors[0].Location)
+}

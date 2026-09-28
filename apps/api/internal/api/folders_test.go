@@ -42,11 +42,11 @@ func (f *tenancyFixture) createFolder(t *testing.T, name string) folderBody {
 	return decode[folderBody](t, rec)
 }
 
-// createLinkInFolder seeds a link already filed into folderID, by inserting
-// directly rather than going through the create-link endpoint: that endpoint
-// does not accept folder_id yet (a later plan wires folders into link
-// create/update), so the only way to get a link into a folder today is the
-// way the fixture seeds its own initial link — a raw insert.
+// createLinkInFolder seeds a link already filed into folderID. It inserts
+// directly rather than going through the create-link endpoint (which does
+// accept folder_id): the raw insert is simply the fixture's way to seed a
+// filed link without going through the endpoint, the same way the fixture
+// seeds its own initial link.
 func (f *tenancyFixture) createLinkInFolder(t *testing.T, dest string, folderID uuid.UUID) uuid.UUID {
 	t.Helper()
 	var id uuid.UUID
@@ -230,4 +230,43 @@ func TestDeleteFolderRecordsWhichFolderWentInTheAuditRow(t *testing.T) {
 		f.teamID, folder.ID).Scan(&name))
 	require.Equal(t, "Sommerfest 2026", name,
 		"the audit row must name the folder, with its case intact")
+}
+
+func TestCreateFolderRejectsADuplicateNameIgnoringCase(t *testing.T) {
+	f := newTenancyFixture(t)
+	f.createFolder(t, "Sommerfest")
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPost,
+		"/v1/teams/"+f.teamID.String()+"/folders", map[string]any{"name": "SOMMERFEST"})
+
+	require.Equal(t, http.StatusConflict, rec.Code, "body: %s", rec.Body.String())
+}
+
+func TestUpdateFolderRejectsAnotherFoldersNameIgnoringCase(t *testing.T) {
+	f := newTenancyFixture(t)
+	f.createFolder(t, "Sommerfest")
+	other := f.createFolder(t, "Newsletter")
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPatch,
+		"/v1/folders/"+other.ID.String(), map[string]any{"name": "sommerfest"})
+
+	require.Equal(t, http.StatusConflict, rec.Code, "body: %s", rec.Body.String())
+}
+
+func TestUpdateFolderAllowsRecasingItsOwnName(t *testing.T) {
+	f := newTenancyFixture(t)
+	folder := f.createFolder(t, "sommerfest")
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPatch,
+		"/v1/folders/"+folder.ID.String(), map[string]any{"name": "Sommerfest"})
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+}
+
+func TestFolderNamesMayRepeatAcrossTeams(t *testing.T) {
+	f := newTenancyFixture(t)
+	other := newTenancyFixture(t)
+	f.createFolder(t, "Sommerfest")
+
+	other.createFolder(t, "Sommerfest") // createFolder itself requires 201
 }

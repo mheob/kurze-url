@@ -231,7 +231,7 @@ export type Link = {
     destination_url: string;
     domain_id: string;
     expires_at: string | null;
-    folder_id: string;
+    folder_id?: string;
     has_password: boolean;
     hostname: string;
     id: string;
@@ -680,7 +680,7 @@ export type LinkWritable = {
     destination_url: string;
     domain_id: string;
     expires_at: string | null;
-    folder_id: string;
+    folder_id?: string;
     has_password: boolean;
     hostname: string;
     id: string;
@@ -1686,6 +1686,10 @@ export type ListLinksData = {
          * Restrict to links carrying one tag, as a UUID.
          */
         tag_id?: string;
+        /**
+         * Only links without a folder. Cannot be combined with folder_id.
+         */
+        unfiled?: boolean;
         /**
          * Newest first by default.
          */

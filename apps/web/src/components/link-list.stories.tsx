@@ -1,10 +1,11 @@
 /* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding of this rule in this
-   file traces to `@kurze-url/api-client`'s generated `Link`/`PageLink` types (`Link.tags`'s nested
-   array included), whose properties are not marked readonly; that is generated codegen output,
-   never edited by hand. */
+   file traces to `@kurze-url/api-client`'s generated `Link`/`PageLink`/`Folder` types (`Link.tags`'s
+   nested array included), whose properties are not marked readonly; that is generated codegen
+   output, never edited by hand. */
 
-import type { Link as ApiLink, PageLink } from '@kurze-url/api-client';
+import type { Folder, Link as ApiLink, PageLink } from '@kurze-url/api-client';
 import type { Meta, StoryObj } from '@storybook/tanstack-react';
+import { fn } from 'storybook/test';
 
 import { LinkList } from './link-list';
 
@@ -22,7 +23,6 @@ function link(overrides: Partial<ApiLink> = {}): ApiLink {
 		destination_url: 'https://example.org/',
 		domain_id: 'domain-1',
 		expires_at: null,
-		folder_id: 'folder-1',
 		has_password: false,
 		hostname: 'kurze.url',
 		id: 'link-1',
@@ -41,7 +41,17 @@ function pageOf(overrides: Partial<PageLink> = {}): PageLink {
 	return { items: [], page: 1, per_page: 20, total_count: 0, ...overrides };
 }
 
+const FOLDERS: readonly Folder[] = [
+	{ created_at: '2026-09-26T00:00:00Z', id: 'folder-1', name: 'Sommerfest', team_id: 'a' },
+	{ created_at: '2026-09-26T00:00:00Z', id: 'folder-2', name: 'Vorstand', team_id: 'a' },
+];
+
 const meta = {
+	args: {
+		folder: undefined,
+		folders: FOLDERS,
+		onFolderChange: fn<(folder: string | undefined) => void>(),
+	},
 	component: LinkList,
 	title: 'Links/LinkList',
 } satisfies Meta<typeof LinkList>;
@@ -61,7 +71,7 @@ export const Populated: StoryObj<typeof meta> = {
 	args: {
 		data: pageOf({
 			items: [
-				link(),
+				link({ folder_id: 'folder-1' }),
 				link({
 					destination_url: 'https://example.org/other',
 					id: 'link-2',
@@ -87,6 +97,62 @@ export const NoShortDomainConfigured: StoryObj<typeof meta> = {
 			items: [link({ hostname: 'short.invalid', short_url: 'https://short.invalid/abc123' })],
 			total_count: 1,
 		}),
+		page: 1,
+		teamSlug: 'verein-a',
+	},
+};
+
+/**
+ * The folder column, populated: one link filed under "Sommerfest", one
+ * unfiled — the "–" cell's visually hidden "No folder" text is what a
+ * screen-reader user hears there instead of a bare dash.
+ */
+export const WithFolderColumn: StoryObj<typeof meta> = {
+	args: {
+		data: pageOf({
+			items: [
+				link({ folder_id: 'folder-1', id: 'link-1' }),
+				link({ id: 'link-2', short_url: 'https://kurze.url/def456', slug: 'def456' }),
+			],
+			total_count: 2,
+		}),
+		page: 1,
+		teamSlug: 'verein-a',
+	},
+};
+
+/**
+ * The list filtered to one folder: the "Folder: Sommerfest" context line, the
+ * filter select reflecting the active choice, and the "New link" link
+ * carrying the folder along to preselect it on the create form.
+ */
+export const FilteredToFolder: StoryObj<typeof meta> = {
+	args: {
+		data: pageOf({ items: [link({ folder_id: 'folder-1', id: 'link-1' })], total_count: 1 }),
+		folder: 'folder-1',
+		page: 1,
+		teamSlug: 'verein-a',
+	},
+};
+
+/**
+ * "No folder" filtered to zero links: distinct wording ("Every link is in a
+ * folder.") from both the plain empty state and the in-folder one, since all
+ * three describe a different reason the table is missing.
+ */
+export const UnfiledEmpty: StoryObj<typeof meta> = {
+	args: { data: pageOf(), folder: 'none', page: 1, teamSlug: 'verein-a' },
+};
+
+/**
+ * The `folder` search value names no folder the team has (deleted, or
+ * hand-edited into the URL) — the list refuses to silently discard the
+ * filter, and offers a way back to the unfiltered list instead of guessing.
+ */
+export const MissingFolder: StoryObj<typeof meta> = {
+	args: {
+		data: pageOf(),
+		folder: '0b7c1f6e-2f4a-4f7e-9a53-8a0e1d2c3b4a',
 		page: 1,
 		teamSlug: 'verein-a',
 	},

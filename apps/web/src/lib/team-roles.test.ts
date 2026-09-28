@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+	canEdit,
 	canManageMember,
 	isSoleOwner,
 	isTeamRole,
@@ -72,5 +73,13 @@ describe('team roles', () => {
 			{ role: 'owner', user_id: 'u2' },
 		];
 		expect(isSoleOwner(members, 'u1')).toBe(false);
+	});
+
+	it('lets editor, admin and owner edit folders, but not viewer or an unset role', () => {
+		expect(canEdit('editor')).toBe(true);
+		expect(canEdit('admin')).toBe(true);
+		expect(canEdit('owner')).toBe(true);
+		expect(canEdit('viewer')).toBe(false);
+		expect(canEdit(undefined)).toBe(false);
 	});
 });

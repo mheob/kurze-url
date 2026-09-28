@@ -168,7 +168,7 @@ describe('links', () => {
 				}),
 			);
 
-			const result = await listLinksFor(request, 'team-a', 1);
+			const result = await listLinksFor(request, 'team-a', { filter: { kind: 'all' }, page: 1 });
 
 			expect(seenAuth).toBe('Bearer tok');
 			expect(seenQuery).toBe('?page=1&per_page=20');
@@ -209,9 +209,35 @@ describe('links', () => {
 				},
 			});
 
-			await listLinksFor(request, 'team-a', 1);
+			await listLinksFor(request, 'team-a', { filter: { kind: 'all' }, page: 1 });
 
 			expect(appended).toStrictEqual(['set-cookie: sb-access-token=refreshed; Path=/; HttpOnly']);
+		});
+
+		it('sends the folder filter as query parameters', async () => {
+			vi.stubEnv('API_HOST', 'http://api.test');
+			withSession('tok');
+
+			const seenQueries: string[] = [];
+			server.use(
+				http.get('http://api.test/v1/teams/team-a/links', ({ request: apiRequest }) => {
+					seenQueries.push(new URL(apiRequest.url).search);
+					return HttpResponse.json(page());
+				}),
+			);
+
+			await listLinksFor(request, 'team-a', { filter: { kind: 'unfiled' }, page: 1 });
+			await listLinksFor(request, 'team-a', {
+				filter: { folderId: 'f1', kind: 'folder' },
+				page: 1,
+			});
+			await listLinksFor(request, 'team-a', { filter: { kind: 'all' }, page: 1 });
+
+			expect(seenQueries).toStrictEqual([
+				'?page=1&per_page=20&unfiled=true',
+				'?page=1&per_page=20&folder_id=f1',
+				'?page=1&per_page=20',
+			]);
 		});
 	});
 

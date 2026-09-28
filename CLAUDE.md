@@ -78,7 +78,7 @@ Inside `apps/api`: `cmd/api/main.go` and `cmd/openapi/main.go` (writes `openapi.
 
 All under `/v1`, all Bearer-authenticated, except the public redirect surface.
 
-`GET /me` · teams (`POST|GET /teams`, `GET|PATCH /teams/{id}`) · members (`GET|POST /teams/{id}/members`, `PATCH|DELETE .../{user_id}`) · domains (under team, plus `POST /domains/{id}/verify`) · folders · tags · links (`POST|GET /teams/{id}/links`, `GET|PATCH|DELETE /links/{id}`) · `PUT|DELETE /links/{id}/password` (deliberately separate from PATCH — own audit actions, and a rate limit on the setter) · `GET /links/{id}/qr` (returns raw image bytes; `format` svg|png, `size` 64–2048 PNG-only, `fg`/`bg` as `rrggbb`) · `GET /links/{id}/stats` (one document per link: totals, a gap-filled daily series and every dimension's top ten; query params `from`/`to` as `YYYY-MM-DD`, clamped to a 90-day window) · `GET /teams/{id}/audit-log`.
+`GET /me` · teams (`POST|GET /teams`, `GET|PATCH /teams/{id}`) · members (`GET|POST /teams/{id}/members`, `PATCH|DELETE .../{user_id}`) · domains (under team, plus `POST /domains/{id}/verify`) · folders · tags · links (`POST|GET /teams/{id}/links` [filters: `q`, `state`, `domain_id`, `folder_id`, `unfiled`, `tag_id`, `sort`], `GET|PATCH|DELETE /links/{id}`) · `PUT|DELETE /links/{id}/password` (deliberately separate from PATCH — own audit actions, and a rate limit on the setter) · `GET /links/{id}/qr` (returns raw image bytes; `format` svg|png, `size` 64–2048 PNG-only, `fg`/`bg` as `rrggbb`) · `GET /links/{id}/stats` (one document per link: totals, a gap-filled daily series and every dimension's top ten; query params `from`/`to` as `YYYY-MM-DD`, clamped to a 90-day window) · `GET /teams/{id}/audit-log`.
 
 **Public, hostname-routed, plain chi handlers outside Huma:** `GET /{slug}` (redirect) · `GET /{slug}/verify` (password interstitial, server-rendered HTML, deliberately framework-free) · `POST /{slug}/verify` (tight rate limit).
 
@@ -95,6 +95,7 @@ Tables: `team`, `team_member`, `domain`, `folder`, `tag`, `link`, `link_tag`, `l
 - Analytics is a generic rollup: `(link_id, bucket_start /*date*/, dimension_type, dimension_value) → clicks, unique_visitors`. **Daily** granularity. No raw click table exists, and none should be added.
 - `link.password_hash` nullable, Argon2id. Never log the plaintext or the hash into `audit_log.metadata`.
 - `team.slug` is globally unique, immutable, `^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`, 3–40 characters. The **frontend** addresses a team by it (`/teams/sv-gruenwald/links`); the **API** addresses teams by UUID everywhere and never accepts a slug in a path.
+- Folder names are unique per team, case-insensitively (`folder_team_id_name_lower_idx`), the same rule tag names follow.
 
 ---
 

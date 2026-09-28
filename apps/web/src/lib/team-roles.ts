@@ -61,6 +61,21 @@ function canManageMember(actorRole: string, targetRole: string): boolean {
 }
 
 /**
+ * Whether a role may create, rename and delete folders (and, later, tags),
+ * matching the API's EditorScope.
+ *
+ * @param role - The caller's role on the team, from `GET /v1/me`.
+ * @returns True for editor, admin and owner.
+ */
+function canEdit(role: string | undefined): boolean {
+	return (
+		role !== undefined &&
+		isTeamRole(role) &&
+		TEAM_ROLES.indexOf(role) >= TEAM_ROLES.indexOf('editor')
+	);
+}
+
+/**
  * Whether this member is the team's only owner, and therefore cannot be
  * demoted or removed.
  *
@@ -78,5 +93,5 @@ function isSoleOwner(members: readonly RoleBearer[], userId: string): boolean {
 	return owners.length === 1 && owners[0]?.user_id === userId;
 }
 
-export { TEAM_ROLES, canManageMember, isTeamRole, isSoleOwner, rolesAssignableBy };
+export { TEAM_ROLES, canEdit, canManageMember, isTeamRole, isSoleOwner, rolesAssignableBy };
 export type { TeamRole };

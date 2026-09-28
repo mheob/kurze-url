@@ -2,13 +2,19 @@ import type { Domain, PageDomain } from '@kurze-url/api-client';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { LinkFormValues } from '../../components/link-form';
-import { afterCreate, loadVerifiedDomains, toRequestBody } from './teams.$teamSlug.links.new';
+import {
+	afterCreate,
+	initialFolderId,
+	loadVerifiedDomains,
+	toRequestBody,
+} from './teams.$teamSlug.links.new';
 
 const baseValues: LinkFormValues = {
 	analytics_enabled: true,
 	destination_url: 'https://example.org/',
 	domain_id: '',
 	expires_at: '',
+	folder_id: '',
 	redirect_type: 302,
 	slug: '',
 };
@@ -82,6 +88,26 @@ describe(toRequestBody, () => {
 		expect(toRequestBody(baseValues)).toStrictEqual(
 			expect.objectContaining({ domain_id: undefined }),
 		);
+	});
+
+	it('sends the chosen folder and omits an empty one', () => {
+		expect(toRequestBody({ ...baseValues, folder_id: 'f1' })).toMatchObject({ folder_id: 'f1' });
+		expect(toRequestBody({ ...baseValues, folder_id: '' }).folder_id).toBeUndefined();
+	});
+});
+
+/**
+ * `links/new` preselects a folder from its own `folder` search parameter, but
+ * only when the team actually has that folder: a stale link (a folder
+ * deleted since the URL was bookmarked or shared) must not silently pin the
+ * form onto an id the picker cannot render, which is why this checks against
+ * the loaded `folders` list rather than trusting the search parameter alone.
+ */
+describe(initialFolderId, () => {
+	it('preselects only a folder the team has', () => {
+		expect(initialFolderId('f1', [{ id: 'f1', name: 'A' }])).toBe('f1');
+		expect(initialFolderId('ffff', [{ id: 'f1', name: 'A' }])).toBe('');
+		expect(initialFolderId(undefined, [{ id: 'f1', name: 'A' }])).toBe('');
 	});
 });
 

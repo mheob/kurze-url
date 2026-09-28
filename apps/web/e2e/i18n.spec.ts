@@ -234,6 +234,7 @@ for (const path of PATHS) {
 const AUTHENTICATED_PATHS = [
 	'links',
 	'links/new',
+	'folders',
 	'domains',
 	'stats',
 	'stats-data',
@@ -336,6 +337,8 @@ for (const suffix of AUTHENTICATED_PATHS) {
 		// short URL are known — see the long comment above `identicalByDesign`
 		// for why these join `teamName` in the same exclusion Set.
 		const linkStrings: string[] = [];
+		// Same idea, populated only for `folders` below.
+		const folderStrings: string[] = [];
 		// Same idea, populated only for `domains` below.
 		const domainStrings: string[] = [];
 		// Same idea, populated only for `audit-log` below.
@@ -362,6 +365,33 @@ for (const suffix of AUTHENTICATED_PATHS) {
 				destinationUrl: I18N_CRAWL_DESTINATION_URL,
 			});
 			linkStrings.push(I18N_CRAWL_DESTINATION_URL, shortUrl);
+		}
+
+		if (suffix === 'folders') {
+			// A freshly provisioned team starts with zero folders, and
+			// `FolderList`'s empty-state branch (`folder-list.tsx`) never renders
+			// a folder's own name as a link, its "Rename" button, or its delete
+			// trigger — all real, translated strings this crawl would otherwise
+			// miss. Created once, before either language visits the page, so both
+			// passes compare the same rendered list. `Date.now()` avoids a
+			// collision with a rerun of this same crawl, or with
+			// `folders.spec.ts`'s own folder, against the same shared preview
+			// database — the same reasoning as `I18N_CRAWL_DESTINATION_URL`
+			// avoiding a fixed literal above.
+			const folderName = `i18n-folders-${Date.now()}`;
+
+			await page.goto(`/teams/${teamSlug}/folders`);
+
+			// Not decorative: this form is server-rendered too, and `goto`
+			// resolves before React hydrates it — see `waitForHydration`.
+			const nameField = page.getByLabel('Folder name');
+			await waitForHydration(nameField);
+			await nameField.fill(folderName);
+			await page.getByRole('button', { name: 'Create folder' }).click();
+
+			await expect(page.getByRole('link', { name: folderName })).toBeVisible();
+
+			folderStrings.push(folderName);
 		}
 
 		if (suffix.startsWith('stats')) {
@@ -499,6 +529,9 @@ for (const suffix of AUTHENTICATED_PATHS) {
 		// created one): a real Verein's own link would render its own
 		// destination and short URL in that exact spot, identically in both
 		// languages, for the same reason — nobody translates a URL either.
+		// `folderStrings` (above, populated only when `folders` created one) is
+		// the same story again: a folder's name is whatever a team chose to call
+		// it, never copy.
 		// `domainStrings` (above,
 		// populated only when `domains` claimed one) is the same story again: a
 		// hostname, its TXT challenge name, and the raw values of the two DNS
@@ -519,6 +552,7 @@ for (const suffix of AUTHENTICATED_PATHS) {
 			...IDENTICAL_BY_DESIGN,
 			teamName,
 			...linkStrings,
+			...folderStrings,
 			...domainStrings,
 			...auditStrings,
 		]);

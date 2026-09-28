@@ -1,24 +1,26 @@
 /* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding of this rule in this
-   file traces to `@kurze-url/api-client`'s generated `Link`/`PageLink` types (`Link.tags`'s nested
-   array included), whose properties are not marked readonly; that is generated codegen output,
-   never edited by hand. */
+   file traces to `@kurze-url/api-client`'s generated `Link`/`PageLink`/`Folder` types (`Link.tags`'s
+   nested array included), whose properties are not marked readonly; that is generated codegen
+   output, never edited by hand. */
 
-import type { Link as ApiLink, PageLink } from '@kurze-url/api-client';
+import type { Folder, Link as ApiLink, PageLink } from '@kurze-url/api-client';
 import {
-	createMemoryHistory,
 	createRootRoute,
 	createRoute,
 	createRouter,
+	createMemoryHistory,
 	RouterProvider,
 } from '@tanstack/react-router';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { useEffect, useState } from 'react';
 import { I18nextProvider } from 'react-i18next';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { createI18n } from '../i18n';
 import { LinkList } from './link-list';
 
-function link(overrides: Partial<ApiLink> = {}): ApiLink {
+function linkWith(overrides: Partial<ApiLink> = {}): ApiLink {
 	return {
 		analytics_enabled: true,
 		created_at: '2026-01-01T00:00:00Z',
@@ -26,7 +28,6 @@ function link(overrides: Partial<ApiLink> = {}): ApiLink {
 		destination_url: 'https://example.org/',
 		domain_id: 'domain-1',
 		expires_at: null,
-		folder_id: 'folder-1',
 		has_password: false,
 		hostname: 'short.invalid',
 		id: 'link-1',
@@ -41,30 +42,120 @@ function link(overrides: Partial<ApiLink> = {}): ApiLink {
 	};
 }
 
-function pageOf(overrides: Partial<PageLink> = {}): PageLink {
-	return { items: [], page: 1, per_page: 20, total_count: 0, ...overrides };
+/**
+ * Unlike `link-list.stories.tsx`'s own `pageOf` (and this file's own former
+ * one), this takes the items directly rather than a `Partial<PageLink>`:
+ * every test below either wants a specific set of links with `total_count`
+ * following from it, or overrides `total_count`/`per_page` by spreading over
+ * the result — `{ ...pageOf([...]), per_page: 1, total_count: 2 }` — which
+ * reads the override at the call site instead of hiding it behind another
+ * layer of partial-object merging.
+ *
+ * @param items - The links on this page.
+ * @returns The page, with `page: 1`, `per_page: 20`, and `total_count` following from `items.length`.
+ */
+function pageOf(items: readonly ApiLink[] = []): PageLink {
+	return { items: [...items], page: 1, per_page: 20, total_count: items.length };
+}
+
+/** The props `renderList`/`listElement` accept; every field has a default so a test only names what it cares about. */
+interface ListElementOptions {
+	readonly data?: PageLink;
+	readonly folder?: string;
+	readonly folders?: readonly Folder[];
+	readonly onFolderChange?: (folder: string | undefined) => void;
+	readonly page?: number;
+	readonly teamSlug?: string;
 }
 
 /**
- * `LinkList` renders TanStack Router `<Link>` elements for pagination, which
- * need a router in context — the same reasoning `team-switcher.test.tsx`
- * gives for its own minimal, test-only route tree. Also registers
- * `/teams/$teamSlug/links/new` (Finding 2's create-link entry point) and
- * `/teams/$teamSlug/links/$linkId` (Finding 2's edit-link entry point): `<Link>`
- * builds its `href` from the `to` path template regardless of whether this
- * router's own tree contains a matching route (verified — omitting either
- * here does not fail any test), but registering them keeps this fixture
- * honest about the routes actually existing, matching every other route
- * `<Link>` here targets.
+ * Identity function returning the props it was given — `renderList`'s
+ * `rerender` (below) takes the same shape directly, so this exists only so a
+ * test reads `rerender(listElement({ ... }))` rather than a bare object
+ * literal, mirroring how the task brief names it.
  *
- * @param data - The page of links to render.
- * @param page - The current page number.
- * @returns The rendered test utilities from Testing Library's `render`.
+ * @param options - The next props to render `LinkList` with.
+ * @returns The same options, unchanged.
  */
-function renderWith(data: PageLink, page = 1): ReturnType<typeof render> {
-	const rootRoute = createRootRoute({
-		component: () => <LinkList data={data} page={page} teamSlug="verein-a" />,
-	});
+function listElement(options: ListElementOptions = {}): ListElementOptions {
+	return options;
+}
+
+/**
+ * `folders` needs a three-way default, not the usual `?? []`: an *omitted*
+ * `folders` key means "this test doesn't care, default to loaded-and-empty"
+ * (`links.folderNone` for existing tests, unchanged since before this task,
+ * predates the folder column entirely) — but an *explicitly* passed
+ * `folders: undefined` (as "falls back to the ordinary empty state..." below
+ * does) means "folders unavailable" and must reach `LinkList` unchanged, not
+ * be folded into `[]`. `?? []` cannot tell those two apart — `state.folders`
+ * reads as `undefined` either way — so this checks the key's presence with
+ * `in` instead.
+ *
+ * @param state - The current render's options.
+ * @returns `state.folders` untouched when the key is present (however it is set), `[]` when it is absent.
+ */
+function foldersOf(state: ListElementOptions): readonly Folder[] | undefined {
+	return 'folders' in state ? state.folders : [];
+}
+
+/**
+ * `LinkList` renders TanStack Router `<Link>` elements for pagination, the
+ * folder filter's row links and the "New link"/"Show all links" links, which
+ * all need a router in context — the same reasoning `team-switcher.test.tsx`
+ * gives for its own minimal, test-only route tree. Also registers
+ * `/teams/$teamSlug/links/new` and `/teams/$teamSlug/links/$linkId`, the
+ * create and edit entry points `<Link>` targets from this component.
+ *
+ * Unlike the file's former `renderWith`, the router and its route tree are
+ * built once per `renderList` call and never recreated: the root route's own
+ * component holds the current props in `useState`, and the `rerender`
+ * returned here (deliberately not Testing Library's own `rerender`, which
+ * would require rebuilding — and remounting — the whole router to hand the
+ * leaf component new props) just updates that state. That keeps a test like
+ * "keeps the filter and heading visible over each empty state" — which walks
+ * through three different `folder` values in a row — driven by ordinary
+ * React re-renders instead of tearing down and reattaching a `RouterProvider`
+ * three times, which is not a transition TanStack Router's own initial-match
+ * resolution is written to support mid-test.
+ *
+ * @param initial - The props to render `LinkList` with first.
+ * @returns Testing Library's render result, with `rerender` replaced by one that accepts the next props directly (not a `ReactElement`).
+ */
+function renderList(initial: ListElementOptions = {}): Omit<
+	ReturnType<typeof render>,
+	'rerender'
+> & {
+	rerender: (next: ListElementOptions) => void;
+} {
+	let applyState: ((next: ListElementOptions) => void) | undefined;
+
+	function Root(): React.JSX.Element {
+		const [state, setState] = useState(initial);
+		// Registered in an effect, not assigned directly during render: oxlint's
+		// `react/globals` flags reassigning a variable declared outside the
+		// component while rendering, exactly this line's own help text
+		// ("update it in an effect" instead). Testing Library's `render` flushes
+		// effects synchronously (it wraps the initial render in `act`), so
+		// `applyState` is already set by the time `renderList` returns below.
+		// `setState` is stable across renders (React guarantees it), so an empty
+		// dependency list is accurate, not a lie told to silence the linter.
+		useEffect(() => {
+			applyState = setState;
+		}, []);
+		return (
+			<LinkList
+				data={state.data ?? pageOf()}
+				folder={state.folder}
+				folders={foldersOf(state)}
+				onFolderChange={state.onFolderChange ?? vi.fn<(folder: string | undefined) => void>()}
+				page={state.page ?? 1}
+				teamSlug={state.teamSlug ?? 'verein-a'}
+			/>
+		);
+	}
+
+	const rootRoute = createRootRoute({ component: Root });
 	const linksRoute = createRoute({
 		component: () => null,
 		getParentRoute: () => rootRoute,
@@ -85,11 +176,20 @@ function renderWith(data: PageLink, page = 1): ReturnType<typeof render> {
 		routeTree: rootRoute.addChildren([linksRoute, newLinkRoute, editLinkRoute]),
 	});
 
-	return render(
+	const result = render(
 		<I18nextProvider i18n={createI18n('en')}>
 			<RouterProvider router={router} />
 		</I18nextProvider>,
 	);
+
+	return {
+		...result,
+		rerender: (next: ListElementOptions) => {
+			act(() => {
+				applyState?.(next);
+			});
+		},
+	};
 }
 
 describe(LinkList, () => {
@@ -100,7 +200,7 @@ describe(LinkList, () => {
 	 * the task report for the mutation this test exists to catch.
 	 */
 	it('shows the empty-state message when the team has no links', async () => {
-		renderWith(pageOf());
+		renderList();
 		// `findBy*`, not `getBy*`, for the first assertion in every test here:
 		// `RouterProvider`'s initial match resolves asynchronously (its own
 		// microtask, separate from React's synchronous render), the same
@@ -111,8 +211,10 @@ describe(LinkList, () => {
 
 	it('offers a link to create the first link when the team has none', async () => {
 		// Finding 2: the empty state read as an actionable prompt ("Create your
-		// first one") with nothing to click. Now it is an actual link.
-		renderWith(pageOf());
+		// first one") with nothing to click. Now it is an actual link — and,
+		// since Task 7, the one link always rendered above the filter, not a
+		// second copy duplicated inside the empty state.
+		renderList();
 		await expect(screen.findByRole('link', { name: 'Create link' })).resolves.toHaveAttribute(
 			'href',
 			'/teams/verein-a/links/new',
@@ -122,7 +224,7 @@ describe(LinkList, () => {
 	it('offers a link to create another link when the team already has links', async () => {
 		// Finding 2, other half: a team that already has links must still be
 		// able to reach the create page, not only a team with none.
-		renderWith(pageOf({ items: [link()], total_count: 1 }));
+		renderList({ data: pageOf([linkWith()]) });
 		await expect(screen.findByRole('link', { name: 'Create link' })).resolves.toHaveAttribute(
 			'href',
 			'/teams/verein-a/links/new',
@@ -139,12 +241,12 @@ describe(LinkList, () => {
 		// deliberately different values: pinning the `href` only proves the
 		// component used the right one because the two can't be mistaken for
 		// each other here.
-		renderWith(
-			pageOf({
-				items: [link(), link({ id: 'link-2', short_url: 'https://short.invalid/def456' })],
-				total_count: 2,
-			}),
-		);
+		renderList({
+			data: pageOf([
+				linkWith(),
+				linkWith({ id: 'link-2', short_url: 'https://short.invalid/def456' }),
+			]),
+		});
 
 		const editLinks = await screen.findAllByRole('link', { name: 'Edit' });
 		expect(editLinks).toHaveLength(2);
@@ -153,12 +255,12 @@ describe(LinkList, () => {
 	});
 
 	it('lists every link on the page with a copy button and its destination', async () => {
-		renderWith(
-			pageOf({
-				items: [link(), link({ id: 'link-2', short_url: 'https://short.invalid/def456' })],
-				total_count: 2,
-			}),
-		);
+		renderList({
+			data: pageOf([
+				linkWith(),
+				linkWith({ id: 'link-2', short_url: 'https://short.invalid/def456' }),
+			]),
+		});
 
 		await expect(
 			screen.findByRole('link', { name: 'https://short.invalid/abc123' }),
@@ -169,7 +271,7 @@ describe(LinkList, () => {
 	});
 
 	it('marks a password-protected link', async () => {
-		renderWith(pageOf({ items: [link({ has_password: true })], total_count: 1 }));
+		renderList({ data: pageOf([linkWith({ has_password: true })]) });
 
 		// The badge carries text, not only an icon and a colour: colour alone may
 		// never be the sole carrier of meaning (WCAG 1.4.1), and the icon is
@@ -178,12 +280,12 @@ describe(LinkList, () => {
 	});
 
 	it('shows the short-domain notice when the links live on an .invalid hostname', async () => {
-		renderWith(pageOf({ items: [link({ hostname: 'short.invalid' })], total_count: 1 }));
+		renderList({ data: pageOf([linkWith({ hostname: 'short.invalid' })]) });
 		await expect(screen.findByRole('note')).resolves.toBeInTheDocument();
 	});
 
 	it('hides the short-domain notice once a real domain is configured', async () => {
-		renderWith(pageOf({ items: [link({ hostname: 'kurze.url' })], total_count: 1 }));
+		renderList({ data: pageOf([linkWith({ hostname: 'kurze.url' })]) });
 		await expect(screen.findByRole('heading', { name: 'Your links' })).resolves.toBeInTheDocument();
 		expect(screen.queryByRole('note')).not.toBeInTheDocument();
 	});
@@ -194,31 +296,123 @@ describe(LinkList, () => {
 		// hostname. Reading only `items[0]` would miss the invalid one entirely
 		// whenever it is not the first row — this pins the fix against that
 		// exact ordering.
-		renderWith(
-			pageOf({
-				items: [
-					link({ hostname: 'kurze.url', id: 'link-1', short_url: 'https://kurze.url/abc123' }),
-					link({
-						hostname: 'short.invalid',
-						id: 'link-2',
-						short_url: 'https://short.invalid/def456',
-					}),
-				],
-				total_count: 2,
-			}),
-		);
+		renderList({
+			data: pageOf([
+				linkWith({ hostname: 'kurze.url', id: 'link-1', short_url: 'https://kurze.url/abc123' }),
+				linkWith({
+					hostname: 'short.invalid',
+					id: 'link-2',
+					short_url: 'https://short.invalid/def456',
+				}),
+			]),
+		});
 		await expect(screen.findByRole('note')).resolves.toBeInTheDocument();
 	});
 
 	it('disables the previous-page control on the first page', async () => {
-		renderWith(pageOf({ items: [link()], page: 1, per_page: 1, total_count: 2 }), 1);
+		renderList({
+			data: { ...pageOf([linkWith()]), per_page: 1, total_count: 2 },
+			page: 1,
+		});
 		await expect(screen.findByRole('link', { name: 'Next page' })).resolves.toBeInTheDocument();
 		expect(screen.queryByRole('link', { name: 'Previous page' })).not.toBeInTheDocument();
 	});
 
 	it('disables the next-page control on the last page', async () => {
-		renderWith(pageOf({ items: [link()], page: 2, per_page: 1, total_count: 2 }), 2);
+		renderList({
+			data: { ...pageOf([linkWith()]), page: 2, per_page: 1, total_count: 2 },
+			page: 2,
+		});
 		await expect(screen.findByRole('link', { name: 'Previous page' })).resolves.toBeInTheDocument();
 		expect(screen.queryByRole('link', { name: 'Next page' })).not.toBeInTheDocument();
+	});
+
+	const folders: readonly Folder[] = [
+		{ created_at: '2026-09-26T00:00:00Z', id: 'f1', name: 'Sommerfest', team_id: 'team-a' },
+	];
+
+	it('shows the folder column: a link for a filed link, "–" with hidden text for an unfiled one', async () => {
+		renderList({
+			data: pageOf([linkWith({ folder_id: 'f1', id: 'l1' }), linkWith({ id: 'l2' })]),
+			folders,
+		});
+		await expect(screen.findByRole('columnheader', { name: 'Folder' })).resolves.toBeVisible();
+		expect(screen.getByRole('link', { name: 'Sommerfest' })).toHaveAttribute(
+			'href',
+			expect.stringContaining('folder=f1'),
+		);
+		expect(screen.getByText('No folder', { selector: '.sr-only' })).toBeInTheDocument();
+	});
+
+	it('offers All folders, No folder, then the folders, and reports a change', async () => {
+		const onFolderChange = vi.fn<(folder: string | undefined) => void>();
+		renderList({ folders, onFolderChange });
+		const select = await screen.findByRole('combobox', { name: 'Folder' });
+		expect(
+			within(select)
+				.getAllByRole('option')
+				.map((option) => option.textContent),
+		).toStrictEqual(['All folders', 'No folder', 'Sommerfest']);
+		await userEvent.selectOptions(select, 'none');
+		expect(onFolderChange).toHaveBeenCalledWith('none');
+		await userEvent.selectOptions(select, '');
+		expect(onFolderChange).toHaveBeenLastCalledWith(undefined);
+	});
+
+	it('keeps the filter and heading visible over each empty state', async () => {
+		const { rerender } = renderList({ data: pageOf(), folder: 'f1', folders });
+		await expect(screen.findByText('No links in this folder.')).resolves.toBeVisible();
+		expect(screen.getByRole('combobox', { name: 'Folder' })).toBeVisible();
+
+		rerender(listElement({ data: pageOf(), folder: 'none', folders }));
+		expect(screen.getByText('Every link is in a folder.')).toBeVisible();
+
+		rerender(
+			listElement({ data: pageOf(), folder: '0b7c1f6e-2f4a-4f7e-9a53-8a0e1d2c3b4a', folders }),
+		);
+		expect(screen.getByText('This folder does not exist (any more).')).toBeVisible();
+		expect(screen.getByRole('link', { name: 'Show all links' })).toBeVisible();
+	});
+
+	it('keeps the folder in the pagination links and in "New link"', async () => {
+		renderList({
+			data: { ...pageOf([linkWith({ id: 'l1' })]), total_count: 45 },
+			folder: 'f1',
+			folders,
+		});
+		await expect(screen.findByRole('link', { name: /next/iu })).resolves.toHaveAttribute(
+			'href',
+			expect.stringContaining('folder=f1'),
+		);
+		expect(screen.getByRole('link', { name: /new link|create/iu })).toHaveAttribute(
+			'href',
+			expect.stringContaining('folder=f1'),
+		);
+	});
+
+	/**
+	 * Controller ruling (Task 7 review, on top of the brief): the
+	 * "does not exist (any more)" message must only ever appear once the
+	 * folders are actually known — passing `folders={undefined}` is how the
+	 * route reports "the folders query hasn't resolved (or failed) yet", and
+	 * that must fall back to the ordinary in-folder empty state rather than
+	 * accusing a possibly-real folder of not existing. The filter still
+	 * offers "All folders" and "No folder", since neither depends on the
+	 * team's actual folder list.
+	 */
+	it('falls back to the ordinary empty state instead of "missing" while folders have not loaded', async () => {
+		renderList({
+			data: pageOf(),
+			folder: '0b7c1f6e-2f4a-4f7e-9a53-8a0e1d2c3b4a',
+			folders: undefined,
+		});
+		await expect(screen.findByText('No links in this folder.')).resolves.toBeVisible();
+		expect(screen.queryByText('This folder does not exist (any more).')).not.toBeInTheDocument();
+		const select = screen.getByRole('combobox', { name: 'Folder' });
+		expect(
+			within(select)
+				.getAllByRole('option')
+				.map((option) => option.textContent),
+		).toStrictEqual(['All folders', 'No folder']);
 	});
 });
