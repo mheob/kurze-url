@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router';
-import { FolderIcon, GlobeIcon, HistoryIcon, LinkIcon, UsersIcon } from 'lucide-react';
+import { FolderIcon, GlobeIcon, HistoryIcon, LinkIcon, TagIcon, UsersIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import type { Theme } from '../lib/preferences';
@@ -144,6 +144,17 @@ export function AppSidebar({
 								>
 									<FolderIcon aria-hidden />
 									<span>{t('nav.folders')}</span>
+								</SidebarMenuButton>
+							</SidebarMenuItem>
+							<SidebarMenuItem>
+								<SidebarMenuButton
+									render={
+										// oxlint-disable-next-line react-perf/jsx-no-jsx-as-prop -- same reason as the `links` button above.
+										<Link params={{ teamSlug: currentTeamSlug }} to="/teams/$teamSlug/tags" />
+									}
+								>
+									<TagIcon aria-hidden />
+									<span>{t('nav.tags')}</span>
 								</SidebarMenuButton>
 							</SidebarMenuItem>
 							<SidebarMenuItem>

@@ -1,12 +1,15 @@
 /* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding of this rule in this
-   file is the same `(field) => {...}` render-prop parameter TanStack Form's `form.Field` supplies;
-   reconstructing that type by hand to mark it readonly was tried and reverted after a nested field
-   came out subtly wrong. */
+   file is either the same `(field) => {...}` render-prop parameter TanStack Form's `form.Field`
+   supplies, where reconstructing that type by hand to mark it readonly was tried and reverted after
+   a nested field came out subtly wrong, or `LinkForm`'s own props, whose `tagNames` is a
+   `ReadonlyMap`: TypeScript's immutable map type, which the rule does not recognise as readonly,
+   the same limitation `audit-actor.ts` documents. */
 
 import { useForm } from '@tanstack/react-form';
-import { useId } from 'react';
+import { useEffect, useId, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { TagPicker, type TagCreateResult, type TagOption } from './tag-picker';
 import { Button } from './ui/button';
 import { Checkbox } from './ui/checkbox';
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from './ui/field';
@@ -21,6 +24,7 @@ const defaultValues: LinkFormValues = {
 	folder_id: '',
 	redirect_type: 302,
 	slug: '',
+	tag_ids: [],
 };
 
 /**
@@ -41,9 +45,12 @@ const KNOWN_FIELD_NAMES: ReadonlySet<string> = new Set([
 	'folder_id',
 	'redirect_type',
 	'slug',
+	'tag_ids',
 ]);
 
 interface LinkFormProps {
+	/** Whether the caller may create tags from the picker (editor and up). */
+	readonly canCreateTags?: boolean;
 	// A team's *verified* domains, or undefined/empty when there are none to
 	// offer — either way the picker below renders nothing at all, per its own
 	// docstring: a `<select>` with a single, forced option is furniture, not a
@@ -56,7 +63,19 @@ interface LinkFormProps {
 	// an already-filed link be unfiled, so there is no furniture-check here.
 	readonly folders?: readonly Readonly<{ id: string; name: string }>[];
 	readonly initial?: Partial<LinkFormValues>;
+	/** Which version of the record `initial` came from, e.g. `link.updated_at`; a new one re-seeds the form from `initial` in place. */
+	readonly initialVersion?: string;
+	/** Creates a tag by name from the picker; resolves to the tag or a message to show. */
+	readonly onCreateTag?: (name: string) => Promise<TagCreateResult>;
 	readonly onSubmit: (values: LinkFormValues) => void;
+	/** Names for chosen tags the loaded `tags` may lack, e.g. from `link.tags` on the edit route. */
+	readonly tagNames?: ReadonlyMap<string, string>;
+	// Like `folders`, this renders whenever the prop is passed at all: an
+	// empty list (none yet, or the fetch failed) still shows the link's chips
+	// and, for an editor, offers to create one.
+	readonly tags?: readonly TagOption[];
+	/** Whether `tags` is the team's real list rather than a stand-in for one that failed or is pending; only then can a chosen tag be called deleted. */
+	readonly tagsLoaded?: boolean;
 }
 
 export interface LinkFormValues {
@@ -67,6 +86,7 @@ export interface LinkFormValues {
 	readonly folder_id: string;
 	readonly redirect_type: number;
 	readonly slug: string;
+	readonly tag_ids: readonly string[];
 }
 
 /**
@@ -85,21 +105,33 @@ export interface LinkFormValues {
  * `form.Field`'s own `onChange` validator rather than a parallel schema.
  *
  * @param props - The component's props.
+ * @param props.canCreateTags - Whether the caller may create tags from the picker; false when absent.
  * @param props.domains - The team's verified domains; the domain picker renders nothing when this is empty or undefined.
  * @param props.fieldErrors - Server-reported field errors, keyed by field name.
  * @param props.folderHint - Shown under the folder field when the team has no folders yet, e.g. a link to the folders page.
  * @param props.folders - The team's folders; the folder field renders whenever this is passed, even empty.
  * @param props.initial - Initial values to seed the form from, for the edit route.
+ * @param props.initialVersion - The version `initial` came from; when it changes, the form re-seeds from `initial`.
+ * @param props.onCreateTag - Creates a tag by name from the picker; without it, a create attempt shows the generic failure.
  * @param props.onSubmit - Called with the form's values on submit.
+ * @param props.tagNames - Names for chosen tags the loaded `tags` may lack, e.g. from `link.tags`.
+ * @param props.tags - The team's tags; the tags field renders whenever this is passed, even empty.
+ * @param props.tagsLoaded - Whether `tags` is the team's real list; only then is a chosen tag missing from it marked deleted.
  * @returns The rendered form.
  */
 export function LinkForm({
+	canCreateTags,
 	domains,
 	fieldErrors,
 	folderHint,
 	folders,
 	initial,
+	initialVersion,
+	onCreateTag,
 	onSubmit,
+	tagNames,
+	tags,
+	tagsLoaded,
 }: LinkFormProps): React.JSX.Element {
 	const { t } = useTranslation();
 	// One per field with an inline error, not a hardcoded `'<field>-error'`
@@ -122,6 +154,19 @@ export function LinkForm({
 			onSubmit(value);
 		},
 	});
+
+	// The edit route compares the next save against the link it reloaded
+	// after this one, so the form has to hold that reload too, or a tag the
+	// server dropped meanwhile is sent again and refused as gone. `useForm`
+	// takes new defaults only while nothing is touched, hence the reset; it
+	// happens in place rather than through a `key`, because remounting would
+	// unmount the focused Save button and drop focus to the page.
+	const seededVersion = useRef(initialVersion);
+	useEffect(() => {
+		if (seededVersion.current === initialVersion) return;
+		seededVersion.current = initialVersion;
+		form.reset({ ...defaultValues, ...initial });
+	}, [form, initial, initialVersion]);
 
 	// A server error naming a field this form doesn't render (see
 	// `KNOWN_FIELD_NAMES` above) — surfaced as a generic alert rather than
@@ -418,6 +463,39 @@ export function LinkForm({
 								</Field>
 							);
 						}}
+					</form.Field>
+				)}
+
+				{tags === undefined ? null : (
+					<form.Field name="tag_ids">
+						{(field) => (
+							<TagPicker
+								canCreate={canCreateTags ?? false}
+								// Only a loaded list can say a tag is gone. While the tags are
+								// pending or failed, `tags` is an empty stand-in, and marking
+								// every chip deleted against it would misreport a link whose
+								// tags are fine.
+								deletedIds={
+									tagsLoaded === true
+										? new Set(field.state.value.filter((id) => !tags.some((tag) => tag.id === id)))
+										: new Set()
+								}
+								error={fieldErrors?.tag_ids}
+								inputId={field.name}
+								knownNames={tagNames ?? new Map()}
+								label={t('links.tags')}
+								onChange={(ids) => {
+									field.handleChange(ids);
+								}}
+								onCreate={
+									onCreateTag ??
+									// oxlint-disable-next-line typescript/require-await -- `TagPicker`'s `onCreate` must return a `Promise`; this stand-in for a caller that wired no create call has nothing to await.
+									(async () => ({ error: t('errors.unknown') }))
+								}
+								options={tags}
+								value={field.state.value}
+							/>
+						)}
 					</form.Field>
 				)}
 			</FieldGroup>

@@ -1,12 +1,12 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { normalizeFolderName } from '../lib/folders';
+import { normalizeName } from '../lib/names';
 import { Button } from './ui/button';
 import { Field, FieldError, FieldLabel } from './ui/field';
 import { Input } from './ui/input';
 
-interface FolderFormProps {
+interface NameFormProps {
 	readonly autoFocus?: boolean;
 	readonly error?: string;
 	readonly initialName?: string;
@@ -17,9 +17,10 @@ interface FolderFormProps {
 }
 
 /**
- * One name field, used both to create a folder and, inline, to rename one.
- * The client applies the API's name rule first, so a blank or over-long name
- * never costs a request, and it shows the same words the API's 422 maps to.
+ * One name field, used both to create a folder or a tag and, inline, to
+ * rename one. The client applies the API's name rule first, so a blank or
+ * over-long name never costs a request, and it shows the same words the API's
+ * 422 maps to.
  *
  * @param props - The form's props.
  * @param props.autoFocus - Focus the field on mount, for the inline rename.
@@ -31,7 +32,7 @@ interface FolderFormProps {
  * @param props.submitLabel - The submit button's text.
  * @returns The form.
  */
-export function FolderForm({
+export function NameForm({
 	autoFocus = false,
 	error,
 	initialName = '',
@@ -39,7 +40,7 @@ export function FolderForm({
 	onCancel,
 	onSubmit,
 	submitLabel,
-}: FolderFormProps): React.JSX.Element {
+}: NameFormProps): React.JSX.Element {
 	const { t } = useTranslation();
 	const id = useId();
 	const errorId = useId();
@@ -65,9 +66,9 @@ export function FolderForm({
 			}}
 			onSubmit={(event: Readonly<{ preventDefault: () => void }>) => {
 				event.preventDefault();
-				const name = normalizeFolderName(value);
+				const name = normalizeName(value);
 				if (name === undefined) {
-					setLocalError(t('folders.nameInvalid'));
+					setLocalError(t('names.nameInvalid'));
 					return;
 				}
 				setLocalError(undefined);
@@ -91,7 +92,7 @@ export function FolderForm({
 			<Button type="submit">{submitLabel}</Button>
 			{onCancel ? (
 				<Button onClick={onCancel} type="button" variant="ghost">
-					{t('folders.cancel')}
+					{t('names.cancel')}
 				</Button>
 			) : null}
 		</form>

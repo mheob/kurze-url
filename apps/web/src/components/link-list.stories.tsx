@@ -3,7 +3,7 @@
    nested array included), whose properties are not marked readonly; that is generated codegen
    output, never edited by hand. */
 
-import type { Folder, Link as ApiLink, PageLink } from '@kurze-url/api-client';
+import type { Folder, Link as ApiLink, PageLink, Tag } from '@kurze-url/api-client';
 import type { Meta, StoryObj } from '@storybook/tanstack-react';
 import { fn } from 'storybook/test';
 
@@ -46,11 +46,18 @@ const FOLDERS: readonly Folder[] = [
 	{ created_at: '2026-09-26T00:00:00Z', id: 'folder-2', name: 'Vorstand', team_id: 'a' },
 ];
 
+const TAGS: readonly Tag[] = [
+	{ id: 'tag-1', name: 'Jugend', team_id: 'a' },
+	{ id: 'tag-2', name: 'Presse', team_id: 'a' },
+];
+
 const meta = {
 	args: {
 		folder: undefined,
 		folders: FOLDERS,
-		onFolderChange: fn<(folder: string | undefined) => void>(),
+		onFilterChange: fn<(next: Readonly<{ folder?: string; tag?: string }>) => void>(),
+		tag: undefined,
+		tags: TAGS,
 	},
 	component: LinkList,
 	title: 'Links/LinkList',
@@ -136,6 +143,85 @@ export const FilteredToFolder: StoryObj<typeof meta> = {
 };
 
 /**
+ * The tags column, populated: a link with two tags, one with a single tag,
+ * and one without — the "–" cell's visually hidden "No tags" text is what a
+ * screen-reader user hears there instead of a bare dash. Each chip is a link
+ * to the list filtered to that tag.
+ */
+export const WithTags: StoryObj<typeof meta> = {
+	args: {
+		data: pageOf({
+			items: [
+				link({
+					folder_id: 'folder-1',
+					id: 'link-1',
+					tags: [
+						{ id: 'tag-1', name: 'Jugend', team_id: 'a' },
+						{ id: 'tag-2', name: 'Presse', team_id: 'a' },
+					],
+				}),
+				link({
+					id: 'link-2',
+					short_url: 'https://kurze.url/def456',
+					slug: 'def456',
+					tags: [{ id: 'tag-2', name: 'Presse', team_id: 'a' }],
+				}),
+				link({ id: 'link-3', short_url: 'https://kurze.url/ghi789', slug: 'ghi789' }),
+			],
+			total_count: 3,
+		}),
+		page: 1,
+		teamSlug: 'verein-a',
+	},
+};
+
+/**
+ * The list filtered to one tag: the "Tag: Presse" context line, the filter
+ * select reflecting the active choice, and the "New link" link carrying the
+ * tag along to preselect it on the create form.
+ */
+export const FilteredByTag: StoryObj<typeof meta> = {
+	args: {
+		data: pageOf({
+			items: [
+				link({
+					id: 'link-2',
+					short_url: 'https://kurze.url/def456',
+					slug: 'def456',
+					tags: [{ id: 'tag-2', name: 'Presse', team_id: 'a' }],
+				}),
+			],
+			total_count: 1,
+		}),
+		page: 1,
+		tag: 'tag-2',
+		teamSlug: 'verein-a',
+	},
+};
+
+/**
+ * Both filters at once, here with no match: the empty state names both
+ * ("No links in this folder with this tag."), and both stay visible above it.
+ */
+export const FolderAndTag: StoryObj<typeof meta> = {
+	args: { data: pageOf(), folder: 'folder-1', page: 1, tag: 'tag-2', teamSlug: 'verein-a' },
+};
+
+/**
+ * The `tag` search value names no tag the team has (deleted, or hand-edited
+ * into the URL) — like `MissingFolder`, the list says so and offers a way
+ * back instead of silently dropping the filter.
+ */
+export const MissingTag: StoryObj<typeof meta> = {
+	args: {
+		data: pageOf(),
+		page: 1,
+		tag: '0b7c1f6e-2f4a-4f7e-9a53-8a0e1d2c3b4a',
+		teamSlug: 'verein-a',
+	},
+};
+
+/**
  * "No folder" filtered to zero links: distinct wording ("Every link is in a
  * folder.") from both the plain empty state and the in-folder one, since all
  * three describe a different reason the table is missing.
@@ -163,5 +249,13 @@ export const MissingFolder: StoryObj<typeof meta> = {
 // checked by anything, only viewable by hand.
 export const Dark: StoryObj<typeof meta> = {
 	args: { ...Populated.args },
+	globals: { theme: 'dark' },
+};
+
+// `Dark` above renders rows without tags, so the tag chips (a badge inside a
+// link) would otherwise never meet the dark palette in front of the a11y
+// addon.
+export const WithTagsDark: StoryObj<typeof meta> = {
+	args: { ...WithTags.args },
 	globals: { theme: 'dark' },
 };

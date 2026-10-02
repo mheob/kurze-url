@@ -3,7 +3,7 @@
    nested array included), whose properties are not marked readonly; that is generated codegen
    output, never edited by hand. */
 
-import type { Folder, Link as ApiLink, PageLink } from '@kurze-url/api-client';
+import type { Folder, Link as ApiLink, PageLink, Tag } from '@kurze-url/api-client';
 import {
 	createRootRoute,
 	createRoute,
@@ -11,7 +11,7 @@ import {
 	createMemoryHistory,
 	RouterProvider,
 } from '@tanstack/react-router';
-import { act, render, screen, within } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useEffect, useState } from 'react';
 import { I18nextProvider } from 'react-i18next';
@@ -63,8 +63,10 @@ interface ListElementOptions {
 	readonly data?: PageLink;
 	readonly folder?: string;
 	readonly folders?: readonly Folder[];
-	readonly onFolderChange?: (folder: string | undefined) => void;
+	readonly onFilterChange?: (next: { folder?: string; tag?: string }) => void;
 	readonly page?: number;
+	readonly tag?: string;
+	readonly tags?: readonly Tag[];
 	readonly teamSlug?: string;
 }
 
@@ -97,6 +99,18 @@ function listElement(options: ListElementOptions = {}): ListElementOptions {
  */
 function foldersOf(state: ListElementOptions): readonly Folder[] | undefined {
 	return 'folders' in state ? state.folders : [];
+}
+
+/**
+ * `foldersOf`'s counterpart for the tags, for the same reason: an omitted
+ * `tags` key means loaded-and-empty, an explicit `tags: undefined` means the
+ * tags query has not resolved, and `?? []` could not tell them apart.
+ *
+ * @param state - The current render's options.
+ * @returns `state.tags` untouched when the key is present (however it is set), `[]` when it is absent.
+ */
+function tagsOf(state: ListElementOptions): readonly Tag[] | undefined {
+	return 'tags' in state ? state.tags : [];
 }
 
 /**
@@ -148,8 +162,12 @@ function renderList(initial: ListElementOptions = {}): Omit<
 				data={state.data ?? pageOf()}
 				folder={state.folder}
 				folders={foldersOf(state)}
-				onFolderChange={state.onFolderChange ?? vi.fn<(folder: string | undefined) => void>()}
+				onFilterChange={
+					state.onFilterChange ?? vi.fn<(next: { folder?: string; tag?: string }) => void>()
+				}
 				page={state.page ?? 1}
+				tag={state.tag}
+				tags={tagsOf(state)}
 				teamSlug={state.teamSlug ?? 'verein-a'}
 			/>
 		);
@@ -190,6 +208,20 @@ function renderList(initial: ListElementOptions = {}): Omit<
 			});
 		},
 	};
+}
+
+/**
+ * The search parameters of a rendered link, read from its `href`. Order-free
+ * on purpose: which parameters a link carries is the contract, the order
+ * TanStack Router happens to serialise them in is not. Values are strings, as
+ * the URL has no other kind.
+ *
+ * @param link - A rendered `<a>`.
+ * @returns Its query parameters.
+ */
+function searchOf(link: HTMLElement): Record<string, string> {
+	const href = link.getAttribute('href') ?? '';
+	return Object.fromEntries(new URL(href, 'http://localhost').searchParams);
 }
 
 describe(LinkList, () => {
@@ -331,6 +363,13 @@ describe(LinkList, () => {
 		{ created_at: '2026-09-26T00:00:00Z', id: 'f1', name: 'Sommerfest', team_id: 'team-a' },
 	];
 
+	const tags: readonly Tag[] = [
+		{ id: 't1', name: 'Jugend', team_id: 'team-a' },
+		{ id: 't2', name: 'Presse', team_id: 'team-a' },
+	];
+
+	const unknownId = '0b7c1f6e-2f4a-4f7e-9a53-8a0e1d2c3b4a';
+
 	it('shows the folder column: a link for a filed link, "–" with hidden text for an unfiled one', async () => {
 		renderList({
 			data: pageOf([linkWith({ folder_id: 'f1', id: 'l1' }), linkWith({ id: 'l2' })]),
@@ -344,19 +383,87 @@ describe(LinkList, () => {
 		expect(screen.getByText('No folder', { selector: '.sr-only' })).toBeInTheDocument();
 	});
 
-	it('offers All folders, No folder, then the folders, and reports a change', async () => {
-		const onFolderChange = vi.fn<(folder: string | undefined) => void>();
-		renderList({ folders, onFolderChange });
-		const select = await screen.findByRole('combobox', { name: 'Folder' });
-		expect(
-			within(select)
-				.getAllByRole('option')
-				.map((option) => option.textContent),
-		).toStrictEqual(['All folders', 'No folder', 'Sommerfest']);
-		await userEvent.selectOptions(select, 'none');
-		expect(onFolderChange).toHaveBeenCalledWith('none');
-		await userEvent.selectOptions(select, '');
-		expect(onFolderChange).toHaveBeenLastCalledWith(undefined);
+	it("shows the tags column: a filed link's tags as links that keep the folder and start at page 1", async () => {
+		renderList({
+			data: pageOf([
+				linkWith({
+					folder_id: 'f1',
+					id: 'l1',
+					tags: [
+						{ id: 't1', name: 'Jugend', team_id: 'team-a' },
+						{ id: 't2', name: 'Presse', team_id: 'team-a' },
+					],
+				}),
+			]),
+			folder: 'f1',
+			folders,
+			page: 3,
+			tags,
+		});
+		await expect(screen.findByRole('columnheader', { name: 'Tags' })).resolves.toBeVisible();
+		// The chips are named after the tags the link itself carries, and the
+		// page jumps back to 1 even though the reader is on page 3: a new
+		// filter's first page is the only one that is certain to exist.
+		expect(searchOf(screen.getByRole('link', { name: 'Presse' }))).toStrictEqual({
+			folder: 'f1',
+			page: '1',
+			tag: 't2',
+		});
+		expect(searchOf(screen.getByRole('link', { name: 'Jugend' }))).toStrictEqual({
+			folder: 'f1',
+			page: '1',
+			tag: 't1',
+		});
+	});
+
+	it('shows "–" with hidden text for a link without tags', async () => {
+		// Filed, so the "–" in the folder column is not also on the page.
+		renderList({ data: pageOf([linkWith({ folder_id: 'f1', tags: [] })]), folders });
+		await expect(
+			screen.findByText('No tags', { selector: '.sr-only' }),
+		).resolves.toBeInTheDocument();
+		expect(screen.getAllByText('–')).toHaveLength(1);
+	});
+
+	it('names a link whose tags the API sent as null the same as one without tags', async () => {
+		// `Link.tags` is nullable on the wire, like `PageLink.items`.
+		renderList({ data: pageOf([linkWith({ folder_id: 'f1', tags: null })]), folders });
+		await expect(
+			screen.findByText('No tags', { selector: '.sr-only' }),
+		).resolves.toBeInTheDocument();
+	});
+
+	it("keeps the active tag in a row's folder link", async () => {
+		renderList({
+			data: pageOf([linkWith({ folder_id: 'f1', id: 'l1' })]),
+			folders,
+			tag: 't2',
+			tags,
+		});
+		// The two filters are additive: choosing a facet on a row narrows what
+		// is already filtered instead of replacing it, the way a tag chip keeps
+		// the folder.
+		await expect(screen.findByRole('link', { name: 'Sommerfest' })).resolves.toBeInTheDocument();
+		expect(searchOf(screen.getByRole('link', { name: 'Sommerfest' }))).toStrictEqual({
+			folder: 'f1',
+			page: '1',
+			tag: 't2',
+		});
+	});
+
+	it('reports a filter change through onFilterChange, keeping the other filter', async () => {
+		const onFilterChange = vi.fn<(next: { folder?: string; tag?: string }) => void>();
+		renderList({ folder: 'f1', folders, onFilterChange, tags });
+		await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Tag' }), 't1');
+		expect(onFilterChange).toHaveBeenCalledWith({ folder: 'f1', tag: 't1' });
+		await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Folder' }), 'none');
+		expect(onFilterChange).toHaveBeenLastCalledWith({ folder: 'none', tag: undefined });
+	});
+
+	it('names the active tag under the heading', async () => {
+		renderList({ data: pageOf([linkWith()]), folder: 'f1', folders, tag: 't2', tags });
+		await expect(screen.findByText('Tag: Presse')).resolves.toBeVisible();
+		expect(screen.getByText('Folder: Sommerfest')).toBeVisible();
 	});
 
 	it('keeps the filter and heading visible over each empty state', async () => {
@@ -367,26 +474,80 @@ describe(LinkList, () => {
 		rerender(listElement({ data: pageOf(), folder: 'none', folders }));
 		expect(screen.getByText('Every link is in a folder.')).toBeVisible();
 
-		rerender(
-			listElement({ data: pageOf(), folder: '0b7c1f6e-2f4a-4f7e-9a53-8a0e1d2c3b4a', folders }),
-		);
+		rerender(listElement({ data: pageOf(), folder: unknownId, folders }));
 		expect(screen.getByText('This folder does not exist (any more).')).toBeVisible();
 		expect(screen.getByRole('link', { name: 'Show all links' })).toBeVisible();
 	});
 
-	it('keeps the folder in the pagination links and in "New link"', async () => {
+	it('words the empty state for a tag alone, a folder with a tag, and no folder with a tag', async () => {
+		const { rerender } = renderList({ data: pageOf(), folders, tag: 't2', tags });
+		await expect(screen.findByText('No links with this tag.')).resolves.toBeVisible();
+
+		rerender(listElement({ data: pageOf(), folder: 'f1', folders, tag: 't2', tags }));
+		expect(screen.getByText('No links in this folder with this tag.')).toBeVisible();
+
+		// "No folder" is not a folder the reader is "in", so it has its own wording.
+		rerender(listElement({ data: pageOf(), folder: 'none', folders, tag: 't2', tags }));
+		expect(screen.getByText('No unfiled links with this tag.')).toBeVisible();
+	});
+
+	it('says the tag does not exist once the tags are known, with a way back', async () => {
+		renderList({ data: pageOf(), folders, tag: unknownId, tags });
+		await expect(screen.findByText('This tag does not exist (any more).')).resolves.toBeVisible();
+		expect(screen.getByRole('link', { name: 'Show all links' })).toBeVisible();
+		// The tag has no name to show, so no "Tag: …" line pretends it has.
+		expect(screen.queryByText(/^Tag: /u)).not.toBeInTheDocument();
+	});
+
+	it('shows the folder message when both the folder and the tag are unknown', async () => {
 		renderList({
-			data: { ...pageOf([linkWith({ id: 'l1' })]), total_count: 45 },
+			data: pageOf(),
+			folder: '5d1c2b3a-9e8f-4a7b-8c6d-1f2e3a4b5c6d',
+			folders,
+			tag: unknownId,
+			tags,
+		});
+		await expect(
+			screen.findByText('This folder does not exist (any more).'),
+		).resolves.toBeVisible();
+		expect(screen.queryByText('This tag does not exist (any more).')).not.toBeInTheDocument();
+	});
+
+	it('keeps both filters in the pagination links', async () => {
+		renderList({
+			data: { ...pageOf([linkWith({ id: 'l1' })]), page: 2, total_count: 45 },
 			folder: 'f1',
 			folders,
+			page: 2,
+			tag: 't2',
+			tags,
 		});
-		await expect(screen.findByRole('link', { name: /next/iu })).resolves.toHaveAttribute(
+		await expect(screen.findByRole('link', { name: 'Next page' })).resolves.toBeInTheDocument();
+		expect(searchOf(screen.getByRole('link', { name: 'Next page' }))).toStrictEqual({
+			folder: 'f1',
+			page: '3',
+			tag: 't2',
+		});
+		expect(searchOf(screen.getByRole('link', { name: 'Previous page' }))).toStrictEqual({
+			folder: 'f1',
+			page: '1',
+			tag: 't2',
+		});
+	});
+
+	it('carries both filters into "New link"', async () => {
+		renderList({ data: pageOf([linkWith()]), folder: 'f1', folders, tag: 't2', tags });
+		const create = await screen.findByRole('link', { name: 'Create link' });
+		expect(searchOf(create)).toStrictEqual({ folder: 'f1', tag: 't2' });
+	});
+
+	it('does not carry a tag it cannot name into "New link"', async () => {
+		// An unknown tag id would be dropped by the create form anyway; not
+		// forwarding it keeps the form's URL free of a filter that matched nothing.
+		renderList({ data: pageOf([linkWith()]), folders, tag: unknownId, tags });
+		await expect(screen.findByRole('link', { name: 'Create link' })).resolves.toHaveAttribute(
 			'href',
-			expect.stringContaining('folder=f1'),
-		);
-		expect(screen.getByRole('link', { name: /new link|create/iu })).toHaveAttribute(
-			'href',
-			expect.stringContaining('folder=f1'),
+			'/teams/verein-a/links/new',
 		);
 	});
 
@@ -398,21 +559,22 @@ describe(LinkList, () => {
 	 * that must fall back to the ordinary in-folder empty state rather than
 	 * accusing a possibly-real folder of not existing. The filter still
 	 * offers "All folders" and "No folder", since neither depends on the
-	 * team's actual folder list.
+	 * team's actual folder list; `link-filter-bar.test.tsx` pins that half.
 	 */
 	it('falls back to the ordinary empty state instead of "missing" while folders have not loaded', async () => {
 		renderList({
 			data: pageOf(),
-			folder: '0b7c1f6e-2f4a-4f7e-9a53-8a0e1d2c3b4a',
+			folder: unknownId,
 			folders: undefined,
 		});
 		await expect(screen.findByText('No links in this folder.')).resolves.toBeVisible();
 		expect(screen.queryByText('This folder does not exist (any more).')).not.toBeInTheDocument();
-		const select = screen.getByRole('combobox', { name: 'Folder' });
-		expect(
-			within(select)
-				.getAllByRole('option')
-				.map((option) => option.textContent),
-		).toStrictEqual(['All folders', 'No folder']);
+	});
+
+	/** The same ruling for tags: an unloaded tag list must not accuse a real tag of not existing. */
+	it('falls back to the ordinary empty state instead of "missing" while tags have not loaded', async () => {
+		renderList({ data: pageOf(), folders, tag: unknownId, tags: undefined });
+		await expect(screen.findByText('No links with this tag.')).resolves.toBeVisible();
+		expect(screen.queryByText('This tag does not exist (any more).')).not.toBeInTheDocument();
 	});
 });

@@ -1,4 +1,5 @@
-import { classifyApiError, statusOf, type ApiFailure } from './api-errors';
+import type { ApiFailure } from './api-errors';
+import { parseUuidSearch } from './names';
 
 // FolderFilter/UNFILED_SEARCH_VALUE/FOLDERS_PER_TEAM stay here, ahead of the
 // exports block below, even though that leaves these flagged by
@@ -24,14 +25,6 @@ export const UNFILED_SEARCH_VALUE = 'none';
 export const FOLDERS_PER_TEAM = 100;
 /* oxlint-enable import/exports-last */
 
-/** Mirrors the API's shared folder and tag name rule. */
-const FOLDER_NAME_MAX_LENGTH = 60;
-
-const HTTP_CONFLICT = 409;
-const HTTP_UNPROCESSABLE_CONTENT = 422;
-
-const UUID_PATTERN = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/iu;
-
 /**
  * Parses a search parameter that may only name one folder, as `links/new`'s
  * preselection does.
@@ -40,7 +33,7 @@ const UUID_PATTERN = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/
  * @returns The lowercased UUID, or `undefined`.
  */
 export function parseFolderIdSearch(value: unknown): string | undefined {
-	return typeof value === 'string' && UUID_PATTERN.test(value) ? value.toLowerCase() : undefined;
+	return parseUuidSearch(value);
 }
 
 /**
@@ -92,53 +85,6 @@ export function folderQueryOf(filter: FolderFilter): {
 			return exhaustive;
 		}
 	}
-}
-
-/**
- * The client-side half of the API's name rule: trimmed, then 1 to 60
- * characters, counted by code point as Go counts runes.
- *
- * @param raw - What the user typed.
- * @returns The name to send, or `undefined` when the API would refuse it.
- */
-export function normalizeFolderName(raw: string): string | undefined {
-	const name = raw.trim();
-	// Array.from, not a spread: oxlint's no-misused-spread flags spreading a
-	// string directly, even though both iterate the same Unicode code points
-	// — the same count Go's []rune conversion produces. Same fix as
-	// `validateLinkPassword` in `link-password.ts`.
-	// oxlint-disable-next-line unicorn/prefer-spread
-	const length = Array.from(name).length;
-	return length > 0 && length <= FOLDER_NAME_MAX_LENGTH ? name : undefined;
-}
-
-/** Every way a folder write can fail, as the folders page words it. */
-export type FolderFailure =
-	| 'capReached'
-	| 'nameInvalid'
-	| 'nameTaken'
-	| 'notFound'
-	| 'rateLimited'
-	| 'unauthenticated'
-	| 'unknown';
-
-/**
- * The folder endpoints send 409 and 422 without a `location`, so this reads
- * the status the way `loadAuditLogPage` does, and only a create can hit the
- * cap.
- *
- * @param error - Whatever the failed folder call threw.
- * @param atCap - Whether the team already had FOLDERS_PER_TEAM folders; always false for a rename.
- * @returns The failure to show.
- */
-export function folderFailureOf(error: unknown, atCap: boolean): FolderFailure {
-	const status = statusOf(error);
-	if (status === HTTP_CONFLICT) return 'nameTaken';
-	if (status === HTTP_UNPROCESSABLE_CONTENT) return atCap ? 'capReached' : 'nameInvalid';
-
-	const { kind } = classifyApiError(error);
-	if (kind === 'unauthenticated' || kind === 'notFound' || kind === 'rateLimited') return kind;
-	return 'unknown';
 }
 
 /**

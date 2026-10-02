@@ -5,11 +5,16 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { LinkForm, type LinkFormValues } from '../../components/link-form';
+import type { TagOption } from '../../components/tag-picker';
+import { useLinkFormTags } from '../../hooks/use-link-form-tags';
 import { classifyApiError, type ApiFailure } from '../../lib/api-errors';
 import { parseFolderIdSearch, remapFolderGoneFailure } from '../../lib/folders';
+import { parseUuidSearch } from '../../lib/names';
+import { remapTagGoneFailure } from '../../lib/tags';
 import { domainsQueryOptions } from '../../server/domains';
 import { foldersQueryOptions, prefetchFolders } from '../../server/folders';
 import { createLinkFn } from '../../server/links';
+import { prefetchTags } from '../../server/tags';
 import { requireTeamId } from '../_authed';
 
 /* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding below is typed by
@@ -69,25 +74,34 @@ export const Route = createFileRoute('/_authed/teams/$teamSlug/links/new')({
 	// Declared before `loader`, the same reason `teams.$teamSlug.links.index.tsx`
 	// gives for its own `validateSearch`: moving it later risks the same
 	// inference fallback to `{}` for anything downstream that reads this
-	// route's own search type. `folder` preselects a folder on the create form
-	// (below); an invalid or malformed value is dropped, not surfaced, same as
-	// `parseFolderSearch`'s handling of the list route's own filter.
-	validateSearch: (search: { folder?: unknown } & SearchSchemaInput): { folder?: string } => ({
+	// route's own search type. `folder` and `tag` preselect a folder and a tag
+	// on the create form (below); an invalid or malformed value is dropped,
+	// not surfaced, same as `parseFolderSearch`'s handling of the list route's
+	// own filter.
+	validateSearch: (
+		search: { folder?: unknown; tag?: unknown } & SearchSchemaInput,
+	): { folder?: string; tag?: string } => ({
 		folder: parseFolderIdSearch(search.folder),
+		tag: parseUuidSearch(search.tag),
 	}),
 	beforeLoad: ({ context, params }) => ({
+		// Decides whether the tag picker offers to create a tag, the same way
+		// the tags page decides whether to offer its create form.
+		role: context.me.memberships.find((membership) => membership.slug === params.teamSlug)?.role,
 		teamId: requireTeamId(context.me.memberships, params.teamSlug),
 	}),
 	component: RouteComponent,
 	loader: async ({ context }) => {
-		// Only `domains` is returned: the folders fetch is a prefetch, not a
-		// dependency this loader's own result carries — see `prefetchFolders`'s
-		// own docstring for why the two are not symmetric. The component reads
-		// folders back out of the same `['folders', teamId]` cache with a plain
+		// Only `domains` is returned: the folders and tags fetches are
+		// prefetches, not dependencies this loader's own result carries — see
+		// `prefetchFolders`'s own docstring for why the two are not symmetric.
+		// The component reads folders and tags back out of the same
+		// `['folders', teamId]` and `['tags', teamId]` caches with a plain
 		// `useQuery`.
 		const [domains] = await Promise.all([
 			loadVerifiedDomains(context.queryClient, context.teamId),
 			prefetchFolders(context.queryClient, context.teamId),
+			prefetchTags(context.queryClient, context.teamId),
 		]);
 		return domains;
 	},
@@ -131,6 +145,8 @@ export function toRequestBody(values: LinkFormValues): CreateLinkInputBodyWritab
 		redirect_type:
 			values.redirect_type === REDIRECT_PERMANENT ? REDIRECT_PERMANENT : REDIRECT_TEMPORARY,
 		slug: values.slug === '' ? undefined : values.slug,
+		// Left out when none were chosen: a new link has no tags to clear.
+		...(values.tag_ids.length > 0 ? { tag_ids: [...values.tag_ids] } : {}),
 	};
 }
 
@@ -155,6 +171,23 @@ export function initialFolderId(
 	return requested !== undefined && folders.some((folder) => folder.id === requested)
 		? requested
 		: '';
+}
+
+/**
+ * The tag counterpart of `initialFolderId`: preselects the tag named by the
+ * `tag` search parameter (`?tag=<id>`, e.g. from the link list's "New link"
+ * button while a tag filter is active), but only when the team has that tag,
+ * so a stale or foreign id never becomes a chip.
+ *
+ * @param requested - The `tag` search parameter, already validated as a well-formed UUID by `parseUuidSearch`.
+ * @param tags - The team's own tags, as loaded for the picker.
+ * @returns `[requested]` when the team has that tag, `[]` otherwise.
+ */
+export function initialTagIds(
+	requested: string | undefined,
+	tags: readonly TagOption[],
+): readonly string[] {
+	return requested !== undefined && tags.some((tag) => tag.id === requested) ? [requested] : [];
 }
 
 /**
@@ -200,7 +233,7 @@ export async function afterCreate(
 
 function RouteComponent(): React.JSX.Element {
 	const { teamSlug } = Route.useParams();
-	const { teamId } = Route.useRouteContext();
+	const { role, teamId } = Route.useRouteContext();
 	const domains = Route.useLoaderData();
 	const search = Route.useSearch();
 	const { t } = useTranslation();
@@ -218,6 +251,8 @@ function RouteComponent(): React.JSX.Element {
 	// update after that refetch resolves.
 	const { data: folderPage } = useQuery(foldersQueryOptions(teamId));
 	const folders = folderPage?.items ?? [];
+	// Non-suspense for the same reason as the folders above; see the hook.
+	const { canCreateTags, onCreateTag, tags, tagsLoaded } = useLinkFormTags(teamId, role);
 
 	const mutation = useMutation({
 		mutationFn: async (values: LinkFormValues) =>
@@ -236,11 +271,17 @@ function RouteComponent(): React.JSX.Element {
 			// generic API message ("body.folder_id: ...") means nothing to a
 			// Verein board member, and the stale entry in `['folders', teamId]`
 			// is what would keep offering the gone folder on a retry without the
-			// refetch `remapFolderGoneFailure` triggers.
+			// refetch `remapFolderGoneFailure` triggers. A chosen tag deleted
+			// meanwhile is the same story on `tag_ids`.
+			const folderChecked = remapFolderGoneFailure(classified, {
+				folderGoneMessage: t('links.folderGone'),
+				queryClient,
+				teamId,
+			});
 			setFailure(
-				remapFolderGoneFailure(classified, {
-					folderGoneMessage: t('links.folderGone'),
+				remapTagGoneFailure(folderChecked, {
 					queryClient,
+					tagGoneMessage: t('links.tagGone'),
 					teamId,
 				}),
 			);
@@ -268,6 +309,7 @@ function RouteComponent(): React.JSX.Element {
 			<h1>{t('links.create')}</h1>
 			{formMessage !== null ? <p role="alert">{formMessage}</p> : null}
 			<LinkForm
+				canCreateTags={canCreateTags}
 				domains={domains}
 				fieldErrors={fieldErrors}
 				folderHint={
@@ -277,10 +319,16 @@ function RouteComponent(): React.JSX.Element {
 					</Link>
 				}
 				folders={folders}
-				initial={{ folder_id: initialFolderId(search.folder, folders) }}
+				initial={{
+					folder_id: initialFolderId(search.folder, folders),
+					tag_ids: initialTagIds(search.tag, tags),
+				}}
+				onCreateTag={onCreateTag}
 				onSubmit={(values) => {
 					mutation.mutate(values);
 				}}
+				tags={tags}
+				tagsLoaded={tagsLoaded}
 			/>
 		</>
 	);

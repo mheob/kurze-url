@@ -2,7 +2,7 @@ import type { PageLink } from '@kurze-url/api-client';
 import { isRedirect } from '@tanstack/react-router';
 import { describe, expect, it } from 'vitest';
 
-import { folderChangeSearch, loadLinks, parseLinksSearch } from './teams.$teamSlug.links.index';
+import { filterChangeSearch, loadLinks, parseLinksSearch } from './teams.$teamSlug.links.index';
 
 /** The one method `loadLinks` reaches through on `context.queryClient`. */
 interface FakeQueryClient {
@@ -108,7 +108,10 @@ describe(loadLinks, () => {
 		const queryClient = fakeQueryClient(async () => data);
 
 		await expect(
-			loadLinks(queryClient, 'team-a', { filter: { kind: 'all' }, page: 1 }),
+			loadLinks(queryClient, 'team-a', {
+				filter: { folder: { kind: 'all' }, tagId: undefined },
+				page: 1,
+			}),
 		).resolves.toBe(data);
 	});
 
@@ -130,9 +133,35 @@ describe(loadLinks, () => {
 		const { capturedKey, ensureQueryData } = capturingEnsureQueryData();
 		const queryClient = fakeQueryClient(ensureQueryData);
 
-		await loadLinks(queryClient, 'team-a', { filter: { kind: 'unfiled' }, page: 1 });
+		await loadLinks(queryClient, 'team-a', {
+			filter: { folder: { kind: 'unfiled' }, tagId: undefined },
+			page: 1,
+		});
 
-		expect(capturedKey()).toStrictEqual(['links', 'team-a', 1, { kind: 'unfiled' }]);
+		expect(capturedKey()).toStrictEqual([
+			'links',
+			'team-a',
+			1,
+			{ folder: { kind: 'unfiled' }, tagId: undefined },
+		]);
+	});
+
+	/** The tag half of the same pin: a tag the loader is handed must reach the query it warms. */
+	it("asks for the requested tag's query key", async () => {
+		const { capturedKey, ensureQueryData } = capturingEnsureQueryData();
+		const queryClient = fakeQueryClient(ensureQueryData);
+
+		await loadLinks(queryClient, 'team-a', {
+			filter: { folder: { kind: 'all' }, tagId: 't1' },
+			page: 1,
+		});
+
+		expect(capturedKey()).toStrictEqual([
+			'links',
+			'team-a',
+			1,
+			{ folder: { kind: 'all' }, tagId: 't1' },
+		]);
 	});
 
 	/**
@@ -154,7 +183,10 @@ describe(loadLinks, () => {
 		});
 
 		const error = await rejected(async () =>
-			loadLinks(queryClient, 'team-a', { filter: { kind: 'all' }, page: 1 }),
+			loadLinks(queryClient, 'team-a', {
+				filter: { folder: { kind: 'all' }, tagId: undefined },
+				page: 1,
+			}),
 		);
 
 		expect(isRedirect(error)).toBe(true);
@@ -176,31 +208,76 @@ describe(loadLinks, () => {
 		});
 
 		await expect(
-			loadLinks(queryClient, 'team-a', { filter: { kind: 'all' }, page: 1 }),
+			loadLinks(queryClient, 'team-a', {
+				filter: { folder: { kind: 'all' }, tagId: undefined },
+				page: 1,
+			}),
 		).rejects.toBe(boom);
 	});
 });
 
 describe(parseLinksSearch, () => {
-	it('parses folder and page together', () => {
+	it('parses folder, page and tag together', () => {
+		const tag = '0b7c1f6e-2f4a-4f7e-9a53-8a0e1d2c3b4a';
+		expect(parseLinksSearch({ folder: 'none', page: '3', tag })).toStrictEqual({
+			folder: 'none',
+			page: 3,
+			tag,
+		});
+	});
+
+	it('parses folder and page without a tag', () => {
 		expect(parseLinksSearch({ folder: 'none', page: '2' })).toStrictEqual({
 			folder: 'none',
 			page: 2,
+			tag: undefined,
 		});
 	});
 
 	it('drops an invalid folder and falls back to page 1', () => {
-		expect(parseLinksSearch({ folder: 'garbage' })).toStrictEqual({ folder: undefined, page: 1 });
+		expect(parseLinksSearch({ folder: 'garbage' })).toStrictEqual({
+			folder: undefined,
+			page: 1,
+			tag: undefined,
+		});
+	});
+
+	/** A tag that is not a UUID is dropped, the way a malformed `folder` is — it never reaches the API call. */
+	it('parses a tag UUID, lowercased, and drops anything else', () => {
+		const id = '0b7c1f6e-2f4a-4f7e-9a53-8a0e1d2c3b4a';
+		expect(parseLinksSearch({ tag: id.toUpperCase() }).tag).toBe(id);
+		expect(parseLinksSearch({ tag: 'garbage' }).tag).toBeUndefined();
+		expect(parseLinksSearch({ tag: 'none' }).tag).toBeUndefined();
 	});
 });
 
-describe(folderChangeSearch, () => {
+describe(filterChangeSearch, () => {
 	/** Pins Review Focus 5: a new filter always starts at page 1, even if the reader was deep in an old filter's pagination. */
-	it('resets to page 1 for a chosen folder', () => {
-		expect(folderChangeSearch('f1')).toStrictEqual({ folder: 'f1', page: 1 });
+	it('carries both filters and resets to page 1', () => {
+		expect(filterChangeSearch({ folder: 'f1', tag: 't1' })).toStrictEqual({
+			folder: 'f1',
+			page: 1,
+			tag: 't1',
+		});
 	});
 
-	it('resets to page 1 for "all folders"', () => {
-		expect(folderChangeSearch(undefined)).toStrictEqual({ folder: undefined, page: 1 });
+	it('resets to page 1 for a folder alone', () => {
+		expect(filterChangeSearch({ folder: 'f1' })).toStrictEqual({
+			folder: 'f1',
+			page: 1,
+			tag: undefined,
+		});
+	});
+
+	it('resets to page 1 for a tag alone', () => {
+		expect(filterChangeSearch({ tag: 't1' })).toStrictEqual({
+			folder: undefined,
+			page: 1,
+			tag: 't1',
+		});
+	});
+
+	it('resets to page 1 once both filters are cleared', () => {
+		expect(filterChangeSearch({})).toStrictEqual({ folder: undefined, page: 1, tag: undefined });
 	});
 });

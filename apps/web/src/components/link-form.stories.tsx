@@ -1,7 +1,14 @@
 import type { Meta, StoryObj } from '@storybook/tanstack-react';
-import { fn } from 'storybook/test';
+import { expect, fn, screen, userEvent, waitFor, within } from 'storybook/test';
 
 import { LinkForm, type LinkFormValues } from './link-form';
+import type { TagCreateResult } from './tag-picker';
+
+const teamTags = [
+	{ id: 't1', name: 'Jugend' },
+	{ id: 't2', name: 'Presse' },
+	{ id: 't3', name: 'Vorstand' },
+];
 
 const meta = {
 	component: LinkForm,
@@ -61,6 +68,55 @@ export const NoFoldersYet: StoryObj<typeof meta> = {
 		folderHint: 'No folders yet. Create them on the Folders page.',
 		folders: [],
 		onSubmit: fn<(values: LinkFormValues) => void>(),
+	},
+};
+
+/** A team with tags, two of them chosen: the picker's chips and their named remove buttons in front of the a11y addon. */
+export const WithTags: StoryObj<typeof meta> = {
+	args: {
+		initial: { tag_ids: ['t1', 't2'] },
+		onSubmit: fn<(values: LinkFormValues) => void>(),
+		tags: teamTags,
+		tagsLoaded: true,
+	},
+};
+
+/**
+ * An editor typing a name no tag has yet, so the picker offers to create it.
+ * The list renders through a portal, so the assertion queries `screen`, the
+ * same reason `TagPicker`'s own `Creatable` story gives.
+ *
+ * The play closes the list again before it ends. While a typeable combobox
+ * is open, Floating UI (under Base UI) sets `aria-hidden` on everything
+ * outside it, so a screen reader's virtual cursor stays in the list. Here
+ * that includes the form's other inputs, and axe reports them as hidden yet
+ * focusable (`aria-hidden-focus`). The open state's own markup is covered by
+ * `TagPicker`'s `Creatable` story, where the picker has no siblings.
+ */
+export const TagCreator: StoryObj<typeof meta> = {
+	args: {
+		canCreateTags: true,
+		// Resolves like a successful create, so a manual "Create" click in
+		// Storybook adds the chip instead of leaving the picker pending.
+		onCreateTag: fn<(name: string) => Promise<TagCreateResult>>(
+			// oxlint-disable-next-line typescript/require-await -- stands in for the create call `TagPicker` awaits; the fake has nothing to await itself.
+			async (name: string) => ({ tag: { id: `created-${name.toLowerCase()}`, name } }),
+		),
+		onSubmit: fn<(values: LinkFormValues) => void>(),
+		tags: teamTags,
+		tagsLoaded: true,
+	},
+	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Storybook's own `play` function context type; not this codebase's to mark readonly.
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await userEvent.type(canvas.getByRole('combobox', { name: 'Tags' }), 'Kassenwart');
+		await expect(
+			await screen.findByRole('option', { name: 'Create tag "Kassenwart"' }),
+		).toBeVisible();
+		await userEvent.keyboard('{Escape}');
+		await waitFor(async () => {
+			await expect(screen.queryByRole('listbox')).toBeNull();
+		});
 	},
 };
 

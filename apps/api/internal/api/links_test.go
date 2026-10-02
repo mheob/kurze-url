@@ -1095,3 +1095,21 @@ func TestCreateLinkNamesTheFolderFieldForAnUnknownFolder(t *testing.T) {
 	require.NotEmpty(t, problem.Errors)
 	require.Equal(t, "body.folder_id", problem.Errors[0].Location)
 }
+
+func TestCreateLinkNamesTheTagFieldForAnUnknownTag(t *testing.T) {
+	f := newTenancyFixture(t)
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPost,
+		"/v1/teams/"+f.teamID.String()+"/links",
+		map[string]any{"destination_url": "https://example.org/t", "tag_ids": []string{uuid.NewString()}})
+
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+	var problem struct {
+		Errors []struct {
+			Location string `json:"location"`
+		} `json:"errors"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &problem))
+	require.NotEmpty(t, problem.Errors)
+	require.Equal(t, "body.tag_ids", problem.Errors[0].Location)
+}

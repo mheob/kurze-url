@@ -90,6 +90,24 @@ describe('translation catalogues', () => {
 			// a literal in `link-list.tsx` only because `react/jsx-no-literals`
 			// is error-level project-wide (see the file's own comment on it).
 			'links.folderNoneMark',
+			// "Tags" is the plural of an established loanword and is spelled the
+			// same in both languages, the same reasoning as `stats.browser`.
+			'tags.heading',
+			// "Tags" again, as the sidebar entry — the same reasoning as `tags.heading`.
+			'nav.tags',
+			// "Tags" again, as the link form's picker label — the same reasoning
+			// as `tags.heading`.
+			'links.tags',
+			// "Tags" again, as the link list's column header — the same reasoning
+			// as `tags.heading`.
+			'links.columnTags',
+			// "Tag" is the same word in both languages, the same reasoning as
+			// `tags.heading`; this is the list filter's label.
+			'links.tagFilter',
+			// Only the interpolated name varies, and the label word is "Tag" in both
+			// languages, so the template is identical — the same reasoning as
+			// `stats.rangeSummary`.
+			'links.inTag',
 		]);
 		const english = new Map(flatten(en));
 		const toCheck = flatten(de).filter(

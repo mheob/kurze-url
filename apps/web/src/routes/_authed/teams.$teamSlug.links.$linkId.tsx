@@ -16,9 +16,11 @@ import { LinkPasswordCard } from '../../components/link-password-card';
 import { LinkQRCard } from '../../components/link-qr-card';
 import { buttonVariants } from '../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
+import { useLinkFormTags } from '../../hooks/use-link-form-tags';
 import { classifyApiError, type ApiFailure, type QrRejectionReason } from '../../lib/api-errors';
 import { remapFolderGoneFailure } from '../../lib/folders';
 import type { LinkPasswordContext, LinkPasswordReason } from '../../lib/link-password';
+import { remapTagGoneFailure, sameTagSet } from '../../lib/tags';
 import { foldersQueryOptions, prefetchFolders } from '../../server/folders';
 import {
 	deleteLinkFn,
@@ -29,6 +31,7 @@ import {
 	setLinkPasswordFn,
 	updateLinkFn,
 } from '../../server/links';
+import { prefetchTags } from '../../server/tags';
 import { requireTeamId } from '../_authed';
 
 /* oxlint-disable typescript/prefer-readonly-parameter-types -- every parameter this rule flags
@@ -121,9 +124,23 @@ export function toDateTimeLocal(expiresAt: string | null): string {
 }
 
 /**
+ * The link's own tag ids, in the API's order. `Link.tags` is typed nullable
+ * (Huma serialises a nil slice as `null`), hence the `?? []`. One definition
+ * for both the form's seed and `toUpdateBody`'s comparison, so the two can
+ * never disagree about what "unchanged" means.
+ *
+ * @param link - The fetched link.
+ * @returns Its tag ids.
+ */
+function tagIdsOf(link: Link): readonly string[] {
+	return (link.tags ?? []).map((tag) => tag.id);
+}
+
+/**
  * Seeds `<LinkForm initial>` from the fetched `Link` — a `Pick`, not a
- * spread, so the extra fields `Link` carries (`id`, `state`, `tags`, …)
- * never reach `LinkFormValues` and trip an excess-property error.
+ * spread, so the extra fields `Link` carries (`id`, `state`, …) never reach
+ * `LinkFormValues` and trip an excess-property error. `tags` reaches it only
+ * as `tag_ids`, the ids the picker holds.
  *
  * `domain_id` is carried through even though this route passes no `domains`
  * list to `<LinkForm>` (so the picker never renders here, Task 14's own
@@ -143,6 +160,7 @@ function toFormValues(link: Link): LinkFormValues {
 		folder_id: link.folder_id ?? '',
 		redirect_type: link.redirect_type,
 		slug: link.slug,
+		tag_ids: tagIdsOf(link),
 	};
 }
 
@@ -158,10 +176,20 @@ function toFormValues(link: Link): LinkFormValues {
  * `folder_id` is omitted entirely when it did not change: omitting an
  * unchanged folder means a folder missing from the loaded list (deleted
  * meanwhile, or never fetched) is never unfiled as a side effect of saving
- * some other field.
+ * some other field. `tag_ids` follows the same rule, compared as a set so a
+ * reordering is no change: the API replaces the whole set when the field is
+ * present, so resending an untouched set would rewrite it on every save, and
+ * a tag deleted meanwhile would then fail a save that only changed, say, the
+ * destination. Once the set did change, `[]` is sent as `[]`, which is how
+ * the API removes every tag.
+ *
+ * Both seeds arrive bundled in `initial`, the same way `remapFolderGoneFailure`
+ * groups its dependencies, to stay within `max-params`.
  *
  * @param values - The form's values, as `LinkForm` hands them back.
- * @param initialFolderId - The link's folder id when the form was seeded, `''` for unfiled — `link.folder_id ?? ''`.
+ * @param initial - What the form was seeded with.
+ * @param initial.folderId - The link's folder id, `''` for unfiled — `link.folder_id ?? ''`.
+ * @param initial.tagIds - The link's tag ids — `(link.tags ?? []).map((tag) => tag.id)`.
  * @returns The API request body, with empty optional fields mapped to `undefined`.
  */
 /** The two redirect status codes a link can use; see CLAUDE.md's "301 vs 302" note for why 302 is the default. */
@@ -170,7 +198,7 @@ const REDIRECT_TEMPORARY = 302;
 
 export function toUpdateBody(
 	values: LinkFormValues,
-	initialFolderId: string,
+	initial: Readonly<{ folderId: string; tagIds: readonly string[] }>,
 ): UpdateLinkInputBodyWritable {
 	return {
 		analytics_enabled: values.analytics_enabled,
@@ -179,9 +207,10 @@ export function toUpdateBody(
 		redirect_type:
 			values.redirect_type === REDIRECT_PERMANENT ? REDIRECT_PERMANENT : REDIRECT_TEMPORARY,
 		slug: values.slug === '' ? undefined : values.slug,
-		...(values.folder_id === initialFolderId
+		...(values.folder_id === initial.folderId
 			? {}
 			: { folder_id: values.folder_id === '' ? null : values.folder_id }),
+		...(sameTagSet(values.tag_ids, initial.tagIds) ? {} : { tag_ids: [...values.tag_ids] }),
 	};
 }
 
@@ -218,6 +247,9 @@ export async function afterMutation(
 
 export const Route = createFileRoute('/_authed/teams/$teamSlug/links/$linkId')({
 	beforeLoad: ({ context, params }) => ({
+		// Decides whether the tag picker offers to create a tag, the same way
+		// the tags page decides whether to offer its create form.
+		role: context.me.memberships.find((membership) => membership.slug === params.teamSlug)?.role,
 		teamId: requireTeamId(context.me.memberships, params.teamSlug),
 	}),
 	component: RouteComponent,
@@ -225,6 +257,7 @@ export const Route = createFileRoute('/_authed/teams/$teamSlug/links/$linkId')({
 		const [link] = await Promise.all([
 			loadLink(getLinkFn, params.linkId),
 			prefetchFolders(context.queryClient, context.teamId),
+			prefetchTags(context.queryClient, context.teamId),
 		]);
 		return link;
 	},
@@ -493,7 +526,7 @@ export function completeQrDownload(
 
 function RouteComponent(): React.JSX.Element {
 	const { linkId, teamSlug } = Route.useParams();
-	const { me, teamId } = Route.useRouteContext();
+	const { me, role, teamId } = Route.useRouteContext();
 	const link = Route.useLoaderData();
 	const { t } = useTranslation();
 	const router = useRouter();
@@ -520,6 +553,12 @@ function RouteComponent(): React.JSX.Element {
 	// `onError` below) actually visible: a suspended, loader-time snapshot
 	// would never update after that refetch resolves.
 	const { data: folderPage } = useQuery(foldersQueryOptions(teamId));
+	// Same reasoning as the folders above; see the hook. While the tags are
+	// pending or failed, the chips still read right — their names come from
+	// `link.tags` through `tagNames` — and none is called deleted, because
+	// `tagsLoaded` is false; saving stays safe, since `toUpdateBody` only
+	// sends `tag_ids` when the set differs from the link's own.
+	const { canCreateTags, onCreateTag, tags, tagsLoaded } = useLinkFormTags(teamId, role);
 
 	// One fetch per link, for the whole life of the card, refetched only when
 	// the matrix itself could differ. The matrix depends on the slug and the
@@ -567,7 +606,10 @@ function RouteComponent(): React.JSX.Element {
 	const updateMutation = useMutation({
 		mutationFn: async (values: LinkFormValues) =>
 			updateLinkFn({
-				data: { body: toUpdateBody(values, link.folder_id ?? ''), linkId },
+				data: {
+					body: toUpdateBody(values, { folderId: link.folder_id ?? '', tagIds: tagIdsOf(link) }),
+					linkId,
+				},
 			}),
 		onError: (error: unknown) => {
 			const classified = classifyApiError(error);
@@ -580,11 +622,17 @@ function RouteComponent(): React.JSX.Element {
 			// Same reasoning as `link.new.tsx`'s identical branch: a folder
 			// deleted since this page loaded gets a message a board member can
 			// act on, and the stale `['folders', teamId]` entry is refetched so a
-			// retry doesn't keep offering the gone folder.
+			// retry doesn't keep offering the gone folder. Same for a chosen tag
+			// deleted meanwhile, on `tag_ids`.
+			const folderChecked = remapFolderGoneFailure(classified, {
+				folderGoneMessage: t('links.folderGone'),
+				queryClient,
+				teamId,
+			});
 			setFailure(
-				remapFolderGoneFailure(classified, {
-					folderGoneMessage: t('links.folderGone'),
+				remapTagGoneFailure(folderChecked, {
 					queryClient,
+					tagGoneMessage: t('links.tagGone'),
 					teamId,
 				}),
 			);
@@ -686,6 +734,7 @@ function RouteComponent(): React.JSX.Element {
 				</CardHeader>
 				<CardContent>
 					<LinkForm
+						canCreateTags={canCreateTags}
 						fieldErrors={fieldErrors}
 						folderHint={
 							// oxlint-disable-next-line react-perf/jsx-no-jsx-as-prop -- one static, one-line link rendered once per page visit; a stable reference would need a `useMemo` around an element that never changes across this component's own re-renders.
@@ -695,10 +744,17 @@ function RouteComponent(): React.JSX.Element {
 						}
 						folders={folderPage?.items ?? []}
 						initial={toFormValues(link)}
+						// Every save bumps `updated_at`, so the form re-seeds from the
+						// reloaded link that `toUpdateBody` compares the next save to.
+						initialVersion={link.updated_at}
 						key={`form-${linkId}`}
+						onCreateTag={onCreateTag}
 						onSubmit={(values) => {
 							updateMutation.mutate(values);
 						}}
+						tagNames={new Map((link.tags ?? []).map((tag) => [tag.id, tag.name]))}
+						tags={tags}
+						tagsLoaded={tagsLoaded}
 					/>
 				</CardContent>
 			</Card>

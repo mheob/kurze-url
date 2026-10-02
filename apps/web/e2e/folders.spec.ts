@@ -48,7 +48,7 @@ test('files a link into a folder, filters by it, renames and deletes it', async 
 	const createResults = await new AxeBuilder({ page }).analyze();
 	expect(createResults.violations).toEqual([]);
 
-	// Each folder name links to its own filtered link list (`folder-list.tsx`).
+	// Each folder name links to its own filtered link list (`name-list.tsx`).
 	await folderLink.click();
 	await expect(page.getByText(`Folder: ${name}`)).toBeVisible();
 
