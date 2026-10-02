@@ -96,7 +96,12 @@ export const WithTags: StoryObj<typeof meta> = {
 export const TagCreator: StoryObj<typeof meta> = {
 	args: {
 		canCreateTags: true,
-		onCreateTag: fn<(name: string) => Promise<TagCreateResult>>(),
+		// Resolves like a successful create, so a manual "Create" click in
+		// Storybook adds the chip instead of leaving the picker pending.
+		onCreateTag: fn<(name: string) => Promise<TagCreateResult>>(
+			// oxlint-disable-next-line typescript/require-await -- stands in for the create call `TagPicker` awaits; the fake has nothing to await itself.
+			async (name: string) => ({ tag: { id: `created-${name.toLowerCase()}`, name } }),
+		),
 		onSubmit: fn<(values: LinkFormValues) => void>(),
 		tags: teamTags,
 		tagsLoaded: true,

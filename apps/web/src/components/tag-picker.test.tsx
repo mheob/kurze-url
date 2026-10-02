@@ -387,4 +387,66 @@ describe(TagPicker, () => {
 		expect(screen.getByText('Alt')).toBeVisible();
 		expect(screen.getByText('(deleted)')).toBeVisible();
 	});
+
+	it('keeps the name of a chosen tag once a refetch no longer has it', async () => {
+		const i18n = createI18n('en');
+		const onChange = vi.fn<(ids: readonly string[]) => void>();
+		const { rerender } = render(
+			<I18nextProvider i18n={i18n}>{picker({ onChange })}</I18nextProvider>,
+		);
+		await userEvent.type(screen.getByRole('combobox', { name: 'Tags' }), 'Pre');
+		await userEvent.click(screen.getByRole('option', { name: 'Presse' }));
+		expect(onChange).toHaveBeenLastCalledWith(['t2']);
+		rerender(
+			<I18nextProvider i18n={i18n}>
+				{picker({
+					deletedIds: new Set(['t2']),
+					onChange,
+					options: options.filter((option: TagOption) => option.id !== 't2'),
+					value: ['t2'],
+				})}
+			</I18nextProvider>,
+		);
+		expect(screen.getByText('Presse')).toBeVisible();
+		expect(screen.getByText('(deleted)')).toBeVisible();
+		expect(screen.getByRole('button', { name: 'Remove tag Presse' })).toBeVisible();
+	});
+
+	it('leaves focus on another field the user moved to while a create was pending', async () => {
+		const pending = pendingCreate();
+		render(
+			<I18nextProvider i18n={createI18n('en')}>
+				{picker({
+					canCreate: true,
+					onCreate: vi
+						.fn<(name: string) => Promise<TagCreateResult>>()
+						.mockReturnValue(pending.promise),
+				})}
+				<input aria-label="Destination" />
+			</I18nextProvider>,
+		);
+		await userEvent.type(screen.getByRole('combobox', { name: 'Tags' }), 'Vorstand{Enter}');
+		const other = screen.getByRole('textbox', { name: 'Destination' });
+		await userEvent.click(other);
+		await act(async () => {
+			pending.resolve({ tag: { id: 't9', name: 'Vorstand' } });
+			await pending.promise;
+		});
+		expect(other).toHaveFocus();
+	});
+
+	it('keeps the typed name in the input when a create fails', async () => {
+		renderPicker({
+			canCreate: true,
+			onCreate: vi.fn<(name: string) => Promise<TagCreateResult>>(
+				// oxlint-disable-next-line typescript/require-await -- stands in for a create call `TagPicker` awaits; the fake has nothing to await itself.
+				async () => ({ error: 'A team can have at most 200 tags.' }),
+			),
+		});
+		const input = screen.getByRole('combobox', { name: 'Tags' });
+		await userEvent.type(input, 'Vorstand');
+		await userEvent.click(screen.getByRole('option', { name: 'Create tag "Vorstand"' }));
+		await expect(screen.findByText('A team can have at most 200 tags.')).resolves.toBeVisible();
+		expect(input).toHaveValue('Vorstand');
+	});
 });

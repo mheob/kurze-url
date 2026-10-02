@@ -24,6 +24,21 @@ interface PickerItem extends TagOption {
 	readonly creatable?: boolean;
 }
 
+/**
+ * Adds tags' names to a map of names by id, leaving the given map unchanged.
+ *
+ * @param names - The names known so far.
+ * @param tags - The tags whose names to add.
+ * @returns A new map holding both.
+ */
+function withNames(
+	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `ReadonlyMap` is TypeScript's immutable map type; the rule does not recognise it as readonly, the same limitation `audit-actor.ts` documents.
+	names: ReadonlyMap<string, string>,
+	tags: readonly TagOption[],
+): ReadonlyMap<string, string> {
+	return new Map([...names, ...tags.map((tag): [string, string] => [tag.id, tag.name])]);
+}
+
 export interface TagOption {
 	readonly id: string;
 	readonly name: string;
@@ -56,8 +71,8 @@ export interface TagPickerProps {
  * The link form's tag field: chosen tags as chips, a filter input that offers
  * the team's other tags, and, for editors, an entry that creates the typed
  * name as a new tag. The value is a list of ids; names come from `options`,
- * then `knownNames`, so a chip still reads right while the tags are
- * unavailable.
+ * then `knownNames`, then any name the picker has seen before, so a chip
+ * still reads right while the tags are unavailable or after its tag is gone.
  *
  * Creating is offered only when no tag already has the typed name in any
  * case, so typing "presse" next to "Presse" picks the existing tag instead of
@@ -98,13 +113,24 @@ export function TagPicker({
 	const anchor = useComboboxAnchor();
 	const capId = useId();
 	const errorId = useId();
+	const root = useRef<HTMLDivElement>(null);
 	const input = useRef<HTMLInputElement>(null);
 	const [query, setQuery] = useState('');
 	const [open, setOpen] = useState(false);
 	const [createError, setCreateError] = useState<string | undefined>(undefined);
 	const [pending, setPending] = useState(false);
-	// Names of tags this picker created, until `options` catches up with them.
-	const [createdNames, setCreatedNames] = useState<ReadonlyMap<string, string>>(new Map());
+	// Every tag name this picker has seen, in `options` or from a create it
+	// made. Nothing is ever dropped, so a chip keeps its name after its tag
+	// leaves `options`: deleted meanwhile and refetched, or not refetched yet.
+	const [seenNames, setSeenNames] = useState<ReadonlyMap<string, string>>(() =>
+		withNames(new Map(), options),
+	);
+	const [seenOptions, setSeenOptions] = useState(options);
+	if (seenOptions !== options) {
+		setSeenOptions(options);
+		// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `ReadonlyMap` is TypeScript's immutable map type; the rule does not recognise it as readonly, the same limitation `audit-actor.ts` documents.
+		setSeenNames((names) => withNames(names, options));
+	}
 
 	// A create resolves after the user may have changed the chips, so it adds
 	// to the latest value rather than the one it started from.
@@ -122,9 +148,9 @@ export function TagPicker({
 		const names = new Map(options.map((option) => [option.id, option.name]));
 		return value.map((id): PickerItem => ({
 			id,
-			name: names.get(id) ?? knownNames.get(id) ?? createdNames.get(id) ?? id,
+			name: names.get(id) ?? knownNames.get(id) ?? seenNames.get(id) ?? id,
 		}));
-	}, [createdNames, knownNames, options, value]);
+	}, [knownNames, options, seenNames, value]);
 
 	const items = useMemo((): PickerItem[] => {
 		if (atCap) return [];
@@ -154,7 +180,9 @@ export function TagPicker({
 
 	/**
 	 * Creates the typed name as a tag and chooses it, or keeps the failure to
-	 * show on the field. Focus goes back to the input either way.
+	 * show on the field with the name back in the input, since Base UI
+	 * cleared it when the list closed. Focus goes back to the input either
+	 * way, unless the user has moved on to another field meanwhile.
 	 *
 	 * The chips may have changed while the call was in flight, so the new tag
 	 * joins the latest value, and only while that is still below the cap.
@@ -169,7 +197,7 @@ export function TagPicker({
 		if ('tag' in result) {
 			const { tag } = result;
 			// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `ReadonlyMap` is TypeScript's immutable map type; the rule does not recognise it as readonly, the same limitation `audit-actor.ts` documents.
-			setCreatedNames((names) => new Map(names).set(tag.id, tag.name));
+			setSeenNames((names) => withNames(names, [tag]));
 			const current = latestValue.current;
 			if (current.length < TAGS_PER_LINK && !current.includes(tag.id)) {
 				onChange([...current, tag.id]);
@@ -177,8 +205,12 @@ export function TagPicker({
 			setQuery('');
 		} else {
 			setCreateError(result.error);
+			setQuery(name);
 		}
-		input.current?.focus();
+		const active = document.activeElement;
+		if (active === null || active === document.body || root.current?.contains(active) === true) {
+			input.current?.focus();
+		}
 	}
 
 	const messages = [error, createError].filter(
@@ -190,7 +222,7 @@ export function TagPicker({
 		.join(' ');
 
 	return (
-		<Field data-invalid={invalid}>
+		<Field data-invalid={invalid} ref={root}>
 			<FieldLabel htmlFor={inputId}>{label}</FieldLabel>
 			<Combobox
 				autoHighlight
