@@ -64,6 +64,16 @@ function renderSidebar(props: {
 		getParentRoute: () => rootRoute,
 		path: '/teams/$teamSlug/links',
 	});
+	const foldersRoute = createRoute({
+		component: () => null,
+		getParentRoute: () => rootRoute,
+		path: '/teams/$teamSlug/folders',
+	});
+	const tagsRoute = createRoute({
+		component: () => null,
+		getParentRoute: () => rootRoute,
+		path: '/teams/$teamSlug/tags',
+	});
 	const domainsRoute = createRoute({
 		component: () => null,
 		getParentRoute: () => rootRoute,
@@ -76,7 +86,13 @@ function renderSidebar(props: {
 	});
 	const router = createRouter({
 		history: createMemoryHistory({ initialEntries: ['/'] }),
-		routeTree: rootRoute.addChildren([linksRoute, domainsRoute, newTeamRoute]),
+		routeTree: rootRoute.addChildren([
+			linksRoute,
+			foldersRoute,
+			tagsRoute,
+			domainsRoute,
+			newTeamRoute,
+		]),
 	});
 
 	return render(
@@ -101,6 +117,14 @@ describe(AppSidebar, () => {
 		await expect(screen.findByRole('link', { name: 'Links' })).resolves.toHaveAttribute(
 			'href',
 			'/teams/verein-a/links',
+		);
+		expect(screen.getByRole('link', { name: 'Folders' })).toHaveAttribute(
+			'href',
+			'/teams/verein-a/folders',
+		);
+		expect(screen.getByRole('link', { name: 'Tags' })).toHaveAttribute(
+			'href',
+			'/teams/verein-a/tags',
 		);
 		expect(screen.getByRole('link', { name: 'Domains' })).toHaveAttribute(
 			'href',

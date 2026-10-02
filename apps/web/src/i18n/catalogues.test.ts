@@ -93,6 +93,8 @@ describe('translation catalogues', () => {
 			// "Tags" is the plural of an established loanword and is spelled the
 			// same in both languages, the same reasoning as `stats.browser`.
 			'tags.heading',
+			// "Tags" again, as the sidebar entry — the same reasoning as `tags.heading`.
+			'nav.tags',
 		]);
 		const english = new Map(flatten(en));
 		const toCheck = flatten(de).filter(
