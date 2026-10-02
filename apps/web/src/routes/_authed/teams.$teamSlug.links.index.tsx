@@ -15,6 +15,7 @@ import { parseUuidSearch } from '../../lib/names';
 import { reportUnexpected } from '../../lib/observability';
 import { foldersQueryOptions, prefetchFolders } from '../../server/folders';
 import { linksQueryOptions, type LinkFilter } from '../../server/links';
+import { prefetchTags, tagsQueryOptions } from '../../server/tags';
 import { requireTeamId } from '../_authed';
 
 /* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding below is typed by
@@ -80,19 +81,24 @@ export async function loadLinks(
 }
 
 /**
- * A new folder filter always starts at page 1, as the audit log's filters do
+ * A changed filter always starts at page 1, as the audit log's filters do
  * (`nextFilters` in `audit-filter-bar.tsx`) — a filtered view still showing a
- * page number from the previous, unfiltered result would leave the reader
- * looking at a page that may not exist under the new filter.
+ * page number from the previous result would leave the reader looking at a
+ * page that may not exist under the new filter. The folder and the tag
+ * combine, and `LinkFilterBar` always reports both, so what this returns is
+ * the whole filter: a field left out is "all", not "unchanged".
  *
- * @param folder - The newly chosen `folder` search value, or undefined for all folders.
+ * @param change - The whole next filter, as `LinkFilterBar` reports it.
+ * @param change.folder - The chosen `folder` search value, or undefined for all folders.
+ * @param change.tag - The chosen `tag` search value, or undefined for all tags.
  * @returns The search parameters to navigate to.
  */
-export function folderChangeSearch(folder: string | undefined): {
+export function filterChangeSearch(change: { readonly folder?: string; readonly tag?: string }): {
 	readonly folder?: string;
-	readonly page: number;
+	readonly page: 1;
+	readonly tag?: string;
 } {
-	return { folder, page: 1 };
+	return { folder: change.folder, page: 1, tag: change.tag };
 }
 
 /**
@@ -117,11 +123,10 @@ export function folderChangeSearch(folder: string | undefined): {
  * `parseFolderSearch`, which drops anything but `none` or a well-formed UUID
  * the same way.
  *
- * `tag` is a stub for now: the tags page links each tag to `?tag=<id>`, so
- * the route has to declare the parameter for those links to typecheck, but
- * nothing reads it yet — `loaderDeps` and the component leave it alone until
- * the tag filter lands. It goes through `parseUuidSearch`, so a tag that
- * isn't a UUID is dropped the way a malformed `folder` is.
+ * `tag` goes through `parseUuidSearch`, so a tag that isn't a UUID is dropped
+ * the way a malformed `folder` is. A well-formed id naming no tag the team has
+ * is kept: telling the two apart needs the tags, which this function does not
+ * have, so `LinkList` reports it once they have loaded.
  *
  * @param search - The raw search record TanStack Router hands `validateSearch`.
  * @returns The parsed `folder`/`page`/`tag` search, `page` always a positive integer.
@@ -177,20 +182,22 @@ export const Route = createFileRoute('/_authed/teams/$teamSlug/links/')({
 	beforeLoad: ({ context, params }) => ({
 		teamId: requireTeamId(context.me.memberships, params.teamSlug),
 	}),
-	loaderDeps: ({ search }) => ({ folder: search.folder, page: search.page }),
-	// Both requests run together: the folders fetch only warms
-	// `['folders', teamId]` for the component's own `useQuery` read below (see
-	// `prefetchFolders`'s docstring) and must never make the whole page depend
-	// on it succeeding, so it is not awaited through `loadLinks`'s
-	// unauthenticated-redirect/rethrow path — a link list is still useful with
-	// an unfilled folder filter, unlike with no links at all.
+	loaderDeps: ({ search }) => ({ folder: search.folder, page: search.page, tag: search.tag }),
+	// All three requests run together: the folders and tags fetches only warm
+	// `['folders', teamId]` and `['tags', teamId]` for the component's own
+	// `useQuery` reads below (see `prefetchFolders`'s docstring) and must never
+	// make the whole page depend on them succeeding, so neither is awaited
+	// through `loadLinks`'s unauthenticated-redirect/rethrow path — a link list
+	// is still useful with an unfilled folder or tag filter, unlike with no
+	// links at all.
 	loader: async ({ context, deps }) => {
 		await Promise.all([
 			loadLinks(context.queryClient, context.teamId, {
-				filter: { folder: folderFilterOf(deps.folder), tagId: undefined },
+				filter: { folder: folderFilterOf(deps.folder), tagId: deps.tag },
 				page: deps.page,
 			}),
 			prefetchFolders(context.queryClient, context.teamId),
+			prefetchTags(context.queryClient, context.teamId),
 		]);
 	},
 	component: RouteComponent,
@@ -255,10 +262,10 @@ export function LinksError({ error }: { readonly error: unknown }): React.JSX.El
 function RouteComponent(): React.JSX.Element {
 	const { teamSlug } = Route.useParams();
 	const { teamId } = Route.useRouteContext();
-	const { folder, page } = Route.useSearch();
+	const { folder, page, tag } = Route.useSearch();
 	const navigate = Route.useNavigate();
 	const { data } = useSuspenseQuery(
-		linksQueryOptions(teamId, page, { folder: folderFilterOf(folder), tagId: undefined }),
+		linksQueryOptions(teamId, page, { folder: folderFilterOf(folder), tagId: tag }),
 	);
 	// Non-suspense, deliberately: the loader's own `prefetchFolders` call never
 	// rejects and never throws — a link list with an unfilled folder filter is
@@ -272,16 +279,23 @@ function RouteComponent(): React.JSX.Element {
 	// flight.
 	const { data: folderPage } = useQuery(foldersQueryOptions(teamId));
 	const folders = folderPage === undefined ? undefined : (folderPage.items ?? []);
+	// Tolerant the same way, and for the same reason: `tagData` stays `undefined`
+	// while loading or after a failed fetch, and is handed on as-is so
+	// `LinkList` can tell "not loaded" from "the team has none" — only the
+	// second may report an unknown tag id as missing.
+	const { data: tagData } = useQuery(tagsQueryOptions(teamId));
 
 	return (
 		<LinkList
 			data={data}
 			folder={folder}
 			folders={folders}
-			onFolderChange={(next) => {
-				void navigate({ search: folderChangeSearch(next) });
+			onFilterChange={(next) => {
+				void navigate({ search: filterChangeSearch(next) });
 			}}
 			page={page}
+			tag={tag}
+			tags={tagData}
 			teamSlug={teamSlug}
 		/>
 	);
