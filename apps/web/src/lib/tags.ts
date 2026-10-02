@@ -46,6 +46,9 @@ export function remapTagGoneFailure(
 ): ApiFailure {
 	if (classified.kind !== 'fields' || classified.fields.tag_ids === undefined) return classified;
 
+	// Huma's `maxItems` 422 also arrives at `body.tag_ids`, so a too-many-tags
+	// refusal would read as "tag gone"; the picker's cap, re-checked when a
+	// create resolves, keeps that refusal unreachable.
 	void deps.queryClient.invalidateQueries({ queryKey: ['tags', deps.teamId] });
 	return { ...classified, fields: { ...classified.fields, tag_ids: deps.tagGoneMessage } };
 }

@@ -35,3 +35,11 @@ export const Default: StoryObj<typeof meta> = {};
 export const BothFiltered: StoryObj<typeof meta> = {
 	args: { folder: 'folder-1', tag: 'tag-2' },
 };
+
+// The theme toolbar global defaults to `light`, and `test:storybook` runs every
+// story at its defaults — so without this story the dark palette is never
+// checked by anything, only viewable by hand.
+export const Dark: StoryObj<typeof meta> = {
+	args: { ...BothFiltered.args },
+	globals: { theme: 'dark' },
+};

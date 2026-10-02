@@ -85,3 +85,11 @@ export const WithError: StoryObj<typeof meta> = {
 		value: ['tag-0'],
 	},
 };
+
+// The theme toolbar global defaults to `light`, and `test:storybook` runs every
+// story at its defaults — so without this story the dark palette is never
+// checked by anything, only viewable by hand.
+export const Dark: StoryObj<typeof meta> = {
+	args: { ...WithTags.args },
+	globals: { theme: 'dark' },
+};

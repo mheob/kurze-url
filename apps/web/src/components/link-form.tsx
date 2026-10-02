@@ -6,7 +6,7 @@
    the same limitation `audit-actor.ts` documents. */
 
 import { useForm } from '@tanstack/react-form';
-import { useId } from 'react';
+import { useEffect, useId, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { TagPicker, type TagCreateResult, type TagOption } from './tag-picker';
@@ -63,6 +63,8 @@ interface LinkFormProps {
 	// an already-filed link be unfiled, so there is no furniture-check here.
 	readonly folders?: readonly Readonly<{ id: string; name: string }>[];
 	readonly initial?: Partial<LinkFormValues>;
+	/** Which version of the record `initial` came from, e.g. `link.updated_at`; a new one re-seeds the form from `initial` in place. */
+	readonly initialVersion?: string;
 	/** Creates a tag by name from the picker; resolves to the tag or a message to show. */
 	readonly onCreateTag?: (name: string) => Promise<TagCreateResult>;
 	readonly onSubmit: (values: LinkFormValues) => void;
@@ -109,6 +111,7 @@ export interface LinkFormValues {
  * @param props.folderHint - Shown under the folder field when the team has no folders yet, e.g. a link to the folders page.
  * @param props.folders - The team's folders; the folder field renders whenever this is passed, even empty.
  * @param props.initial - Initial values to seed the form from, for the edit route.
+ * @param props.initialVersion - The version `initial` came from; when it changes, the form re-seeds from `initial`.
  * @param props.onCreateTag - Creates a tag by name from the picker; without it, a create attempt shows the generic failure.
  * @param props.onSubmit - Called with the form's values on submit.
  * @param props.tagNames - Names for chosen tags the loaded `tags` may lack, e.g. from `link.tags`.
@@ -123,6 +126,7 @@ export function LinkForm({
 	folderHint,
 	folders,
 	initial,
+	initialVersion,
 	onCreateTag,
 	onSubmit,
 	tagNames,
@@ -150,6 +154,19 @@ export function LinkForm({
 			onSubmit(value);
 		},
 	});
+
+	// The edit route compares the next save against the link it reloaded
+	// after this one, so the form has to hold that reload too, or a tag the
+	// server dropped meanwhile is sent again and refused as gone. `useForm`
+	// takes new defaults only while nothing is touched, hence the reset; it
+	// happens in place rather than through a `key`, because remounting would
+	// unmount the focused Save button and drop focus to the page.
+	const seededVersion = useRef(initialVersion);
+	useEffect(() => {
+		if (seededVersion.current === initialVersion) return;
+		seededVersion.current = initialVersion;
+		form.reset({ ...defaultValues, ...initial });
+	}, [form, initial, initialVersion]);
 
 	// A server error naming a field this form doesn't render (see
 	// `KNOWN_FIELD_NAMES` above) — surfaced as a generic alert rather than

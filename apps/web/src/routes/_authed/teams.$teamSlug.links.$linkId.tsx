@@ -744,6 +744,9 @@ function RouteComponent(): React.JSX.Element {
 						}
 						folders={folderPage?.items ?? []}
 						initial={toFormValues(link)}
+						// Every save bumps `updated_at`, so the form re-seeds from the
+						// reloaded link that `toUpdateBody` compares the next save to.
+						initialVersion={link.updated_at}
 						key={`form-${linkId}`}
 						onCreateTag={onCreateTag}
 						onSubmit={(values) => {

@@ -379,4 +379,64 @@ describe(LinkForm, () => {
 		expect(screen.getByText('Altpapier')).toBeVisible();
 		expect(screen.getAllByText('(deleted)')).toHaveLength(1);
 	});
+
+	describe('after a save reloads the record', () => {
+		const i18n = createI18n('en');
+		const before = { destination_url: 'https://example.org/', tag_ids: ['t1', 'gone'] };
+		// The server dropped the tag deleted meanwhile, so the reload lacks it.
+		const after = { destination_url: 'https://example.org/new', tag_ids: ['t1'] };
+
+		/**
+		 * The form as the edit route renders it, seeded from one version of the link.
+		 *
+		 * @param initial - The values the link held at that version.
+		 * @param initialVersion - The link's `updated_at`.
+		 * @param onSubmit - The submit handler.
+		 * @returns The form element.
+		 */
+		function form(
+			initial: Partial<LinkFormValues>,
+			initialVersion: string,
+			onSubmit: (values: LinkFormValues) => void,
+		): React.JSX.Element {
+			return (
+				<I18nextProvider i18n={i18n}>
+					<LinkForm
+						initial={initial}
+						initialVersion={initialVersion}
+						onSubmit={onSubmit}
+						tagNames={new Map([['gone', 'Altpapier']])}
+						tags={teamTags}
+						tagsLoaded
+					/>
+				</I18nextProvider>
+			);
+		}
+
+		it('re-seeds in place from a new version, keeping focus on Save', async () => {
+			const onSubmit = vi.fn<(values: LinkFormValues) => void>();
+			const { rerender } = render(form(before, 'v1', onSubmit));
+			const destination = screen.getByLabelText(/destination|ziel/iu);
+			await userEvent.clear(destination);
+			await userEvent.type(destination, after.destination_url);
+			const save = screen.getByRole('button', { name: /save/iu });
+			await userEvent.click(save);
+			rerender(form(after, 'v2', onSubmit));
+
+			expect(screen.queryByText('Altpapier')).not.toBeInTheDocument();
+			expect(save).toHaveFocus();
+			await userEvent.click(save);
+			expect(onSubmit).toHaveBeenLastCalledWith(expect.objectContaining(after));
+		});
+
+		it('keeps unsaved edits while the version stays the same', async () => {
+			const { rerender } = render(form(before, 'v1', vi.fn<(values: LinkFormValues) => void>()));
+			const destination = screen.getByLabelText(/destination|ziel/iu);
+			await userEvent.type(destination, 'typed');
+			rerender(form(after, 'v1', vi.fn<(values: LinkFormValues) => void>()));
+
+			expect(destination).toHaveValue('https://example.org/typed');
+			expect(screen.getByText('Altpapier')).toBeVisible();
+		});
+	});
 });

@@ -251,3 +251,11 @@ export const Dark: StoryObj<typeof meta> = {
 	args: { ...Populated.args },
 	globals: { theme: 'dark' },
 };
+
+// `Dark` above renders rows without tags, so the tag chips (a badge inside a
+// link) would otherwise never meet the dark palette in front of the a11y
+// addon.
+export const WithTagsDark: StoryObj<typeof meta> = {
+	args: { ...WithTags.args },
+	globals: { theme: 'dark' },
+};
