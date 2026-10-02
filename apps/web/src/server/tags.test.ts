@@ -81,11 +81,13 @@ function withSession(accessToken: string): void {
  *
  * @param page - The 1-based page number requested.
  * @param total - How many tags the team holds in all.
+ * @param reported - The `total_count` the response claims; only differs from `total` when a test wants the API to misreport it.
  * @returns The response body for that page.
  */
 function tagPage(
 	page: number,
 	total: number,
+	reported = total,
 ): {
 	readonly items: readonly {
 		readonly id: string;
@@ -102,7 +104,27 @@ function tagPage(
 		name: `T${page}-${index}`,
 		team_id: 'team-a',
 	}));
-	return { items, page, per_page: 100, total_count: total };
+	return { items, page, per_page: 100, total_count: reported };
+}
+
+/**
+ * Serves the team's tag list from MSW and records which pages were asked for.
+ * Module scope for the same reason as `tagPage`: the resolver is a test body.
+ *
+ * @param total - How many tags the team holds in all.
+ * @param reported - The `total_count` the API claims, when it should differ.
+ * @returns The `page` query parameter of every request, in order.
+ */
+function serveTagPages(total: number, reported = total): string[] {
+	const pages: string[] = [];
+	server.use(
+		http.get('*/v1/teams/team-a/tags', ({ request }) => {
+			const requested = new URL(request.url).searchParams.get('page');
+			pages.push(String(requested));
+			return HttpResponse.json(tagPage(Number(requested), total, reported));
+		}),
+	);
+	return pages;
 }
 
 describe('tag server functions', () => {
@@ -133,6 +155,53 @@ describe('tag server functions', () => {
 		expect(tags).toHaveLength(120);
 		expect(tags[0]?.id).toBe('t1-0');
 		expect(tags[119]?.id).toBe('t2-19');
+	});
+
+	it('keeps paging past 200 tags, because concurrent creates can leave a team over its cap', async () => {
+		withSession('token-a');
+		const pages = serveTagPages(201);
+
+		const tags = await listTagsFor(new Request('http://localhost/'), 'team-a');
+
+		expect(pages).toStrictEqual(['1', '2', '3']);
+		expect(tags).toHaveLength(201);
+		expect(tags[200]?.id).toBe('t3-0');
+	});
+
+	it('makes one request for exactly 100 tags and two for 101', async () => {
+		withSession('token-a');
+		const exactlyOnePage = serveTagPages(100);
+		await expect(listTagsFor(new Request('http://localhost/'), 'team-a')).resolves.toHaveLength(
+			100,
+		);
+		expect(exactlyOnePage).toStrictEqual(['1']);
+
+		server.resetHandlers();
+		const justOverOnePage = serveTagPages(101);
+		await expect(listTagsFor(new Request('http://localhost/'), 'team-a')).resolves.toHaveLength(
+			101,
+		);
+		expect(justOverOnePage).toStrictEqual(['1', '2']);
+	});
+
+	it('stops at an empty page when total_count promises more than the pages deliver', async () => {
+		withSession('token-a');
+		const pages = serveTagPages(100, 500);
+
+		const tags = await listTagsFor(new Request('http://localhost/'), 'team-a');
+
+		expect(pages).toStrictEqual(['1', '2']);
+		expect(tags).toHaveLength(100);
+	});
+
+	it('never asks for more pages than the cap allows, however large total_count claims to be', async () => {
+		withSession('token-a');
+		const pages = serveTagPages(500);
+
+		const tags = await listTagsFor(new Request('http://localhost/'), 'team-a');
+
+		expect(pages).toStrictEqual(['1', '2', '3']);
+		expect(tags).toHaveLength(300);
 	});
 
 	it('stops after one page when everything fits', async () => {

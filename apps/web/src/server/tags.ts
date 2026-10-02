@@ -3,6 +3,7 @@ import { queryOptions } from '@tanstack/react-query';
 import { createServerFn, createServerOnlyFn } from '@tanstack/react-start';
 import { getRequest } from '@tanstack/react-start/server';
 
+import { TAGS_PER_TEAM } from '../lib/tags';
 import { authedApiClient, flushSessionCookies, requireSession } from './session';
 
 /* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding of this rule in this
@@ -28,8 +29,57 @@ interface TagsDataSource {
 	readonly ensureQueryData: (options: ReturnType<typeof tagsQueryOptions>) => Promise<Tag[]>;
 }
 
-/** The API's page-size ceiling; with TAGS_PER_TEAM at 200, two pages always suffice. */
+/** The API's page-size ceiling. */
 const TAG_PAGE_SIZE = 100;
+
+/**
+ * The most pages `listTagsFor` will ask for: what a team at its cap needs, plus
+ * one. The extra page is for the over-cap race (`createTag` in
+ * `apps/api/internal/api/tags.go` accepts that two concurrent creates can leave
+ * a team one row over `TAGS_PER_TEAM`), so a team at 201 tags still lists
+ * completely. It is also the ceiling that stops a misreported `total_count`
+ * from keeping the paging going.
+ */
+const MAX_TAG_PAGES = Math.ceil(TAGS_PER_TEAM / TAG_PAGE_SIZE) + 1;
+
+/** What `fetchTagPages` carries from one page to the next. */
+interface TagPagesProgress {
+	/** Every tag collected so far, in page order. */
+	readonly collected: readonly Tag[];
+	/** The 1-based page to request next. */
+	readonly page: number;
+}
+
+/**
+ * Fetches `progress.page`, then keeps going while fewer tags have been
+ * collected than the API's `total_count`, the page just fetched delivered
+ * something, and `MAX_TAG_PAGES` has not been reached. Recursive rather than
+ * a loop because whether page N + 1 is needed depends on page N, which a loop
+ * would express as an `await` per iteration — a pattern `no-await-in-loop`
+ * exists to flag — and the depth is bounded by `MAX_TAG_PAGES`.
+ *
+ * @param client - The authenticated API client to fetch through.
+ * @param teamId - The team whose tags to list.
+ * @param progress - The tags collected so far and the page to request next.
+ * @returns Every tag collected, in page order.
+ */
+async function fetchTagPages(
+	client: ReturnType<typeof authedApiClient>,
+	teamId: string,
+	progress: TagPagesProgress,
+): Promise<Tag[]> {
+	const { data } = await listTags({
+		client,
+		path: { team_id: teamId },
+		query: { page: progress.page, per_page: TAG_PAGE_SIZE },
+		throwOnError: true,
+	});
+	const items = data.items ?? [];
+	const collected = [...progress.collected, ...items];
+	if (items.length === 0 || collected.length >= data.total_count || progress.page >= MAX_TAG_PAGES)
+		return collected;
+	return fetchTagPages(client, teamId, { collected, page: progress.page + 1 });
+}
 
 /**
  * Same `...For`/`...Fn` split as `server/folders.ts`, for the same reason:
@@ -44,10 +94,14 @@ const TAG_PAGE_SIZE = 100;
  * would silently drop that refresh's cookies on every tag list fetch.
  *
  * Unlike `listFoldersFor`, one request is not always enough: a team may hold
- * `TAGS_PER_TEAM` (200) tags and the API pages at 100, so a second page is
- * fetched whenever the first one did not carry everything. Two pages always
- * suffice, which is why this is a fixed second request and not a loop — a
- * loop would also keep going if the API ever misreported `total_count`.
+ * `TAGS_PER_TEAM` (200) tags and the API pages at 100. `fetchTagPages` asks
+ * for pages one after another while fewer tags have been collected than
+ * `total_count` and the last page delivered something, and never past
+ * `MAX_TAG_PAGES`. A fixed second request would be wrong, because the API
+ * accepts a team one row over its cap when two creates race, which puts a
+ * third page in reach. Paging without a bound would be wrong too, because a
+ * `total_count` larger than what the pages deliver would never end it; the
+ * empty-page check and the page cap each stop that on their own.
  */
 export const listTagsFor = createServerOnlyFn(
 	async (request: Request, teamId: string): Promise<Tag[]> => {
@@ -55,24 +109,7 @@ export const listTagsFor = createServerOnlyFn(
 		const { accessToken } = await requireSession(request, headers);
 		flushSessionCookies(headers);
 
-		const client = authedApiClient(accessToken);
-		const first = await listTags({
-			client,
-			path: { team_id: teamId },
-			query: { page: 1, per_page: TAG_PAGE_SIZE },
-			throwOnError: true,
-		});
-		const items = [...(first.data.items ?? [])];
-		if (first.data.total_count > items.length) {
-			const second = await listTags({
-				client,
-				path: { team_id: teamId },
-				query: { page: 2, per_page: TAG_PAGE_SIZE },
-				throwOnError: true,
-			});
-			items.push(...(second.data.items ?? []));
-		}
-		return items;
+		return fetchTagPages(authedApiClient(accessToken), teamId, { collected: [], page: 1 });
 	},
 );
 
