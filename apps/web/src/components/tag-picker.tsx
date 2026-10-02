@@ -102,6 +102,9 @@ export function TagPicker({
 	const [query, setQuery] = useState('');
 	const [open, setOpen] = useState(false);
 	const [createError, setCreateError] = useState<string | undefined>(undefined);
+	const [pending, setPending] = useState(false);
+	// Names of tags this picker created, until `options` catches up with them.
+	const [createdNames, setCreatedNames] = useState<ReadonlyMap<string, string>>(new Map());
 
 	// A create resolves after the user may have changed the chips, so it adds
 	// to the latest value rather than the one it started from.
@@ -117,32 +120,60 @@ export function TagPicker({
 
 	const selected = useMemo(() => {
 		const names = new Map(options.map((option) => [option.id, option.name]));
-		return value.map((id): PickerItem => ({ id, name: names.get(id) ?? knownNames.get(id) ?? id }));
-	}, [knownNames, options, value]);
+		return value.map((id): PickerItem => ({
+			id,
+			name: names.get(id) ?? knownNames.get(id) ?? createdNames.get(id) ?? id,
+		}));
+	}, [createdNames, knownNames, options, value]);
 
 	const items = useMemo((): PickerItem[] => {
 		if (atCap) return [];
 		const chosen = new Set(value);
 		const available: PickerItem[] = options.filter((option) => !chosen.has(option.id));
-		const name = canCreate ? normalizeName(query) : undefined;
+		const name = canCreate && !pending ? normalizeName(query) : undefined;
 		if (name === undefined) return available;
 		const lowered = name.toLowerCase();
 		const exists = options.some((option) => option.name.toLowerCase() === lowered);
 		return exists ? available : [...available, { creatable: true, id: `create:${lowered}`, name }];
-	}, [atCap, canCreate, options, query, value]);
+	}, [atCap, canCreate, options, pending, query, value]);
+
+	/**
+	 * Calls `onCreate`, turning a rejection into the generic message so the
+	 * field always has something to say.
+	 *
+	 * @param name - The normalized name to create.
+	 * @returns What the create resolved to, or the generic failure.
+	 */
+	async function settle(name: string): Promise<TagCreateResult> {
+		try {
+			return await onCreate(name);
+		} catch {
+			return { error: t('errors.unknown') };
+		}
+	}
 
 	/**
 	 * Creates the typed name as a tag and chooses it, or keeps the failure to
 	 * show on the field. Focus goes back to the input either way.
 	 *
+	 * The chips may have changed while the call was in flight, so the new tag
+	 * joins the latest value, and only while that is still below the cap.
+	 *
 	 * @param name - The normalized name to create.
 	 */
 	async function create(name: string): Promise<void> {
 		setCreateError(undefined);
-		const result = await onCreate(name);
+		setPending(true);
+		const result = await settle(name);
+		setPending(false);
 		if ('tag' in result) {
+			const { tag } = result;
+			// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `ReadonlyMap` is TypeScript's immutable map type; the rule does not recognise it as readonly, the same limitation `audit-actor.ts` documents.
+			setCreatedNames((names) => new Map(names).set(tag.id, tag.name));
 			const current = latestValue.current;
-			if (!current.includes(result.tag.id)) onChange([...current, result.tag.id]);
+			if (current.length < TAGS_PER_LINK && !current.includes(tag.id)) {
+				onChange([...current, tag.id]);
+			}
 			setQuery('');
 		} else {
 			setCreateError(result.error);
@@ -214,9 +245,15 @@ export function TagPicker({
 						);
 					})}
 					<ComboboxChipsInput
+						aria-busy={pending ? true : undefined}
 						aria-describedby={describedBy === '' ? undefined : describedBy}
 						aria-invalid={invalid ? true : undefined}
 						id={inputId}
+						// While a create is in flight the list is closed, so Enter
+						// would submit the surrounding form without the new tag.
+						onKeyDown={(event: Readonly<{ key: string; preventDefault: () => void }>) => {
+							if (pending && event.key === 'Enter') event.preventDefault();
+						}}
 						placeholder={t('links.tagsPlaceholder')}
 						ref={input}
 					/>
