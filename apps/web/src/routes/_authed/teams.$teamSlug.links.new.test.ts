@@ -5,6 +5,7 @@ import type { LinkFormValues } from '../../components/link-form';
 import {
 	afterCreate,
 	initialFolderId,
+	initialTagIds,
 	loadVerifiedDomains,
 	toRequestBody,
 } from './teams.$teamSlug.links.new';
@@ -17,6 +18,7 @@ const baseValues: LinkFormValues = {
 	folder_id: '',
 	redirect_type: 302,
 	slug: '',
+	tag_ids: [],
 };
 
 /**
@@ -94,6 +96,14 @@ describe(toRequestBody, () => {
 		expect(toRequestBody({ ...baseValues, folder_id: 'f1' })).toMatchObject({ folder_id: 'f1' });
 		expect(toRequestBody({ ...baseValues, folder_id: '' }).folder_id).toBeUndefined();
 	});
+
+	it('omits tag_ids when no tag was chosen', () => {
+		expect(toRequestBody({ ...baseValues, tag_ids: [] })).not.toHaveProperty('tag_ids');
+	});
+
+	it('sends the chosen tag ids', () => {
+		expect(toRequestBody({ ...baseValues, tag_ids: ['t1'] })).toMatchObject({ tag_ids: ['t1'] });
+	});
 });
 
 /**
@@ -108,6 +118,19 @@ describe(initialFolderId, () => {
 		expect(initialFolderId('f1', [{ id: 'f1', name: 'A' }])).toBe('f1');
 		expect(initialFolderId('ffff', [{ id: 'f1', name: 'A' }])).toBe('');
 		expect(initialFolderId(undefined, [{ id: 'f1', name: 'A' }])).toBe('');
+	});
+});
+
+/**
+ * The tag counterpart of `initialFolderId`: `?tag=<id>` (the link list's "New
+ * link" button while a tag filter is active) preselects that tag, but only
+ * when the team has it, so a stale or foreign id never becomes a chip.
+ */
+describe(initialTagIds, () => {
+	it('preselects only a tag the team has', () => {
+		expect(initialTagIds('t1', [{ id: 't1', name: 'A' }])).toStrictEqual(['t1']);
+		expect(initialTagIds('tttt', [{ id: 't1', name: 'A' }])).toStrictEqual([]);
+		expect(initialTagIds(undefined, [{ id: 't1', name: 'A' }])).toStrictEqual([]);
 	});
 });
 

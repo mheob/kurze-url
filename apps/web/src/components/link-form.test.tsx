@@ -5,6 +5,12 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { createI18n } from '../i18n';
 import { LinkForm, type LinkFormValues } from './link-form';
+import type { TagCreateResult, TagOption } from './tag-picker';
+
+const teamTags = [
+	{ id: 't1', name: 'Jugend' },
+	{ id: 't2', name: 'Presse' },
+];
 
 /**
  * Same pattern as `language-switcher.test.tsx`: any component that calls
@@ -17,14 +23,19 @@ import { LinkForm, type LinkFormValues } from './link-form';
  * @param props - The props to render `LinkForm` with.
  * @returns The rendered test utilities from Testing Library's `render`.
  */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `React.ReactNode` is React's own type; not a declaration this file can edit.
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `React.ReactNode` is React's own type; not a declaration this file can edit. `tagNames` is a `ReadonlyMap`, TypeScript's immutable map type, which the rule does not recognise as readonly, the same limitation `audit-actor.ts` documents.
 function renderForm(props: {
+	readonly canCreateTags?: boolean;
 	readonly domains?: readonly Readonly<{ id: string; hostname: string }>[];
 	readonly fieldErrors?: Readonly<Record<string, string>>;
 	readonly folderHint?: React.ReactNode;
 	readonly folders?: readonly Readonly<{ id: string; name: string }>[];
 	readonly initial?: Partial<LinkFormValues>;
+	readonly onCreateTag?: (name: string) => Promise<TagCreateResult>;
 	readonly onSubmit: (values: LinkFormValues) => void;
+	readonly tagNames?: ReadonlyMap<string, string>;
+	readonly tags?: readonly TagOption[];
+	readonly tagsLoaded?: boolean;
 }): ReturnType<typeof render> {
 	return render(
 		<I18nextProvider i18n={createI18n('en')}>
@@ -261,5 +272,111 @@ describe(LinkForm, () => {
 			onSubmit: vi.fn<(values: LinkFormValues) => void>(),
 		});
 		expect(screen.queryByText('Deleted folder')).not.toBeInTheDocument();
+	});
+
+	it('offers the team tags and hands back the chosen ids', async () => {
+		const onSubmit = vi.fn<(values: LinkFormValues) => void>();
+		renderForm({ onSubmit, tags: teamTags, tagsLoaded: true });
+
+		await userEvent.type(screen.getByRole('combobox', { name: 'Tags' }), 'Pre');
+		await userEvent.click(screen.getByRole('option', { name: 'Presse' }));
+		await userEvent.type(screen.getByLabelText(/destination|ziel/iu), 'https://example.org/');
+		await userEvent.click(screen.getByRole('button', { name: /save/iu }));
+
+		expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ tag_ids: ['t2'] }));
+	});
+
+	it('omits the tags field when no tags prop is passed at all', () => {
+		renderForm({ onSubmit: vi.fn<(values: LinkFormValues) => void>() });
+		expect(screen.queryByRole('combobox', { name: 'Tags' })).not.toBeInTheDocument();
+	});
+
+	it('hands back no tags when none were chosen', async () => {
+		const onSubmit = vi.fn<(values: LinkFormValues) => void>();
+		renderForm({ onSubmit, tags: teamTags, tagsLoaded: true });
+
+		await userEvent.type(screen.getByLabelText(/destination|ziel/iu), 'https://example.org/');
+		await userEvent.click(screen.getByRole('button', { name: /save/iu }));
+
+		expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ tag_ids: [] }));
+	});
+
+	it('shows a tag_ids field error on the tags field', () => {
+		renderForm({
+			fieldErrors: { tag_ids: 'A chosen tag no longer exists. Remove it and save again.' },
+			onSubmit: vi.fn<(values: LinkFormValues) => void>(),
+			tags: teamTags,
+			tagsLoaded: true,
+		});
+		expect(screen.getByRole('combobox', { name: 'Tags' })).toHaveAccessibleDescription(
+			'A chosen tag no longer exists. Remove it and save again.',
+		);
+		// Attached to its own field, not repeated by the alert for fields the
+		// form has no input for.
+		expect(screen.getAllByRole('alert')).toHaveLength(1);
+	});
+
+	it('offers no create option when the caller may not create tags', async () => {
+		renderForm({
+			canCreateTags: false,
+			onSubmit: vi.fn<(values: LinkFormValues) => void>(),
+			tags: teamTags,
+			tagsLoaded: true,
+		});
+		await userEvent.type(screen.getByRole('combobox', { name: 'Tags' }), 'Vorstand');
+		expect(screen.queryByRole('option', { name: /create tag/iu })).toBeNull();
+	});
+
+	it('offers a create option to an editor and chooses the created tag', async () => {
+		const onSubmit = vi.fn<(values: LinkFormValues) => void>();
+		const onCreateTag = vi.fn<(name: string) => Promise<TagCreateResult>>(
+			// oxlint-disable-next-line typescript/require-await -- stands in for the create call the picker awaits; the fake has nothing to await itself.
+			async () => ({ tag: { id: 't9', name: 'Vorstand' } }),
+		);
+		renderForm({ canCreateTags: true, onCreateTag, onSubmit, tags: teamTags, tagsLoaded: true });
+
+		await userEvent.type(screen.getByRole('combobox', { name: 'Tags' }), 'Vorstand');
+		await userEvent.click(screen.getByRole('option', { name: 'Create tag "Vorstand"' }));
+		await expect(
+			screen.findByRole('button', { name: 'Remove tag Vorstand' }),
+		).resolves.toBeInTheDocument();
+		await userEvent.type(screen.getByLabelText(/destination|ziel/iu), 'https://example.org/');
+		await userEvent.click(screen.getByRole('button', { name: /save/iu }));
+
+		expect(onCreateTag).toHaveBeenCalledWith('Vorstand');
+		expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ tag_ids: ['t9'] }));
+	});
+
+	it('keeps a link’s chips, named from tagNames, while the tags are unavailable', async () => {
+		// Review Focus 1: the tags fetch failed, so `tags` is empty — that says
+		// nothing about whether the link's tags still exist, so no chip is
+		// marked deleted, and saving hands the same ids back untouched.
+		const onSubmit = vi.fn<(values: LinkFormValues) => void>();
+		renderForm({
+			initial: { destination_url: 'https://example.org/', tag_ids: ['t1', 't2'] },
+			onSubmit,
+			tagNames: new Map(teamTags.map((tag: TagOption) => [tag.id, tag.name])),
+			tags: [],
+			tagsLoaded: false,
+		});
+
+		expect(screen.getByText('Jugend')).toBeVisible();
+		expect(screen.getByText('Presse')).toBeVisible();
+		expect(screen.queryByText('(deleted)')).not.toBeInTheDocument();
+		await userEvent.click(screen.getByRole('button', { name: /save/iu }));
+
+		expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ tag_ids: ['t1', 't2'] }));
+	});
+
+	it('marks a chosen tag the loaded tags no longer have as deleted', () => {
+		renderForm({
+			initial: { tag_ids: ['t1', 'gone'] },
+			onSubmit: vi.fn<(values: LinkFormValues) => void>(),
+			tagNames: new Map([['gone', 'Altpapier']]),
+			tags: teamTags,
+			tagsLoaded: true,
+		});
+		expect(screen.getByText('Altpapier')).toBeVisible();
+		expect(screen.getAllByText('(deleted)')).toHaveLength(1);
 	});
 });

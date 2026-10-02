@@ -176,16 +176,47 @@ const base: LinkFormValues = {
 	folder_id: 'f1',
 	redirect_type: 302,
 	slug: 'x',
+	tag_ids: ['t1', 't2'],
 };
+
+/** What the form was seeded with for `base`: the link's own folder and tags. */
+const seeded = { folderId: 'f1', tagIds: ['t1', 't2'] };
 
 describe(toUpdateBody, () => {
 	it('omits folder_id when unchanged, so a folder missing from the list is never unfiled by accident', () => {
-		expect(toUpdateBody(base, 'f1')).not.toHaveProperty('folder_id');
+		expect(toUpdateBody(base, seeded)).not.toHaveProperty('folder_id');
 	});
 
 	it('sends null to unfile and the id to refile', () => {
-		expect(toUpdateBody({ ...base, folder_id: '' }, 'f1')).toMatchObject({ folder_id: null });
-		expect(toUpdateBody({ ...base, folder_id: 'f2' }, 'f1')).toMatchObject({ folder_id: 'f2' });
+		expect(toUpdateBody({ ...base, folder_id: '' }, seeded)).toMatchObject({ folder_id: null });
+		expect(toUpdateBody({ ...base, folder_id: 'f2' }, seeded)).toMatchObject({ folder_id: 'f2' });
+	});
+
+	/**
+	 * Review Focus 1, the wire half: a link whose tags failed to load keeps its
+	 * chips (`link-form.test.tsx`), and saving some other field must not send
+	 * `tag_ids` at all, so a picker that never saw the team's tags cannot
+	 * rewrite the link's set.
+	 */
+	it('omits tag_ids when the set is unchanged, in any order', () => {
+		expect(
+			toUpdateBody({ ...base, tag_ids: ['t2', 't1'] }, { folderId: 'f1', tagIds: ['t1', 't2'] }),
+		).not.toHaveProperty('tag_ids');
+	});
+
+	it('sends the new set, and [] when every tag was removed', () => {
+		expect(
+			toUpdateBody({ ...base, tag_ids: ['t1'] }, { folderId: 'f1', tagIds: ['t1', 't2'] }),
+		).toMatchObject({ tag_ids: ['t1'] });
+		expect(
+			toUpdateBody({ ...base, tag_ids: [] }, { folderId: 'f1', tagIds: ['t1'] }),
+		).toMatchObject({ tag_ids: [] });
+	});
+
+	it('keeps the folder rule', () => {
+		expect(toUpdateBody(base, { folderId: 'f1', tagIds: ['t1', 't2'] })).not.toHaveProperty(
+			'folder_id',
+		);
 	});
 });
 
