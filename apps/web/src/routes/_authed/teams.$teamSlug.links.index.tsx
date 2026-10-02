@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next';
 import { LinkList } from '../../components/link-list';
 import { classifyApiError, type ApiFailure } from '../../lib/api-errors';
 import { folderFilterOf, parseFolderSearch, type FolderFilter } from '../../lib/folders';
+import { parseUuidSearch } from '../../lib/names';
 import { reportUnexpected } from '../../lib/observability';
 import { foldersQueryOptions, prefetchFolders } from '../../server/folders';
 import { linksQueryOptions } from '../../server/links';
@@ -116,17 +117,29 @@ export function folderChangeSearch(folder: string | undefined): {
  * `parseFolderSearch`, which drops anything but `none` or a well-formed UUID
  * the same way.
  *
+ * `tag` is a stub for now: the tags page links each tag to `?tag=<id>`, so
+ * the route has to declare the parameter for those links to typecheck, but
+ * nothing reads it yet — `loaderDeps` and the component leave it alone until
+ * the tag filter lands. It goes through `parseUuidSearch`, so a tag that
+ * isn't a UUID is dropped the way a malformed `folder` is.
+ *
  * @param search - The raw search record TanStack Router hands `validateSearch`.
- * @returns The parsed `folder`/`page` search, `page` always a positive integer.
+ * @returns The parsed `folder`/`page`/`tag` search, `page` always a positive integer.
  */
-export function parseLinksSearch(search: { folder?: unknown; page?: number | string }): {
+export function parseLinksSearch(search: {
+	folder?: unknown;
+	page?: number | string;
+	tag?: unknown;
+}): {
 	folder?: string;
 	page: number;
+	tag?: string;
 } {
 	const page = Number(search.page ?? 1);
 	return {
 		folder: parseFolderSearch(search.folder),
 		page: Number.isFinite(page) && page > 0 ? page : 1,
+		tag: parseUuidSearch(search.tag),
 	};
 }
 
@@ -159,8 +172,8 @@ export const Route = createFileRoute('/_authed/teams/$teamSlug/links/')({
 	// TanStack Router's own benefit (see `parseLinksSearch`'s docstring for
 	// why that marker can't live on the tested function itself).
 	validateSearch: (
-		search: { folder?: unknown; page?: number | string } & SearchSchemaInput,
-	): { folder?: string; page: number } => parseLinksSearch(search),
+		search: { folder?: unknown; page?: number | string; tag?: unknown } & SearchSchemaInput,
+	): { folder?: string; page: number; tag?: string } => parseLinksSearch(search),
 	beforeLoad: ({ context, params }) => ({
 		teamId: requireTeamId(context.me.memberships, params.teamSlug),
 	}),

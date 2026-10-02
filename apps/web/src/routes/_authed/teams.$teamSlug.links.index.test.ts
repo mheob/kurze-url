@@ -186,11 +186,24 @@ describe(parseLinksSearch, () => {
 		expect(parseLinksSearch({ folder: 'none', page: '2' })).toStrictEqual({
 			folder: 'none',
 			page: 2,
+			tag: undefined,
 		});
 	});
 
 	it('drops an invalid folder and falls back to page 1', () => {
-		expect(parseLinksSearch({ folder: 'garbage' })).toStrictEqual({ folder: undefined, page: 1 });
+		expect(parseLinksSearch({ folder: 'garbage' })).toStrictEqual({
+			folder: undefined,
+			page: 1,
+			tag: undefined,
+		});
+	});
+
+	/** The stub the tag links on the tags page land on until the tag filter exists: parsed, never acted on. */
+	it('parses a tag UUID, lowercased, and drops anything else', () => {
+		const id = '0b7c1f6e-2f4a-4f7e-9a53-8a0e1d2c3b4a';
+		expect(parseLinksSearch({ tag: id.toUpperCase() }).tag).toBe(id);
+		expect(parseLinksSearch({ tag: 'garbage' }).tag).toBeUndefined();
+		expect(parseLinksSearch({ tag: 'none' }).tag).toBeUndefined();
 	});
 });
 

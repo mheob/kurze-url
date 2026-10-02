@@ -369,7 +369,7 @@ for (const suffix of AUTHENTICATED_PATHS) {
 
 		if (suffix === 'folders') {
 			// A freshly provisioned team starts with zero folders, and
-			// `FolderList`'s empty-state branch (`folder-list.tsx`) never renders
+			// `NameList`'s empty-state branch (`name-list.tsx`) never renders
 			// a folder's own name as a link, its "Rename" button, or its delete
 			// trigger — all real, translated strings this crawl would otherwise
 			// miss. Created once, before either language visits the page, so both

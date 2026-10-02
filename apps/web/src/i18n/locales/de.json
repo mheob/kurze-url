@@ -187,13 +187,31 @@
 		"rename": "Umbenennen",
 		"renameLabel": "Ordner {{name}} umbenennen",
 		"save": "Speichern",
-		"cancel": "Abbrechen",
 		"deleteLabel": "Ordner {{name}} löschen",
 		"deleteQuestion": "Ordner „{{name}}“ löschen? Die Links darin bleiben erhalten und sind danach ohne Ordner.",
 		"nameTaken": "Einen Ordner mit diesem Namen gibt es schon.",
 		"capReached": "Ein Verein kann höchstens 100 Ordner haben.",
-		"nameInvalid": "Gib einen Namen mit 1 bis 60 Zeichen ein.",
 		"notFound": "Diesen Ordner gibt es nicht mehr."
+	},
+	"names": {
+		"cancel": "Abbrechen",
+		"nameInvalid": "Gib einen Namen mit 1 bis 60 Zeichen ein."
+	},
+	"tags": {
+		"heading": "Tags",
+		"intro": "Verschlagworte deine Links über Ordner hinweg. Ein Link kann bis zu 10 Tags tragen.",
+		"empty": "Noch keine Tags.",
+		"emptyEditorHint": "Lege oben den ersten an.",
+		"name": "Tagname",
+		"create": "Tag anlegen",
+		"rename": "Umbenennen",
+		"renameLabel": "Tag {{name}} umbenennen",
+		"save": "Speichern",
+		"deleteLabel": "Tag {{name}} löschen",
+		"deleteQuestion": "Tag „{{name}}“ löschen? Die Links bleiben erhalten und verlieren nur diesen Tag.",
+		"nameTaken": "Einen Tag mit diesem Namen gibt es schon.",
+		"capReached": "Ein Verein kann höchstens 200 Tags haben.",
+		"notFound": "Diesen Tag gibt es nicht mehr."
 	},
 	"audit": {
 		"heading": "Verlauf",

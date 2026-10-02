@@ -90,6 +90,9 @@ describe('translation catalogues', () => {
 			// a literal in `link-list.tsx` only because `react/jsx-no-literals`
 			// is error-level project-wide (see the file's own comment on it).
 			'links.folderNoneMark',
+			// "Tags" is the plural of an established loanword and is spelled the
+			// same in both languages, the same reasoning as `stats.browser`.
+			'tags.heading',
 		]);
 		const english = new Map(flatten(en));
 		const toCheck = flatten(de).filter(

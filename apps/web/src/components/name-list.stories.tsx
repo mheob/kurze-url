@@ -1,24 +1,16 @@
-import type { Folder as ApiFolder } from '@kurze-url/api-client';
 import type { Meta, StoryObj } from '@storybook/tanstack-react';
 import { fn } from 'storybook/test';
 
-import { FolderList } from './folder-list';
+import { NameList, type NamedItem } from './name-list';
 
 /**
- * Mirrors `folder-list.test.tsx`'s own fixture — kept local for the same reason `domain-list.stories.tsx`'s docstring gives.
+ * Mirrors `name-list.test.tsx`'s own fixture — kept local for the same reason `domain-list.stories.tsx`'s docstring gives.
  *
- * @param overrides - Partial fields to override on the default folder fixture.
- * @returns The folder fixture.
+ * @param overrides - Partial fields to override on the default item fixture.
+ * @returns The item fixture.
  */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `ApiFolder` is `@kurze-url/api-client`'s generated `Folder` type, whose properties are not marked readonly; that is generated codegen output, never edited by hand.
-function folder(overrides: Partial<ApiFolder> = {}): ApiFolder {
-	return {
-		created_at: '2026-09-26T00:00:00Z',
-		id: 'f1',
-		name: 'Newsletter',
-		team_id: 'team-a',
-		...overrides,
-	};
+function item(overrides: Readonly<Partial<NamedItem>> = {}): NamedItem {
+	return { id: 'f1', name: 'Newsletter', ...overrides };
 }
 
 const meta = {
@@ -26,29 +18,30 @@ const meta = {
 	// folder list with no row failure, unless it says otherwise.
 	args: {
 		canEdit: true,
-		onDelete: fn<(folderId: string) => void>(),
-		onDismissError: fn<(folderId: string) => void>(),
+		namespace: 'folders',
+		onDelete: fn<(itemId: string) => void>(),
+		onDismissError: fn<(itemId: string) => void>(),
 		// oxlint-disable-next-line typescript/require-await -- stands in for a rename call the real route awaits; the fixture has nothing to await itself.
-		onRename: fn<(folderId: string, name: string) => Promise<boolean>>(async () => true),
+		onRename: fn<(itemId: string, name: string) => Promise<boolean>>(async () => true),
 		rowError: null,
 		teamSlug: 'verein',
 	},
-	component: FolderList,
-	title: 'Folders/FolderList',
-} satisfies Meta<typeof FolderList>;
+	component: NameList,
+	title: 'Names/NameList',
+} satisfies Meta<typeof NameList>;
 
 export default meta;
 
 /** A team with no folders yet — an editor gets a hint to create the first one. */
 export const Empty: StoryObj<typeof meta> = {
-	args: { canEdit: true, folders: [] },
+	args: { canEdit: true, items: [] },
 };
 
 /** An editor sees every folder plus rename and delete controls on each row. */
 export const Editor: StoryObj<typeof meta> = {
 	args: {
 		canEdit: true,
-		folders: [folder(), folder({ id: 'f2', name: 'Sommerfest' })],
+		items: [item(), item({ id: 'f2', name: 'Sommerfest' })],
 	},
 };
 
@@ -56,7 +49,7 @@ export const Editor: StoryObj<typeof meta> = {
 export const Viewer: StoryObj<typeof meta> = {
 	args: {
 		canEdit: false,
-		folders: [folder(), folder({ id: 'f2', name: 'Sommerfest' })],
+		items: [item(), item({ id: 'f2', name: 'Sommerfest' })],
 	},
 };
 
@@ -64,18 +57,27 @@ export const Viewer: StoryObj<typeof meta> = {
  * A delete that failed shows the row's own alert, with the row left in
  * place — the closed-row branch this story actually renders, since nothing
  * here opens the rename form. A rename failure instead renders inside the
- * open rename form itself (`FolderRowError`'s own docstring), which a static
+ * open rename form itself (`NameRowError`'s own docstring), which a static
  * story can't show without user interaction to open that form first.
  */
 export const RowError: StoryObj<typeof meta> = {
 	args: {
 		canEdit: true,
-		folders: [folder(), folder({ id: 'f2', name: 'Sommerfest' })],
+		items: [item(), item({ id: 'f2', name: 'Sommerfest' })],
 		rowError: {
 			action: 'delete',
-			folderId: 'f2',
+			itemId: 'f2',
 			message: 'A folder with this name already exists.',
 		},
+	},
+};
+
+/** The same list for tags: the tags copy, and each name links to the tag filter instead of the folder one. */
+export const Tags: StoryObj<typeof meta> = {
+	args: {
+		canEdit: true,
+		items: [item({ id: 't1', name: 'Presse' }), item({ id: 't2', name: 'Vorstand' })],
+		namespace: 'tags',
 	},
 };
 

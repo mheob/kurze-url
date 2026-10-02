@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/tanstack-react';
 import { fn } from 'storybook/test';
 
-import { FolderForm } from './folder-form';
+import { NameForm } from './name-form';
 
 const meta = {
 	args: {
@@ -9,9 +9,9 @@ const meta = {
 		onSubmit: fn<(name: string) => void>(),
 		submitLabel: 'Create folder',
 	},
-	component: FolderForm,
-	title: 'Folders/FolderForm',
-} satisfies Meta<typeof FolderForm>;
+	component: NameForm,
+	title: 'Names/NameForm',
+} satisfies Meta<typeof NameForm>;
 
 export default meta;
 

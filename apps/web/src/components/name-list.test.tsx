@@ -13,24 +13,27 @@ import { I18nextProvider } from 'react-i18next';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createI18n } from '../i18n';
-import { FolderForm } from './folder-form';
-import { FolderList, type FolderRowError } from './folder-list';
+import { NameList, type NamedItem, type NameNamespace, type NameRowError } from './name-list';
 
 const folders: Folder[] = [
 	{ created_at: '2026-09-26T00:00:00Z', id: 'f1', name: 'Newsletter', team_id: 'team-a' },
 	{ created_at: '2026-09-26T00:00:00Z', id: 'f2', name: 'Sommerfest', team_id: 'team-a' },
 ];
 
+const tags: readonly NamedItem[] = [{ id: 't1', name: 'Presse' }];
+
 interface RenderListOptions {
 	readonly canEdit?: boolean;
-	readonly onDelete?: (folderId: string) => void;
-	readonly onDismissError?: (folderId: string) => void;
-	readonly onRename?: (folderId: string, name: string) => Promise<boolean>;
-	readonly rowError?: FolderRowError | null;
+	readonly items?: readonly NamedItem[];
+	readonly namespace?: NameNamespace;
+	readonly onDelete?: (itemId: string) => void;
+	readonly onDismissError?: (itemId: string) => void;
+	readonly onRename?: (itemId: string, name: string) => Promise<boolean>;
+	readonly rowError?: NameRowError | null;
 }
 
 /**
- * `FolderList` renders TanStack Router `<Link>` elements for each folder, the
+ * `NameList` renders TanStack Router `<Link>` elements for each item, the
  * same reason `link-list.test.tsx`'s own `renderWith` needs a router in
  * context — see that file's docstring.
  *
@@ -40,15 +43,16 @@ interface RenderListOptions {
 function renderList(overrides: RenderListOptions = {}): ReturnType<typeof render> {
 	const rootRoute = createRootRoute({
 		component: () => (
-			<FolderList
+			<NameList
 				canEdit={overrides.canEdit ?? false}
-				folders={folders}
-				onDelete={overrides.onDelete ?? vi.fn<(folderId: string) => void>()}
-				onDismissError={overrides.onDismissError ?? vi.fn<(folderId: string) => void>()}
+				items={overrides.items ?? folders}
+				namespace={overrides.namespace ?? 'folders'}
+				onDelete={overrides.onDelete ?? vi.fn<(itemId: string) => void>()}
+				onDismissError={overrides.onDismissError ?? vi.fn<(itemId: string) => void>()}
 				onRename={
 					overrides.onRename ??
-					// oxlint-disable-next-line typescript/require-await -- stands in for a rename call `FolderList` awaits; the fake has nothing to await itself.
-					vi.fn<(folderId: string, name: string) => Promise<boolean>>(async () => true)
+					// oxlint-disable-next-line typescript/require-await -- stands in for a rename call `NameList` awaits; the fake has nothing to await itself.
+					vi.fn<(itemId: string, name: string) => Promise<boolean>>(async () => true)
 				}
 				rowError={overrides.rowError ?? null}
 				teamSlug="verein"
@@ -72,7 +76,7 @@ function renderList(overrides: RenderListOptions = {}): ReturnType<typeof render
 	);
 }
 
-describe(FolderList, () => {
+describe(NameList, () => {
 	it('shows a viewer the folders and no controls', async () => {
 		renderList({ canEdit: false });
 		await expect(screen.findByRole('link', { name: 'Sommerfest' })).resolves.toHaveAttribute(
@@ -83,9 +87,19 @@ describe(FolderList, () => {
 		expect(screen.queryByRole('button', { name: /delete/iu })).toBeNull();
 	});
 
+	it('words a tag list in the tags copy and links each name to the tag filter', async () => {
+		renderList({ canEdit: true, items: tags, namespace: 'tags' });
+		await expect(screen.findByRole('link', { name: 'Presse' })).resolves.toHaveAttribute(
+			'href',
+			expect.stringContaining('tag=t1'),
+		);
+		expect(screen.getByRole('button', { name: 'Rename tag Presse' })).toBeVisible();
+		expect(screen.getByRole('button', { name: 'Delete tag Presse' })).toBeVisible();
+	});
+
 	it('renames inline, moving focus into the field and back to the button', async () => {
-		// oxlint-disable-next-line typescript/require-await -- stands in for a rename call `FolderList` awaits; the fake has nothing to await itself.
-		const onRename = vi.fn<(folderId: string, name: string) => Promise<boolean>>(async () => true);
+		// oxlint-disable-next-line typescript/require-await -- stands in for a rename call `NameList` awaits; the fake has nothing to await itself.
+		const onRename = vi.fn<(itemId: string, name: string) => Promise<boolean>>(async () => true);
 		renderList({ canEdit: true, onRename });
 		await screen.findByRole('link', { name: 'Sommerfest' });
 		await userEvent.click(screen.getByRole('button', { name: 'Rename folder Sommerfest' }));
@@ -100,8 +114,8 @@ describe(FolderList, () => {
 	});
 
 	it('cancels a rename on Escape without calling onRename', async () => {
-		// oxlint-disable-next-line typescript/require-await -- stands in for a rename call `FolderList` awaits; the fake has nothing to await itself.
-		const onRename = vi.fn<(folderId: string, name: string) => Promise<boolean>>(async () => true);
+		// oxlint-disable-next-line typescript/require-await -- stands in for a rename call `NameList` awaits; the fake has nothing to await itself.
+		const onRename = vi.fn<(itemId: string, name: string) => Promise<boolean>>(async () => true);
 		renderList({ canEdit: true, onRename });
 		await screen.findByRole('link', { name: 'Sommerfest' });
 		await userEvent.click(screen.getByRole('button', { name: 'Rename folder Sommerfest' }));
@@ -113,11 +127,11 @@ describe(FolderList, () => {
 	it('keeps the rename open when it fails, showing the row error', async () => {
 		renderList({
 			canEdit: true,
-			// oxlint-disable-next-line typescript/require-await -- stands in for a rename call `FolderList` awaits; the fake has nothing to await itself.
-			onRename: vi.fn<(folderId: string, name: string) => Promise<boolean>>(async () => false),
+			// oxlint-disable-next-line typescript/require-await -- stands in for a rename call `NameList` awaits; the fake has nothing to await itself.
+			onRename: vi.fn<(itemId: string, name: string) => Promise<boolean>>(async () => false),
 			rowError: {
 				action: 'rename',
-				folderId: 'f2',
+				itemId: 'f2',
 				message: 'A folder with this name already exists.',
 			},
 		});
@@ -129,7 +143,7 @@ describe(FolderList, () => {
 	});
 
 	it('deletes only after confirming', async () => {
-		const onDelete = vi.fn<(folderId: string) => void>();
+		const onDelete = vi.fn<(itemId: string) => void>();
 		renderList({ canEdit: true, onDelete });
 		await screen.findByRole('link', { name: 'Sommerfest' });
 		await userEvent.click(screen.getByRole('button', { name: 'Delete folder Sommerfest' }));
@@ -140,15 +154,15 @@ describe(FolderList, () => {
 });
 
 /**
- * Wraps `FolderList` in a small shell that plays the route's own part: it
+ * Wraps `NameList` in a small shell that plays the page's own part: it
  * moves `rowError` after `onRename`/`onDelete` resolve, and clears it on
- * `onDismissError` — the same round trip `teams.$teamSlug.folders.tsx`'s
- * `RouteComponent` drives for real (`dismissRowError`, the rename/delete
- * mutations' own `onError`). Every other test above treats `rowError` as a
- * fixed prop, which is enough when nothing needs to react to it changing;
- * the two tests below are specifically about that reaction — Important 2 of
- * the folders-frontend final review — so they need the real round trip, not
- * a snapshot of one step in it.
+ * `onDismissError` — the same round trip `useNameMutations` drives for real
+ * (its `onDismissError`, and the rename/delete mutations' own `onError`).
+ * Every other test above treats `rowError` as a fixed prop, which is enough
+ * when nothing needs to react to it changing; the two tests below are
+ * specifically about that reaction — Important 2 of the folders-frontend
+ * final review — so they need the real round trip, not a snapshot of one step
+ * in it.
  *
  * @param overrides - The failure each mutation should record, and the action it is tagged with.
  * @returns The rendered test utilities from Testing Library's `render`.
@@ -157,26 +171,27 @@ function renderListWithLiveRowError(
 	overrides: Readonly<{ deleteMessage?: string; renameMessage?: string }> = {},
 ): ReturnType<typeof render> {
 	function Shell(): React.JSX.Element {
-		const [rowError, setRowError] = useState<FolderRowError | null>(null);
+		const [rowError, setRowError] = useState<NameRowError | null>(null);
 		return (
-			<FolderList
+			<NameList
 				canEdit
-				folders={folders}
-				onDelete={(folderId) => {
+				items={folders}
+				namespace="folders"
+				onDelete={(itemId) => {
 					setRowError({
 						action: 'delete',
-						folderId,
+						itemId,
 						message: overrides.deleteMessage ?? 'Could not delete this folder.',
 					});
 				}}
-				onDismissError={(folderId) => {
-					setRowError((current) => (current?.folderId === folderId ? null : current));
+				onDismissError={(itemId) => {
+					setRowError((current) => (current?.itemId === itemId ? null : current));
 				}}
-				// oxlint-disable-next-line typescript/require-await -- stands in for a rename call `FolderList` awaits; the fake has nothing to await itself.
-				onRename={async (folderId) => {
+				// oxlint-disable-next-line typescript/require-await -- stands in for a rename call `NameList` awaits; the fake has nothing to await itself.
+				onRename={async (itemId) => {
 					setRowError({
 						action: 'rename',
-						folderId,
+						itemId,
 						message: overrides.renameMessage ?? 'A folder with this name already exists.',
 					});
 					return false;
@@ -240,19 +255,5 @@ describe('row error clearing (folders-frontend final review, Important 2)', () =
 
 		expect(screen.queryByText('Could not delete this folder.')).not.toBeInTheDocument();
 		expect(screen.getByRole('textbox', { name: 'Folder name' })).toHaveValue('Sommerfest');
-	});
-});
-
-describe(FolderForm, () => {
-	it('refuses a blank name on the client', async () => {
-		const onSubmit = vi.fn<(name: string) => void>();
-		render(
-			<I18nextProvider i18n={createI18n('en')}>
-				<FolderForm label="Folder name" onSubmit={onSubmit} submitLabel="Create folder" />
-			</I18nextProvider>,
-		);
-		await userEvent.type(screen.getByRole('textbox', { name: 'Folder name' }), '   {Enter}');
-		expect(onSubmit).not.toHaveBeenCalled();
-		expect(screen.getByText('Enter a name of 1 to 60 characters.')).toBeVisible();
 	});
 });

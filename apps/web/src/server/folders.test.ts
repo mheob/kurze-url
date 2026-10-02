@@ -139,8 +139,8 @@ describe('folder server functions', () => {
 			),
 		);
 
-		// The status, not just "something was thrown": folderFailureOf
-		// (lib/folders.ts) reads it straight off the rejection with statusOf,
+		// The status, not just "something was thrown": nameFailureOf
+		// (lib/names.ts) reads it straight off the rejection with statusOf,
 		// so a rejection that resolved with the wrong shape would leave every
 		// folder write misclassified as unknown rather than "name taken", and
 		// `rejects.toBeDefined()` alone would not have caught that.

@@ -187,13 +187,31 @@
 		"rename": "Rename",
 		"renameLabel": "Rename folder {{name}}",
 		"save": "Save",
-		"cancel": "Cancel",
 		"deleteLabel": "Delete folder {{name}}",
 		"deleteQuestion": "Delete folder \"{{name}}\"? The links in it are kept and will have no folder.",
 		"nameTaken": "A folder with this name already exists.",
 		"capReached": "A team can have at most 100 folders.",
-		"nameInvalid": "Enter a name of 1 to 60 characters.",
 		"notFound": "This folder no longer exists."
+	},
+	"names": {
+		"cancel": "Cancel",
+		"nameInvalid": "Enter a name of 1 to 60 characters."
+	},
+	"tags": {
+		"heading": "Tags",
+		"intro": "Label your links across folders. A link can carry up to 10 tags.",
+		"empty": "No tags yet.",
+		"emptyEditorHint": "Create the first one above.",
+		"name": "Tag name",
+		"create": "Create tag",
+		"rename": "Rename",
+		"renameLabel": "Rename tag {{name}}",
+		"save": "Save",
+		"deleteLabel": "Delete tag {{name}}",
+		"deleteQuestion": "Delete tag \"{{name}}\"? The links keep everything else; they only lose this tag.",
+		"nameTaken": "A tag with this name already exists.",
+		"capReached": "A team can have at most 200 tags.",
+		"notFound": "This tag no longer exists."
 	},
 	"audit": {
 		"heading": "History",
