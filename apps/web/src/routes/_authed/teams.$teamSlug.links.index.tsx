@@ -10,11 +10,11 @@ import { useTranslation } from 'react-i18next';
 
 import { LinkList } from '../../components/link-list';
 import { classifyApiError, type ApiFailure } from '../../lib/api-errors';
-import { folderFilterOf, parseFolderSearch, type FolderFilter } from '../../lib/folders';
+import { folderFilterOf, parseFolderSearch } from '../../lib/folders';
 import { parseUuidSearch } from '../../lib/names';
 import { reportUnexpected } from '../../lib/observability';
 import { foldersQueryOptions, prefetchFolders } from '../../server/folders';
-import { linksQueryOptions } from '../../server/links';
+import { linksQueryOptions, type LinkFilter } from '../../server/links';
 import { requireTeamId } from '../_authed';
 
 /* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding below is typed by
@@ -62,13 +62,13 @@ interface LinksDataSource {
  *
  * @param queryClient - The query client to fetch through; only needs `ensureQueryData`.
  * @param teamId - The team's id, already resolved from its slug.
- * @param query - The 1-indexed page number to fetch, and which folder to scope the list to.
+ * @param query - The 1-indexed page number to fetch, and which folder and tag to scope the list to.
  * @returns The requested page of links.
  */
 export async function loadLinks(
 	queryClient: LinksDataSource,
 	teamId: string,
-	query: { readonly filter: FolderFilter; readonly page: number },
+	query: { readonly filter: LinkFilter; readonly page: number },
 ): Promise<PageLink> {
 	try {
 		return await queryClient.ensureQueryData(linksQueryOptions(teamId, query.page, query.filter));
@@ -187,7 +187,7 @@ export const Route = createFileRoute('/_authed/teams/$teamSlug/links/')({
 	loader: async ({ context, deps }) => {
 		await Promise.all([
 			loadLinks(context.queryClient, context.teamId, {
-				filter: folderFilterOf(deps.folder),
+				filter: { folder: folderFilterOf(deps.folder), tagId: undefined },
 				page: deps.page,
 			}),
 			prefetchFolders(context.queryClient, context.teamId),
@@ -257,7 +257,9 @@ function RouteComponent(): React.JSX.Element {
 	const { teamId } = Route.useRouteContext();
 	const { folder, page } = Route.useSearch();
 	const navigate = Route.useNavigate();
-	const { data } = useSuspenseQuery(linksQueryOptions(teamId, page, folderFilterOf(folder)));
+	const { data } = useSuspenseQuery(
+		linksQueryOptions(teamId, page, { folder: folderFilterOf(folder), tagId: undefined }),
+	);
 	// Non-suspense, deliberately: the loader's own `prefetchFolders` call never
 	// rejects and never throws — a link list with an unfilled folder filter is
 	// still a usable link list, unlike one with no links at all — so this read

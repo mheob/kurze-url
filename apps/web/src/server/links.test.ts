@@ -168,7 +168,10 @@ describe('links', () => {
 				}),
 			);
 
-			const result = await listLinksFor(request, 'team-a', { filter: { kind: 'all' }, page: 1 });
+			const result = await listLinksFor(request, 'team-a', {
+				filter: { folder: { kind: 'all' }, tagId: undefined },
+				page: 1,
+			});
 
 			expect(seenAuth).toBe('Bearer tok');
 			expect(seenQuery).toBe('?page=1&per_page=20');
@@ -209,7 +212,10 @@ describe('links', () => {
 				},
 			});
 
-			await listLinksFor(request, 'team-a', { filter: { kind: 'all' }, page: 1 });
+			await listLinksFor(request, 'team-a', {
+				filter: { folder: { kind: 'all' }, tagId: undefined },
+				page: 1,
+			});
 
 			expect(appended).toStrictEqual(['set-cookie: sb-access-token=refreshed; Path=/; HttpOnly']);
 		});
@@ -226,17 +232,55 @@ describe('links', () => {
 				}),
 			);
 
-			await listLinksFor(request, 'team-a', { filter: { kind: 'unfiled' }, page: 1 });
 			await listLinksFor(request, 'team-a', {
-				filter: { folderId: 'f1', kind: 'folder' },
+				filter: { folder: { kind: 'unfiled' }, tagId: undefined },
 				page: 1,
 			});
-			await listLinksFor(request, 'team-a', { filter: { kind: 'all' }, page: 1 });
+			await listLinksFor(request, 'team-a', {
+				filter: { folder: { folderId: 'f1', kind: 'folder' }, tagId: undefined },
+				page: 1,
+			});
+			await listLinksFor(request, 'team-a', {
+				filter: { folder: { kind: 'all' }, tagId: undefined },
+				page: 1,
+			});
 
 			expect(seenQueries).toStrictEqual([
 				'?page=1&per_page=20&unfiled=true',
 				'?page=1&per_page=20&folder_id=f1',
 				'?page=1&per_page=20',
+			]);
+		});
+
+		it('sends a tag filter alone, and together with a folder filter', async () => {
+			vi.stubEnv('API_HOST', 'http://api.test');
+			withSession('tok');
+
+			const seenQueries: string[] = [];
+			server.use(
+				http.get('http://api.test/v1/teams/team-a/links', ({ request: apiRequest }) => {
+					seenQueries.push(new URL(apiRequest.url).search);
+					return HttpResponse.json(page());
+				}),
+			);
+
+			await listLinksFor(request, 'team-a', {
+				filter: { folder: { kind: 'all' }, tagId: 't1' },
+				page: 1,
+			});
+			await listLinksFor(request, 'team-a', {
+				filter: { folder: { kind: 'unfiled' }, tagId: 't1' },
+				page: 2,
+			});
+			await listLinksFor(request, 'team-a', {
+				filter: { folder: { folderId: 'f1', kind: 'folder' }, tagId: 't1' },
+				page: 1,
+			});
+
+			expect(seenQueries).toStrictEqual([
+				'?page=1&per_page=20&tag_id=t1',
+				'?page=2&per_page=20&unfiled=true&tag_id=t1',
+				'?page=1&per_page=20&folder_id=f1&tag_id=t1',
 			]);
 		});
 	});

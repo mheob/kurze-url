@@ -32,6 +32,12 @@ import { authedApiClient, flushSessionCookies, requireSession } from './session'
  * never hand-edited.
  */
 
+/** Which links the list shows: one folder filter plus, optionally, one tag. */
+export interface LinkFilter {
+	readonly folder: FolderFilter;
+	readonly tagId?: string;
+}
+
 /**
  * Takes `request` as a parameter rather than calling `getRequest()` itself,
  * the same shape `requireSession` uses in `server/session.ts`: that is what
@@ -76,7 +82,7 @@ export const listLinksFor = createServerOnlyFn(
 	async (
 		request: Request,
 		teamId: string,
-		query: { readonly filter: FolderFilter; readonly page: number },
+		query: { readonly filter: LinkFilter; readonly page: number },
 	): Promise<PageLink> => {
 		const headers = new Headers();
 		const { accessToken } = await requireSession(request, headers);
@@ -91,7 +97,12 @@ export const listLinksFor = createServerOnlyFn(
 			// rendering an empty list rather than the loud failure this list is
 			// deliberately built to show. `classifyApiError` (Task 8) is written
 			// against exactly this thrown shape.
-			query: { page: query.page, per_page: 20, ...folderQueryOf(query.filter) },
+			query: {
+				page: query.page,
+				per_page: 20,
+				...folderQueryOf(query.filter.folder),
+				...(query.filter.tagId === undefined ? {} : { tag_id: query.filter.tagId }),
+			},
 			throwOnError: true,
 		});
 		return data;
@@ -110,15 +121,14 @@ export const listLinksFor = createServerOnlyFn(
  */
 export const listLinksFn = createServerFn({ method: 'GET' })
 	.validator(
-		(data: { readonly filter: FolderFilter; readonly teamId: string; readonly page: number }) =>
-			data,
+		(data: { readonly filter: LinkFilter; readonly teamId: string; readonly page: number }) => data,
 	)
 	.handler(
 		async ({
 			data,
 		}: {
 			readonly data: {
-				readonly filter: FolderFilter;
+				readonly filter: LinkFilter;
 				readonly teamId: string;
 				readonly page: number;
 			};
@@ -133,7 +143,7 @@ export const listLinksFn = createServerFn({ method: 'GET' })
  *
  * @param teamId - The team whose links to list.
  * @param page - The 1-based page number.
- * @param filter - Which folder to scope the list to.
+ * @param filter - Which folder, and optionally which tag, to scope the list to.
  * @returns Query options for `useSuspenseQuery`/`ensureQueryData`, keyed on
  *   `['links', teamId, page, filter]`.
  */
@@ -148,7 +158,7 @@ export const listLinksFn = createServerFn({ method: 'GET' })
 // reason covers `explicit-module-boundary-types` below: it's the same
 // missing annotation this exported function can't be given either.
 // oxlint-disable-next-line typescript/explicit-function-return-type, typescript/explicit-module-boundary-types
-export const linksQueryOptions = (teamId: string, page: number, filter: FolderFilter) =>
+export const linksQueryOptions = (teamId: string, page: number, filter: LinkFilter) =>
 	queryOptions({
 		queryFn: async () => listLinksFn({ data: { filter, page, teamId } }),
 		queryKey: ['links', teamId, page, filter] as const,

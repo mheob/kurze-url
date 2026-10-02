@@ -108,7 +108,10 @@ describe(loadLinks, () => {
 		const queryClient = fakeQueryClient(async () => data);
 
 		await expect(
-			loadLinks(queryClient, 'team-a', { filter: { kind: 'all' }, page: 1 }),
+			loadLinks(queryClient, 'team-a', {
+				filter: { folder: { kind: 'all' }, tagId: undefined },
+				page: 1,
+			}),
 		).resolves.toBe(data);
 	});
 
@@ -130,9 +133,17 @@ describe(loadLinks, () => {
 		const { capturedKey, ensureQueryData } = capturingEnsureQueryData();
 		const queryClient = fakeQueryClient(ensureQueryData);
 
-		await loadLinks(queryClient, 'team-a', { filter: { kind: 'unfiled' }, page: 1 });
+		await loadLinks(queryClient, 'team-a', {
+			filter: { folder: { kind: 'unfiled' }, tagId: undefined },
+			page: 1,
+		});
 
-		expect(capturedKey()).toStrictEqual(['links', 'team-a', 1, { kind: 'unfiled' }]);
+		expect(capturedKey()).toStrictEqual([
+			'links',
+			'team-a',
+			1,
+			{ folder: { kind: 'unfiled' }, tagId: undefined },
+		]);
 	});
 
 	/**
@@ -154,7 +165,10 @@ describe(loadLinks, () => {
 		});
 
 		const error = await rejected(async () =>
-			loadLinks(queryClient, 'team-a', { filter: { kind: 'all' }, page: 1 }),
+			loadLinks(queryClient, 'team-a', {
+				filter: { folder: { kind: 'all' }, tagId: undefined },
+				page: 1,
+			}),
 		);
 
 		expect(isRedirect(error)).toBe(true);
@@ -176,7 +190,10 @@ describe(loadLinks, () => {
 		});
 
 		await expect(
-			loadLinks(queryClient, 'team-a', { filter: { kind: 'all' }, page: 1 }),
+			loadLinks(queryClient, 'team-a', {
+				filter: { folder: { kind: 'all' }, tagId: undefined },
+				page: 1,
+			}),
 		).rejects.toBe(boom);
 	});
 });
