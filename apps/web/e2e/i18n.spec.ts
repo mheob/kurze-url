@@ -70,6 +70,22 @@ import { linkIdForTeam, seedLinkClicks } from './fixtures/seed';
  * roles (`roleViewer`/`roleEditor`/`roleOwner`) are translated and do not
  * collide — this is the members page's only one.
  *
+ * `Tags`, `TAGS`, `Tag` and `TAG` join them for the tags feature, which the
+ * German UI names with the same English word (`nav.tags`, `links.tags`,
+ * `links.columnTags` and `tags.heading` are all "Tags" in both catalogues,
+ * `links.tagFilter` is "Tag"), exactly like `Bot`/`Browser` above and not a
+ * missed translation; `catalogues.test.ts` allowlists the same keys. Which
+ * spelling reaches this crawl depends on the element, because it reads the
+ * rendered text: the sidebar entry on every authenticated page and the tags
+ * page's `<h1>` stay "Tags". `FieldLabel` (through `Label`) and `TableHead` both
+ * carry `uppercase`, so the tag picker's label on the create form and the "Tags"
+ * column of the link list arrive as `TAGS`, and the list's tag filter label as
+ * `TAG`. A plain `Tag` is the catalogue's own spelling of that last one; no
+ * element renders it unshouted today, and it is listed so this set agrees with
+ * `catalogues.test.ts` and keeps agreeing if that label ever loses its styling.
+ * The names of the tags the crawl itself creates are excluded per run, below,
+ * like every other piece of user data.
+ *
  * `destination_url`, `hostname`, `redirect_type` and `slug` are
  * `audit-entry-table.tsx`'s `MetadataList` own `<dt>` keys — the exact four
  * `createLink` writes into a `link.created` row's metadata
@@ -97,6 +113,10 @@ const IDENTICAL_BY_DESIGN = new Set([
 	'Link',
 	'PERSON',
 	'Admin',
+	'Tags',
+	'Tag',
+	'TAGS',
+	'TAG',
 	'destination_url',
 	'hostname',
 	'redirect_type',
@@ -235,6 +255,7 @@ const AUTHENTICATED_PATHS = [
 	'links',
 	'links/new',
 	'folders',
+	'tags',
 	'domains',
 	'stats',
 	'stats-data',
@@ -339,6 +360,8 @@ for (const suffix of AUTHENTICATED_PATHS) {
 		const linkStrings: string[] = [];
 		// Same idea, populated only for `folders` below.
 		const folderStrings: string[] = [];
+		// Same idea, populated only for `tags` below.
+		const tagStrings: string[] = [];
 		// Same idea, populated only for `domains` below.
 		const domainStrings: string[] = [];
 		// Same idea, populated only for `audit-log` below.
@@ -392,6 +415,29 @@ for (const suffix of AUTHENTICATED_PATHS) {
 			await expect(page.getByRole('link', { name: folderName })).toBeVisible();
 
 			folderStrings.push(folderName);
+		}
+
+		if (suffix === 'tags') {
+			// Same reasoning as the `folders` branch above: a freshly provisioned
+			// team has no tags, and `NameList`'s empty-state branch never renders a
+			// tag's own name as a link, its "Rename" button, or its delete trigger.
+			// `NameManagementBody` renders both pages, so this reaches the same
+			// markup with the `tags.*` copy instead. `Date.now()` for the same
+			// reason as there, against `tags.spec.ts`'s own tag.
+			const tagName = `i18n-tags-${Date.now()}`;
+
+			await page.goto(`/teams/${teamSlug}/tags`);
+
+			// Not decorative: this form is server-rendered too, and `goto`
+			// resolves before React hydrates it — see `waitForHydration`.
+			const nameField = page.getByLabel('Tag name');
+			await waitForHydration(nameField);
+			await nameField.fill(tagName);
+			await page.getByRole('button', { name: 'Create tag' }).click();
+
+			await expect(page.getByRole('link', { name: tagName })).toBeVisible();
+
+			tagStrings.push(tagName);
 		}
 
 		if (suffix.startsWith('stats')) {
@@ -532,6 +578,7 @@ for (const suffix of AUTHENTICATED_PATHS) {
 		// `folderStrings` (above, populated only when `folders` created one) is
 		// the same story again: a folder's name is whatever a team chose to call
 		// it, never copy.
+		// `tagStrings` (populated only when `tags` created one) is the same again.
 		// `domainStrings` (above,
 		// populated only when `domains` claimed one) is the same story again: a
 		// hostname, its TXT challenge name, and the raw values of the two DNS
@@ -553,6 +600,7 @@ for (const suffix of AUTHENTICATED_PATHS) {
 			teamName,
 			...linkStrings,
 			...folderStrings,
+			...tagStrings,
 			...domainStrings,
 			...auditStrings,
 		]);
