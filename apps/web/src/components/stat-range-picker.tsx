@@ -203,6 +203,11 @@ export function StatRangePicker({
 							}}
 							resetOnSelect
 							selected={selectedRange}
+							// Without it the calendar takes its visible month and its
+							// "today" marker from the system clock rather than from the
+							// instant this component was given, so the two disagree as
+							// soon as they fall in different months.
+							today={today}
 						/>
 					</PopoverContent>
 				</Popover>
