@@ -95,6 +95,9 @@ describe('translation catalogues', () => {
 			'tags.heading',
 			// "Tags" again, as the sidebar entry — the same reasoning as `tags.heading`.
 			'nav.tags',
+			// "Tags" again, as the link form's picker label — the same reasoning
+			// as `tags.heading`.
+			'links.tags',
 		]);
 		const english = new Map(flatten(en));
 		const toCheck = flatten(de).filter(

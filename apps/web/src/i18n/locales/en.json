@@ -138,7 +138,15 @@
 		"qrLowContrast": "These two colours are too close together. A camera will not read the code — pick a darker code colour or a lighter background.",
 		"qrInvalidColor": "Give the colours as six hex digits, for example 003366.",
 		"qrSizeRequiresPng": "A size only applies to the PNG. Switch the format to PNG, or leave the size out.",
-		"qrRejected": "That combination cannot be used. Change the colours or the size."
+		"qrRejected": "That combination cannot be used. Change the colours or the size.",
+		"tags": "Tags",
+		"tagsPlaceholder": "Add tags…",
+		"tagRemove": "Remove tag {{name}}",
+		"tagCreate": "Create tag \"{{name}}\"",
+		"tagsAtCap": "At most 10 tags per link",
+		"tagDeleted": "(deleted)",
+		"tagGone": "A chosen tag no longer exists. Remove it and save again.",
+		"tagsNoMatch": "No matching tags"
 	},
 	"domains": {
 		"heading": "Your domains",
