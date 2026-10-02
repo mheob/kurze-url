@@ -314,8 +314,10 @@ func (d Deps) resolveTagRefs(
 	}
 	for _, id := range tagIDs {
 		if _, ok := found[id]; !ok {
-			return nil, huma.Error422UnprocessableEntity(
-				fmt.Sprintf("no tag %s in this team", id))
+			message := fmt.Sprintf("no tag %s in this team", id)
+			return nil, huma.Error422UnprocessableEntity(message, &huma.ErrorDetail{
+				Location: "body.tag_ids", Message: message, Value: id.String(),
+			})
 		}
 	}
 
