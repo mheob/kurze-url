@@ -121,6 +121,29 @@ export const TagCreator: StoryObj<typeof meta> = {
 };
 
 /**
+ * The edit form of a saved link whose short path has just been changed: the
+ * warning that the old address stops working is showing, and the slug input
+ * is described by it. The play does the editing, since the warning only
+ * exists once the value differs from the saved one, so the a11y addon runs
+ * against the form with the note and the extra `aria-describedby` in place.
+ */
+export const SlugChanged: StoryObj<typeof meta> = {
+	args: {
+		initial: { destination_url: 'https://example.org/sommerfest', slug: 'sommerfest' },
+		onSubmit: fn<(values: LinkFormValues) => void>(),
+	},
+	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Storybook's own `play` function context type; not this codebase's to mark readonly.
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		const slug = canvas.getByLabelText('Short path');
+		await userEvent.clear(slug);
+		await userEvent.type(slug, 'herbstfest');
+		await expect(canvas.getByRole('note')).toHaveTextContent(/retires the old address/u);
+		await expect(slug).toHaveAccessibleDescription(/retires the old address/u);
+	},
+};
+
+/**
  * A viewer's view of a link: every field filled and disabled, the tags shown
  * as chips with their remove buttons off, and no Save button. Every control
  * the form can render is present, so the a11y addon covers the disabled

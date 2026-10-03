@@ -45,6 +45,19 @@ function renderForm(props: {
 	);
 }
 
+/**
+ * Replaces what is in the slug field.
+ *
+ * @param value - The slug to type in.
+ * @returns The slug input.
+ */
+async function typeSlug(value: string): Promise<HTMLElement> {
+	const slug = screen.getByLabelText('Short path');
+	await userEvent.clear(slug);
+	await userEvent.type(slug, value);
+	return slug;
+}
+
 describe(LinkForm, () => {
 	it('warns inline when 301 is chosen', async () => {
 		// CLAUDE.md requires this. A cached 301 stops clicks being counted and
@@ -381,6 +394,121 @@ describe(LinkForm, () => {
 		expect(screen.getAllByText('(deleted)')).toHaveLength(1);
 	});
 
+	// A QR code and every link already shared encode the short path, so changing
+	// it on a saved link retires the old address without telling anyone who holds
+	// it. The warning is the whole of the answer: no dialog, no refusal.
+	describe('slug change warning', () => {
+		const warning = /Changing the short path retires the old address/u;
+		const saved: Partial<LinkFormValues> = {
+			destination_url: 'https://example.org/sommerfest',
+			slug: 'sommerfest',
+		};
+
+		it('says nothing while the slug is still the saved one', () => {
+			renderForm({ initial: saved, onSubmit: vi.fn<(values: LinkFormValues) => void>() });
+
+			expect(screen.queryByText(warning)).not.toBeInTheDocument();
+			expect(screen.getByLabelText('Short path')).not.toHaveAccessibleDescription();
+		});
+
+		it('warns once the slug differs from the saved one, and stops when it is put back', async () => {
+			renderForm({ initial: saved, onSubmit: vi.fn<(values: LinkFormValues) => void>() });
+
+			await typeSlug('herbstfest');
+			expect(screen.getByText(warning)).toBeVisible();
+
+			await typeSlug('sommerfest');
+			expect(screen.queryByText(warning)).not.toBeInTheDocument();
+		});
+
+		it('treats a change of case alone as no change, since the API stores slugs lowercase', async () => {
+			renderForm({ initial: saved, onSubmit: vi.fn<(values: LinkFormValues) => void>() });
+
+			await typeSlug('Sommerfest');
+
+			expect(screen.queryByText(warning)).not.toBeInTheDocument();
+		});
+
+		it('ignores whitespace around the slug when comparing', async () => {
+			renderForm({ initial: saved, onSubmit: vi.fn<(values: LinkFormValues) => void>() });
+
+			await typeSlug(' sommerfest ');
+
+			expect(screen.queryByText(warning)).not.toBeInTheDocument();
+		});
+
+		it('describes the slug input with the warning', async () => {
+			renderForm({ initial: saved, onSubmit: vi.fn<(values: LinkFormValues) => void>() });
+
+			const slug = await typeSlug('herbstfest');
+
+			expect(slug).toHaveAccessibleDescription(/retires the old address/u);
+		});
+
+		it('describes the slug input with its error first and the warning after it', async () => {
+			renderForm({
+				fieldErrors: { slug: 'That path is taken.' },
+				initial: saved,
+				onSubmit: vi.fn<(values: LinkFormValues) => void>(),
+			});
+
+			const slug = await typeSlug('herbstfest');
+
+			expect(slug).toHaveAccessibleDescription(/^That path is taken\. Changing the short path/u);
+		});
+
+		it('announces the warning as a note, like the 301 warning', async () => {
+			renderForm({ initial: saved, onSubmit: vi.fn<(values: LinkFormValues) => void>() });
+
+			await typeSlug('herbstfest');
+
+			expect(screen.getByRole('note')).toHaveTextContent('retires the old address');
+		});
+
+		it.each([
+			['no saved slug at all', undefined],
+			['an empty saved slug', { slug: '' }],
+		])(
+			'never warns on the create form, which has %s',
+			async (_name: string, initial: Partial<LinkFormValues> | undefined) => {
+				renderForm({ initial, onSubmit: vi.fn<(values: LinkFormValues) => void>() });
+
+				await typeSlug('herbstfest');
+
+				expect(screen.queryByText(warning)).not.toBeInTheDocument();
+				expect(screen.getByLabelText('Short path')).not.toHaveAccessibleDescription();
+			},
+		);
+
+		it('does not warn on a read-only form, even if the value somehow differs', () => {
+			// `userEvent` treats a disabled fieldset's contents as inert, so the
+			// change is dispatched by hand: it is the only way to give the guard
+			// something to refuse, since a read-only form's value cannot otherwise
+			// leave the saved one.
+			renderForm({
+				initial: saved,
+				onSubmit: vi.fn<(values: LinkFormValues) => void>(),
+				readOnly: true,
+			});
+			expect(screen.queryByText(warning)).not.toBeInTheDocument();
+
+			fireEvent.change(screen.getByLabelText('Short path'), { target: { value: 'herbstfest' } });
+
+			expect(screen.getByLabelText('Short path')).toHaveValue('herbstfest');
+			expect(screen.queryByText(warning)).not.toBeInTheDocument();
+		});
+
+		it('still saves a changed slug without asking', async () => {
+			const onSubmit = vi.fn<(values: LinkFormValues) => void>();
+			renderForm({ initial: saved, onSubmit });
+
+			await typeSlug('herbstfest');
+			await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+			expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ slug: 'herbstfest' }));
+		});
+	});
+
 	// A viewer reads the link's settings here and cannot change them: the API
 	// answers every write with a 403, so the form shows the values and offers
 	// nothing to operate. Disabled, not merely hidden, so a screen reader still
@@ -587,6 +715,28 @@ describe(LinkForm, () => {
 			expect(save).toHaveFocus();
 			await userEvent.click(save);
 			expect(onSubmit).toHaveBeenLastCalledWith(expect.objectContaining(after));
+		});
+
+		it('takes the slug the save just stored as the one to compare against', async () => {
+			// The baseline follows `initial.slug`: once the save reloads the record
+			// and `initial` carries the new slug, that slug is the saved one and the
+			// old one counts as the change.
+			const warning = /Changing the short path retires the old address/u;
+			const onSubmit = vi.fn<(values: LinkFormValues) => void>();
+			const { rerender } = render(form({ ...before, slug: 'sommerfest' }, 'v1', onSubmit));
+			const slug = screen.getByLabelText('Short path');
+			await userEvent.clear(slug);
+			await userEvent.type(slug, 'herbstfest');
+			expect(screen.getByText(warning)).toBeVisible();
+
+			rerender(form({ ...after, slug: 'herbstfest' }, 'v2', onSubmit));
+
+			expect(slug).toHaveValue('herbstfest');
+			expect(screen.queryByText(warning)).not.toBeInTheDocument();
+
+			await userEvent.clear(slug);
+			await userEvent.type(slug, 'sommerfest');
+			expect(screen.getByText(warning)).toBeVisible();
 		});
 
 		it('keeps unsaved edits while the version stays the same', async () => {
