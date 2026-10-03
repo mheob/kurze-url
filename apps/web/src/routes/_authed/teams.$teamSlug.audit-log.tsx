@@ -1,4 +1,4 @@
-import type { AuditEntry, Member, PageAuditEntry, PageMember } from '@kurze-url/api-client';
+import type { AuditEntry, AuditLogPage, Member, PageMember } from '@kurze-url/api-client';
 import {
 	createFileRoute,
 	Link as RouterLink,
@@ -15,6 +15,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '../../componen
 import { Pagination, PaginationContent, PaginationItem } from '../../components/ui/pagination';
 import { classifyApiError, statusOf, type ApiFailure } from '../../lib/api-errors';
 import { hasActiveFilters, parseAuditFilters, type AuditFilters } from '../../lib/audit-filters';
+import { formatDay } from '../../lib/format';
 import { reportUnexpected } from '../../lib/observability';
 import type { Language } from '../../lib/preferences';
 import { usePreferences } from '../../lib/use-preferences';
@@ -44,6 +45,8 @@ export type AuditLogPageData =
 			readonly members: readonly Member[];
 			readonly page: number;
 			readonly perPage: number;
+			/** The first day the log still holds, as YYYY-MM-DD — the API's `retained_since`. */
+			readonly retainedSince: string;
 			readonly total: number;
 	  }
 	| { readonly forbidden: true };
@@ -84,6 +87,11 @@ export type AuditLogPageData =
  * swallow the 403 into `notFound` and send an admin-less member to the
  * "page not found" page instead of an explanation.
  *
+ * `retained_since` is carried through untouched, for the filter bar's date
+ * bounds, its note and the unfiltered empty state. It is the API's floor
+ * rather than a date computed here, so the retention period is never typed a
+ * second time in TypeScript.
+ *
  * A 404 is normalised to the router's own `notFound()`, the same way
  * `loadStats` does it, so it lands on the root's not-found page rather than
  * this route's error boundary.
@@ -101,7 +109,7 @@ export type AuditLogPageData =
  */
 export async function loadAuditLogPage(
 	options: Readonly<{
-		fetchLog: () => Promise<PageAuditEntry>;
+		fetchLog: () => Promise<AuditLogPage>;
 		fetchMembers: () => Promise<PageMember>;
 	}>,
 ): Promise<AuditLogPageData> {
@@ -119,6 +127,7 @@ export async function loadAuditLogPage(
 			// is the only one the arithmetic below may trust, and it is already
 			// in the payload.
 			perPage: log.per_page,
+			retainedSince: log.retained_since,
 			total: log.total_count,
 		};
 	} catch (error) {
@@ -258,6 +267,8 @@ export interface AuditLogPageBodyProps {
 	readonly page: number;
 	/** The page size the API applied, carried out of the same envelope as `page` and `total`. */
 	readonly perPage: number;
+	/** The first day the log still holds, as YYYY-MM-DD, for the filter bar and the unfiltered empty state. */
+	readonly retainedSince: string;
 	/** The team slug, for the pagination links' route params. */
 	readonly teamSlug: string;
 	/** How many entries match the active filters across every page. */
@@ -277,11 +288,14 @@ export interface AuditLogPageBodyProps {
  * filters matched nothing, which in front of a reader who set no filters is
  * a small lie about a page that is simply new. `audit.emptyUnfiltered` is
  * reserved for the one case that claim is true — no filter set *and* nothing
- * matching anywhere. A page number past the end is the third way to reach an
- * empty page (a bookmark outlives the entries it was made on, which is what
- * keeping the page in the URL invites), and there `total` is positive: saying
- * "nothing has happened in this team yet" over 45 real entries is the worst
- * of the three lies available.
+ * matching anywhere. Its claim is bounded by `retainedSince` rather than
+ * "ever": once retention has deleted a dormant team's older entries, "nothing
+ * has happened in this team" would be false, while "nothing has been recorded
+ * since the floor" holds whether the team is new or long quiet. A page number
+ * past the end is the third way to reach an empty page (a bookmark outlives
+ * the entries it was made on, which is what keeping the page in the URL
+ * invites), and there `total` is positive: saying nothing has been recorded
+ * over 45 real entries is the worst of the three lies available.
  *
  * The filter bar renders in both empty states, and the pagination renders
  * whenever the reader is past page one — including on an empty page, which is
@@ -295,6 +309,7 @@ export interface AuditLogPageBodyProps {
  * @param props.onFiltersChange - Called with the whole next `AuditFilters`.
  * @param props.page - The page the API answered with.
  * @param props.perPage - The page size the API applied.
+ * @param props.retainedSince - The first day the log still holds, for the filter bar and the unfiltered empty state.
  * @param props.teamSlug - The team slug, for the pagination links' route params.
  * @param props.total - How many entries match the active filters across every page.
  * @returns The rendered page body.
@@ -307,6 +322,7 @@ export function AuditLogPageBody({
 	onFiltersChange,
 	page,
 	perPage,
+	retainedSince,
 	teamSlug,
 	total,
 }: AuditLogPageBodyProps): React.JSX.Element {
@@ -328,16 +344,24 @@ export function AuditLogPageBody({
 			<h1>{t('audit.heading')}</h1>
 			<p>{t('audit.intro')}</p>
 
-			<AuditFilterBar filters={filters} members={members} onChange={onFiltersChange} />
+			<AuditFilterBar
+				filters={filters}
+				language={language}
+				members={members}
+				onChange={onFiltersChange}
+				retainedSince={retainedSince}
+			/>
 
 			{entries.length === 0 ? (
 				<Empty>
 					<EmptyDescription>
-						{/* `audit.emptyUnfiltered` claims nothing has ever happened here,
-						    so it needs both halves of that claim to hold: no filter, and
-						    no entry anywhere. A page past the end fails the second half
-						    while passing the first. */}
-						{t(hasActiveFilters(filters) || total > 0 ? 'audit.empty' : 'audit.emptyUnfiltered')}
+						{/* `audit.emptyUnfiltered` claims nothing has been recorded here
+						    since the retention floor, so it needs both halves of that
+						    claim to hold: no filter, and no entry anywhere. A page past
+						    the end fails the second half while passing the first. */}
+						{hasActiveFilters(filters) || total > 0
+							? t('audit.empty')
+							: t('audit.emptyUnfiltered', { date: formatDay(retainedSince, language) })}
 					</EmptyDescription>
 				</Empty>
 			) : (
@@ -442,6 +466,7 @@ export function AuditLogRouteView({
 			}}
 			page={data.page}
 			perPage={data.perPage}
+			retainedSince={data.retainedSince}
 			teamSlug={teamSlug}
 			total={data.total}
 		/>

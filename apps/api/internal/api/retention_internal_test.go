@@ -39,3 +39,22 @@ func TestRetentionCutoffReducesToAUTCDay(t *testing.T) {
 		"00:30 on 12 September in UTC+2 is 22:30 on the 11th in UTC")
 	require.Equal(t, time.UTC, cutoff.Location())
 }
+
+// TestAuditRetentionFloorIsTheAuditLogsFloor is the audit log's counterpart of
+// TestRetentionCutoffIsTheStatsEndpointsFloor. The job deletes every entry
+// before auditRetentionFloor; the
+// endpoint serves from auditLogFrom forward. Asking the endpoint's clamp for
+// a from in 1999, and for none at all, makes the bound it returns the oldest
+// instant it will ever serve, and that has to be the oldest instant the job
+// keeps — computed here from one clock, so two literals happening to match
+// cannot pass it.
+func TestAuditRetentionFloorIsTheAuditLogsFloor(t *testing.T) {
+	now := time.Date(2026, 9, 12, 14, 30, 0, 0, time.UTC)
+
+	oldestKept := auditRetentionFloor(now)
+
+	require.Equal(t, oldestKept, auditLogFrom(mustDay(t, "1999-01-01"), now))
+	require.Equal(t, oldestKept, auditLogFrom(time.Time{}, now))
+	require.Equal(t, "2024-09-12", oldestKept.Format(dayLayout),
+		"2026-09-12 minus two calendar years")
+}

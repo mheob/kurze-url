@@ -129,8 +129,8 @@ type Config struct {
 	// the uptime monitor alerts on the 404.
 	HealthCheckToken string
 
-	// RetentionToken guards POST /internal/retention, the daily analytics
-	// deletion. Empty disables the endpoint outright — it then answers 404
+	// RetentionToken guards POST /internal/retention, the daily deletion of
+	// expired click analytics and audit entries. Empty disables the endpoint outright — it then answers 404
 	// for every caller. Fail closed, for a sharper reason than
 	// HealthCheckToken's: a forgotten variable there publishes dependency
 	// status, while a forgotten variable here would leave a delete endpoint

@@ -91,7 +91,13 @@ describe('listAuditLogFor', () => {
 		server.use(
 			http.get('*/v1/teams/:teamId/audit-log', ({ request: apiRequest }) => {
 				seenUrl = new URL(apiRequest.url);
-				return HttpResponse.json({ items: [], page: 2, per_page: 20, total_count: 0 });
+				return HttpResponse.json({
+					items: [],
+					page: 2,
+					per_page: 20,
+					retained_since: '2024-10-03',
+					total_count: 0,
+				});
 			}),
 		);
 

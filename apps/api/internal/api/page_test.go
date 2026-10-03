@@ -78,7 +78,9 @@ func TestNewPageNeverEmitsANullItemsArray(t *testing.T) {
 // assertion — rather than calling huma.DefaultSchemaNamer directly, which
 // would only prove the namer behaves as expected in isolation, not that the
 // three list endpoints' response schemas actually end up named that way in
-// the document a generated client would consume.
+// the document a generated client would consume. The audit log used to be the
+// third; its body now embeds Page in AuditLogPage, which
+// TestAuditLogPageSchemaIsTheFlatEnvelope covers, so the links list stands in.
 func TestGenericEnvelopeSchemaNamesAreReadable(t *testing.T) {
 	router := chi.NewRouter()
 	humaAPI := humachi.New(router, api.NewHumaConfig())
@@ -86,7 +88,7 @@ func TestGenericEnvelopeSchemaNamesAreReadable(t *testing.T) {
 
 	schemas := humaAPI.OpenAPI().Components.Schemas.Map()
 
-	for _, name := range []string{"PageTeam", "PageMember", "PageAuditEntry"} {
+	for _, name := range []string{"PageTeam", "PageMember", "PageLink"} {
 		require.Contains(t, schemas, name)
 	}
 }

@@ -170,6 +170,7 @@ function pageBody({
 			onFiltersChange={vi.fn<(next: AuditFilters) => void>()}
 			page={filters.page}
 			perPage={PER_PAGE}
+			retainedSince="2024-10-03"
 			teamSlug="verein-a"
 			total={total}
 		/>
@@ -190,6 +191,11 @@ describe('the audit log page', () => {
 
 		expect(screen.getByRole('link', { name: 'Next page' })).toBeInTheDocument();
 		expect(screen.getByRole('cell', { name: 'Link changed' })).toBeInTheDocument();
+		// The retention note is on screen for the scan, and both date fields
+		// point at it, so a dangling `aria-describedby` would be reported here.
+		expect(screen.getByLabelText('From')).toHaveAccessibleDescription(
+			'Entries from before Oct 3, 2024 are deleted automatically.',
+		);
 
 		const results = await axe.run(document.body);
 		expect(results.violations).toStrictEqual([]);
@@ -202,7 +208,9 @@ describe('the audit log page', () => {
 		// Asserted before the scan for the same reason the populated case
 		// asserts its table cell: an empty branch that rendered nothing at all
 		// would have no violations either, and this test would pass on it.
-		expect(screen.getByText('Nothing has happened in this team yet.')).toBeInTheDocument();
+		expect(
+			screen.getByText('Nothing has been recorded for this team since Oct 3, 2024.'),
+		).toBeInTheDocument();
 		expect(screen.getByLabelText('Entity')).toBeInTheDocument();
 
 		const results = await axe.run(document.body);
@@ -223,11 +231,19 @@ describe('the audit log page', () => {
 });
 
 describe('the two empty states', () => {
-	it('says nothing has happened yet when no filter is set', async () => {
+	/**
+	 * The claim is bounded by the retention floor, not "ever": a team quiet for
+	 * longer than the retention period has had every entry deleted, and
+	 * "nothing has happened" would then be false for it. Nothing recorded since
+	 * the floor stays true for a new team and a dormant one alike.
+	 */
+	it('says nothing has been recorded since the floor when no filter is set', async () => {
 		renderComposedPage(pageBody({ entries: [], filters: NO_FILTERS, total: 0 }));
 		await screen.findByRole('heading', { level: 1, name: 'History' });
 
-		expect(screen.getByText('Nothing has happened in this team yet.')).toBeInTheDocument();
+		expect(
+			screen.getByText('Nothing has been recorded for this team since Oct 3, 2024.'),
+		).toBeInTheDocument();
 	});
 
 	it('says the filters matched nothing when one is set', async () => {
@@ -268,9 +284,11 @@ describe('the pagination', () => {
 			'href',
 			'/teams/verein-a/audit-log?page=2',
 		);
-		// …and not the copy that claims the team has no history at all, which
-		// would be a plain falsehood over 45 real entries.
-		expect(screen.queryByText('Nothing has happened in this team yet.')).not.toBeInTheDocument();
+		// …and not the copy that claims nothing has been recorded, which would
+		// be a plain falsehood over 45 real entries.
+		expect(
+			screen.queryByText('Nothing has been recorded for this team since Oct 3, 2024.'),
+		).not.toBeInTheDocument();
 		expect(screen.getByText('No changes match these filters.')).toBeInTheDocument();
 	});
 

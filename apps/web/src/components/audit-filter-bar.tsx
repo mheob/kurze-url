@@ -8,8 +8,10 @@ import {
 	type AuditEntityType,
 	type AuditFilters,
 } from '../lib/audit-filters';
+import { formatDay } from '../lib/format';
+import type { Language } from '../lib/preferences';
 import { Button } from './ui/button';
-import { Field, FieldGroup, FieldLabel } from './ui/field';
+import { Field, FieldDescription, FieldGroup, FieldLabel } from './ui/field';
 import { Input } from './ui/input';
 import { NativeSelect, NativeSelectOption } from './ui/native-select';
 
@@ -65,10 +67,18 @@ function nextFilters(
 export interface AuditFilterBarProps {
 	/** The filters as they currently live in the route's search parameters. */
 	readonly filters: AuditFilters;
+	/** The active language, for formatting the retention note's date. */
+	readonly language: Language;
 	/** The team's current members, offered as the "Person" filter's choices. */
 	readonly members: readonly Readonly<{ email: string; user_id: string }>[];
 	/** Called with the whole next `AuditFilters`, page already reset to `1`. */
 	readonly onChange: (filters: AuditFilters) => void;
+	/**
+	 * The first day the log still holds, as YYYY-MM-DD — the API's
+	 * `retained_since`, passed through untouched. Absent until a response has
+	 * named it, and then neither the `min` nor the note renders.
+	 */
+	readonly retainedSince?: string;
 }
 
 /**
@@ -83,25 +93,43 @@ export interface AuditFilterBarProps {
  * keeps the control keyboard- and screen-reader-complete without a second
  * implementation. The day bounds are plain `<Input type="date">`s rather
  * than a calendar popover for the reason `StatRangePicker` doesn't fit
- * here: these are two independent bounds with no presets and no retention
- * floor, and the browser's own date control is already complete for that.
+ * here: these are two independent bounds with no presets, and the browser's
+ * own date control is already complete for that — the retention floor
+ * included, which is a native `min` on both of them.
+ *
+ * The floor is `retainedSince`, the API's own `retained_since`, and the note
+ * under the bar states it as a date rather than as a period: the period is
+ * written down once, in Go, and a second copy here would be the one that
+ * drifts. `to` carries the `min` as well, since an end before the floor can
+ * only ever produce an empty page. Both inputs point at the note through
+ * `aria-describedby`, so a screen reader hears why the calendar stops where
+ * it does. A bookmarked `from` the floor has since moved past is shown as
+ * the URL holds it and not corrected here: `parseAuditFilters` keeps it, the
+ * API raises it to the floor, and the note explains why the results start
+ * later than the field says.
  *
  * @param props - The component's props.
  * @param props.filters - The filters as they currently live in the route's search parameters.
+ * @param props.language - The active language, for formatting the retention note's date.
  * @param props.members - The team's current members, offered as the "Person" filter's choices.
  * @param props.onChange - Called with the whole next `AuditFilters`, page already reset to `1`.
+ * @param props.retainedSince - The first day the log still holds, or `undefined` until it is known.
  * @returns The rendered filter bar.
  */
 export function AuditFilterBar({
 	filters,
+	language,
 	members,
 	onChange,
+	retainedSince,
 }: AuditFilterBarProps): React.JSX.Element {
 	const { t } = useTranslation();
 	const entityId = useId();
 	const actorId = useId();
 	const fromId = useId();
 	const toId = useId();
+	const retentionNoteId = useId();
+	const describedBy = retainedSince === undefined ? undefined : retentionNoteId;
 
 	// Shared with the page's own choice between its two empty states — see
 	// `hasActiveFilters`'s docstring for why the two must not be separate
@@ -156,7 +184,9 @@ export function AuditFilterBar({
 				<Field>
 					<FieldLabel htmlFor={fromId}>{t('audit.filterFrom')}</FieldLabel>
 					<Input
+						aria-describedby={describedBy}
 						id={fromId}
+						min={retainedSince}
 						onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
 							const { value } = event.target;
 							onChange(nextFilters(filters, { from: value === '' ? undefined : value }));
@@ -169,7 +199,9 @@ export function AuditFilterBar({
 				<Field>
 					<FieldLabel htmlFor={toId}>{t('audit.filterTo')}</FieldLabel>
 					<Input
+						aria-describedby={describedBy}
 						id={toId}
+						min={retainedSince}
 						onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
 							const { value } = event.target;
 							onChange(nextFilters(filters, { to: value === '' ? undefined : value }));
@@ -179,6 +211,19 @@ export function AuditFilterBar({
 					/>
 				</Field>
 			</FieldGroup>
+
+			{/* Wrapped so the spacing lives on a box of its own: `FieldDescription`
+			    sets its own top margin by its position among siblings (`last:` and
+			    `nth-last-2:`), which is tuned for sitting inside one `Field` and
+			    would glue this note to the "To" input as if it were that field's
+			    alone. It describes both bounds. */}
+			{retainedSince === undefined ? null : (
+				<div className="pt-4">
+					<FieldDescription id={retentionNoteId}>
+						{t('audit.retentionNote', { date: formatDay(retainedSince, language) })}
+					</FieldDescription>
+				</div>
+			)}
 
 			{hasFilters ? (
 				<Button

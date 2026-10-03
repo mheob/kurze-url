@@ -50,6 +50,38 @@ func (q *Queries) CountAuditLog(ctx context.Context, arg CountAuditLogParams) (i
 	return count, err
 }
 
+const deleteExpiredAuditLog = `-- name: DeleteExpiredAuditLog :execrows
+
+delete from audit_log
+where created_at < $1::timestamptz
+`
+
+// Retention. Audit entries are kept for api.AuditRetentionYears (two years)
+// and POST /internal/retention deletes everything older, after the click
+// rollup's own delete.
+//
+// :execrows for the reason DeleteExpiredClickStats gives: the row count is the
+// only evidence the job did anything, and for the first two years nothing is
+// old enough to delete, so "0 rows" is the correct answer.
+//
+// The floor is a parameter, never a literal. GET /v1/teams/{team_id}/audit-log
+// serves created_at >= the same instant, computed by api.auditRetentionFloor;
+// an interval written here as well would be a second definition of one
+// boundary, and the two drifting apart would either show entries the policy
+// says are gone or hide entries the endpoint still offers.
+//
+// No team_id, deliberately — the one documented exception to golden rule 4,
+// for the same reason as DeleteExpiredClickStats: a nightly job acts for the
+// instance, not for a caller, and the retention period is the same for every
+// Verein. Scoping it to a team would make the promise depend on who called.
+func (q *Queries) DeleteExpiredAuditLog(ctx context.Context, oldestKept time.Time) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteExpiredAuditLog, oldestKept)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const insertAuditLog = `-- name: InsertAuditLog :exec
 
 insert into audit_log (team_id, actor_user_id, action, entity_type, entity_id, metadata)

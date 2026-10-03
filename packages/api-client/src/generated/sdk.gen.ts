@@ -235,7 +235,7 @@ export const updateTeam = <ThrowOnError extends boolean = false>(options: Option
 /**
  * Read a team's audit log
  *
- * Administrative history, so it is restricted to admins and owners.
+ * Administrative history, so it is restricted to admins and owners. Entries are kept for 2 years and deleted automatically after that; retained_since says how far back this log reaches.
  */
 export const listAuditLog = <ThrowOnError extends boolean = false>(options: Options<ListAuditLogData, ThrowOnError>): RequestResult<ListAuditLogResponses, ListAuditLogErrors, ThrowOnError> => (options.client ?? client).get<ListAuditLogResponses, ListAuditLogErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],

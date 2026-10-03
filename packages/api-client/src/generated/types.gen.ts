@@ -44,6 +44,21 @@ export type AuditEntry = {
     metadata: unknown;
 };
 
+export type AuditLogPage = {
+    /**
+     * A URL to the JSON Schema for this object.
+     */
+    readonly $schema?: string;
+    items: Array<AuditEntry> | null;
+    page: number;
+    per_page: number;
+    /**
+     * The first day, as YYYY-MM-DD in UTC, this log still holds entries for. Entries before this day have been deleted automatically, and a from filter earlier than this day is raised to it.
+     */
+    retained_since: string;
+    total_count: number;
+};
+
 export type CreateDomainInputBody = {
     /**
      * A URL to the JSON Schema for this object.
@@ -303,17 +318,6 @@ export type Member = {
     user_id: string;
 };
 
-export type PageAuditEntry = {
-    /**
-     * A URL to the JSON Schema for this object.
-     */
-    readonly $schema?: string;
-    items: Array<AuditEntry> | null;
-    page: number;
-    per_page: number;
-    total_count: number;
-};
-
 export type PageDomain = {
     /**
      * A URL to the JSON Schema for this object.
@@ -558,6 +562,17 @@ export type AddedMemberWritable = {
     user_id: string;
 };
 
+export type AuditLogPageWritable = {
+    items: Array<AuditEntry> | null;
+    page: number;
+    per_page: number;
+    /**
+     * The first day, as YYYY-MM-DD in UTC, this log still holds entries for. Entries before this day have been deleted automatically, and a from filter earlier than this day is raised to it.
+     */
+    retained_since: string;
+    total_count: number;
+};
+
 export type CreateDomainInputBodyWritable = {
     /**
      * A subdomain you control, e.g. links.verein.de. Not an apex.
@@ -724,13 +739,6 @@ export type MeOutputBodyWritable = {
     is_maintainer: boolean;
     memberships: Array<TeamMembership> | null;
     user_id: string;
-};
-
-export type PageAuditEntryWritable = {
-    items: Array<AuditEntry> | null;
-    page: number;
-    per_page: number;
-    total_count: number;
 };
 
 export type PageDomainWritable = {
@@ -1482,11 +1490,11 @@ export type ListAuditLogData = {
          */
         actor_user_id?: string;
         /**
-         * Only entries at or after this instant (RFC 3339).
+         * Only entries at or after this instant (RFC 3339). Entries older than the retention floor are deleted and never returned, so an earlier or absent from is raised to the floor; retained_since in the response names its day.
          */
         from?: string;
         /**
-         * Only entries at or before this instant (RFC 3339).
+         * Only entries at or before this instant (RFC 3339). A to before the retention floor matches nothing and answers an empty page, not an error.
          */
         to?: string;
     };
@@ -1506,7 +1514,7 @@ export type ListAuditLogResponses = {
     /**
      * OK
      */
-    200: PageAuditEntry;
+    200: AuditLogPage;
 };
 
 export type ListAuditLogResponse = ListAuditLogResponses[keyof ListAuditLogResponses];

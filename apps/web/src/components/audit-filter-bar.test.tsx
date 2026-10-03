@@ -34,6 +34,7 @@ describe(AuditFilterBar, () => {
 		renderWithI18n(
 			<AuditFilterBar
 				filters={{ page: 1 }}
+				language="en"
 				members={MEMBERS}
 				onChange={vi.fn<(filters: AuditFilters) => void>()}
 			/>,
@@ -48,7 +49,9 @@ describe(AuditFilterBar, () => {
 
 	it('reports a chosen entity type and sends the reader back to page one', async () => {
 		const onChange = vi.fn<(filters: AuditFilters) => void>();
-		renderWithI18n(<AuditFilterBar filters={{ page: 3 }} members={MEMBERS} onChange={onChange} />);
+		renderWithI18n(
+			<AuditFilterBar filters={{ page: 3 }} language="en" members={MEMBERS} onChange={onChange} />,
+		);
 
 		await userEvent.selectOptions(screen.getByLabelText('Entity'), 'link');
 
@@ -61,7 +64,9 @@ describe(AuditFilterBar, () => {
 
 	it("lists the team's members as actors, by address", async () => {
 		const onChange = vi.fn<(filters: AuditFilters) => void>();
-		renderWithI18n(<AuditFilterBar filters={{ page: 1 }} members={MEMBERS} onChange={onChange} />);
+		renderWithI18n(
+			<AuditFilterBar filters={{ page: 1 }} language="en" members={MEMBERS} onChange={onChange} />,
+		);
 
 		const select = screen.getByLabelText('Person');
 		expect(within(select).getByRole('option', { name: 'bernd@example.org' })).toBeInTheDocument();
@@ -78,6 +83,7 @@ describe(AuditFilterBar, () => {
 		renderWithI18n(
 			<AuditFilterBar
 				filters={{ page: 1, to: '2026-03-31' }}
+				language="en"
 				members={MEMBERS}
 				onChange={onChange}
 			/>,
@@ -95,6 +101,7 @@ describe(AuditFilterBar, () => {
 		renderWithI18n(
 			<AuditFilterBar
 				filters={{ entityType: 'link', page: 1 }}
+				language="en"
 				members={MEMBERS}
 				onChange={onChange}
 			/>,
@@ -111,6 +118,7 @@ describe(AuditFilterBar, () => {
 		const { rerender } = renderWithI18n(
 			<AuditFilterBar
 				filters={{ page: 1 }}
+				language="en"
 				members={MEMBERS}
 				onChange={vi.fn<(filters: AuditFilters) => void>()}
 			/>,
@@ -121,11 +129,103 @@ describe(AuditFilterBar, () => {
 			<I18nextProvider i18n={createI18n('en')}>
 				<AuditFilterBar
 					filters={{ entityType: 'link', page: 1 }}
+					language="en"
 					members={MEMBERS}
 					onChange={vi.fn<(filters: AuditFilters) => void>()}
 				/>
 			</I18nextProvider>,
 		);
 		expect(screen.getByRole('button', { name: 'Clear the filters' })).toBeInTheDocument();
+	});
+
+	/**
+	 * `to` gets the floor as well as `from`: an end before it can only ever
+	 * produce an empty page, so the calendar should not offer one. The
+	 * description is asserted alongside the attribute because a bound the
+	 * reader cannot see explained is one a screen reader user meets as a
+	 * calendar that simply stops.
+	 */
+	it('bounds both days at the floor the API reports', () => {
+		renderWithI18n(
+			<AuditFilterBar
+				filters={{ page: 1 }}
+				language="en"
+				members={MEMBERS}
+				onChange={vi.fn<(filters: AuditFilters) => void>()}
+				retainedSince="2024-10-03"
+			/>,
+		);
+
+		for (const label of ['From', 'To']) {
+			const input = screen.getByLabelText(label);
+			expect(input).toHaveAttribute('min', '2024-10-03');
+			expect(input).toHaveAccessibleDescription(
+				'Entries from before Oct 3, 2024 are deleted automatically.',
+			);
+		}
+	});
+
+	/**
+	 * Before a response has named the floor there is nothing true to say about
+	 * it, so neither the bound nor the note may appear with a guessed value.
+	 */
+	it('sets no floor and shows no note until one is known', () => {
+		renderWithI18n(
+			<AuditFilterBar
+				filters={{ page: 1 }}
+				language="en"
+				members={MEMBERS}
+				onChange={vi.fn<(filters: AuditFilters) => void>()}
+			/>,
+		);
+
+		for (const label of ['From', 'To']) {
+			const input = screen.getByLabelText(label);
+			expect(input).not.toHaveAttribute('min');
+			expect(input).not.toHaveAttribute('aria-describedby');
+		}
+		expect(screen.queryByText(/deleted automatically/u)).not.toBeInTheDocument();
+	});
+
+	/**
+	 * The note carries the date the API sent, formatted the way every other
+	 * day in this product is, rather than the retention period: the period is
+	 * defined once, in Go, and copy that restated it would be the copy that
+	 * goes stale.
+	 */
+	it("states the floor as a date in the reader's language", () => {
+		renderWithI18n(
+			<AuditFilterBar
+				filters={{ page: 1 }}
+				language="de"
+				members={MEMBERS}
+				onChange={vi.fn<(filters: AuditFilters) => void>()}
+				retainedSince="2024-10-03"
+			/>,
+			'de',
+		);
+
+		expect(
+			screen.getByText('Einträge vor dem 3. Okt. 2024 werden automatisch gelöscht.'),
+		).toBeInTheDocument();
+	});
+
+	/**
+	 * A bookmark made before the floor moved keeps its `from`. The API raises
+	 * it to the floor on its own; correcting it here would rewrite a URL the
+	 * reader shared without telling them.
+	 */
+	it('shows a bookmarked day before the floor as the URL holds it', () => {
+		renderWithI18n(
+			<AuditFilterBar
+				filters={{ from: '2023-01-01', page: 1 }}
+				language="en"
+				members={MEMBERS}
+				onChange={vi.fn<(filters: AuditFilters) => void>()}
+				retainedSince="2024-10-03"
+			/>,
+		);
+
+		expect(screen.getByLabelText('From')).toHaveValue('2023-01-01');
 	});
 });

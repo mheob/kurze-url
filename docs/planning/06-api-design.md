@@ -50,7 +50,7 @@ type Page[T any] struct {
 }
 ```
 
-Every list endpoint (`GET /v1/teams/{team_id}/links`, `.../audit-log`, etc.) returns `Page[T]` for its resource type. `per_page` capped server-side (e.g. max 100) to bound query cost.
+Every list endpoint (`GET /v1/teams/{team_id}/links`, `.../audit-log`, etc.) returns `Page[T]` for its resource type. `per_page` capped server-side (e.g. max 100) to bound query cost. The audit log is the one variation: its body, `AuditLogPage`, is the same envelope flattened with one more field, `retained_since`, the first day the log still holds entries for (added 2026-10-03 with the two-year retention).
 
 ## Filtering
 

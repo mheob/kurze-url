@@ -243,10 +243,11 @@ func TestDeleteExpiredClickStatsReportsZeroWithoutErroring(t *testing.T) {
 }
 
 // TestDeleteExpiredClickStatsLeavesTheAuditLogAlone pins the scope decision.
-// No document promises audit_log a retention period, and it is the record of
-// who changed what — the thing one consults precisely when something went
-// wrong months ago. Deleting it has to be its own decision, never a side
-// effect of this job growing a "while we're at it" clause.
+// audit_log is the record of who changed what — the thing one consults
+// precisely when something went wrong months ago — so it has a retention
+// period of its own, two years (api.AuditRetentionYears), deleted by its own
+// statement, DeleteExpiredAuditLog. The click rollup's 90-day cutoff reaching
+// it would erase twenty-one months of history the audit log promises to keep.
 func TestDeleteExpiredClickStatsLeavesTheAuditLogAlone(t *testing.T) {
 	f := newLinkFixture(t)
 	pool := testPool(t)

@@ -1,4 +1,4 @@
-import { listAuditLog, type PageAuditEntry } from '@kurze-url/api-client';
+import { listAuditLog, type AuditLogPage } from '@kurze-url/api-client';
 import { queryOptions } from '@tanstack/react-query';
 import { createServerFn, createServerOnlyFn } from '@tanstack/react-start';
 import { getRequest } from '@tanstack/react-start/server';
@@ -42,7 +42,7 @@ const PER_PAGE = 20;
  * @returns The requested page of the team's audit log.
  */
 export const listAuditLogFor = createServerOnlyFn(
-	async (request: Request, teamId: string, filters: AuditFilters): Promise<PageAuditEntry> => {
+	async (request: Request, teamId: string, filters: AuditFilters): Promise<AuditLogPage> => {
 		const headers = new Headers();
 		const { accessToken } = await requireSession(request, headers);
 		flushSessionCookies(headers);
@@ -83,7 +83,7 @@ export const listAuditLogFor = createServerOnlyFn(
  * `unknown` serializable at any depth (`ValidateSerializableMapped` in
  * `@tanstack/router-core`'s `transformer.d.ts` has no case for it — it isn't
  * `T extends object`, since `unknown` also admits primitives), so
- * `PageAuditEntry` fails that check regardless of how this handler is
+ * `AuditLogPage` fails that check regardless of how this handler is
  * written. The payload is ordinary JSON that already round-tripped through
  * `fetch`, so it serializes across this same RPC boundary without issue at
  * runtime; only the static check is the obstacle. Turning off the output

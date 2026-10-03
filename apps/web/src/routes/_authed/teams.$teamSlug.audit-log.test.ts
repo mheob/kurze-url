@@ -1,12 +1,19 @@
-import type { PageAuditEntry, PageMember } from '@kurze-url/api-client';
+import type { AuditLogPage, PageMember } from '@kurze-url/api-client';
 import { isNotFound } from '@tanstack/react-router';
 import { describe, expect, it } from 'vitest';
 
 import { loadAuditLogPage } from './teams.$teamSlug.audit-log';
 
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `PageAuditEntry` is a generated `@kurze-url/api-client` type; `Readonly<>` is shallow and can't reach its nested `items` array from this side of the codegen boundary.
-function logPage(overrides: Readonly<Partial<PageAuditEntry>> = {}): PageAuditEntry {
-	return { items: [], page: 1, per_page: 20, total_count: 0, ...overrides };
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `AuditLogPage` is a generated `@kurze-url/api-client` type; `Readonly<>` is shallow and can't reach its nested `items` array from this side of the codegen boundary.
+function logPage(overrides: Readonly<Partial<AuditLogPage>> = {}): AuditLogPage {
+	return {
+		items: [],
+		page: 1,
+		per_page: 20,
+		retained_since: '2024-10-03',
+		total_count: 0,
+		...overrides,
+	};
 }
 
 // oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- same reason as `logPage` above: `PageMember` is generated codegen output with a mutable nested `items` array.
@@ -76,7 +83,14 @@ describe(loadAuditLogPage, () => {
 				// has to carry what the server answered with, and a fixture
 				// echoing the request back would pass either way.
 				// oxlint-disable-next-line typescript/require-await -- stands in for a fetch `loadAuditLogPage` awaits; the fake has nothing to await itself.
-				fetchLog: async () => logPage({ items: [entry], page: 2, per_page: 50, total_count: 45 }),
+				fetchLog: async () =>
+					logPage({
+						items: [entry],
+						page: 2,
+						per_page: 50,
+						retained_since: '2024-09-18',
+						total_count: 45,
+					}),
 				// oxlint-disable-next-line typescript/require-await -- same as `fetchLog` above.
 				fetchMembers: async () => memberPage({ items: [member], total_count: 1 }),
 			}),
@@ -86,6 +100,7 @@ describe(loadAuditLogPage, () => {
 			members: [member],
 			page: 2,
 			perPage: 50,
+			retainedSince: '2024-09-18',
 			total: 45,
 		});
 	});
@@ -111,6 +126,7 @@ describe(loadAuditLogPage, () => {
 			members: [],
 			page: 1,
 			perPage: 20,
+			retainedSince: '2024-10-03',
 			total: 0,
 		});
 	});
