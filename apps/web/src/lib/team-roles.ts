@@ -76,6 +76,18 @@ function canEdit(role: string | undefined): boolean {
 }
 
 /**
+ * Whether a role may claim, verify and delete domains, matching the API's
+ * `AdminScope` and `DomainAdminScope`. Like `canEdit`, this only decides which
+ * controls the interface shows; the API stays the enforcement point.
+ *
+ * @param role - The caller's role on the team, from `GET /v1/me`.
+ * @returns True for admin and owner.
+ */
+function canAdminister(role: string | undefined): boolean {
+	return role !== undefined && isTeamRole(role) && TEAM_ROLES.indexOf(role) >= ADMIN_RANK;
+}
+
+/**
  * Whether this member is the team's only owner, and therefore cannot be
  * demoted or removed.
  *
@@ -93,5 +105,13 @@ function isSoleOwner(members: readonly RoleBearer[], userId: string): boolean {
 	return owners.length === 1 && owners[0]?.user_id === userId;
 }
 
-export { TEAM_ROLES, canEdit, canManageMember, isTeamRole, isSoleOwner, rolesAssignableBy };
+export {
+	TEAM_ROLES,
+	canAdminister,
+	canEdit,
+	canManageMember,
+	isTeamRole,
+	isSoleOwner,
+	rolesAssignableBy,
+};
 export type { TeamRole };

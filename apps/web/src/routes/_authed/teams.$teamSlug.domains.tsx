@@ -11,6 +11,7 @@ import { Field, FieldDescription, FieldError, FieldLabel } from '../../component
 import { Input } from '../../components/ui/input';
 import { classifyApiError, statusOf, type ApiFailure } from '../../lib/api-errors';
 import { reportUnexpected } from '../../lib/observability';
+import { canAdminister } from '../../lib/team-roles';
 import {
 	claimDomainFn,
 	deleteDomainFn,
@@ -91,6 +92,9 @@ export async function loadDomains(
 
 export const Route = createFileRoute('/_authed/teams/$teamSlug/domains')({
 	beforeLoad: ({ context, params }) => ({
+		// Decides whether the page offers to claim, verify and delete domains,
+		// the same way the folders page decides whether to offer its form.
+		role: context.me.memberships.find((membership) => membership.slug === params.teamSlug)?.role,
 		teamId: requireTeamId(context.me.memberships, params.teamSlug),
 	}),
 	component: RouteComponent,
@@ -129,7 +133,7 @@ export function DomainsError({ error }: { readonly error: unknown }): React.JSX.
 }
 
 function RouteComponent(): React.JSX.Element {
-	const { teamId } = Route.useRouteContext();
+	const { role, teamId } = Route.useRouteContext();
 	const { t } = useTranslation();
 	const router = useRouter();
 	const queryClient = useQueryClient();
@@ -265,6 +269,10 @@ function RouteComponent(): React.JSX.Element {
 		deleteMutation.mutate(domainId);
 	}
 
+	// Below admin the API refuses claim, verify and delete with a 403, so the
+	// page offers none of them. The list and a pending domain's DNS records stay.
+	const mayManage = canAdminister(role);
+
 	const fieldError = claimFailure?.kind === 'fields' ? claimFailure.fields.hostname : undefined;
 	// A field error renders on the field itself; a second generic banner for
 	// the same failure is what the create-link route deliberately avoids.
@@ -302,6 +310,7 @@ function RouteComponent(): React.JSX.Element {
 				<output>{t('domains.truncated', { count: items.length, total: data.total_count })}</output>
 			) : null}
 			<DomainList
+				canManage={mayManage}
 				deleteBlockedCount={deleteBlockedCount}
 				deletingId={deletingId}
 				domains={items}
@@ -314,54 +323,56 @@ function RouteComponent(): React.JSX.Element {
 			{verifyMessage !== null ? <p role="alert">{verifyMessage}</p> : null}
 			{deleteMessage !== null ? <p role="alert">{deleteMessage}</p> : null}
 			{claimMessage !== null ? <p role="alert">{claimMessage}</p> : null}
-			<form
-				onSubmit={(event) => {
-					event.preventDefault();
-					event.stopPropagation();
-					void form.handleSubmit();
-				}}
-			>
-				<form.Field
-					name="hostname"
-					validators={{
-						onChange: ({ value }) =>
-							value.trim() === '' ? t('domains.hostnameRequired') : undefined,
+			{mayManage ? (
+				<form
+					onSubmit={(event) => {
+						event.preventDefault();
+						event.stopPropagation();
+						void form.handleSubmit();
 					}}
 				>
-					{(field) => {
-						const errorId = hostnameErrorId;
-						const hintId = 'hostname-hint';
-						const errorMessage =
-							fieldError ?? (field.state.meta.isTouched ? field.state.meta.errors[0] : undefined);
+					<form.Field
+						name="hostname"
+						validators={{
+							onChange: ({ value }) =>
+								value.trim() === '' ? t('domains.hostnameRequired') : undefined,
+						}}
+					>
+						{(field) => {
+							const errorId = hostnameErrorId;
+							const hintId = 'hostname-hint';
+							const errorMessage =
+								fieldError ?? (field.state.meta.isTouched ? field.state.meta.errors[0] : undefined);
 
-						return (
-							<Field data-invalid={errorMessage !== undefined}>
-								<FieldLabel htmlFor={field.name}>{t('domains.hostname')}</FieldLabel>
-								<Input
-									aria-describedby={errorMessage !== undefined ? `${hintId} ${errorId}` : hintId}
-									aria-invalid={errorMessage !== undefined ? true : undefined}
-									id={field.name}
-									name={field.name}
-									onBlur={field.handleBlur}
-									onChange={(event) => {
-										field.handleChange(event.target.value);
-									}}
-									required
-									value={field.state.value}
-								/>
-								<FieldDescription id={hintId}>{t('domains.hostnameHint')}</FieldDescription>
-								{errorMessage === undefined ? null : (
-									<FieldError id={errorId}>{errorMessage}</FieldError>
-								)}
-							</Field>
-						);
-					}}
-				</form.Field>
+							return (
+								<Field data-invalid={errorMessage !== undefined}>
+									<FieldLabel htmlFor={field.name}>{t('domains.hostname')}</FieldLabel>
+									<Input
+										aria-describedby={errorMessage !== undefined ? `${hintId} ${errorId}` : hintId}
+										aria-invalid={errorMessage !== undefined ? true : undefined}
+										id={field.name}
+										name={field.name}
+										onBlur={field.handleBlur}
+										onChange={(event) => {
+											field.handleChange(event.target.value);
+										}}
+										required
+										value={field.state.value}
+									/>
+									<FieldDescription id={hintId}>{t('domains.hostnameHint')}</FieldDescription>
+									{errorMessage === undefined ? null : (
+										<FieldError id={errorId}>{errorMessage}</FieldError>
+									)}
+								</Field>
+							);
+						}}
+					</form.Field>
 
-				<Button disabled={claimMutation.isPending} type="submit">
-					{t('domains.claim')}
-				</Button>
-			</form>
+					<Button disabled={claimMutation.isPending} type="submit">
+						{t('domains.claim')}
+					</Button>
+				</form>
+			) : null}
 		</>
 	);
 }

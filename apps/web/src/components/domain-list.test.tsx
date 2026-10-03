@@ -36,6 +36,8 @@ const verifiedDomain = domain({
 });
 
 interface RenderOverrides {
+	/** Defaults to true: most tests are about the list, not about who may manage it. */
+	readonly canManage?: boolean;
 	readonly deleteBlockedCount?: number;
 	readonly deletingId?: string | null;
 	readonly onDelete?: (domainId: string) => void;
@@ -61,6 +63,7 @@ function renderList(
 	return render(
 		<I18nextProvider i18n={createI18n('en')}>
 			<DomainList
+				canManage={overrides.canManage ?? true}
 				deleteBlockedCount={overrides.deleteBlockedCount}
 				deletingId={overrides.deletingId ?? null}
 				domains={domains}
@@ -75,6 +78,66 @@ function renderList(
 }
 
 describe(DomainList, () => {
+	// Below admin the API refuses verify and delete with a 403, so the list
+	// stops offering them. What a viewer or an editor can still use is the
+	// list itself, and the DNS records of a pending domain: they are what an
+	// admin is waiting on, and anyone on the team may be the one to publish them.
+	describe('for a member below admin', () => {
+		const other = domain({
+			hostname: 'other.verein.test',
+			id: 'domain-2',
+			verification_status: 'verified',
+			verified_at: '2026-01-01T00:00:00Z',
+		});
+
+		it('offers neither Check now nor a delete button', () => {
+			renderList([pendingDomain, other], { canManage: false });
+
+			expect(screen.queryByRole('button', { name: 'Check now' })).not.toBeInTheDocument();
+			expect(screen.queryByRole('button', { name: /^Delete /u })).not.toBeInTheDocument();
+		});
+
+		it('has no empty Actions column left behind', () => {
+			renderList([pendingDomain, other], { canManage: false });
+
+			expect(screen.queryByRole('columnheader', { name: 'Actions' })).not.toBeInTheDocument();
+		});
+
+		it('still lists every domain with its status', () => {
+			renderList([pendingDomain, other], { canManage: false });
+
+			// The pending domain's CNAME record carries its hostname too, hence `getAllBy`.
+			expect(screen.getAllByText('links.verein.test').length).toBeGreaterThan(0);
+			expect(screen.getByText('other.verein.test')).toBeInTheDocument();
+			expect(screen.getByText('Waiting for DNS')).toBeInTheDocument();
+			expect(screen.getByText('Working')).toBeInTheDocument();
+		});
+
+		it('still shows the DNS records of a pending domain', () => {
+			renderList([pendingDomain, other], { canManage: false });
+
+			expect(screen.getByText('_kurze-url-challenge.links.verein.test')).toBeInTheDocument();
+			expect(screen.getByText('tok-a')).toBeInTheDocument();
+			expect(screen.getByText('cname.vercel-dns.com')).toBeInTheDocument();
+		});
+
+		it('keeps the empty state', () => {
+			renderList([], { canManage: false });
+
+			expect(
+				screen.getByText('No domains yet. Your links use the shared domain.'),
+			).toBeInTheDocument();
+		});
+	});
+
+	it('offers the Actions column, Check now and delete to a member who can manage', () => {
+		renderList([pendingDomain]);
+
+		expect(screen.getByRole('columnheader', { name: 'Actions' })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Check now' })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Delete links.verein.test' })).toBeInTheDocument();
+	});
+
 	it.each([
 		['pending', 'Waiting for DNS'],
 		['verified', 'Working'],

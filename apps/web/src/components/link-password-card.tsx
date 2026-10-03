@@ -28,7 +28,17 @@ const messageKeys: Record<LinkPasswordReason | 'rejected', string> = {
 	too_short: 'links.passwordTooShort',
 };
 
+// The types `LinkPasswordCardProps` is made of, exported with it so a page that
+// renders the card names them from here rather than from `lib/`, one import
+// fewer — `import/max-dependencies` caps the edit page at 20.
+export type { LinkPasswordContext, LinkPasswordReason } from '../lib/link-password';
+
 export interface LinkPasswordCardProps {
+	/**
+	 * Whether the caller may set, change or remove the password (editor and
+	 * up). Below that the card only reports whether the link has one.
+	 */
+	readonly canEdit: boolean;
 	readonly context: LinkPasswordContext;
 	readonly hasPassword: boolean;
 	/**
@@ -75,7 +85,13 @@ export interface LinkPasswordCardProps {
  * only the API caught, still rendered through the exact same message table
  * so it reaches the reader either way.
  *
+ * Below editor, only the heading and the status line render: whether a
+ * password is set is worth knowing, but every way to change it ends in a 403,
+ * and the explainer under the heading tells a reader to share the password,
+ * which is an instruction to whoever sets it.
+ *
  * @param props - The component's props.
+ * @param props.canEdit - Whether the caller may change the password; false leaves only the status.
  * @param props.context - The link/destination/team values the mirrored password policy checks against.
  * @param props.hasPassword - Whether the link currently has a password.
  * @param props.onDismissRejection - Called when the reader edits the field, to clear a stale `rejection`.
@@ -85,6 +101,7 @@ export interface LinkPasswordCardProps {
  * @returns The rendered password card section.
  */
 export function LinkPasswordCard({
+	canEdit,
 	context,
 	hasPassword,
 	onDismissRejection,
@@ -186,6 +203,31 @@ export function LinkPasswordCard({
 		</form>
 	);
 
+	// Split out of the return statement's own JSX so the role check below is one
+	// ternary, not nested in the protected/unprotected one — `no-nested-ternary`
+	// is error-level.
+	const controls =
+		hasPassword && !changing ? (
+			<>
+				<Button
+					onClick={() => {
+						setChanging(true);
+					}}
+					type="button"
+				>
+					{t('links.passwordChange')}
+				</Button>
+				<ConfirmDelete
+					confirmLabel={t('links.passwordRemoveConfirm')}
+					label={t('links.passwordRemove')}
+					onConfirm={onRemove}
+					question={t('links.passwordRemoveQuestion')}
+				/>
+			</>
+		) : (
+			passwordInput
+		);
+
 	return (
 		<Card>
 			<CardHeader>
@@ -199,31 +241,12 @@ export function LinkPasswordCard({
 				<CardTitle>
 					<h2>{t('links.passwordHeading')}</h2>
 				</CardTitle>
-				<CardDescription>{t('links.passwordExplainer')}</CardDescription>
+				{canEdit ? <CardDescription>{t('links.passwordExplainer')}</CardDescription> : null}
 			</CardHeader>
 			<CardContent>
 				<p>{t(hasPassword ? 'links.passwordProtected' : 'links.passwordUnprotected')}</p>
 
-				{hasPassword && !changing ? (
-					<>
-						<Button
-							onClick={() => {
-								setChanging(true);
-							}}
-							type="button"
-						>
-							{t('links.passwordChange')}
-						</Button>
-						<ConfirmDelete
-							confirmLabel={t('links.passwordRemoveConfirm')}
-							label={t('links.passwordRemove')}
-							onConfirm={onRemove}
-							question={t('links.passwordRemoveQuestion')}
-						/>
-					</>
-				) : (
-					passwordInput
-				)}
+				{canEdit ? controls : null}
 			</CardContent>
 		</Card>
 	);

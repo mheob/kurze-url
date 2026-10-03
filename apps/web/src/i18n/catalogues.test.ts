@@ -108,6 +108,9 @@ describe('translation catalogues', () => {
 			// languages, so the template is identical — the same reasoning as
 			// `stats.rangeSummary`.
 			'links.inTag',
+			// "Details" is the German word too, the same reasoning as `audit.entityLink`;
+			// this is the link list's read-only counterpart to "Edit".
+			'links.details',
 		]);
 		const english = new Map(flatten(en));
 		const toCheck = flatten(de).filter(

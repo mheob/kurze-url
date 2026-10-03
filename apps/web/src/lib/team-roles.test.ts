@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+	canAdminister,
 	canEdit,
 	canManageMember,
 	isSoleOwner,
@@ -81,5 +82,17 @@ describe('team roles', () => {
 		expect(canEdit('owner')).toBe(true);
 		expect(canEdit('viewer')).toBe(false);
 		expect(canEdit(undefined)).toBe(false);
+	});
+
+	it('lets admin and owner administer', () => {
+		expect(canAdminister('owner')).toBe(true);
+		expect(canAdminister('admin')).toBe(true);
+	});
+
+	it('does not let editor, viewer, an unknown role or an unset one administer', () => {
+		expect(canAdminister('editor')).toBe(false);
+		expect(canAdminister('viewer')).toBe(false);
+		expect(canAdminister('superuser')).toBe(false);
+		expect(canAdminister(undefined)).toBe(false);
 	});
 });

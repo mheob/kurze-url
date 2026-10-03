@@ -52,6 +52,14 @@ export interface TagPickerProps {
 	readonly canCreate: boolean;
 	/** Ids whose tag is known to be gone (only computed once the tags have loaded). */
 	readonly deletedIds: ReadonlySet<string>;
+	/**
+	 * Shows the chips and nothing to operate: the input, every chip remove
+	 * button and the keyboard removal of a chip are all off. A disabled
+	 * `fieldset` around the picker reaches the input and the buttons but not
+	 * the chips themselves, which are focusable `div`s that remove themselves
+	 * on Backspace, so the picker is told directly.
+	 */
+	readonly disabled?: boolean;
 	/** A field error from the server, e.g. the tag-gone 422. */
 	readonly error?: string;
 	/** The input's id, for the visible <label>. */
@@ -86,6 +94,7 @@ export interface TagPickerProps {
  * @param props - The picker's props.
  * @param props.canCreate - Whether the caller may create tags (editor and up).
  * @param props.deletedIds - Ids whose tag is known to be gone; their chips say so.
+ * @param props.disabled - Turns the whole picker off, chips included; false when absent.
  * @param props.error - A field error from the server, e.g. the tag-gone 422.
  * @param props.inputId - The input's id, which the visible label points at.
  * @param props.label - The field's visible label.
@@ -100,6 +109,7 @@ export interface TagPickerProps {
 export function TagPicker({
 	canCreate,
 	deletedIds,
+	disabled = false,
 	error,
 	inputId,
 	knownNames,
@@ -226,6 +236,7 @@ export function TagPicker({
 			<FieldLabel htmlFor={inputId}>{label}</FieldLabel>
 			<Combobox
 				autoHighlight
+				disabled={disabled}
 				inputValue={query}
 				isItemEqualToValue={(item: PickerItem, chosen: PickerItem) => item.id === chosen.id}
 				itemToStringLabel={(item: PickerItem) => item.name}

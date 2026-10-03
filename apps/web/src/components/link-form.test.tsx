@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { I18nextProvider } from 'react-i18next';
 import { describe, expect, it, vi } from 'vitest';
@@ -33,6 +33,7 @@ function renderForm(props: {
 	readonly initial?: Partial<LinkFormValues>;
 	readonly onCreateTag?: (name: string) => Promise<TagCreateResult>;
 	readonly onSubmit: (values: LinkFormValues) => void;
+	readonly readOnly?: boolean;
 	readonly tagNames?: ReadonlyMap<string, string>;
 	readonly tags?: readonly TagOption[];
 	readonly tagsLoaded?: boolean;
@@ -378,6 +379,165 @@ describe(LinkForm, () => {
 		});
 		expect(screen.getByText('Altpapier')).toBeVisible();
 		expect(screen.getAllByText('(deleted)')).toHaveLength(1);
+	});
+
+	// A viewer reads the link's settings here and cannot change them: the API
+	// answers every write with a 403, so the form shows the values and offers
+	// nothing to operate. Disabled, not merely hidden, so a screen reader still
+	// reads each field with its value, and no control can be reached by keyboard.
+	describe('read-only', () => {
+		const stored: Partial<LinkFormValues> = {
+			analytics_enabled: true,
+			destination_url: 'https://example.org/sommerfest',
+			domain_id: 'd1',
+			expires_at: '2030-01-01T10:00',
+			folder_id: 'f1',
+			redirect_type: 301,
+			slug: 'sommerfest',
+			tag_ids: ['t1', 't2'],
+		};
+
+		/**
+		 * Every control the form can render, filled from `stored`.
+		 *
+		 * @param onSubmit - The submit handler the form is given, for tests that assert it is never called.
+		 * @returns The rendered test utilities from Testing Library's `render`.
+		 */
+		function renderReadOnly(
+			onSubmit: (values: LinkFormValues) => void = vi.fn<(values: LinkFormValues) => void>(),
+		): ReturnType<typeof render> {
+			return renderForm({
+				domains: [{ hostname: 'links.verein.test', id: 'd1' }],
+				folders: [{ id: 'f1', name: 'Sommerfest' }],
+				initial: stored,
+				onSubmit,
+				readOnly: true,
+				tags: teamTags,
+				tagsLoaded: true,
+			});
+		}
+
+		it.each([
+			['Destination URL', 'https://example.org/sommerfest'],
+			['Short path', 'sommerfest'],
+			['Redirect type', '301'],
+			['Expires at', '2030-01-01T10:00'],
+			['Domain', 'd1'],
+			['Folder', 'f1'],
+		])('shows %s with its stored value, disabled', (label, value) => {
+			renderReadOnly();
+
+			expect(screen.getByLabelText(label)).toBeDisabled();
+			expect(screen.getByLabelText(label)).toHaveValue(value);
+		});
+
+		it('shows the analytics choice as disabled, and a click does not change it', async () => {
+			renderReadOnly();
+
+			const checkbox = screen.getByRole('checkbox', { name: 'Count clicks for this link' });
+			expect(checkbox).toBeChecked();
+			expect(checkbox).toHaveAttribute('aria-disabled', 'true');
+			// A disabled fieldset does not take this `span` out of the tab order in a
+			// browser, which only disables form controls; Base UI does, once told.
+			expect(checkbox).toHaveAttribute('tabindex', '-1');
+
+			await userEvent.click(checkbox);
+
+			expect(checkbox).toBeChecked();
+		});
+
+		it('has no submit button', () => {
+			renderReadOnly();
+
+			expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+		});
+
+		it('shows the tags as chips and disables the picker and every chip remove button', () => {
+			renderReadOnly();
+
+			expect(screen.getByText('Jugend')).toBeVisible();
+			expect(screen.getByText('Presse')).toBeVisible();
+			expect(screen.getByRole('combobox', { name: 'Tags' })).toBeDisabled();
+			// Every button left on the form is a chip's remove button, and each is disabled.
+			const buttons = screen.getAllByRole('button');
+			expect(buttons).toHaveLength(2);
+			for (const button of buttons) expect(button).toBeDisabled();
+		});
+
+		// Base UI's chips are focusable `div`s that remove themselves on Backspace.
+		// A disabled fieldset does not reach them in a browser, which only disables
+		// form controls, so the picker is told directly. The key event is
+		// dispatched by hand: `userEvent` treats everything inside a disabled
+		// fieldset as disabled and would swallow it, passing for the wrong reason.
+		it('does not remove a chip on Backspace or Delete', () => {
+			renderReadOnly();
+
+			// Dispatched on the chip's label, which bubbles to the chip itself.
+			fireEvent.keyDown(screen.getByText('Jugend'), { key: 'Backspace' });
+			fireEvent.keyDown(screen.getByText('Jugend'), { key: 'Delete' });
+
+			expect(screen.getByText('Jugend')).toBeVisible();
+			expect(screen.getByText('Presse')).toBeVisible();
+		});
+
+		it('takes no keyboard focus at all', async () => {
+			renderReadOnly();
+
+			await userEvent.tab();
+			expect(document.body).toHaveFocus();
+		});
+
+		// The hint is a link to the folders page, where a viewer can create
+		// nothing, and a disabled fieldset does not reach an `<a>` in a browser:
+		// shown, it would be the one focusable thing on a form that is otherwise
+		// inert. `userEvent` treats everything inside a disabled fieldset as
+		// unfocusable, so the Tab check at the end cannot fail by itself here (it
+		// passes with the hint shown too); the link's absence is what pins this.
+		it('leaves out the "no folders yet" hint link, so nothing in the form takes focus', async () => {
+			renderForm({
+				folderHint: (
+					<a href="/teams/verein-a/folders">{'No folders yet. Create them on the Folders page.'}</a>
+				),
+				folders: [],
+				initial: stored,
+				onSubmit: vi.fn<(values: LinkFormValues) => void>(),
+				readOnly: true,
+				tags: teamTags,
+				tagsLoaded: true,
+			});
+
+			expect(screen.getByLabelText('Folder')).toBeDisabled();
+			expect(screen.queryByRole('link')).not.toBeInTheDocument();
+			expect(screen.queryByText(/No folders yet/u)).not.toBeInTheDocument();
+
+			await userEvent.tab();
+			expect(document.body).toHaveFocus();
+		});
+
+		it('never calls onSubmit, even when a submit event reaches the form', async () => {
+			const onSubmit = vi.fn<(values: LinkFormValues) => void>();
+			renderReadOnly(onSubmit);
+
+			// A submit event on a field bubbles to the form, the same path Enter takes.
+			// `form.handleSubmit()` settles asynchronously, so an assertion made
+			// straight after would pass whatever the form does with the event.
+			await act(async () => {
+				fireEvent.submit(screen.getByLabelText('Destination URL'));
+				await Promise.resolve();
+			});
+
+			expect(onSubmit).not.toHaveBeenCalled();
+		});
+
+		it('is editable and saveable when readOnly is not set', async () => {
+			const onSubmit = vi.fn<(values: LinkFormValues) => void>();
+			renderForm({ initial: stored, onSubmit });
+
+			expect(screen.getByLabelText('Destination URL')).toBeEnabled();
+			await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+			expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ slug: 'sommerfest' }));
+		});
 	});
 
 	describe('after a save reloads the record', () => {

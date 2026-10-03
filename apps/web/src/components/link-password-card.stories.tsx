@@ -12,6 +12,8 @@ const context = {
 };
 
 const meta = {
+	// Shared across every story below: an editor, unless a story says otherwise.
+	args: { canEdit: true },
 	component: LinkPasswordCard,
 	title: 'Links/LinkPasswordCard',
 } satisfies Meta<typeof LinkPasswordCard>;
@@ -26,6 +28,16 @@ export const Unprotected: StoryObj<typeof meta> = {
 /** A protected link: the input stays hidden behind "Change password" until asked for, and removal needs its own confirmation. */
 export const Protected: StoryObj<typeof meta> = {
 	args: { context, hasPassword: true, onRemove: fn<() => void>(), onSet: fn() },
+};
+
+/** A viewer on a protected link: the heading and the status, with nothing to change it. */
+export const ViewerProtected: StoryObj<typeof meta> = {
+	args: { canEdit: false, context, hasPassword: true, onRemove: fn<() => void>(), onSet: fn() },
+};
+
+/** A viewer on an unprotected link: the status alone, no field to protect it. */
+export const ViewerUnprotected: StoryObj<typeof meta> = {
+	args: { canEdit: false, context, hasPassword: false, onRemove: fn<() => void>(), onSet: fn() },
 };
 
 /**

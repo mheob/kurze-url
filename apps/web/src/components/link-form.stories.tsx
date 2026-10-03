@@ -120,6 +120,36 @@ export const TagCreator: StoryObj<typeof meta> = {
 	},
 };
 
+/**
+ * A viewer's view of a link: every field filled and disabled, the tags shown
+ * as chips with their remove buttons off, and no Save button. Every control
+ * the form can render is present, so the a11y addon covers the disabled
+ * `fieldset`, the disabled Base UI checkbox and the disabled picker together.
+ */
+export const ReadOnly: StoryObj<typeof meta> = {
+	args: {
+		domains: [{ hostname: 'links.verein.test', id: 'd1' }],
+		folders: [
+			{ id: 'f1', name: 'Sommerfest' },
+			{ id: 'f2', name: 'Vorstand' },
+		],
+		initial: {
+			analytics_enabled: true,
+			destination_url: 'https://example.org/sommerfest',
+			domain_id: 'd1',
+			expires_at: '2030-01-01T10:00',
+			folder_id: 'f1',
+			redirect_type: 301,
+			slug: 'sommerfest',
+			tag_ids: ['t1', 't2'],
+		},
+		onSubmit: fn<(values: LinkFormValues) => void>(),
+		readOnly: true,
+		tags: teamTags,
+		tagsLoaded: true,
+	},
+};
+
 // The theme toolbar global defaults to `light`, and `test:storybook` runs every
 // story at its defaults — so without this story the dark palette is never
 // checked by anything, only viewable by hand.
