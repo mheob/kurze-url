@@ -184,12 +184,12 @@ describe(isReportable, () => {
 
 describe(sentryOptions, () => {
 	/**
-	 * `@sentry/core`'s `resolveDataCollectionOptions` falls back to its own
-	 * permissive `DEFAULTS` — not the `sendDefaultPii: false` off-state — for
-	 * any field a supplied `dataCollection` object does not set. Pinning the
-	 * full field list here means adding a field to the SDK's type without
-	 * setting it here, or deleting one that is set here, fails this test
-	 * instead of silently falling through to "collect".
+	 * `@sentry/core`'s `resolveDataCollectionOptions` resolves every field a
+	 * supplied `dataCollection` object does not set to its own permissive
+	 * `DEFAULTS`. The type guard in `observability.ts` refuses a missing field
+	 * at compile time, including one a future SDK release adds; pinning the
+	 * field list here is the runtime half of that check, and still fails if
+	 * the guard is ever removed.
 	 */
 	it('sets every DataCollectionOptions field explicitly', () => {
 		const { dataCollection } = sentryOptions('https://public@o0.ingest.sentry.io/0');
@@ -209,6 +209,7 @@ describe(sentryOptions, () => {
 				'graphQL',
 				'httpBodies',
 				'httpHeaders',
+				'queues',
 				'stackFrameVariables',
 				'urlQueryParams',
 				'userInfo',
@@ -217,6 +218,32 @@ describe(sentryOptions, () => {
 		expect(new Set(Object.keys(httpHeaders))).toStrictEqual(new Set(['request', 'response']));
 		expect(new Set(Object.keys(graphQL))).toStrictEqual(new Set(['document', 'variables']));
 		expect(new Set(Object.keys(genAI))).toStrictEqual(new Set(['inputs', 'outputs']));
+	});
+
+	/**
+	 * The type guard only checks that every field is present, not what it
+	 * holds: `queues: true` or `userInfo: true` type-checks just as well and
+	 * quietly widens collection. Every value here is what v10's
+	 * `sendDefaultPii: false` resolved to, plus `queues: false` for the field
+	 * v11 added, which that off-state never collected.
+	 */
+	it('keeps every dataCollection field at the v10 sendDefaultPii off-state', () => {
+		const { dataCollection } = sentryOptions('https://public@o0.ingest.sentry.io/0');
+		const deny = { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] };
+
+		expect(dataCollection).toStrictEqual({
+			cookies: deny,
+			databaseQueryData: false,
+			frameContextLines: 7,
+			genAI: { inputs: false, outputs: false },
+			graphQL: { document: true, variables: true },
+			httpBodies: [],
+			httpHeaders: { request: deny, response: deny },
+			queues: false,
+			stackFrameVariables: true,
+			urlQueryParams: deny,
+			userInfo: false,
+		});
 	});
 });
 
