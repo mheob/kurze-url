@@ -121,6 +121,47 @@ func TestTheInnerHandlerStillReceivesEveryRecord(t *testing.T) {
 	require.Equal(t, []string{"kept", "also kept", "also kept"}, written)
 }
 
+// A coalescing rule gates Sentry exactly as the per-message throttle does,
+// and no further: a record its slot suppresses still reaches the log.
+func TestCoalescedRecordsStillReachTheInnerHandler(t *testing.T) {
+	var written []string
+	everything := observability.CoalesceRule{
+		Key:    "everything",
+		Match:  func(error) bool { return true },
+		Window: time.Hour,
+	}
+	logger := slog.New(observability.NewSlogHandler(&recordingHandler{lines: &written}, everything))
+
+	err := errors.New("connection refused")
+	logger.Error("first", "error", err)
+	logger.Error("second", "error", err)
+
+	require.Equal(t, []string{"first", "second"}, written)
+}
+
+// A rule is code, not configuration, so a broken one is a programming error
+// and is refused where the handler is built rather than where it would bite:
+// a nil Match would panic on the first error-level record, inside a request
+// or the click recorder's goroutine, and a Window of zero or less would
+// throttle nothing — the very budget hazard a rule exists to prevent.
+func TestAnUnusableRuleIsRefusedAtConstruction(t *testing.T) {
+	match := func(error) bool { return true }
+	cases := map[string]observability.CoalesceRule{
+		"no key":          {Match: match, Window: time.Hour},
+		"no match":        {Key: "quota", Window: time.Hour},
+		"no window":       {Key: "quota", Match: match},
+		"negative window": {Key: "quota", Match: match, Window: -time.Hour},
+	}
+
+	for name, rule := range cases {
+		t.Run(name, func(t *testing.T) {
+			require.Panics(t, func() {
+				observability.NewSlogHandler(slog.NewJSONHandler(io.Discard, nil), rule)
+			})
+		})
+	}
+}
+
 // The budget finding, from the outside: one dependency outage logs the same
 // failure on every request, and at the traffic ceiling this project documents
 // that empties a 5,000-event month in under two hours — after which Sentry
