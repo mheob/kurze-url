@@ -213,6 +213,19 @@ describe(toUpdateBody, () => {
 		).toMatchObject({ tag_ids: [] });
 	});
 
+	/**
+	 * The field's placeholder on this form says an empty slug keeps the
+	 * current path. Whitespace looks empty, and the API trims it to nothing
+	 * and refuses that with a 422, so it has to keep the path too.
+	 */
+	it('sends no slug for an empty or whitespace-only field, so the saved path is kept', () => {
+		expect(toUpdateBody({ ...base, slug: '' }, seeded).slug).toBeUndefined();
+		expect(toUpdateBody({ ...base, slug: '   ' }, seeded).slug).toBeUndefined();
+		expect(toUpdateBody({ ...base, slug: 'sommerfest' }, seeded)).toMatchObject({
+			slug: 'sommerfest',
+		});
+	});
+
 	it('keeps the folder rule', () => {
 		expect(toUpdateBody(base, { folderId: 'f1', tagIds: ['t1', 't2'] })).not.toHaveProperty(
 			'folder_id',

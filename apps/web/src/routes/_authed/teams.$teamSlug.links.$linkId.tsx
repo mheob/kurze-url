@@ -176,6 +176,9 @@ function toFormValues(link: Link): LinkFormValues {
  * clear-and-regenerate signal in `UpdateLinkInputBodyWritable`, unlike
  * `folder_id`'s explicit `null`-to-unfile) rather than the create form's
  * "generate one" — inherited from reusing the same `<LinkForm>` unmodified.
+ * A slug of whitespace alone counts as empty: the API trims what it is sent
+ * and would refuse what is left as malformed, a 422 for a field the form
+ * presents as "leave empty to keep the current path".
  *
  * `folder_id` is omitted entirely when it did not change: omitting an
  * unchanged folder means a folder missing from the loaded list (deleted
@@ -210,7 +213,7 @@ export function toUpdateBody(
 		expires_at: values.expires_at === '' ? undefined : new Date(values.expires_at).toISOString(),
 		redirect_type:
 			values.redirect_type === REDIRECT_PERMANENT ? REDIRECT_PERMANENT : REDIRECT_TEMPORARY,
-		slug: values.slug === '' ? undefined : values.slug,
+		slug: values.slug.trim() === '' ? undefined : values.slug,
 		...(values.folder_id === initial.folderId
 			? {}
 			: { folder_id: values.folder_id === '' ? null : values.folder_id }),
