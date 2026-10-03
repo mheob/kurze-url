@@ -1,0 +1,180 @@
+# Upstash's free tier allows 500K Redis commands a month and then refuses
+# every further one until the month turns over: no throttling first, no
+# warning, no automatic upgrade. Redirects survive that through Postgres, but
+# the redirect rate limit fails open, unique-visitor counting stops and
+# invitations fail closed, and /health/deep stays 200 by design — so the
+# uptime monitor never notices. The rate limits cannot prevent it either: each
+# caps one subject in one window, and a monthly quota is spent by subjects
+# they never compare (see CLAUDE.md, "Every rate limit caps one subject in one
+# window").
+#
+# So this watches the quota itself. Every six hours it reads the month's
+# command count from Upstash's Developer API and lets
+# .github/scripts/redis-budget.sh decide: alarm at 70% of the limit, or when
+# the month so far projects past it. The stats call goes to Upstash's control
+# plane, api.upstash.com, not to the database, so it spends no Redis commands.
+#
+# Two signals reach the Better Stack heartbeat monitor:
+#
+#   - An alarm pings the heartbeat's /fail URL with the status line as the
+#     body, so the incident carries the numbers. The run itself stays green:
+#     Better Stack carries the alarm, and a red run every six hours would
+#     mail the maintainer four times a day for the rest of the month.
+#   - A missing ping. A job that cannot fetch or read the stats fails without
+#     pinging, and so does one that never runs at all — GitHub disables
+#     scheduled workflows after 60 days of repository inactivity, and a
+#     disabled workflow does not fail, it stops. retention.yml is watched the
+#     same way, for the same reason.
+#
+# Inputs, created by hand (names only; the values live in GitHub):
+#
+#   - secret UPSTASH_EMAIL: the Upstash account's email, the Basic-auth user.
+#   - secret UPSTASH_API_KEY: a Read Only key from the Upstash console,
+#     Account > Developer API. Upstash offers the Developer API to native
+#     accounts only, not to one created through the Vercel or Fly.io
+#     integration, so this workflow cannot work for such an account.
+#   - secret REDIS_BUDGET_HEARTBEAT_URL: the URL of a Better Stack heartbeat
+#     expecting a ping every 6 hours, with a grace of at least an hour:
+#     GitHub starts scheduled runs late, and a run that is merely late must
+#     not read as a dead job.
+#   - variable UPSTASH_REDIS_DB_ID: the database's id, from the console.
+#   - variable REDIS_MONTHLY_LIMIT, optional: the monthly limit, 500000 when
+#     unset. Change it with the plan.
+#
+# Until they exist the scheduled run fails on purpose. After creating them,
+# start one run by hand and compare its figure with the monthly usage the
+# Upstash console shows: that confirms the field mirrors the quota counter
+# and, in the middle of a month, that Upstash's month is a calendar month
+# rather than a rolling one. Which timezone it turns over in shows only in
+# the first runs on the 1st; until the counter resets they read last month's
+# total and can raise a false 70% alarm (see the header of redis-budget.sh).
+name: redis budget
+
+on:
+  schedule:
+    # Every six hours, so a burst has at most that long to outrun the alarm;
+    # the call costs no Redis commands, so polling more often would only cost
+    # runner minutes. Not on the hour: GitHub queues every scheduled job at
+    # :00 and runs the backlog late.
+    - cron: "29 */6 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/redis-budget.yml
+      - .github/scripts/redis-budget.sh
+      - .github/scripts/redis-budget.test.sh
+
+concurrency:
+  # One group per event. Queuing a run cancels whichever run is still pending
+  # in its group, so with one shared group a pull request's run could replace
+  # a scheduled run waiting behind it: one missing ping, and a false "dead
+  # job" alarm.
+  group: redis-budget-${{ github.event_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  redis-budget:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        # Spelled out because it is what turns on pipefail; the implicit
+        # default runs bash -e only, and the fetch below is a pipeline.
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # On a pull request the job proves the logic, not the account: no
+      # secret is read and nothing outside the runner is called.
+      - name: Test the evaluation script
+        if: github.event_name == 'pull_request'
+        run: bash .github/scripts/redis-budget.test.sh
+
+      - name: Check the inputs are configured
+        if: github.event_name != 'pull_request'
+        env:
+          UPSTASH_EMAIL: ${{ secrets.UPSTASH_EMAIL }}
+          UPSTASH_API_KEY: ${{ secrets.UPSTASH_API_KEY }}
+          REDIS_BUDGET_HEARTBEAT_URL: ${{ secrets.REDIS_BUDGET_HEARTBEAT_URL }}
+          UPSTASH_REDIS_DB_ID: ${{ vars.UPSTASH_REDIS_DB_ID }}
+        run: |
+          missing=0
+          require() {
+            if [ -z "${!2}" ]; then
+              echo "::error::The $1 $2 is not set; see the top of .github/workflows/redis-budget.yml"
+              missing=1
+            fi
+          }
+          require secret UPSTASH_EMAIL
+          require secret UPSTASH_API_KEY
+          require secret REDIS_BUDGET_HEARTBEAT_URL
+          require "repository variable" UPSTASH_REDIS_DB_ID
+          exit "$missing"
+
+      # A failure here ends the run before the heartbeat step, so the missing
+      # ping is the alarm. The body goes to a file and is never printed.
+      - name: Fetch this month's usage from Upstash
+        if: github.event_name != 'pull_request'
+        env:
+          UPSTASH_EMAIL: ${{ secrets.UPSTASH_EMAIL }}
+          UPSTASH_API_KEY: ${{ secrets.UPSTASH_API_KEY }}
+          UPSTASH_REDIS_DB_ID: ${{ vars.UPSTASH_REDIS_DB_ID }}
+        run: |
+          # The credentials reach curl as a config on stdin, never as an
+          # argument, where any process on the runner could read them. printf
+          # is a shell builtin, so they are in no process's argv on the way
+          # either. A quote, a backslash or a line break would end or bend the
+          # quoted config value, and neither an email nor an Upstash key needs
+          # one, so they are refused rather than escaped.
+          case "$UPSTASH_EMAIL$UPSTASH_API_KEY" in
+            *[\"\\]* | *$'\n'*)
+              echo "::error::UPSTASH_EMAIL or UPSTASH_API_KEY contains a quote, a backslash or a line break"
+              exit 1
+              ;;
+          esac
+          printf 'user = "%s:%s"\n' "$UPSTASH_EMAIL" "$UPSTASH_API_KEY" |
+            curl --config - \
+              --fail --silent --show-error \
+              --connect-timeout 10 --max-time 30 \
+              --output "$RUNNER_TEMP/redis-stats.json" \
+              "https://api.upstash.com/v2/redis/stats/$UPSTASH_REDIS_DB_ID"
+
+      - name: Evaluate and report to the heartbeat monitor
+        if: github.event_name != 'pull_request'
+        env:
+          REDIS_BUDGET_HEARTBEAT_URL: ${{ secrets.REDIS_BUDGET_HEARTBEAT_URL }}
+          REDIS_MONTHLY_LIMIT: ${{ vars.REDIS_MONTHLY_LIMIT || '500000' }}
+        run: |
+          verdict=0
+          status=$(bash .github/scripts/redis-budget.sh "$REDIS_MONTHLY_LIMIT" "$(date +%s)" \
+            < "$RUNNER_TEMP/redis-stats.json") || verdict=$?
+
+          echo "$status"
+          echo "$status" >> "$GITHUB_STEP_SUMMARY"
+          # Workflow commands read % as the start of an escape.
+          annotation=${status//%/%25}
+
+          # The status line is the request body, which Better Stack keeps as
+          # the job's output — on an alarm, that is what the incident shows.
+          report() {
+            printf '%s\n' "$status" |
+              curl --fail --silent --show-error \
+                --connect-timeout 10 --max-time 30 \
+                --data-binary @- "$1"
+          }
+
+          case "$verdict" in
+            0) report "$REDIS_BUDGET_HEARTBEAT_URL" ;;
+            2)
+              echo "::warning::$annotation"
+              report "${REDIS_BUDGET_HEARTBEAT_URL%/}/fail"
+              ;;
+            *)
+              # Bad input: nothing was decided, so nothing is reported, and
+              # the missing ping raises it.
+              echo "::error::$annotation"
+              exit 1
+              ;;
+          esac
