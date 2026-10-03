@@ -487,6 +487,33 @@ describe(LinkForm, () => {
 			expect(document.body).toHaveFocus();
 		});
 
+		// The hint is a link to the folders page, where a viewer can create
+		// nothing, and a disabled fieldset does not reach an `<a>` in a browser:
+		// shown, it would be the one focusable thing on a form that is otherwise
+		// inert. `userEvent` treats everything inside a disabled fieldset as
+		// unfocusable, so the Tab check at the end cannot fail by itself here (it
+		// passes with the hint shown too); the link's absence is what pins this.
+		it('leaves out the "no folders yet" hint link, so nothing in the form takes focus', async () => {
+			renderForm({
+				folderHint: (
+					<a href="/teams/verein-a/folders">{'No folders yet. Create them on the Folders page.'}</a>
+				),
+				folders: [],
+				initial: stored,
+				onSubmit: vi.fn<(values: LinkFormValues) => void>(),
+				readOnly: true,
+				tags: teamTags,
+				tagsLoaded: true,
+			});
+
+			expect(screen.getByLabelText('Folder')).toBeDisabled();
+			expect(screen.queryByRole('link')).not.toBeInTheDocument();
+			expect(screen.queryByText(/No folders yet/u)).not.toBeInTheDocument();
+
+			await userEvent.tab();
+			expect(document.body).toHaveFocus();
+		});
+
 		it('never calls onSubmit, even when a submit event reaches the form', async () => {
 			const onSubmit = vi.fn<(values: LinkFormValues) => void>();
 			renderReadOnly(onSubmit);

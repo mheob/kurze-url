@@ -69,8 +69,9 @@ interface LinkFormProps {
 	readonly onCreateTag?: (name: string) => Promise<TagCreateResult>;
 	readonly onSubmit: (values: LinkFormValues) => void;
 	/**
-	 * Shows the values and nothing to operate: every field is disabled and
-	 * there is no submit button. For a member whose role cannot save them.
+	 * Shows the values and nothing to operate: every field is disabled, there
+	 * is no submit button and no `folderHint` link. For a member whose role
+	 * cannot save them.
 	 */
 	readonly readOnly?: boolean;
 	/** Names for chosen tags the loaded `tags` may lack, e.g. from `link.tags` on the edit route. */
@@ -113,7 +114,7 @@ export interface LinkFormValues {
  * @param props.canCreateTags - Whether the caller may create tags from the picker; false when absent.
  * @param props.domains - The team's verified domains; the domain picker renders nothing when this is empty or undefined.
  * @param props.fieldErrors - Server-reported field errors, keyed by field name.
- * @param props.folderHint - Shown under the folder field when the team has no folders yet, e.g. a link to the folders page.
+ * @param props.folderHint - Shown under the folder field when the team has no folders yet, e.g. a link to the folders page; never shown when read-only.
  * @param props.folders - The team's folders; the folder field renders whenever this is passed, even empty.
  * @param props.initial - Initial values to seed the form from, for the edit route.
  * @param props.initialVersion - The version `initial` came from; when it changes, the form re-seeds from `initial`.
@@ -472,7 +473,10 @@ export function LinkForm({
 												</NativeSelectOption>
 											))}
 										</NativeSelect>
-										{folders.length === 0 && folderHint !== undefined ? (
+										{/* Not read-only: the hint is a link to the folders page, a disabled
+										    fieldset does not reach an `<a>`, and a member who may not edit
+										    cannot create folders there anyway. */}
+										{folders.length === 0 && folderHint !== undefined && !readOnly ? (
 											<FieldDescription>{folderHint}</FieldDescription>
 										) : null}
 										{errorMessage === undefined ? null : (

@@ -110,6 +110,17 @@ describe('the link page', () => {
 	// link here and is offered nothing to change. What stays is what a viewer
 	// can use: the QR code with its download, and the statistics.
 	describe('for a viewer', () => {
+		// The row link on the list reads "Details" below editor; the page it opens
+		// must not then announce itself as an edit page above disabled fields.
+		it('is headed "Details", not "Edit"', async () => {
+			renderPage('viewer');
+
+			await expect(
+				screen.findByRole('heading', { level: 1, name: 'Details' }),
+			).resolves.toBeInTheDocument();
+			expect(screen.queryByRole('heading', { level: 1, name: 'Edit' })).not.toBeInTheDocument();
+		});
+
 		it('shows the link read-only', async () => {
 			renderPage('viewer');
 
@@ -159,6 +170,15 @@ describe('the link page', () => {
 	});
 
 	describe('for an editor', () => {
+		it('is headed "Edit", not "Details"', async () => {
+			renderPage('editor');
+
+			await expect(
+				screen.findByRole('heading', { level: 1, name: 'Edit' }),
+			).resolves.toBeInTheDocument();
+			expect(screen.queryByRole('heading', { level: 1, name: 'Details' })).not.toBeInTheDocument();
+		});
+
 		it('shows the form with its Save button', async () => {
 			renderPage('editor');
 

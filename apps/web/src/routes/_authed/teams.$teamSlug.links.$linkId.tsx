@@ -709,7 +709,10 @@ function RouteComponent(): React.JSX.Element {
 
 	return (
 		<>
-			<h1>{t('links.edit')}</h1>
+			{/* "Details" for a viewer, matching the list's row link that leads here:
+			    the page is read-only for them, so it must not announce itself as an
+			    edit page above disabled fields. */}
+			<h1>{t(mayEdit ? 'links.edit' : 'links.details')}</h1>
 			<RouterLink
 				// oxlint-disable-next-line react/forbid-component-props -- shadcn/ui's own "link styled as a button" idiom, same as `routes/index.tsx`'s two call sites: TanStack Router's `Link` forwards `className` straight to the rendered `<a>`, and `buttonVariants` exists precisely to be applied here.
 				className={buttonVariants({ variant: 'outline' })}
