@@ -58,6 +58,23 @@ async function typeSlug(value: string): Promise<HTMLElement> {
 	return slug;
 }
 
+/**
+ * The polite live region in the same field as a control. A live region only
+ * announces what is added to it after it already exists, so the tests below
+ * find it before the warning appears and again after.
+ *
+ * @param control - A control inside the field, e.g. its input or select.
+ * @returns The field's `aria-live="polite"` element.
+ */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `HTMLElement` is a DOM lib type, not one this codebase declares.
+function liveRegionOf(control: HTMLElement): HTMLElement {
+	const region = control
+		.closest('[data-slot="field"]')
+		?.querySelector<HTMLElement>('[aria-live="polite"]');
+	if (region === null || region === undefined) throw new Error('Expected a polite live region.');
+	return region;
+}
+
 describe(LinkForm, () => {
 	it('warns inline when 301 is chosen', async () => {
 		// CLAUDE.md requires this. A cached 301 stops clicks being counted and
@@ -72,6 +89,23 @@ describe(LinkForm, () => {
 	it('does not warn for 302', () => {
 		renderForm({ onSubmit: vi.fn<(values: LinkFormValues) => void>() });
 		expect(screen.queryByRole('note')).not.toBeInTheDocument();
+	});
+
+	it('announces the 301 warning through a live region that is there before it appears', async () => {
+		// WCAG 2.1 SC 4.1.3: a screen reader reads `aria-describedby` text when a
+		// field gains focus, but says nothing about text that appears while focus
+		// is already in the field. Only a live region that existed beforehand
+		// announces what is added to it.
+		renderForm({ onSubmit: vi.fn<(values: LinkFormValues) => void>() });
+		const select = screen.getByLabelText(/redirect|weiterleitung/iu);
+		const region = liveRegionOf(select);
+		expect(region).toBeEmptyDOMElement();
+
+		await userEvent.selectOptions(select, '301');
+
+		expect(liveRegionOf(select)).toBe(region);
+		expect(region).toHaveTextContent('Browsers cache a 301');
+		expect(within(region).getByRole('note')).toBeInTheDocument();
 	});
 
 	it('shows a server field error on the field it belongs to', () => {
@@ -498,6 +532,25 @@ describe(LinkForm, () => {
 			const slug = await typeSlug('herbstfest');
 
 			expect(slug).toHaveAccessibleDescription(/^That path is taken\. Changing the short path/u);
+		});
+
+		it('announces the warning through a live region that is there before it appears', async () => {
+			// See the same test for the 301 warning: focus is already in the field
+			// when the first keystroke makes the warning appear.
+			renderForm({ initial: saved, onSubmit: vi.fn<(values: LinkFormValues) => void>() });
+			const slug = screen.getByLabelText('Short path');
+			const region = liveRegionOf(slug);
+			expect(region).toBeEmptyDOMElement();
+
+			await typeSlug('herbstfest');
+
+			expect(liveRegionOf(slug)).toBe(region);
+			expect(region).toHaveTextContent('retires the old address');
+			expect(within(region).getByRole('note')).toBeInTheDocument();
+
+			await typeSlug('sommerfest');
+
+			expect(region).toBeEmptyDOMElement();
 		});
 
 		it('announces the warning as a note, like the 301 warning', async () => {

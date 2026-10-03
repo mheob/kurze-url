@@ -79,6 +79,45 @@ function isSlugChange(saved: string | undefined, current: string): boolean {
 	return hasSavedSlug(saved) && currentSlug !== '' && currentSlug !== saved.trim().toLowerCase();
 }
 
+/**
+ * An inline warning that is announced when it appears, not only read when its
+ * field gains focus (WCAG 2.1 SC 4.1.3, Status Messages). `aria-describedby`
+ * covers the second case and nothing else: a warning that appears while focus
+ * is already in the field, as both of these do, would otherwise go unspoken.
+ *
+ * The live region is a wrapper that is always rendered, rather than the note
+ * itself: a region is announced for what is added to it after it exists, and
+ * the note only exists while the warning applies. It stays out of the
+ * `Field`'s flex flow while empty (`sr-only` is `position: absolute`),
+ * because an empty flex child would still add its 12px gap after the input,
+ * and it is not `hidden`, because `display: none` would drop it from the
+ * accessibility tree and leave nothing registered to announce into. The note
+ * keeps its own `role="note"`, so it reads the same as before wherever a
+ * field points `aria-describedby` at it.
+ *
+ * @param props - The component's props.
+ * @param props.id - The note's id, for an input's `aria-describedby` to point at; omitted when nothing refers to it.
+ * @param props.message - The warning to show and announce, or undefined while it does not apply.
+ * @returns The live region, empty while there is no message.
+ */
+function LiveNote({
+	id,
+	message,
+}: {
+	readonly id?: string;
+	readonly message: string | undefined;
+}): React.JSX.Element {
+	return (
+		<div aria-live="polite" className="empty:sr-only">
+			{message === undefined ? null : (
+				<FieldDescription id={id} role="note">
+					{message}
+				</FieldDescription>
+			)}
+		</div>
+	);
+}
+
 interface LinkFormProps {
 	/** Whether the caller may create tags from the picker (editor and up). */
 	readonly canCreateTags?: boolean;
@@ -324,11 +363,10 @@ export function LinkForm({
 									    server-side rule for a hazard this names already. The input's
 									    `aria-describedby` points at it, so a screen reader reads it as the
 									    input's description when the field gains focus. */}
-									{warnsOfChange ? (
-										<FieldDescription id={slugChangeWarningId} role="note">
-											{t('links.slugChangeWarning')}
-										</FieldDescription>
-									) : null}
+									<LiveNote
+										id={slugChangeWarningId}
+										message={warnsOfChange ? t('links.slugChangeWarning') : undefined}
+									/>
 								</Field>
 							);
 						}}
@@ -369,9 +407,13 @@ export function LinkForm({
 								    and stops later destination changes taking effect for anyone who
 								    has already visited — breakage a volunteer cannot diagnose and
 								    cannot undo. It belongs next to the choice, not in a tooltip. */}
-									{field.state.value === REDIRECT_PERMANENT ? (
-										<FieldDescription role="note">{t('links.redirect301Warning')}</FieldDescription>
-									) : null}
+									<LiveNote
+										message={
+											field.state.value === REDIRECT_PERMANENT
+												? t('links.redirect301Warning')
+												: undefined
+										}
+									/>
 								</Field>
 							);
 						}}
