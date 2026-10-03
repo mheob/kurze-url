@@ -31,6 +31,35 @@ const (
 	clickBufferMax     = 5000
 )
 
+// redisQuotaReportInterval is how often each instance tells Sentry that
+// Upstash is refusing commands because the month's quota is spent.
+//
+// An hour, because the condition does not clear by itself: every Redis call
+// fails until the month turns over or the plan changes, so after the first
+// report each further one only says "still". The per-message minute is too
+// short for that. The redirect path logs the refusal under three messages,
+// which is 180 events an hour per instance, and at that rate the month's
+// 5,000 are gone in about a day — the same budget the next, unrelated
+// incident would need. An hour makes it 24 events a day per instance, or 720
+// for an outage lasting a whole month.
+const redisQuotaReportInterval = time.Hour
+
+// sentryCoalesceRules are the causes reported to Sentry by cause rather than
+// by message (see observability.CoalesceRule).
+//
+// A function rather than a literal at the call site, because that call site
+// only runs when SENTRY_DSN is set — on Preview and Production, never
+// locally or in CI — and NewSlogHandler panics on an unusable rule.
+// main_test.go builds the handler from this, so a bad edit fails there
+// instead of at boot.
+func sentryCoalesceRules() []observability.CoalesceRule {
+	return []observability.CoalesceRule{{
+		Key:    "redis quota exhausted",
+		Match:  cache.QuotaExceeded,
+		Window: redisQuotaReportInterval,
+	}}
+}
+
 func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
@@ -99,7 +128,7 @@ func run(log *slog.Logger) (*slog.Logger, func(), error) {
 	default:
 		// Every existing Log.Error call site becomes a Sentry event from
 		// here on, including the two in HandleDeepHealth.
-		log = slog.New(observability.NewSlogHandler(log.Handler()))
+		log = slog.New(observability.NewSlogHandler(log.Handler(), sentryCoalesceRules()...))
 	}
 
 	// internal/pages logs through slog's package-level default rather than an

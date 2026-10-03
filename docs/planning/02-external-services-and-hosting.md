@@ -100,6 +100,8 @@ Two things follow, both settled with the rate-limit values on 2026-09-08. A refu
 
 **Implementation**: both platforms expose the numbers needed to check this — Supabase via its Management API (project usage/stats endpoints) and Upstash via its Developer API (`Get Database Stats`). A Vercel Cron Job that polls both once a day, compares against the table above, and sends a notification (email/webhook) on a threshold crossing covers this with no extra infrastructure. The same cron job can double as the Supabase keep-alive ping (a trivial query against the DB) — one job, two purposes. Consider also alerting if the keep-alive itself fails for >3 days, as an early warning inside the 7-day pause window rather than finding out only after a project has already paused.
 
+The Upstash half was implemented on 2026-10-03 as a GitHub Actions workflow, `.github/workflows/redis-budget.yml`, rather than a Vercel Cron Job, so the account-wide Developer API key stays out of the API's runtime; see the Redis budget entry under "Non-obvious constraints" in `CLAUDE.md`.
+
 ## Observability: error tracking (Sentry)
 
 Decided 2026-09-01, added on top of the resource-threshold monitoring above rather than replacing it — the "Alert thresholds" section above answers "are we about to hit a free-tier ceiling," not "is the application actually throwing errors right now," which is a real gap on its own.

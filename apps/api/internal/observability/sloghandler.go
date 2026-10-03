@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -18,13 +19,13 @@ const errorAttrKey = "error"
 // carrying the same log message.
 //
 // One dependency outage otherwise empties the month's budget. GET /<slug>
-// logs at error level up to twice per redirect while Redis is unreachable,
-// and analytics/recorder.go logs on every five-second flush while Postgres
-// is: at the traffic ceiling this project documents for itself that is
-// thousands of events an hour against a 5,000-events-a-month free tier.
-// Sentry answers 429 once it is gone, and the Go SDK's transport then backs
-// off and drops events locally — so the *next* incident, the one nobody is
-// already watching, is the one that goes unreported.
+// logs at error level up to three times per redirect while Redis is
+// unreachable, and analytics/recorder.go logs on every five-second flush
+// while Postgres is: at the traffic ceiling this project documents for
+// itself that is thousands of events an hour against a 5,000-events-a-month
+// free tier. Sentry answers 429 once it is gone, and the Go SDK's transport
+// then backs off and drops events locally — so the *next* incident, the one
+// nobody is already watching, is the one that goes unreported.
 const sentryThrottleWindow = time.Minute
 
 // suppressedAttrKey carries, on the next event that does go out for a
@@ -32,6 +33,41 @@ const sentryThrottleWindow = time.Minute
 // one. Without it "this happened once" and "this happened four thousand
 // times" look identical in Sentry.
 const suppressedAttrKey = "suppressed_since_last_event"
+
+// coalescedAttrKey names, on an event a CoalesceRule admitted, the rule's
+// Key. A rule's slot counts suppressed records across every message it
+// covers, so without this a suppressed count on a "redirect cache lookup
+// failed" event would read as that message's own when most of it may be
+// another's.
+const coalescedAttrKey = "coalesced_under"
+
+// CoalesceRule throttles every error-level record whose error it matches
+// under one shared slot with its own window, whatever the record's message.
+//
+// The per-message throttle assumes one message is one problem. That fails
+// for a cause several call sites log under different messages at once: each
+// message gets its own minute, so the cause is reported once a minute per
+// message, and a cause that lasts — Upstash's command quota, gone until the
+// month turns over — spends the month's events by itself. A rule reports
+// such a cause once per Window instead.
+//
+// The first record in a window goes out exactly as it would have without
+// the rule, under its own message and wrapping its own error. A record whose
+// error no rule matches keeps its message's slot, which a rule's records
+// never spend, so a second, unrelated failure on the same line is still
+// reported within the minute.
+type CoalesceRule struct {
+	// Key names the shared slot, and is written onto the event as
+	// coalesced_under. A fixed literal: see messageThrottle on why the key
+	// space has to stay bounded.
+	Key string
+	// Match reports whether a record's error belongs to this rule. It is
+	// only ever called with a non-nil error; a record without one is never
+	// matched. Rules are tried in order and the first match wins.
+	Match func(error) bool
+	// Window is the shortest gap between two events this rule admits.
+	Window time.Duration
+}
 
 // logContextKey names the Sentry context the record's attributes land in.
 //
@@ -65,27 +101,42 @@ type slogHandler struct {
 // possibility of an error.
 //
 // At most one event per distinct record.Message per sentryThrottleWindow
-// reaches Sentry; the inner handler still receives every record, so the
-// throttle never costs a log line.
+// reaches Sentry, except that a record whose error one of rules matches is
+// throttled under that rule's slot and window instead (see CoalesceRule).
+// The inner handler still receives every record, so the throttle never costs
+// a log line.
 //
 // The "error" attribute is read from the record's own attributes only, so
 // Error(msg, "error", err) produces a Sentry exception with a stack trace —
 // but an error carried in via Logger.With("error", err) arrives as a plain
 // message instead, because slog keeps With-attributes on the handler rather
-// than threading them onto the Record, so this handler never sees them.
-func NewSlogHandler(inner slog.Handler) slog.Handler {
-	return newSlogHandler(inner, time.Now)
+// than threading them onto the Record, so this handler never sees them. The
+// same limit applies to rules: an error attached through With is never
+// offered to one.
+//
+// It panics on a rule with an empty Key, a nil Match or a Window that is not
+// positive. Rules are written in code, so that is a programming error, and
+// the alternative is finding out on the first error-level record.
+func NewSlogHandler(inner slog.Handler, rules ...CoalesceRule) slog.Handler {
+	return newSlogHandler(inner, time.Now, rules...)
 }
 
 // newSlogHandler takes the clock the throttle reads, so a test can advance
 // past sentryThrottleWindow without sleeping for a minute.
-func newSlogHandler(inner slog.Handler, now func() time.Time) slog.Handler {
+func newSlogHandler(inner slog.Handler, now func() time.Time, rules ...CoalesceRule) slog.Handler {
+	for _, rule := range rules {
+		if rule.Key == "" || rule.Match == nil || rule.Window <= 0 {
+			panic(fmt.Sprintf("observability: unusable CoalesceRule %q: "+
+				"it needs a Key, a Match and a positive Window", rule.Key))
+		}
+	}
+
 	return &slogHandler{
 		inner: inner,
 		throttle: &messageThrottle{
-			now:    now,
-			window: sentryThrottleWindow,
-			seen:   make(map[string]*throttleEntry),
+			now:   now,
+			rules: slices.Clone(rules),
+			seen:  make(map[throttleSlot]*throttleEntry),
 		},
 	}
 }
@@ -100,8 +151,9 @@ func (h *slogHandler) Handle(ctx context.Context, record slog.Record) error {
 	// after the lookup already reported the same outage — and reporting
 	// those would spend the monthly event budget on notes.
 	if record.Level >= slog.LevelError {
-		if admitted, suppressed := h.throttle.admit(record.Message); admitted {
-			capture(ctx, record, suppressed)
+		slot, window := h.throttle.slotFor(record)
+		if admitted, suppressed := h.throttle.admit(slot, window); admitted {
+			capture(ctx, record, slot, suppressed)
 		}
 	}
 
@@ -111,7 +163,8 @@ func (h *slogHandler) Handle(ctx context.Context, record slog.Record) error {
 }
 
 // WithAttrs and WithGroup delegate, carrying the throttle across so a derived
-// logger shares one budget with the logger it came from.
+// logger shares one budget with the logger it came from — its rules
+// included, since they live on the throttle.
 //
 // Attributes passed here reach the inner handler's output but not Sentry: as
 // NewSlogHandler's comment says, slog keeps With-attributes on the handler
@@ -135,14 +188,14 @@ func (h *slogHandler) WithGroup(name string) slog.Handler {
 // deliberately no longer clones a hub per request — would let two concurrent
 // captures see each other's scope. Cloning costs a scope copy, on a path that
 // is already throttled to one event per message per minute.
-func capture(ctx context.Context, record slog.Record, suppressed int) {
+func capture(ctx context.Context, record slog.Record, slot throttleSlot, suppressed int) {
 	hub := sentry.GetHubFromContext(ctx)
 	if hub == nil {
 		hub = sentry.CurrentHub()
 	}
 	hub = hub.Clone()
 
-	if fields := logFields(record, suppressed); len(fields) > 0 {
+	if fields := logFields(record, slot, suppressed); len(fields) > 0 {
 		hub.Scope().SetContext(logContextKey, fields)
 	}
 
@@ -165,7 +218,7 @@ func capture(ctx context.Context, record slog.Record, suppressed int) {
 // attribute such as "dependency" can be the only thing telling their events
 // apart (health.go's two pings did exactly this, until distinct messages
 // per dependency replaced it — see health.go's HandleDeepHealth).
-func logFields(record slog.Record, suppressed int) sentry.Context {
+func logFields(record slog.Record, slot throttleSlot, suppressed int) sentry.Context {
 	fields := make(sentry.Context, record.NumAttrs())
 
 	record.Attrs(func(attr slog.Attr) bool {
@@ -179,6 +232,9 @@ func logFields(record slog.Record, suppressed int) sentry.Context {
 
 	if suppressed > 0 {
 		fields[suppressedAttrKey] = suppressed
+	}
+	if slot.coalesced {
+		fields[coalescedAttrKey] = slot.name
 	}
 
 	return fields
@@ -240,20 +296,31 @@ func errorAttr(record slog.Record) error {
 	return found
 }
 
-// messageThrottle holds, per distinct log message, when it was last reported
-// and how many occurrences have been dropped since.
+// messageThrottle holds, per slot, when it was last reported and how many
+// occurrences have been dropped since. A slot is a distinct log message, or
+// a CoalesceRule's Key for the records that rule claims.
 //
-// The map is keyed by record.Message. Every Error call site in this codebase
-// passes a fixed string literal and puts the varying part in attributes —
-// never fmt.Sprintf into the message — so the key space is the number of such
-// call sites (a few dozen) and does not grow with traffic. A message built by
-// formatting would break that, which is the reason to keep writing them as
-// literals.
+// The map is keyed by those two things and nothing else. Every Error call
+// site in this codebase passes a fixed string literal and puts the varying
+// part in attributes — never fmt.Sprintf into the message — so the message
+// half of the key space is the number of such call sites (a few dozen) and
+// does not grow with traffic. A message built by formatting would break that,
+// which is the reason to keep writing them as literals. The rule half is
+// smaller still: rules are fixed when the handler is built, main.go wires
+// one, and a rule's Key is a literal too.
 type messageThrottle struct {
-	mu     sync.Mutex
-	now    func() time.Time
-	window time.Duration
-	seen   map[string]*throttleEntry
+	mu    sync.Mutex
+	now   func() time.Time
+	rules []CoalesceRule
+	seen  map[throttleSlot]*throttleEntry
+}
+
+// throttleSlot names what a record is throttled under. The flag keeps the
+// two namespaces apart, so a rule whose Key happens to read like a message
+// can neither share that message's slot nor spend it.
+type throttleSlot struct {
+	coalesced bool
+	name      string
 }
 
 type throttleEntry struct {
@@ -261,22 +328,37 @@ type throttleEntry struct {
 	suppressed int
 }
 
-// admit reports whether this message may become a Sentry event now and, when
-// it may, how many occurrences of it were suppressed since the last one that
-// did.
-func (t *messageThrottle) admit(message string) (bool, int) {
+// slotFor picks the slot a record is throttled under and that slot's window:
+// the first rule matching the record's error, else the record's own message
+// with sentryThrottleWindow.
+func (t *messageThrottle) slotFor(record slog.Record) (throttleSlot, time.Duration) {
+	if err := errorAttr(record); err != nil {
+		for _, rule := range t.rules {
+			if rule.Match(err) {
+				return throttleSlot{coalesced: true, name: rule.Key}, rule.Window
+			}
+		}
+	}
+
+	return throttleSlot{name: record.Message}, sentryThrottleWindow
+}
+
+// admit reports whether a record in this slot may become a Sentry event now
+// and, when it may, how many records in it were suppressed since the last
+// one that did.
+func (t *messageThrottle) admit(slot throttleSlot, window time.Duration) (bool, int) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	now := t.now()
 
-	entry, seen := t.seen[message]
+	entry, seen := t.seen[slot]
 	if !seen {
-		t.seen[message] = &throttleEntry{lastSent: now}
+		t.seen[slot] = &throttleEntry{lastSent: now}
 		return true, 0
 	}
 
-	if now.Sub(entry.lastSent) < t.window {
+	if now.Sub(entry.lastSent) < window {
 		entry.suppressed++
 		return false, 0
 	}
