@@ -306,8 +306,8 @@ func errorAttr(record slog.Record) error {
 // half of the key space is the number of such call sites (a few dozen) and
 // does not grow with traffic. A message built by formatting would break that,
 // which is the reason to keep writing them as literals. The rule half is
-// smaller still: rules are fixed when the handler is built, main.go wires
-// one, and a rule's Key is a literal too.
+// smaller still: rules are fixed when the handler is built, main.go wires a
+// short list of them (sentryCoalesceRules), and a rule's Key is a literal too.
 type messageThrottle struct {
 	mu    sync.Mutex
 	now   func() time.Time
