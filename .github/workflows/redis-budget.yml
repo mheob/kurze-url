@@ -158,10 +158,16 @@ jobs:
 
           # The status line is the request body, which Better Stack keeps as
           # the job's output — on an alarm, that is what the incident shows.
+          #
+          # Sent as text/plain, not curl's default form encoding: the line
+          # carries a percentage such as "(0.4%);", and "%);" is not a valid
+          # percent-escape, so a form body is refused with a 400 before the
+          # ping is recorded. The first run after merge failed exactly so.
           report() {
             printf '%s\n' "$status" |
               curl --fail --silent --show-error \
                 --connect-timeout 10 --max-time 30 \
+                --header 'Content-Type: text/plain' \
                 --data-binary @- "$1"
           }
 
