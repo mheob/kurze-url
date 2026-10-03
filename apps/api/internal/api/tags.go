@@ -39,8 +39,8 @@ type TagOutput struct {
 	Body   Tag
 }
 
-// ListTagsInput takes no filters: a list capped at 100 rows and ordered by
-// name does not need them.
+// ListTagsInput takes no filters: a team holds at most maxTagsPerTeam (200)
+// tags, listed by name at up to 100 per page, which needs no filters.
 type ListTagsInput struct {
 	authz.ViewerScope
 	PageParams
