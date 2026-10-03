@@ -83,6 +83,7 @@
 		"destinationRequired": "Destination URL is required.",
 		"slug": "Short path",
 		"slugGenerated": "Leave empty and one will be generated",
+		"slugKeep": "Leave empty to keep the current path",
 		"slugChangeWarning": "Changing the short path retires the old address: printed QR codes and every link already shared with it stop working.",
 		"redirectType": "Redirect type",
 		"redirect302": "302 — temporary (recommended)",

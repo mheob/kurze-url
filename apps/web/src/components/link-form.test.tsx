@@ -151,11 +151,31 @@ describe(LinkForm, () => {
 		expect(screen.getByRole('alert')).toHaveTextContent('not allowed');
 	});
 
-	it('shows the slug placeholder saying one will be generated', () => {
-		renderForm({ onSubmit: vi.fn<(values: LinkFormValues) => void>() });
+	it.each([
+		['no saved slug at all', undefined],
+		['an empty saved slug', { slug: '' }],
+	])(
+		'shows the slug placeholder saying one will be generated on the create form, which has %s',
+		(_name: string, initial: Partial<LinkFormValues> | undefined) => {
+			renderForm({ initial, onSubmit: vi.fn<(values: LinkFormValues) => void>() });
+			expect(screen.getByLabelText(/short path|kurzpfad/iu)).toHaveAttribute(
+				'placeholder',
+				'Leave empty and one will be generated',
+			);
+		},
+	);
+
+	it('shows the slug placeholder saying the current path is kept on the edit form', () => {
+		// On the edit form a blank slug is not "generate one": the API leaves the
+		// saved path alone, so the create form's wording would promise a change
+		// that never happens.
+		renderForm({
+			initial: { destination_url: 'https://example.org/sommerfest', slug: 'sommerfest' },
+			onSubmit: vi.fn<(values: LinkFormValues) => void>(),
+		});
 		expect(screen.getByLabelText(/short path|kurzpfad/iu)).toHaveAttribute(
 			'placeholder',
-			'Leave empty and one will be generated',
+			'Leave empty to keep the current path',
 		);
 	});
 
@@ -419,6 +439,29 @@ describe(LinkForm, () => {
 
 			await typeSlug('sommerfest');
 			expect(screen.queryByText(warning)).not.toBeInTheDocument();
+		});
+
+		// Empty is the edit route's "keep the saved path".
+		it('says nothing once the field is cleared, since a blank slug keeps the saved one', async () => {
+			renderForm({ initial: saved, onSubmit: vi.fn<(values: LinkFormValues) => void>() });
+
+			const slug = screen.getByLabelText('Short path');
+			await userEvent.clear(slug);
+
+			expect(slug).toHaveValue('');
+			expect(screen.queryByText(warning)).not.toBeInTheDocument();
+			expect(slug).not.toHaveAccessibleDescription();
+		});
+
+		// Whitespace alone is not "keep": the API refuses it as malformed. But
+		// nothing is retired by that either, so there is nothing to warn about.
+		it('says nothing once the field is only whitespace, since no address is retired', async () => {
+			renderForm({ initial: saved, onSubmit: vi.fn<(values: LinkFormValues) => void>() });
+
+			const slug = await typeSlug('   ');
+
+			expect(screen.queryByText(warning)).not.toBeInTheDocument();
+			expect(slug).not.toHaveAccessibleDescription();
 		});
 
 		it('treats a change of case alone as no change, since the API stores slugs lowercase', async () => {

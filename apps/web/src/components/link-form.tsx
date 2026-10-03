@@ -49,17 +49,34 @@ const KNOWN_FIELD_NAMES: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Whether the link was saved with a slug, which is what makes this the edit
+ * form: the create form has none yet, and so nothing to keep or retire.
+ *
+ * @param saved - The slug the link was saved with; absent or empty on the create form.
+ * @returns True when there is a saved slug.
+ */
+function hasSavedSlug(saved: string | undefined): saved is string {
+	return (saved?.trim() ?? '') !== '';
+}
+
+/**
  * Whether the slug in the field is a different address from the saved one.
  * The API stores slugs trimmed and lowercase, so a change of case or of
  * surrounding whitespace alone is the same address and not a change.
+ *
+ * A blank field is not a change either. On the edit form an empty slug means
+ * "keep the current path": the edit route sends none and the API leaves the
+ * saved one alone, so nothing is retired and warning that it would be would
+ * be false. (Whitespace alone reaches the API as a slug and is refused as
+ * malformed, which retires nothing either.)
  *
  * @param saved - The slug the link was saved with; absent or empty on the create form, which has nothing to retire.
  * @param current - The slug now in the field.
  * @returns True when saving would move the link to another address.
  */
 function isSlugChange(saved: string | undefined, current: string): boolean {
-	const savedSlug = saved?.trim().toLowerCase() ?? '';
-	return savedSlug !== '' && current.trim().toLowerCase() !== savedSlug;
+	const currentSlug = current.trim().toLowerCase();
+	return hasSavedSlug(saved) && currentSlug !== '' && currentSlug !== saved.trim().toLowerCase();
 }
 
 interface LinkFormProps {
@@ -278,8 +295,10 @@ export function LinkForm({
 							return (
 								<Field data-invalid={errorMessage !== undefined}>
 									<FieldLabel htmlFor={field.name}>{t('links.slug')}</FieldLabel>
-									{/* An empty slug means the API generates one. Said here, because a
-								    blank required-looking field otherwise reads as an oversight. */}
+									{/* An empty slug is not an error, and what it does depends on the
+								    form: the create form has the API generate one, the edit form keeps
+								    the saved one. Said here, because a blank required-looking field
+								    otherwise reads as an oversight. */}
 									<Input
 										aria-describedby={describedBy === '' ? undefined : describedBy}
 										aria-invalid={errorMessage !== undefined ? true : undefined}
@@ -289,7 +308,9 @@ export function LinkForm({
 										onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
 											field.handleChange(event.target.value);
 										}}
-										placeholder={t('links.slugGenerated')}
+										placeholder={t(
+											hasSavedSlug(initial?.slug) ? 'links.slugKeep' : 'links.slugGenerated',
+										)}
 										value={field.state.value}
 									/>
 									{errorMessage === undefined ? null : (
