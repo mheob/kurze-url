@@ -31,10 +31,12 @@ if (typeof globalThis.matchMedia !== 'function') {
 	// oxlint-enable typescript/no-deprecated
 }
 
-// onUnhandledRequest: 'error' is what makes the empty handler list above a
+// onUnhandledFrame: 'error' is what makes the empty handler list above a
 // feature rather than a gap — an unmocked call fails the test that made it.
+// (MSW 3 renamed the option from onUnhandledRequest; an unknown key would be
+// ignored silently and unmocked calls would reach the network.)
 beforeAll(() => {
-	server.listen({ onUnhandledRequest: 'error' });
+	server.listen({ onUnhandledFrame: 'error' });
 });
 afterEach(() => {
 	server.resetHandlers();
