@@ -48,6 +48,7 @@ const DATA: AuditLogPageData = {
 	],
 	page: 1,
 	perPage: 20,
+	retainedSince: '2024-10-03',
 	total: 1,
 };
 
@@ -145,6 +146,21 @@ describe('the audit log route', () => {
 		await user.selectOptions(screen.getByLabelText('Person'), 'user-a');
 
 		expect(navigated).toStrictEqual([{ actor: 'user-a', entityType: 'link', page: 1 }]);
+	});
+
+	/**
+	 * The loader's `retainedSince` has to reach the filter bar, or the bar
+	 * renders as if the floor were unknown: no bound on the calendar and no
+	 * note saying why entries stop where they do.
+	 */
+	it("hands the API's retention floor to the filter bar", async () => {
+		renderRouteView({ data: DATA });
+		await screen.findByRole('heading', { level: 1, name: 'History' });
+
+		expect(screen.getByLabelText('From')).toHaveAttribute('min', '2024-10-03');
+		expect(
+			screen.getByText('Entries from before Oct 3, 2024 are deleted automatically.'),
+		).toBeInTheDocument();
 	});
 
 	/**

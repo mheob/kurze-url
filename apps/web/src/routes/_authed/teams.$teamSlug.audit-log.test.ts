@@ -83,7 +83,14 @@ describe(loadAuditLogPage, () => {
 				// has to carry what the server answered with, and a fixture
 				// echoing the request back would pass either way.
 				// oxlint-disable-next-line typescript/require-await -- stands in for a fetch `loadAuditLogPage` awaits; the fake has nothing to await itself.
-				fetchLog: async () => logPage({ items: [entry], page: 2, per_page: 50, total_count: 45 }),
+				fetchLog: async () =>
+					logPage({
+						items: [entry],
+						page: 2,
+						per_page: 50,
+						retained_since: '2024-09-18',
+						total_count: 45,
+					}),
 				// oxlint-disable-next-line typescript/require-await -- same as `fetchLog` above.
 				fetchMembers: async () => memberPage({ items: [member], total_count: 1 }),
 			}),
@@ -93,6 +100,7 @@ describe(loadAuditLogPage, () => {
 			members: [member],
 			page: 2,
 			perPage: 50,
+			retainedSince: '2024-09-18',
 			total: 45,
 		});
 	});
@@ -118,6 +126,7 @@ describe(loadAuditLogPage, () => {
 			members: [],
 			page: 1,
 			perPage: 20,
+			retainedSince: '2024-10-03',
 			total: 0,
 		});
 	});
