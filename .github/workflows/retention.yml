@@ -1,7 +1,12 @@
 # docs/planning/01-architecture.md promises 90-day automatic deletion of click
-# analytics. This workflow is what keeps that promise: once a day it calls the
-# API's retention endpoint, which deletes every link_click_stats row older than
-# the window the stats endpoint will serve.
+# analytics, and the audit log is kept for two years (AuditRetentionYears in
+# apps/api/internal/api/auditlog.go). This workflow is what keeps both: once a
+# day it calls the API's retention endpoint, which deletes every
+# link_click_stats row older than the window the stats endpoint will serve and
+# then every audit_log row older than the window the audit log endpoint will
+# serve. A failure in either delete fails the step, so read the API's error log
+# (Sentry) for which table it was: "analytics retention failed" or "audit log
+# retention failed".
 #
 # The heartbeat is the last step and runs only if the delete succeeded, so one
 # signal covers both hazards. A failing delete withholds the ping — and so does
@@ -11,8 +16,10 @@
 # backups in kurze-url-backups are watched the same way, for the same reason.
 #
 # Worth knowing when reading the logs: the oldest rollup row dates from
-# 2026-09-02, so until roughly December this job correctly deletes nothing.
-# "deleted: 0" is the expected output, not a symptom.
+# 2026-09-02, so until roughly December 2026 this job correctly deletes no
+# click analytics, and the audit log's first entries date from September 2026,
+# so "audit_deleted": 0 is expected until about September 2028. Both zeros are
+# the expected output, not a symptom.
 name: retention
 
 on:
@@ -40,7 +47,7 @@ jobs:
       # production data from an unmerged branch is not a thing a review should
       # be able to do. On a pull request the job therefore only proves the file
       # parses, which is what the path filter above is for.
-      - name: Delete expired click analytics
+      - name: Delete expired click analytics and audit entries
         if: github.event_name != 'pull_request'
         env:
           RETENTION_TOKEN: ${{ secrets.RETENTION_TOKEN }}

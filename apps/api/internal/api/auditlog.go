@@ -13,6 +13,35 @@ import (
 	"github.com/mheob/kurze-url/apps/api/internal/db"
 )
 
+// AuditRetentionYears is how long an audit entry is kept: two years, decided
+// by the maintainer on 2026-10-03. The log exists so that a Verein can still
+// show who changed what long after the fact — a board asking in spring who
+// moved last summer's registration link — without the instance keeping its
+// administrative history, member addresses in invitation metadata included,
+// forever.
+//
+// It is deliberately not RetentionDays. That window is a privacy-minimised
+// rollup of strangers' clicks and is as short as the product allows; this one
+// is a governance record whose whole purpose is to outlast the events it
+// describes. Folding the two into one constant would make one of them wrong.
+//
+// auditRetentionFloor is the only place this becomes a boundary; nothing else
+// may restate the arithmetic.
+const AuditRetentionYears = 2
+
+// auditRetentionFloor is the oldest instant the audit log keeps: the start of
+// the current UTC day, as dayOf defines a day, two calendar years back. The
+// retention job deletes every entry created before it.
+//
+// AddDate normalises a date that does not exist, so on 29 February the floor
+// two years back is 1 March rather than 28 February. That keeps one day less,
+// never one more, which is the acceptable direction for a deletion floor;
+// TestAuditRetentionFloorOnALeapDay pins it so nobody "fixes" it into the
+// other direction.
+func auditRetentionFloor(now time.Time) time.Time {
+	return dayOf(now).AddDate(-AuditRetentionYears, 0, 0)
+}
+
 // AuditEntry is one audit_log row. Metadata is passed through verbatim: the
 // writer already guarantees it carries no secret and no IP address.
 type AuditEntry struct {
