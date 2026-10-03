@@ -14,6 +14,12 @@ type VerifyReason = VerifyDomainOutputBody['reason'];
 type DomainStatusVariant = 'default' | 'destructive' | 'secondary';
 
 interface DomainListProps {
+	/**
+	 * Whether the caller may verify and delete domains (admin and up). Below
+	 * that the list still lists every domain and shows a pending one's DNS
+	 * records, but has no "Check now" or delete button, and no Actions column.
+	 */
+	readonly canManage: boolean;
 	readonly domains: readonly Domain[];
 	// Set only for whichever domain `deletingId` names — same one-slot
 	// correlation `pendingReason`/`verifyingId` already use below, and for the
@@ -157,7 +163,14 @@ function reasonLabel(t: TFunction, reason: VerifyReason): string {
  * status, can be removed; only a domain that still has links refuses (409),
  * which is what `deleteBlockedCount` surfaces.
  *
+ * Below admin (`canManage` false) the API refuses both verify and delete with
+ * a 403, so neither button renders, and the Actions column goes with them
+ * rather than staying behind as an empty one. The records stay: they are what
+ * an admin is waiting on, and anyone on the team may be the one to publish
+ * them.
+ *
  * @param props - The component's props.
+ * @param props.canManage - Whether the caller may verify and delete domains; false hides both and the Actions column.
  * @param props.deleteBlockedCount - The blocking link count, set only for the domain named by `deletingId`.
  * @param props.deletingId - The id of the domain a delete is in flight for, or null.
  * @param props.domains - The team's domains, already fetched by the caller.
@@ -170,6 +183,7 @@ function reasonLabel(t: TFunction, reason: VerifyReason): string {
  */
 // oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `domains` carries `@kurze-url/api-client`'s generated `Domain` type, whose properties are not marked readonly; that is generated codegen output, never edited by hand.
 export function DomainList({
+	canManage,
 	deleteBlockedCount,
 	deletingId,
 	domains,
@@ -191,7 +205,7 @@ export function DomainList({
 					<TableRow>
 						<TableHead>{t('domains.hostname')}</TableHead>
 						<TableHead>{t('domains.status')}</TableHead>
-						<TableHead>{t('domains.columnActions')}</TableHead>
+						{canManage ? <TableHead>{t('domains.columnActions')}</TableHead> : null}
 					</TableRow>
 				</TableHeader>
 				<TableBody>
@@ -209,24 +223,26 @@ export function DomainList({
 											{statusLabel(t, domain.verification_status)}
 										</Badge>
 									</TableCell>
-									<TableCell>
-										{deletingId === domain.id && deleteBlockedCount !== undefined ? (
-											<output>
-												{t('domains.deleteBlockedByLinks', { count: deleteBlockedCount })}
-											</output>
-										) : null}
-										<ConfirmDelete
-											label={t('domains.delete', { hostname: domain.hostname })}
-											onConfirm={() => {
-												onDelete(domain.id);
-											}}
-											question={t('domains.deleteQuestion', { hostname: domain.hostname })}
-										/>
-									</TableCell>
+									{canManage ? (
+										<TableCell>
+											{deletingId === domain.id && deleteBlockedCount !== undefined ? (
+												<output>
+													{t('domains.deleteBlockedByLinks', { count: deleteBlockedCount })}
+												</output>
+											) : null}
+											<ConfirmDelete
+												label={t('domains.delete', { hostname: domain.hostname })}
+												onConfirm={() => {
+													onDelete(domain.id);
+												}}
+												question={t('domains.deleteQuestion', { hostname: domain.hostname })}
+											/>
+										</TableCell>
+									) : null}
 								</TableRow>
 								{domain.verification_status === 'pending' ? (
 									<TableRow>
-										<TableCell colSpan={3}>
+										<TableCell colSpan={canManage ? 3 : 2}>
 											<h2>{t('domains.recordsHeadingFor', { hostname: domain.hostname })}</h2>
 											<Table>
 												<TableHeader>
@@ -264,15 +280,17 @@ export function DomainList({
 											{verifyingId === domain.id && pendingReason !== undefined ? (
 												<output>{reasonLabel(t, pendingReason)}</output>
 											) : null}
-											<Button
-												disabled={verifyingId === domain.id && verifyPending}
-												onClick={() => {
-													onVerify(domain.id);
-												}}
-												type="button"
-											>
-												{t('domains.verify')}
-											</Button>
+											{canManage ? (
+												<Button
+													disabled={verifyingId === domain.id && verifyPending}
+													onClick={() => {
+														onVerify(domain.id);
+													}}
+													type="button"
+												>
+													{t('domains.verify')}
+												</Button>
+											) : null}
 										</TableCell>
 									</TableRow>
 								) : null}

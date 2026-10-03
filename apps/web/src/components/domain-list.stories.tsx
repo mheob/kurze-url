@@ -31,6 +31,7 @@ const meta = {
 	// Shared across every story below: every story here renders exactly one
 	// domain list with no delete in flight, unless it says otherwise.
 	args: {
+		canManage: true,
 		deleteBlockedCount: undefined,
 		deletingId: null,
 		onDelete: fn<(domainId: string) => void>(),
@@ -103,6 +104,37 @@ export const Failed: StoryObj<typeof meta> = {
 /** A mixed list: one working, one still pending. */
 export const Mixed: StoryObj<typeof meta> = {
 	args: {
+		domains: [
+			domain({
+				hostname: 'links.verein.test',
+				id: 'domain-1',
+				verification_status: 'verified',
+				verified_at: '2026-01-01T00:00:00Z',
+			}),
+			domain({
+				hostname: 'kurz.other-verein.test',
+				id: 'domain-2',
+				records: {
+					cname: { name: 'kurz.other-verein.test', value: 'cname.vercel-dns.com' },
+					txt: {
+						name: '_kurze-url-challenge.kurz.other-verein.test',
+						value: 'example-txt-token-two',
+					},
+				},
+				verification_token: 'example-txt-token-two',
+			}),
+		],
+	},
+};
+
+/**
+ * A viewer or an editor, below admin: every domain and a pending one's DNS
+ * records are still there, but there is no "Check now", no delete button and
+ * no Actions column. Mixed, so both a working and a pending row are covered.
+ */
+export const ViewerOrEditor: StoryObj<typeof meta> = {
+	args: {
+		canManage: false,
 		domains: [
 			domain({
 				hostname: 'links.verein.test',
