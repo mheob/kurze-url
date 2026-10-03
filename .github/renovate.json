@@ -7,6 +7,12 @@
 			"matchFileNames": ["packages/api-client/package.json"],
 			"matchPackageNames": ["typescript"],
 			"allowedVersions": "<7"
+		},
+		{
+			"description": "pnpm-workspace.yaml overrides js-yaml@4.2.0 to ^4.3.2 for two advisories, because @hey-api/json-schema-ref-parser (1.4.4, still the latest on 2026-10-03) pins 4.2.0 exactly. The override exists to stay on the major its parent expects; lifting it to 5 would force a breaking release under a package written for 4. Drop this rule together with the override once the parent bumps.",
+			"matchFileNames": ["pnpm-workspace.yaml"],
+			"matchPackageNames": ["js-yaml"],
+			"allowedVersions": "<5"
 		}
 	]
 }
