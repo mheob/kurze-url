@@ -7,16 +7,6 @@
 			"matchFileNames": ["packages/api-client/package.json"],
 			"matchPackageNames": ["typescript"],
 			"allowedVersions": "<7"
-		},
-		{
-			"description": "Held at the versions #91 pinned. router-core 1.171.30 changed interpolatePath's signature in a patch release and @storybook/tanstack-react 10.6.0 still calls the old form, so every story fails. Fixed by storybookjs/storybook#36333, in no release as of 2026-09-25. Remove this rule once Renovate proposes a @storybook/tanstack-react release that carries it, and move the four packages together.",
-			"matchPackageNames": [
-				"@tanstack/react-router",
-				"@tanstack/react-router-devtools",
-				"@tanstack/react-router-ssr-query",
-				"@tanstack/react-start"
-			],
-			"enabled": false
 		}
 	]
 }
