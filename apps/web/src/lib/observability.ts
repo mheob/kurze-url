@@ -33,6 +33,19 @@ const IP_OR_USER_LIKE_KEYS = ['forwarded', '-ip', 'remote-', 'via', '-user'];
 const BREADCRUMB_URL_KEYS = ['from', 'to', 'url'] as const;
 
 /**
+ * Breadcrumb `data` keys that hold a URL's query string or fragment on their
+ * own. The server SDK (the SSR bundle's outgoing `http` and `fetch` calls)
+ * splits both off the URL, writes an already query-free `url`, and keeps
+ * them beside it: as `url.query` and `url.fragment` since v11, as
+ * `http.query` and `http.fragment` in v10. Its own filter only masks the
+ * values of query parameters whose names look sensitive, so a search term
+ * such as `q=Schmidt` would pass. Stripping `url` alone misses them, so they
+ * are dropped outright, from every breadcrumb, by name — both generations,
+ * for the same reason `BREADCRUMB_URL_KEYS` ignores `category`.
+ */
+const BREADCRUMB_QUERY_KEYS = new Set(['http.fragment', 'http.query', 'url.fragment', 'url.query']);
+
+/**
  * `init`'s `dataCollection` option, read off the SDK this file imports:
  * `@sentry/core`, which declares it, is not a direct dependency.
  */
@@ -79,7 +92,8 @@ let initialized = false;
 
 /**
  * Filters out console breadcrumbs — which carry whatever any code logged —
- * and strips the query string from every URL-shaped breadcrumb field.
+ * strips the query string from every URL-shaped breadcrumb field, and
+ * deletes the fields that hold a query string or fragment on their own.
  * Split out of `scrubEvent` only to keep that function's own statement count
  * down; the in-place mutation contract is the same one documented there.
  *
@@ -96,8 +110,12 @@ function scrubBreadcrumbs(event: ErrorEvent): void {
 	event.breadcrumbs = event.breadcrumbs.filter((crumb) => crumb.category !== 'console');
 
 	for (const crumb of event.breadcrumbs) {
-		const { data } = crumb;
-		if (data) {
+		if (crumb.data) {
+			const data = Object.fromEntries(
+				Object.entries(crumb.data).filter(
+					([key]: readonly [string, unknown]) => !BREADCRUMB_QUERY_KEYS.has(key),
+				),
+			);
 			for (const key of BREADCRUMB_URL_KEYS) {
 				// `Breadcrumb.data` is typed `{ [key: string]: any }` by the
 				// SDK; the annotation narrows the read to `unknown` so it is
@@ -105,6 +123,7 @@ function scrubBreadcrumbs(event: ErrorEvent): void {
 				const value: unknown = data[key];
 				if (typeof value === 'string') data[key] = stripQueryString(value);
 			}
+			crumb.data = data;
 		}
 	}
 }
@@ -147,7 +166,8 @@ function scrubRequest(event: ErrorEvent): void {
  * are required.
  *
  * @param event - The event Sentry is about to send, mutated in place.
- * @returns `event`, with IP address, cookies, request body, query strings, and disallowed
+ * @returns `event`, with IP address, cookies, request body, query strings (including the
+ * query and fragment keys server-side breadcrumbs carry beside their URL), and disallowed
  * headers removed.
  */
 // oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `scrubEvent` deletes the IP address from `event` in place; that mutation is its documented contract, not an oversight.
