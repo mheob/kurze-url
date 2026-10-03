@@ -16,18 +16,68 @@ const context = {
 /**
  * Same pattern as `link-form.test.tsx`'s `renderForm`: `useTranslation` needs an `I18nextProvider` in the tree.
  *
- * @param props - The props to render `LinkPasswordCard` with.
+ * @param props - The props to render `LinkPasswordCard` with; `canEdit` defaults to true, since most tests here are about editing.
  * @returns The rendered test utilities from Testing Library's `render`.
  */
-function renderCard(props: LinkPasswordCardProps): ReturnType<typeof render> {
+function renderCard(
+	props: Omit<LinkPasswordCardProps, 'canEdit'> & { readonly canEdit?: boolean },
+): ReturnType<typeof render> {
 	return render(
 		<I18nextProvider i18n={createI18n('en')}>
-			<LinkPasswordCard {...props} />
+			<LinkPasswordCard canEdit {...props} />
 		</I18nextProvider>,
 	);
 }
 
 describe(LinkPasswordCard, () => {
+	// Below editor the API refuses set, change and remove with a 403, so the card
+	// only reports the state. Whether a password is set is still worth knowing:
+	// it is what a viewer would tell a visitor who asks why the link wants one.
+	describe('for a member below editor', () => {
+		it('reports a protected link and offers nothing to change', () => {
+			renderCard({
+				canEdit: false,
+				context,
+				hasPassword: true,
+				onRemove: vi.fn<() => void>(),
+				onSet: vi.fn(),
+			});
+
+			expect(screen.getByRole('heading', { name: 'Password protection' })).toBeInTheDocument();
+			expect(screen.getByText('This link is protected by a password.')).toBeInTheDocument();
+			expect(screen.queryByRole('button')).not.toBeInTheDocument();
+			expect(screen.queryByLabelText('Password')).not.toBeInTheDocument();
+		});
+
+		it('reports an unprotected link without a field to protect it', () => {
+			renderCard({
+				canEdit: false,
+				context,
+				hasPassword: false,
+				onRemove: vi.fn<() => void>(),
+				onSet: vi.fn(),
+			});
+
+			expect(screen.getByText('This link is not protected.')).toBeInTheDocument();
+			expect(screen.queryByRole('button')).not.toBeInTheDocument();
+			expect(screen.queryByLabelText('Password')).not.toBeInTheDocument();
+		});
+
+		// The explainer tells a reader to share the password with the people who
+		// should get through; that is an instruction to the person who sets it.
+		it('leaves out the explainer addressed to whoever sets the password', () => {
+			renderCard({
+				canEdit: false,
+				context,
+				hasPassword: true,
+				onRemove: vi.fn<() => void>(),
+				onSet: vi.fn(),
+			});
+
+			expect(screen.queryByText(/Share it with the people/u)).not.toBeInTheDocument();
+		});
+	});
+
 	it('offers to protect an unprotected link', () => {
 		renderCard({ context, hasPassword: false, onRemove: vi.fn<() => void>(), onSet: vi.fn() });
 

@@ -12,7 +12,7 @@ import { useTranslation } from 'react-i18next';
 import { TagPicker, type TagCreateResult, type TagOption } from './tag-picker';
 import { Button } from './ui/button';
 import { Checkbox } from './ui/checkbox';
-import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from './ui/field';
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldSet } from './ui/field';
 import { Input } from './ui/input';
 import { NativeSelect, NativeSelectOption } from './ui/native-select';
 
@@ -68,6 +68,11 @@ interface LinkFormProps {
 	/** Creates a tag by name from the picker; resolves to the tag or a message to show. */
 	readonly onCreateTag?: (name: string) => Promise<TagCreateResult>;
 	readonly onSubmit: (values: LinkFormValues) => void;
+	/**
+	 * Shows the values and nothing to operate: every field is disabled and
+	 * there is no submit button. For a member whose role cannot save them.
+	 */
+	readonly readOnly?: boolean;
 	/** Names for chosen tags the loaded `tags` may lack, e.g. from `link.tags` on the edit route. */
 	readonly tagNames?: ReadonlyMap<string, string>;
 	// Like `folders`, this renders whenever the prop is passed at all: an
@@ -114,6 +119,7 @@ export interface LinkFormValues {
  * @param props.initialVersion - The version `initial` came from; when it changes, the form re-seeds from `initial`.
  * @param props.onCreateTag - Creates a tag by name from the picker; without it, a create attempt shows the generic failure.
  * @param props.onSubmit - Called with the form's values on submit.
+ * @param props.readOnly - Disables every field and drops the submit button; false when absent.
  * @param props.tagNames - Names for chosen tags the loaded `tags` may lack, e.g. from `link.tags`.
  * @param props.tags - The team's tags; the tags field renders whenever this is passed, even empty.
  * @param props.tagsLoaded - Whether `tags` is the team's real list; only then is a chosen tag missing from it marked deleted.
@@ -129,6 +135,7 @@ export function LinkForm({
 	initialVersion,
 	onCreateTag,
 	onSubmit,
+	readOnly = false,
 	tagNames,
 	tags,
 	tagsLoaded,
@@ -182,6 +189,10 @@ export function LinkForm({
 			onSubmit={(event: Readonly<{ preventDefault: () => void; stopPropagation: () => void }>) => {
 				event.preventDefault();
 				event.stopPropagation();
+				// Nothing in a read-only form can raise this, since there is no submit
+				// button and every field is disabled; refusing here too keeps "a
+				// read-only form never saves" true without leaning on that.
+				if (readOnly) return;
 				void form.handleSubmit();
 			}}
 		>
@@ -191,152 +202,157 @@ export function LinkForm({
 				</FieldError>
 			) : null}
 
-			<FieldGroup>
-				<form.Field
-					name="destination_url"
-					validators={{
-						onChange: ({ value }: { readonly value: string }) =>
-							value.trim() === '' ? t('links.destinationRequired') : undefined,
-					}}
-				>
-					{(field) => {
-						const errorId = destinationUrlErrorId;
-						const errorMessage =
-							fieldErrors?.destination_url ??
-							(field.state.meta.isTouched ? field.state.meta.errors[0] : undefined);
+			{/* A disabled `fieldset` disables every native control inside it at once,
+			    which is why it wraps the group rather than each field carrying its own
+			    flag. It does not reach Base UI's non-native parts: the analytics
+			    checkbox and the tag picker's chips take `disabled` themselves below. */}
+			<FieldSet disabled={readOnly}>
+				<FieldGroup>
+					<form.Field
+						name="destination_url"
+						validators={{
+							onChange: ({ value }: { readonly value: string }) =>
+								value.trim() === '' ? t('links.destinationRequired') : undefined,
+						}}
+					>
+						{(field) => {
+							const errorId = destinationUrlErrorId;
+							const errorMessage =
+								fieldErrors?.destination_url ??
+								(field.state.meta.isTouched ? field.state.meta.errors[0] : undefined);
 
-						return (
-							<Field data-invalid={errorMessage !== undefined}>
-								<FieldLabel htmlFor={field.name}>{t('links.destination')}</FieldLabel>
-								<Input
-									aria-describedby={errorMessage !== undefined ? errorId : undefined}
-									aria-invalid={errorMessage !== undefined ? true : undefined}
-									id={field.name}
-									name={field.name}
-									onBlur={field.handleBlur}
-									onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
-										field.handleChange(event.target.value);
-									}}
-									required
-									type="url"
-									value={field.state.value}
-								/>
-								{errorMessage === undefined ? null : (
-									<FieldError id={errorId}>{errorMessage}</FieldError>
-								)}
-							</Field>
-						);
-					}}
-				</form.Field>
+							return (
+								<Field data-invalid={errorMessage !== undefined}>
+									<FieldLabel htmlFor={field.name}>{t('links.destination')}</FieldLabel>
+									<Input
+										aria-describedby={errorMessage !== undefined ? errorId : undefined}
+										aria-invalid={errorMessage !== undefined ? true : undefined}
+										id={field.name}
+										name={field.name}
+										onBlur={field.handleBlur}
+										onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
+											field.handleChange(event.target.value);
+										}}
+										required
+										type="url"
+										value={field.state.value}
+									/>
+									{errorMessage === undefined ? null : (
+										<FieldError id={errorId}>{errorMessage}</FieldError>
+									)}
+								</Field>
+							);
+						}}
+					</form.Field>
 
-				<form.Field name="slug">
-					{(field) => {
-						const errorId = slugErrorId;
-						const errorMessage = fieldErrors?.slug;
+					<form.Field name="slug">
+						{(field) => {
+							const errorId = slugErrorId;
+							const errorMessage = fieldErrors?.slug;
 
-						return (
-							<Field data-invalid={errorMessage !== undefined}>
-								<FieldLabel htmlFor={field.name}>{t('links.slug')}</FieldLabel>
-								{/* An empty slug means the API generates one. Said here, because a
+							return (
+								<Field data-invalid={errorMessage !== undefined}>
+									<FieldLabel htmlFor={field.name}>{t('links.slug')}</FieldLabel>
+									{/* An empty slug means the API generates one. Said here, because a
 								    blank required-looking field otherwise reads as an oversight. */}
-								<Input
-									aria-describedby={errorMessage !== undefined ? errorId : undefined}
-									aria-invalid={errorMessage !== undefined ? true : undefined}
-									id={field.name}
-									name={field.name}
-									onBlur={field.handleBlur}
-									onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
-										field.handleChange(event.target.value);
-									}}
-									placeholder={t('links.slugGenerated')}
-									value={field.state.value}
-								/>
-								{errorMessage === undefined ? null : (
-									<FieldError id={errorId}>{errorMessage}</FieldError>
-								)}
-							</Field>
-						);
-					}}
-				</form.Field>
+									<Input
+										aria-describedby={errorMessage !== undefined ? errorId : undefined}
+										aria-invalid={errorMessage !== undefined ? true : undefined}
+										id={field.name}
+										name={field.name}
+										onBlur={field.handleBlur}
+										onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
+											field.handleChange(event.target.value);
+										}}
+										placeholder={t('links.slugGenerated')}
+										value={field.state.value}
+									/>
+									{errorMessage === undefined ? null : (
+										<FieldError id={errorId}>{errorMessage}</FieldError>
+									)}
+								</Field>
+							);
+						}}
+					</form.Field>
 
-				{/* Not converted to the design system's `Select`: that control is a
+					{/* Not converted to the design system's `Select`: that control is a
 				    custom popup listbox rather than a native `<select>`, and swapping
 				    it in would change how this field is actually operated (and would
 				    stop `userEvent.selectOptions` from working in the tests below) —
 				    the opposite of this task's "behaviour does not change" rule.
 				    `NativeSelect` is the design system's styling on a real `<select>`,
 				    so it keeps both the behaviour and the shared look. */}
-				<form.Field name="redirect_type">
-					{(field) => {
-						const errorId = redirectTypeErrorId;
-						const errorMessage = fieldErrors?.redirect_type;
+					<form.Field name="redirect_type">
+						{(field) => {
+							const errorId = redirectTypeErrorId;
+							const errorMessage = fieldErrors?.redirect_type;
 
-						return (
-							<Field data-invalid={errorMessage !== undefined}>
-								<FieldLabel htmlFor={field.name}>{t('links.redirectType')}</FieldLabel>
-								<NativeSelect
-									aria-describedby={errorMessage !== undefined ? errorId : undefined}
-									aria-invalid={errorMessage !== undefined ? true : undefined}
-									id={field.name}
-									name={field.name}
-									onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
-										field.handleChange(Number(event.target.value));
-									}}
-									value={field.state.value}
-								>
-									<NativeSelectOption value={302}>{t('links.redirect302')}</NativeSelectOption>
-									<NativeSelectOption value={301}>{t('links.redirect301')}</NativeSelectOption>
-								</NativeSelect>
-								{errorMessage === undefined ? null : (
-									<FieldError id={errorId}>{errorMessage}</FieldError>
-								)}
-								{/* CLAUDE.md requires this. A cached 301 stops clicks being counted
+							return (
+								<Field data-invalid={errorMessage !== undefined}>
+									<FieldLabel htmlFor={field.name}>{t('links.redirectType')}</FieldLabel>
+									<NativeSelect
+										aria-describedby={errorMessage !== undefined ? errorId : undefined}
+										aria-invalid={errorMessage !== undefined ? true : undefined}
+										id={field.name}
+										name={field.name}
+										onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
+											field.handleChange(Number(event.target.value));
+										}}
+										value={field.state.value}
+									>
+										<NativeSelectOption value={302}>{t('links.redirect302')}</NativeSelectOption>
+										<NativeSelectOption value={301}>{t('links.redirect301')}</NativeSelectOption>
+									</NativeSelect>
+									{errorMessage === undefined ? null : (
+										<FieldError id={errorId}>{errorMessage}</FieldError>
+									)}
+									{/* CLAUDE.md requires this. A cached 301 stops clicks being counted
 								    and stops later destination changes taking effect for anyone who
 								    has already visited — breakage a volunteer cannot diagnose and
 								    cannot undo. It belongs next to the choice, not in a tooltip. */}
-								{field.state.value === REDIRECT_PERMANENT ? (
-									<FieldDescription role="note">{t('links.redirect301Warning')}</FieldDescription>
-								) : null}
-							</Field>
-						);
-					}}
-				</form.Field>
+									{field.state.value === REDIRECT_PERMANENT ? (
+										<FieldDescription role="note">{t('links.redirect301Warning')}</FieldDescription>
+									) : null}
+								</Field>
+							);
+						}}
+					</form.Field>
 
-				<form.Field name="expires_at">
-					{(field) => {
-						const errorId = expiresAtErrorId;
-						const errorMessage = fieldErrors?.expires_at;
+					<form.Field name="expires_at">
+						{(field) => {
+							const errorId = expiresAtErrorId;
+							const errorMessage = fieldErrors?.expires_at;
 
-						return (
-							<Field data-invalid={errorMessage !== undefined}>
-								<FieldLabel htmlFor={field.name}>{t('links.expiresAt')}</FieldLabel>
-								<Input
-									aria-describedby={errorMessage !== undefined ? errorId : undefined}
-									aria-invalid={errorMessage !== undefined ? true : undefined}
-									id={field.name}
-									name={field.name}
-									onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
-										field.handleChange(event.target.value);
-									}}
-									type="datetime-local"
-									value={field.state.value}
-								/>
-								{errorMessage === undefined ? null : (
-									<FieldError id={errorId}>{errorMessage}</FieldError>
-								)}
-							</Field>
-						);
-					}}
-				</form.Field>
+							return (
+								<Field data-invalid={errorMessage !== undefined}>
+									<FieldLabel htmlFor={field.name}>{t('links.expiresAt')}</FieldLabel>
+									<Input
+										aria-describedby={errorMessage !== undefined ? errorId : undefined}
+										aria-invalid={errorMessage !== undefined ? true : undefined}
+										id={field.name}
+										name={field.name}
+										onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
+											field.handleChange(event.target.value);
+										}}
+										type="datetime-local"
+										value={field.state.value}
+									/>
+									{errorMessage === undefined ? null : (
+										<FieldError id={errorId}>{errorMessage}</FieldError>
+									)}
+								</Field>
+							);
+						}}
+					</form.Field>
 
-				<form.Field name="analytics_enabled">
-					{(field) => {
-						const errorId = analyticsEnabledErrorId;
-						const errorMessage = fieldErrors?.analytics_enabled;
+					<form.Field name="analytics_enabled">
+						{(field) => {
+							const errorId = analyticsEnabledErrorId;
+							const errorMessage = fieldErrors?.analytics_enabled;
 
-						return (
-							<Field data-invalid={errorMessage !== undefined} orientation="horizontal">
-								{/* `id` is load-bearing, not a leftover: Base UI's `Checkbox` renders
+							return (
+								<Field data-invalid={errorMessage !== undefined} orientation="horizontal">
+									{/* `id` is load-bearing, not a leftover: Base UI's `Checkbox` renders
 								    a visible `role="checkbox"` `<span>` (its own generated id,
 								    unaffected by this prop) plus a hidden native input for form
 								    semantics, which *does* take this `id`. That hidden input's id is
@@ -346,59 +362,18 @@ export function LinkForm({
 								    at it — remove this prop and the span loses its accessible name,
 								    which is exactly what breaks link-form.test.tsx's "lets the reader
 								    turn analytics off" (`getByRole('checkbox', { name: ... })`). */}
-								<Checkbox
-									aria-describedby={errorMessage !== undefined ? errorId : undefined}
-									aria-invalid={errorMessage !== undefined ? true : undefined}
-									checked={field.state.value}
-									id={field.name}
-									name={field.name}
-									onCheckedChange={(checked: boolean) => {
-										field.handleChange(checked);
-									}}
-								/>
-								<FieldLabel htmlFor={field.name}>{t('links.analyticsEnabled')}</FieldLabel>
-								{errorMessage === undefined ? null : (
-									<FieldError id={errorId}>{errorMessage}</FieldError>
-								)}
-							</Field>
-						);
-					}}
-				</form.Field>
-
-				{/* Furniture check: a select offering only the shared domain is no
-				    choice at all, so this renders nothing unless the team has at
-				    least one verified domain to pick instead. The empty-valued
-				    option is the shared instance hostname — `toRequestBody` in the
-				    create route maps `''` back to `undefined`, exactly as it already
-				    does for `slug`/`expires_at`, so leaving this untouched keeps
-				    today's behaviour. Kept as a native `<select>` (via `NativeSelect`)
-				    for the same reason `redirect_type` above is. */}
-				{domains && domains.length > 0 ? (
-					<form.Field name="domain_id">
-						{(field) => {
-							const errorId = domainErrorId;
-							const errorMessage = fieldErrors?.domain_id;
-
-							return (
-								<Field data-invalid={errorMessage !== undefined}>
-									<FieldLabel htmlFor={field.name}>{t('links.domain')}</FieldLabel>
-									<NativeSelect
+									<Checkbox
 										aria-describedby={errorMessage !== undefined ? errorId : undefined}
 										aria-invalid={errorMessage !== undefined ? true : undefined}
+										checked={field.state.value}
+										disabled={readOnly}
 										id={field.name}
 										name={field.name}
-										onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
-											field.handleChange(event.target.value);
+										onCheckedChange={(checked: boolean) => {
+											field.handleChange(checked);
 										}}
-										value={field.state.value}
-									>
-										<NativeSelectOption value="">{t('links.domainShared')}</NativeSelectOption>
-										{domains.map((domain) => (
-											<NativeSelectOption key={domain.id} value={domain.id}>
-												{domain.hostname}
-											</NativeSelectOption>
-										))}
-									</NativeSelect>
+									/>
+									<FieldLabel htmlFor={field.name}>{t('links.analyticsEnabled')}</FieldLabel>
 									{errorMessage === undefined ? null : (
 										<FieldError id={errorId}>{errorMessage}</FieldError>
 									)}
@@ -406,101 +381,148 @@ export function LinkForm({
 							);
 						}}
 					</form.Field>
-				) : null}
 
-				{folders === undefined ? null : (
-					<form.Field name="folder_id">
-						{(field) => {
-							const errorMessage = fieldErrors?.folder_id;
-							const currentFolderId = field.state.value;
-							// A folder deleted between loading this form and the folders
-							// refetch that follows a "folder gone" 422: the value the form
-							// still holds is no longer among `folders`, and a controlled
-							// `<select>` with no matching option silently falls back to its
-							// first one ("No folder") while `field.state.value` keeps the
-							// stale id — the select then *shows* "No folder" while the form
-							// still *holds* the deleted id, so Save resends the same 422 and
-							// picking "No folder" for real fires no change event at all,
-							// since the select already looked selected on that option. Adding
-							// this option one time keeps the visible selection and the form
-							// state in agreement, so choosing "No folder" becomes a real
-							// change again. Never auto-cleared: on the edit route, a folders
-							// fetch that merely failed (not a deletion) would otherwise
-							// silently unfile the link on save.
-							const currentFolderIsUnknown =
-								currentFolderId !== '' && !folders.some((folder) => folder.id === currentFolderId);
-							return (
-								<Field data-invalid={errorMessage !== undefined}>
-									<FieldLabel htmlFor={field.name}>{t('links.folder')}</FieldLabel>
-									<NativeSelect
-										aria-describedby={errorMessage !== undefined ? folderErrorId : undefined}
-										aria-invalid={errorMessage !== undefined ? true : undefined}
-										id={field.name}
-										name={field.name}
-										onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
-											field.handleChange(event.target.value);
-										}}
-										value={field.state.value}
-									>
-										<NativeSelectOption value="">{t('links.folderNone')}</NativeSelectOption>
-										{currentFolderIsUnknown ? (
-											<NativeSelectOption value={currentFolderId}>
-												{t('links.folderUnknown')}
-											</NativeSelectOption>
+					{/* Furniture check: a select offering only the shared domain is no
+				    choice at all, so this renders nothing unless the team has at
+				    least one verified domain to pick instead. The empty-valued
+				    option is the shared instance hostname — `toRequestBody` in the
+				    create route maps `''` back to `undefined`, exactly as it already
+				    does for `slug`/`expires_at`, so leaving this untouched keeps
+				    today's behaviour. Kept as a native `<select>` (via `NativeSelect`)
+				    for the same reason `redirect_type` above is. */}
+					{domains && domains.length > 0 ? (
+						<form.Field name="domain_id">
+							{(field) => {
+								const errorId = domainErrorId;
+								const errorMessage = fieldErrors?.domain_id;
+
+								return (
+									<Field data-invalid={errorMessage !== undefined}>
+										<FieldLabel htmlFor={field.name}>{t('links.domain')}</FieldLabel>
+										<NativeSelect
+											aria-describedby={errorMessage !== undefined ? errorId : undefined}
+											aria-invalid={errorMessage !== undefined ? true : undefined}
+											id={field.name}
+											name={field.name}
+											onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
+												field.handleChange(event.target.value);
+											}}
+											value={field.state.value}
+										>
+											<NativeSelectOption value="">{t('links.domainShared')}</NativeSelectOption>
+											{domains.map((domain) => (
+												<NativeSelectOption key={domain.id} value={domain.id}>
+													{domain.hostname}
+												</NativeSelectOption>
+											))}
+										</NativeSelect>
+										{errorMessage === undefined ? null : (
+											<FieldError id={errorId}>{errorMessage}</FieldError>
+										)}
+									</Field>
+								);
+							}}
+						</form.Field>
+					) : null}
+
+					{folders === undefined ? null : (
+						<form.Field name="folder_id">
+							{(field) => {
+								const errorMessage = fieldErrors?.folder_id;
+								const currentFolderId = field.state.value;
+								// A folder deleted between loading this form and the folders
+								// refetch that follows a "folder gone" 422: the value the form
+								// still holds is no longer among `folders`, and a controlled
+								// `<select>` with no matching option silently falls back to its
+								// first one ("No folder") while `field.state.value` keeps the
+								// stale id — the select then *shows* "No folder" while the form
+								// still *holds* the deleted id, so Save resends the same 422 and
+								// picking "No folder" for real fires no change event at all,
+								// since the select already looked selected on that option. Adding
+								// this option one time keeps the visible selection and the form
+								// state in agreement, so choosing "No folder" becomes a real
+								// change again. Never auto-cleared: on the edit route, a folders
+								// fetch that merely failed (not a deletion) would otherwise
+								// silently unfile the link on save.
+								const currentFolderIsUnknown =
+									currentFolderId !== '' &&
+									!folders.some((folder) => folder.id === currentFolderId);
+								return (
+									<Field data-invalid={errorMessage !== undefined}>
+										<FieldLabel htmlFor={field.name}>{t('links.folder')}</FieldLabel>
+										<NativeSelect
+											aria-describedby={errorMessage !== undefined ? folderErrorId : undefined}
+											aria-invalid={errorMessage !== undefined ? true : undefined}
+											id={field.name}
+											name={field.name}
+											onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
+												field.handleChange(event.target.value);
+											}}
+											value={field.state.value}
+										>
+											<NativeSelectOption value="">{t('links.folderNone')}</NativeSelectOption>
+											{currentFolderIsUnknown ? (
+												<NativeSelectOption value={currentFolderId}>
+													{t('links.folderUnknown')}
+												</NativeSelectOption>
+											) : null}
+											{folders.map((folder) => (
+												<NativeSelectOption key={folder.id} value={folder.id}>
+													{folder.name}
+												</NativeSelectOption>
+											))}
+										</NativeSelect>
+										{folders.length === 0 && folderHint !== undefined ? (
+											<FieldDescription>{folderHint}</FieldDescription>
 										) : null}
-										{folders.map((folder) => (
-											<NativeSelectOption key={folder.id} value={folder.id}>
-												{folder.name}
-											</NativeSelectOption>
-										))}
-									</NativeSelect>
-									{folders.length === 0 && folderHint !== undefined ? (
-										<FieldDescription>{folderHint}</FieldDescription>
-									) : null}
-									{errorMessage === undefined ? null : (
-										<FieldError id={folderErrorId}>{errorMessage}</FieldError>
-									)}
-								</Field>
-							);
-						}}
-					</form.Field>
-				)}
+										{errorMessage === undefined ? null : (
+											<FieldError id={folderErrorId}>{errorMessage}</FieldError>
+										)}
+									</Field>
+								);
+							}}
+						</form.Field>
+					)}
 
-				{tags === undefined ? null : (
-					<form.Field name="tag_ids">
-						{(field) => (
-							<TagPicker
-								canCreate={canCreateTags ?? false}
-								// Only a loaded list can say a tag is gone. While the tags are
-								// pending or failed, `tags` is an empty stand-in, and marking
-								// every chip deleted against it would misreport a link whose
-								// tags are fine.
-								deletedIds={
-									tagsLoaded === true
-										? new Set(field.state.value.filter((id) => !tags.some((tag) => tag.id === id)))
-										: new Set()
-								}
-								error={fieldErrors?.tag_ids}
-								inputId={field.name}
-								knownNames={tagNames ?? new Map()}
-								label={t('links.tags')}
-								onChange={(ids) => {
-									field.handleChange(ids);
-								}}
-								onCreate={
-									onCreateTag ??
-									// oxlint-disable-next-line typescript/require-await -- `TagPicker`'s `onCreate` must return a `Promise`; this stand-in for a caller that wired no create call has nothing to await.
-									(async () => ({ error: t('errors.unknown') }))
-								}
-								options={tags}
-								value={field.state.value}
-							/>
-						)}
-					</form.Field>
-				)}
-			</FieldGroup>
+					{tags === undefined ? null : (
+						<form.Field name="tag_ids">
+							{(field) => (
+								<TagPicker
+									canCreate={canCreateTags ?? false}
+									// Only a loaded list can say a tag is gone. While the tags are
+									// pending or failed, `tags` is an empty stand-in, and marking
+									// every chip deleted against it would misreport a link whose
+									// tags are fine.
+									deletedIds={
+										tagsLoaded === true
+											? new Set(
+													field.state.value.filter((id) => !tags.some((tag) => tag.id === id)),
+												)
+											: new Set()
+									}
+									disabled={readOnly}
+									error={fieldErrors?.tag_ids}
+									inputId={field.name}
+									knownNames={tagNames ?? new Map()}
+									label={t('links.tags')}
+									onChange={(ids) => {
+										field.handleChange(ids);
+									}}
+									onCreate={
+										onCreateTag ??
+										// oxlint-disable-next-line typescript/require-await -- `TagPicker`'s `onCreate` must return a `Promise`; this stand-in for a caller that wired no create call has nothing to await.
+										(async () => ({ error: t('errors.unknown') }))
+									}
+									options={tags}
+									value={field.state.value}
+								/>
+							)}
+						</form.Field>
+					)}
+				</FieldGroup>
+			</FieldSet>
 
-			<Button type="submit">{t('links.save')}</Button>
+			{readOnly ? null : <Button type="submit">{t('links.save')}</Button>}
 		</form>
 	);
 }

@@ -11,6 +11,7 @@ import { classifyApiError, type ApiFailure } from '../../lib/api-errors';
 import { parseFolderIdSearch, remapFolderGoneFailure } from '../../lib/folders';
 import { parseUuidSearch } from '../../lib/names';
 import { remapTagGoneFailure } from '../../lib/tags';
+import { canEdit } from '../../lib/team-roles';
 import { domainsQueryOptions } from '../../server/domains';
 import { foldersQueryOptions, prefetchFolders } from '../../server/folders';
 import { createLinkFn } from '../../server/links';
@@ -231,7 +232,44 @@ export async function afterCreate(
 	await router.invalidate();
 }
 
+/**
+ * What a member below editor sees in place of the create form: the API
+ * refuses `POST /v1/teams/{id}/links` below `EditorScope`, so a form here
+ * could only end in a 403 after the visitor has filled it in. A page of its
+ * own rather than a redirect, because the address is real and the reader may
+ * have followed a link or a bookmark to it — they are told why it is empty
+ * and offered the way back, as the audit log does for a member below admin.
+ *
+ * @param props - The component's props.
+ * @param props.teamSlug - The team's slug, for the way back to its links.
+ * @returns The explanation and a link back to the list.
+ */
+function NewLinkForbidden({ teamSlug }: { readonly teamSlug: string }): React.JSX.Element {
+	const { t } = useTranslation();
+
+	return (
+		<>
+			<h1>{t('links.forbiddenTitle')}</h1>
+			<p>{t('links.forbiddenBody')}</p>
+			<Link params={{ teamSlug }} to="/teams/$teamSlug/links">
+				{t('links.backToList')}
+			</Link>
+		</>
+	);
+}
+
 function RouteComponent(): React.JSX.Element {
+	const { teamSlug } = Route.useParams();
+	const { role } = Route.useRouteContext();
+
+	// The page's mutation and queries all live in `NewLinkPage`, so a member who
+	// cannot create mounts none of them, and the hooks stay unconditional.
+	if (!canEdit(role)) return <NewLinkForbidden teamSlug={teamSlug} />;
+
+	return <NewLinkPage />;
+}
+
+function NewLinkPage(): React.JSX.Element {
 	const { teamSlug } = Route.useParams();
 	const { role, teamId } = Route.useRouteContext();
 	const domains = Route.useLoaderData();

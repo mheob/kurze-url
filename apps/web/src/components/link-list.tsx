@@ -18,6 +18,11 @@ import { Pagination, PaginationContent, PaginationItem } from './ui/pagination';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 
 interface LinkListViewProps {
+	/**
+	 * Whether the caller may create links (editor and up). Below that the list
+	 * offers no way to create one, and its row links read "Details", not "Edit".
+	 */
+	readonly canEdit: boolean;
 	readonly data: PageLink;
 	/** The active `folder` search value: absent for "all folders", `UNFILED_SEARCH_VALUE` for "no folder", otherwise a folder id. */
 	readonly folder: string | undefined;
@@ -91,6 +96,49 @@ function missingMessageKey(
 	return undefined;
 }
 
+// Below editor the page behind a row's link is read-only, so the link must not
+// promise an edit. Kept out of `LinkList` for the same reason as the two
+// functions above: oxlint's `complexity` is error-level and the component sits
+// at its limit, so each further branch moves out to a function like this.
+function rowLinkKey(canEdit: boolean): 'links.details' | 'links.edit' {
+	return canEdit ? 'links.edit' : 'links.details';
+}
+
+interface NewLinkActionProps {
+	/** Whether the caller may create links; when false this renders nothing. */
+	readonly canEdit: boolean;
+	/** The `folder` and `tag` the create form should preselect. */
+	readonly search: Readonly<{ folder?: string; tag?: string }>;
+	readonly teamSlug: string;
+}
+
+/**
+ * The way into the create form. Below editor it renders nothing, because the
+ * API refuses creation there; the check lives here rather than in `LinkList`
+ * because that component sits at oxlint's `complexity` limit.
+ *
+ * @param props - The component's props.
+ * @param props.canEdit - Whether the caller may create links.
+ * @param props.search - The `folder` and `tag` the create form should preselect.
+ * @param props.teamSlug - The team's slug, used only for the navigation link.
+ * @returns The link to the create form, or nothing below editor.
+ */
+function NewLinkAction({
+	canEdit,
+	search,
+	teamSlug,
+}: NewLinkActionProps): React.JSX.Element | null {
+	const { t } = useTranslation();
+
+	if (!canEdit) return null;
+
+	return (
+		<Link params={{ teamSlug }} search={search} to="/teams/$teamSlug/links/new">
+			{t('links.create')}
+		</Link>
+	);
+}
+
 interface TagChipsProps {
 	/** The active `folder` search value, kept by every chip so a click narrows the current view. */
 	readonly folder: string | undefined;
@@ -152,6 +200,7 @@ function TagChips({ folder, tags, teamSlug }: TagChipsProps): React.JSX.Element 
  * than the id — unlike its caller, it never feeds an API call.
  *
  * @param props - The component's props.
+ * @param props.canEdit - Whether the caller may create links; false hides "Create link" and words the row links "Details".
  * @param props.data - The already-fetched page of links.
  * @param props.folder - The active `folder` search value.
  * @param props.folders - The team's folders, or `undefined` while they have not loaded yet.
@@ -163,6 +212,7 @@ function TagChips({ folder, tags, teamSlug }: TagChipsProps): React.JSX.Element 
  * @returns The rendered link list, or an empty-state message.
  */
 export function LinkList({
+	canEdit,
 	data,
 	folder,
 	folders,
@@ -274,7 +324,7 @@ export function LinkList({
 								</TableCell>
 								<TableCell>
 									<Link params={{ linkId: link.id, teamSlug }} to="/teams/$teamSlug/links/$linkId">
-										{t('links.edit')}
+										{t(rowLinkKey(canEdit))}
 									</Link>
 								</TableCell>
 							</TableRow>
@@ -320,13 +370,12 @@ export function LinkList({
 			{selected === undefined ? null : <p>{t('links.inFolder', { name: selected.name })}</p>}
 			{selectedTag === undefined ? null : <p>{t('links.inTag', { name: selectedTag.name })}</p>}
 			{folder === UNFILED_SEARCH_VALUE ? <p>{t('links.folderNone')}</p> : null}
-			{/* Always here, filtered or not, populated or empty — the empty
-			    state used to carry its own "create" link, which this
-			    subsumes; see link-list.test.tsx for the single-link
-			    assertion that pins there being only one. */}
-			<Link params={{ teamSlug }} search={newLinkSearch} to="/teams/$teamSlug/links/new">
-				{t('links.create')}
-			</Link>
+			{/* Always here for an editor, filtered or not, populated or empty — the
+			    empty state used to carry its own "create" link, which this
+			    subsumes; see link-list.test.tsx for the single-link assertion
+			    that pins there being only one. Below editor the API refuses
+			    creation, so there is nothing to offer. */}
+			<NewLinkAction canEdit={canEdit} search={newLinkSearch} teamSlug={teamSlug} />
 			<LinkFilterBar
 				folder={folder}
 				folders={folders}

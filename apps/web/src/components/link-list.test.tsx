@@ -60,6 +60,8 @@ function pageOf(items: readonly ApiLink[] = []): PageLink {
 
 /** The props `renderList`/`listElement` accept; every field has a default so a test only names what it cares about. */
 interface ListElementOptions {
+	/** Defaults to true: most tests are about the list, not about who may edit. */
+	readonly canEdit?: boolean;
 	readonly data?: PageLink;
 	readonly folder?: string;
 	readonly folders?: readonly Folder[];
@@ -159,6 +161,7 @@ function renderList(initial: ListElementOptions = {}): Omit<
 		}, []);
 		return (
 			<LinkList
+				canEdit={state.canEdit ?? true}
 				data={state.data ?? pageOf()}
 				folder={state.folder}
 				folders={foldersOf(state)}
@@ -284,6 +287,57 @@ describe(LinkList, () => {
 		expect(editLinks).toHaveLength(2);
 		expect(editLinks[0]).toHaveAttribute('href', '/teams/verein-a/links/link-1');
 		expect(editLinks[1]).toHaveAttribute('href', '/teams/verein-a/links/link-2');
+	});
+
+	// Below editor the API refuses create, update and delete with a 403, so
+	// the list stops offering the way in. The row link stays, because the
+	// link page is how a viewer reads a link's settings and gets its QR code
+	// and statistics; only its wording changes, so it does not promise an edit.
+	describe('for a member below editor', () => {
+		it('offers no way to create a link, with links or on an empty team', async () => {
+			renderList({ canEdit: false, data: pageOf([linkWith()]) });
+			await expect(
+				screen.findByRole('link', { name: 'https://short.invalid/abc123' }),
+			).resolves.toBeInTheDocument();
+			expect(screen.queryByRole('link', { name: 'Create link' })).not.toBeInTheDocument();
+
+			renderList({ canEdit: false });
+			await expect(screen.findByText('No links yet.')).resolves.toBeInTheDocument();
+			expect(screen.queryByRole('link', { name: 'Create link' })).not.toBeInTheDocument();
+		});
+
+		it('words each row link as "Details", still addressed at the link page', async () => {
+			renderList({
+				canEdit: false,
+				data: pageOf([
+					linkWith(),
+					linkWith({ id: 'link-2', short_url: 'https://short.invalid/def456' }),
+				]),
+			});
+
+			const detailLinks = await screen.findAllByRole('link', { name: 'Details' });
+			expect(detailLinks).toHaveLength(2);
+			expect(detailLinks[0]).toHaveAttribute('href', '/teams/verein-a/links/link-1');
+			expect(detailLinks[1]).toHaveAttribute('href', '/teams/verein-a/links/link-2');
+			expect(screen.queryByRole('link', { name: 'Edit' })).not.toBeInTheDocument();
+		});
+
+		it('keeps the filters, the chips and the pagination', async () => {
+			renderList({
+				canEdit: false,
+				data: {
+					...pageOf([linkWith({ tags: [{ id: 'tag-1', name: 'Jugend', team_id: 'a' }] })]),
+					per_page: 1,
+					total_count: 2,
+				},
+				folders: [],
+				tags: [{ id: 'tag-1', name: 'Jugend', team_id: 'a' }],
+			});
+
+			await expect(screen.findByRole('link', { name: 'Jugend' })).resolves.toBeInTheDocument();
+			expect(screen.getByRole('link', { name: 'Next page' })).toBeInTheDocument();
+			expect(screen.getByRole('heading', { level: 1, name: 'Your links' })).toBeInTheDocument();
+		});
 	});
 
 	it('lists every link on the page with a copy button and its destination', async () => {

@@ -13,6 +13,7 @@ import { classifyApiError, type ApiFailure } from '../../lib/api-errors';
 import { folderFilterOf, parseFolderSearch } from '../../lib/folders';
 import { parseUuidSearch } from '../../lib/names';
 import { reportUnexpected } from '../../lib/observability';
+import { canEdit } from '../../lib/team-roles';
 import { foldersQueryOptions, prefetchFolders } from '../../server/folders';
 import { linksQueryOptions, type LinkFilter } from '../../server/links';
 import { prefetchTags, tagsQueryOptions } from '../../server/tags';
@@ -180,6 +181,9 @@ export const Route = createFileRoute('/_authed/teams/$teamSlug/links/')({
 		search: { folder?: unknown; page?: number | string; tag?: unknown } & SearchSchemaInput,
 	): { folder?: string; page: number; tag?: string } => parseLinksSearch(search),
 	beforeLoad: ({ context, params }) => ({
+		// Decides whether the list offers to create a link and how its row links
+		// read, the same way the folders page decides whether to offer its form.
+		role: context.me.memberships.find((membership) => membership.slug === params.teamSlug)?.role,
 		teamId: requireTeamId(context.me.memberships, params.teamSlug),
 	}),
 	loaderDeps: ({ search }) => ({ folder: search.folder, page: search.page, tag: search.tag }),
@@ -261,7 +265,7 @@ export function LinksError({ error }: { readonly error: unknown }): React.JSX.El
 
 function RouteComponent(): React.JSX.Element {
 	const { teamSlug } = Route.useParams();
-	const { teamId } = Route.useRouteContext();
+	const { role, teamId } = Route.useRouteContext();
 	const { folder, page, tag } = Route.useSearch();
 	const navigate = Route.useNavigate();
 	const { data } = useSuspenseQuery(
@@ -287,6 +291,7 @@ function RouteComponent(): React.JSX.Element {
 
 	return (
 		<LinkList
+			canEdit={canEdit(role)}
 			data={data}
 			folder={folder}
 			folders={folders}

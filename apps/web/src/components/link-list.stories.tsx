@@ -53,6 +53,7 @@ const TAGS: readonly Tag[] = [
 
 const meta = {
 	args: {
+		canEdit: true,
 		folder: undefined,
 		folders: FOLDERS,
 		onFilterChange: fn<(next: Readonly<{ folder?: string; tag?: string }>) => void>(),
@@ -79,6 +80,34 @@ export const Populated: StoryObj<typeof meta> = {
 		data: pageOf({
 			items: [
 				link({ folder_id: 'folder-1' }),
+				link({
+					destination_url: 'https://example.org/other',
+					id: 'link-2',
+					short_url: 'https://kurze.url/def456',
+					slug: 'def456',
+				}),
+			],
+			total_count: 2,
+		}),
+		page: 1,
+		teamSlug: 'verein-a',
+	},
+};
+
+/**
+ * A viewer's list: no "Create link", and each row's link to the link page
+ * reads "Details" because there is nothing to edit there — the filters, tag
+ * chips and pagination are unchanged.
+ */
+export const Viewer: StoryObj<typeof meta> = {
+	args: {
+		canEdit: false,
+		data: pageOf({
+			items: [
+				link({
+					folder_id: 'folder-1',
+					tags: [{ id: 'tag-1', name: 'Jugend', team_id: 'a' }],
+				}),
 				link({
 					destination_url: 'https://example.org/other',
 					id: 'link-2',

@@ -12,15 +12,19 @@ import { useTranslation } from 'react-i18next';
 
 import { ConfirmDelete } from '../../components/confirm-delete';
 import { LinkForm, type LinkFormValues } from '../../components/link-form';
-import { LinkPasswordCard } from '../../components/link-password-card';
+import {
+	LinkPasswordCard,
+	type LinkPasswordContext,
+	type LinkPasswordReason,
+} from '../../components/link-password-card';
 import { LinkQRCard } from '../../components/link-qr-card';
 import { buttonVariants } from '../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { useLinkFormTags } from '../../hooks/use-link-form-tags';
 import { classifyApiError, type ApiFailure, type QrRejectionReason } from '../../lib/api-errors';
 import { remapFolderGoneFailure } from '../../lib/folders';
-import type { LinkPasswordContext, LinkPasswordReason } from '../../lib/link-password';
 import { remapTagGoneFailure, sameTagSet } from '../../lib/tags';
+import { canEdit } from '../../lib/team-roles';
 import { foldersQueryOptions, prefetchFolders } from '../../server/folders';
 import {
 	deleteLinkFn,
@@ -697,6 +701,11 @@ function RouteComponent(): React.JSX.Element {
 
 	const fieldErrors = failure?.kind === 'fields' ? failure.fields : undefined;
 	const formMessage = failure && failure.kind !== 'fields' ? t(`errors.${failure.kind}`) : null;
+	// Below editor the API refuses the form's save, the password's set, change
+	// and remove, and the delete with a 403, so this page offers none of them. A
+	// viewer still reads the link here, and keeps the QR download and the
+	// statistics, which are viewer-scope reads.
+	const mayEdit = canEdit(role);
 
 	return (
 		<>
@@ -752,6 +761,7 @@ function RouteComponent(): React.JSX.Element {
 						onSubmit={(values) => {
 							updateMutation.mutate(values);
 						}}
+						readOnly={!mayEdit}
 						tagNames={new Map((link.tags ?? []).map((tag) => [tag.id, tag.name]))}
 						tags={tags}
 						tagsLoaded={tagsLoaded}
@@ -759,6 +769,7 @@ function RouteComponent(): React.JSX.Element {
 				</CardContent>
 			</Card>
 			<LinkPasswordCard
+				canEdit={mayEdit}
 				context={toPasswordContext(link, me.memberships, teamSlug)}
 				hasPassword={hasPassword}
 				key={`password-${linkId}`}
@@ -794,23 +805,27 @@ function RouteComponent(): React.JSX.Element {
 				rejection={qrRejection}
 				svg={qrQuery.data}
 			/>
-			<Card>
-				<CardHeader>
-					{/* Same `CardTitle`/`<h2>` note as the details card above. */}
-					<CardTitle>
-						<h2>{t('links.deleteHeading')}</h2>
-					</CardTitle>
-				</CardHeader>
-				<CardContent>
-					<ConfirmDelete
-						label={t('links.delete')}
-						onConfirm={() => {
-							deleteMutation.mutate();
-						}}
-						question={t('links.deleteQuestion')}
-					/>
-				</CardContent>
-			</Card>
+			{/* The whole card, not only its control: a "Delete link" heading with
+			    nothing under it would announce an action that does not exist. */}
+			{mayEdit ? (
+				<Card>
+					<CardHeader>
+						{/* Same `CardTitle`/`<h2>` note as the details card above. */}
+						<CardTitle>
+							<h2>{t('links.deleteHeading')}</h2>
+						</CardTitle>
+					</CardHeader>
+					<CardContent>
+						<ConfirmDelete
+							label={t('links.delete')}
+							onConfirm={() => {
+								deleteMutation.mutate();
+							}}
+							question={t('links.deleteQuestion')}
+						/>
+					</CardContent>
+				</Card>
+			) : null}
 		</>
 	);
 }
