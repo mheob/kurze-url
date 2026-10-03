@@ -25,8 +25,8 @@ type retentionBody struct {
 	// The audit pair sits beside the click pair under prefixed names rather
 	// than regrouping all four, because the workflow's logs are read by
 	// deleted and oldest_kept and those two keys must keep meaning what they
-	// meant. AuditOldestKept is auditRetentionFloor's day, for the same reason
-	// OldestKept is retentionFloor's.
+	// meant. AuditOldestKept is the audit log endpoint's retained_since, for
+	// the same reason OldestKept is the stats endpoint's floor.
 	AuditDeleted    int64  `json:"audit_deleted"`
 	AuditOldestKept string `json:"audit_oldest_kept"`
 }

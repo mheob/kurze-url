@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -26,12 +27,22 @@ import (
 // describes. Folding the two into one constant would make one of them wrong.
 //
 // auditRetentionFloor is the only place this becomes a boundary; nothing else
-// may restate the arithmetic.
+// may restate the arithmetic. The retention job deletes before it, and
+// GET /v1/teams/{team_id}/audit-log serves from it forward and reports its day
+// as retained_since, which is where the web filter reads it from instead of
+// restating the period in TypeScript. The operation's description interpolates
+// this constant and no doc tag states the period, so the published contract
+// cannot keep naming an old period after the constant changes.
+// TestAuditRetentionFloorIsTheAuditLogsFloor holds the job and the endpoint
+// together.
 const AuditRetentionYears = 2
 
 // auditRetentionFloor is the oldest instant the audit log keeps: the start of
 // the current UTC day, as dayOf defines a day, two calendar years back. The
-// retention job deletes every entry created before it.
+// retention job deletes every entry created before it, and the audit log
+// endpoint never serves one: between two of the job's daily runs the floor
+// has already moved past entries the job has not yet deleted, and showing
+// them would let a reader see what the policy says is gone.
 //
 // AddDate normalises a date that does not exist, so on 29 February the floor
 // two years back is 1 March rather than 28 February. That keeps one day less,
@@ -40,6 +51,24 @@ const AuditRetentionYears = 2
 // other direction.
 func auditRetentionFloor(now time.Time) time.Time {
 	return dayOf(now).AddDate(-AuditRetentionYears, 0, 0)
+}
+
+// auditLogFrom is the lower bound the audit log query actually runs with: the
+// caller's from, raised to the retention floor when it is earlier or absent
+// (the zero time is earlier than any floor). It raises rather than refuses
+// because a bookmarked filter outlives the floor that moves under it every
+// day, and an error for "older than we keep" would break a link that still
+// has a sensible answer.
+//
+// to needs no counterpart. A to before the floor leaves from > to, which the
+// query answers with no rows, and an empty page is the honest answer to a
+// window whose entries are all gone.
+func auditLogFrom(requested, now time.Time) time.Time {
+	floor := auditRetentionFloor(now)
+	if requested.Before(floor) {
+		return floor
+	}
+	return requested
 }
 
 // AuditEntry is one audit_log row. Metadata is passed through verbatim: the
@@ -63,13 +92,24 @@ type ListAuditLogInput struct {
 	EntityType  string    `query:"entity_type" enum:"team,team_member,domain,folder,tag,link" doc:"Restrict to one entity type."`
 	Action      string    `query:"action" maxLength:"64" doc:"Restrict to one action, e.g. team_member.removed."`
 	ActorUserID string    `query:"actor_user_id" doc:"Restrict to one actor, as a UUID."`
-	From        time.Time `query:"from" doc:"Only entries at or after this instant (RFC 3339)."`
-	To          time.Time `query:"to" doc:"Only entries at or before this instant (RFC 3339)."`
+	From        time.Time `query:"from" doc:"Only entries at or after this instant (RFC 3339). Entries older than the retention floor are deleted and never returned, so an earlier or absent from is raised to the floor; retained_since in the response names its day."`
+	To          time.Time `query:"to" doc:"Only entries at or before this instant (RFC 3339). A to before the retention floor matches nothing and answers an empty page, not an error."`
+}
+
+// AuditLogPage is a page of the audit log plus the day it reaches back to.
+//
+// Page is embedded without a JSON name, so Huma splices its four fields into
+// this object the way encoding/json does (the same mechanism StatDay relies
+// on for StatCounts), and the generated schema is the usual envelope with one
+// more required property rather than an envelope nested inside another.
+type AuditLogPage struct {
+	Page[AuditEntry]
+	RetainedSince string `json:"retained_since" doc:"The first day, as YYYY-MM-DD in UTC, this log still holds entries for. Entries before this day have been deleted automatically, and a from filter earlier than this day is raised to it."`
 }
 
 // ListAuditLogOutput is the body of GET /v1/teams/{team_id}/audit-log.
 type ListAuditLogOutput struct {
-	Body Page[AuditEntry]
+	Body AuditLogPage
 }
 
 func (d Deps) registerAuditLog(api huma.API) {
@@ -78,9 +118,11 @@ func (d Deps) registerAuditLog(api huma.API) {
 		Method:      http.MethodGet,
 		Path:        "/v1/teams/{team_id}/audit-log",
 		Summary:     "Read a team's audit log",
-		Description: "Administrative history, so it is restricted to admins and owners.",
-		Tags:        []string{"Audit"},
-		Security:    []map[string][]string{{"bearerAuth": {}}},
+		Description: fmt.Sprintf("Administrative history, so it is restricted to admins and owners. "+
+			"Entries are kept for %d years and deleted automatically after that; "+
+			"retained_since says how far back this log reaches.", AuditRetentionYears),
+		Tags:     []string{"Audit"},
+		Security: []map[string][]string{{"bearerAuth": {}}},
 	}, d.listAuditLog)
 }
 
@@ -89,8 +131,14 @@ func (d Deps) listAuditLog(
 ) (*ListAuditLogOutput, error) {
 	member := in.Member()
 
+	// One reading of the clock, so the floor the query is clamped to and the
+	// retained_since reported beside the result cannot straddle midnight.
+	now := d.now()
+	from := auditLogFrom(in.From, now)
+
 	params := db.ListAuditLogParams{
 		TeamID:       member.TeamID,
+		From:         &from,
 		ResultLimit:  in.Limit(),
 		ResultOffset: in.Offset(),
 	}
@@ -109,10 +157,6 @@ func (d Deps) listAuditLog(
 			return nil, huma.Error422UnprocessableEntity("actor_user_id must be a UUID")
 		}
 		params.ActorUserID = &actor
-	}
-	if !in.From.IsZero() {
-		from := in.From
-		params.From = &from
 	}
 	if !in.To.IsZero() {
 		to := in.To
@@ -144,6 +188,8 @@ func (d Deps) listAuditLog(
 		})
 	}
 
+	// The count runs with the same clamped from as the page above, so a page
+	// past the end reports the total of what the endpoint will actually show.
 	if NeedsTotalFallback(in.PageParams, len(rows)) {
 		total, err = d.Queries.CountAuditLog(ctx, db.CountAuditLogParams{
 			TeamID:      params.TeamID,
@@ -159,5 +205,8 @@ func (d Deps) listAuditLog(
 		}
 	}
 
-	return &ListAuditLogOutput{Body: NewPage(items, in.PageParams, total)}, nil
+	return &ListAuditLogOutput{Body: AuditLogPage{
+		Page:          NewPage(items, in.PageParams, total),
+		RetainedSince: auditRetentionFloor(now).Format(dayLayout),
+	}}, nil
 }

@@ -1,4 +1,4 @@
-import type { AuditEntry, Member, PageAuditEntry, PageMember } from '@kurze-url/api-client';
+import type { AuditEntry, AuditLogPage, Member, PageMember } from '@kurze-url/api-client';
 import {
 	createFileRoute,
 	Link as RouterLink,
@@ -101,7 +101,7 @@ export type AuditLogPageData =
  */
 export async function loadAuditLogPage(
 	options: Readonly<{
-		fetchLog: () => Promise<PageAuditEntry>;
+		fetchLog: () => Promise<AuditLogPage>;
 		fetchMembers: () => Promise<PageMember>;
 	}>,
 ): Promise<AuditLogPageData> {

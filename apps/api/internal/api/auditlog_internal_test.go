@@ -39,3 +39,26 @@ func TestAuditRetentionFloorOnALeapDay(t *testing.T) {
 
 	require.Equal(t, "2026-03-01", floor.Format(dayLayout))
 }
+
+// The clamp raises from to the floor and nothing else: a from inside the
+// retained window, including one exactly at the floor, is the reader's own.
+func TestAuditLogFromOnlyEverRaises(t *testing.T) {
+	now := time.Date(2026, 10, 3, 9, 0, 0, 0, time.UTC)
+	floor := time.Date(2024, 10, 3, 0, 0, 0, 0, time.UTC)
+
+	cases := map[string]struct {
+		requested time.Time
+		want      time.Time
+	}{
+		"absent":        {time.Time{}, floor},
+		"before":        {floor.Add(-time.Second), floor},
+		"at the floor":  {floor, floor},
+		"after":         {floor.Add(time.Hour), floor.Add(time.Hour)},
+		"in the future": {now.AddDate(0, 1, 0), now.AddDate(0, 1, 0)},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, c.want, auditLogFrom(c.requested, now))
+		})
+	}
+}

@@ -1,12 +1,19 @@
-import type { PageAuditEntry, PageMember } from '@kurze-url/api-client';
+import type { AuditLogPage, PageMember } from '@kurze-url/api-client';
 import { isNotFound } from '@tanstack/react-router';
 import { describe, expect, it } from 'vitest';
 
 import { loadAuditLogPage } from './teams.$teamSlug.audit-log';
 
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `PageAuditEntry` is a generated `@kurze-url/api-client` type; `Readonly<>` is shallow and can't reach its nested `items` array from this side of the codegen boundary.
-function logPage(overrides: Readonly<Partial<PageAuditEntry>> = {}): PageAuditEntry {
-	return { items: [], page: 1, per_page: 20, total_count: 0, ...overrides };
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `AuditLogPage` is a generated `@kurze-url/api-client` type; `Readonly<>` is shallow and can't reach its nested `items` array from this side of the codegen boundary.
+function logPage(overrides: Readonly<Partial<AuditLogPage>> = {}): AuditLogPage {
+	return {
+		items: [],
+		page: 1,
+		per_page: 20,
+		retained_since: '2024-10-03',
+		total_count: 0,
+		...overrides,
+	};
 }
 
 // oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- same reason as `logPage` above: `PageMember` is generated codegen output with a mutable nested `items` array.
