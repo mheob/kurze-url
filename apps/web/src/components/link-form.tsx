@@ -49,17 +49,73 @@ const KNOWN_FIELD_NAMES: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Whether the link was saved with a slug, which is what makes this the edit
+ * form: the create form has none yet, and so nothing to keep or retire.
+ *
+ * @param saved - The slug the link was saved with; absent or empty on the create form.
+ * @returns True when there is a saved slug.
+ */
+function hasSavedSlug(saved: string | undefined): saved is string {
+	return (saved?.trim() ?? '') !== '';
+}
+
+/**
  * Whether the slug in the field is a different address from the saved one.
  * The API stores slugs trimmed and lowercase, so a change of case or of
  * surrounding whitespace alone is the same address and not a change.
+ *
+ * A blank field is not a change either. On the edit form an empty slug means
+ * "keep the current path": the edit route sends none and the API leaves the
+ * saved one alone, so nothing is retired and warning that it would be would
+ * be false. (Whitespace alone reaches the API as a slug and is refused as
+ * malformed, which retires nothing either.)
  *
  * @param saved - The slug the link was saved with; absent or empty on the create form, which has nothing to retire.
  * @param current - The slug now in the field.
  * @returns True when saving would move the link to another address.
  */
 function isSlugChange(saved: string | undefined, current: string): boolean {
-	const savedSlug = saved?.trim().toLowerCase() ?? '';
-	return savedSlug !== '' && current.trim().toLowerCase() !== savedSlug;
+	const currentSlug = current.trim().toLowerCase();
+	return hasSavedSlug(saved) && currentSlug !== '' && currentSlug !== saved.trim().toLowerCase();
+}
+
+/**
+ * An inline warning that is announced when it appears, not only read when its
+ * field gains focus (WCAG 2.1 SC 4.1.3, Status Messages). `aria-describedby`
+ * covers the second case and nothing else: a warning that appears while focus
+ * is already in the field, as both of these do, would otherwise go unspoken.
+ *
+ * The live region is a wrapper that is always rendered, rather than the note
+ * itself: a region is announced for what is added to it after it exists, and
+ * the note only exists while the warning applies. It stays out of the
+ * `Field`'s flex flow while empty (`sr-only` is `position: absolute`),
+ * because an empty flex child would still add its 12px gap after the input,
+ * and it is not `hidden`, because `display: none` would drop it from the
+ * accessibility tree and leave nothing registered to announce into. The note
+ * keeps its own `role="note"`, so it reads the same as before wherever a
+ * field points `aria-describedby` at it.
+ *
+ * @param props - The component's props.
+ * @param props.id - The note's id, for an input's `aria-describedby` to point at; omitted when nothing refers to it.
+ * @param props.message - The warning to show and announce, or undefined while it does not apply.
+ * @returns The live region, empty while there is no message.
+ */
+function LiveNote({
+	id,
+	message,
+}: {
+	readonly id?: string;
+	readonly message: string | undefined;
+}): React.JSX.Element {
+	return (
+		<div aria-live="polite" className="empty:sr-only">
+			{message === undefined ? null : (
+				<FieldDescription id={id} role="note">
+					{message}
+				</FieldDescription>
+			)}
+		</div>
+	);
 }
 
 interface LinkFormProps {
@@ -278,8 +334,10 @@ export function LinkForm({
 							return (
 								<Field data-invalid={errorMessage !== undefined}>
 									<FieldLabel htmlFor={field.name}>{t('links.slug')}</FieldLabel>
-									{/* An empty slug means the API generates one. Said here, because a
-								    blank required-looking field otherwise reads as an oversight. */}
+									{/* An empty slug is not an error, and what it does depends on the
+								    form: the create form has the API generate one, the edit form keeps
+								    the saved one. Said here, because a blank required-looking field
+								    otherwise reads as an oversight. */}
 									<Input
 										aria-describedby={describedBy === '' ? undefined : describedBy}
 										aria-invalid={errorMessage !== undefined ? true : undefined}
@@ -289,7 +347,9 @@ export function LinkForm({
 										onChange={(event: Readonly<{ target: Readonly<{ value: string }> }>) => {
 											field.handleChange(event.target.value);
 										}}
-										placeholder={t('links.slugGenerated')}
+										placeholder={t(
+											hasSavedSlug(initial?.slug) ? 'links.slugKeep' : 'links.slugGenerated',
+										)}
 										value={field.state.value}
 									/>
 									{errorMessage === undefined ? null : (
@@ -303,11 +363,10 @@ export function LinkForm({
 									    server-side rule for a hazard this names already. The input's
 									    `aria-describedby` points at it, so a screen reader reads it as the
 									    input's description when the field gains focus. */}
-									{warnsOfChange ? (
-										<FieldDescription id={slugChangeWarningId} role="note">
-											{t('links.slugChangeWarning')}
-										</FieldDescription>
-									) : null}
+									<LiveNote
+										id={slugChangeWarningId}
+										message={warnsOfChange ? t('links.slugChangeWarning') : undefined}
+									/>
 								</Field>
 							);
 						}}
@@ -348,9 +407,13 @@ export function LinkForm({
 								    and stops later destination changes taking effect for anyone who
 								    has already visited — breakage a volunteer cannot diagnose and
 								    cannot undo. It belongs next to the choice, not in a tooltip. */}
-									{field.state.value === REDIRECT_PERMANENT ? (
-										<FieldDescription role="note">{t('links.redirect301Warning')}</FieldDescription>
-									) : null}
+									<LiveNote
+										message={
+											field.state.value === REDIRECT_PERMANENT
+												? t('links.redirect301Warning')
+												: undefined
+										}
+									/>
 								</Field>
 							);
 						}}

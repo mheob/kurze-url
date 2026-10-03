@@ -154,6 +154,67 @@ describe('scrubEvent breadcrumb URLs', () => {
 	});
 
 	/**
+	 * A fragment is as private as a query string: a browser navigation
+	 * breadcrumb's `from`/`to` carries `location`'s path, search and hash, and
+	 * the hash is where a client-side route or a token can sit. Cut at
+	 * whichever of `?` and `#` comes first, so the order they appear in does not
+	 * decide what survives.
+	 */
+	it.each([
+		[
+			'a fragment and no query',
+			'/teams/sv-gruenwald/members#token=secret',
+			'/teams/sv-gruenwald/members',
+		],
+		[
+			'a query before a fragment',
+			'/teams/sv-gruenwald/members?q=Schmidt#top',
+			'/teams/sv-gruenwald/members',
+		],
+		[
+			'a fragment before a query',
+			'/teams/sv-gruenwald/members#top?q=Schmidt',
+			'/teams/sv-gruenwald/members',
+		],
+		[
+			'a query and no fragment',
+			'/teams/sv-gruenwald/members?q=Schmidt',
+			'/teams/sv-gruenwald/members',
+		],
+		[
+			'neither a query nor a fragment',
+			'/teams/sv-gruenwald/members',
+			'/teams/sv-gruenwald/members',
+		],
+		['a bare fragment', '#top', ''],
+	])('cuts a breadcrumb URL with %s', (_name: string, input: string, expected: string) => {
+		const event: ErrorEvent = {
+			breadcrumbs: [
+				{ category: 'fetch', data: { url: input } },
+				{ category: 'navigation', data: { from: input, to: input } },
+			],
+			type: undefined,
+		};
+
+		const got = scrubEvent(event);
+
+		expect(got.breadcrumbs?.[0]?.data?.url).toBe(expected);
+		expect(got.breadcrumbs?.[1]?.data?.from).toBe(expected);
+		expect(got.breadcrumbs?.[1]?.data?.to).toBe(expected);
+	});
+
+	it('cuts a fragment off the request URL too', () => {
+		const event: ErrorEvent = {
+			request: { url: 'https://kurze-url.app/teams/sv-gruenwald/links#access_token=secret' },
+			type: undefined,
+		};
+
+		const got = scrubEvent(event);
+
+		expect(got.request?.url).toBe('https://kurze-url.app/teams/sv-gruenwald/links');
+	});
+
+	/**
 	 * On the server (the SSR bundle's outgoing `http` and `fetch` calls), v11
 	 * splits the query string and fragment off the URL into keys of their
 	 * own, beside an already query-free `url`. Stripping `url` alone leaves a

@@ -27,8 +27,8 @@ const IP_OR_USER_LIKE_KEYS = ['forwarded', '-ip', 'remote-', 'via', '-user'];
  * category names across majors (the same reason `console` filtering below
  * matches on data shape, not on the integration that produced it), and
  * these three key names are specific enough that stripping a query string
- * off whatever they hold is safe even on a breadcrumb category that turns
- * out not to carry a URL after all.
+ * and fragment off whatever they hold is safe even on a breadcrumb category
+ * that turns out not to carry a URL after all.
  */
 const BREADCRUMB_URL_KEYS = ['from', 'to', 'url'] as const;
 
@@ -64,15 +64,22 @@ type ExplicitDataCollection = {
 };
 
 /**
- * Strips the query string off a URL. Shared by `request.url` and every breadcrumb field that carries a URL.
+ * Strips the query string and the fragment off a URL. Shared by `request.url`
+ * and every breadcrumb field that carries a URL.
+ *
+ * A fragment is cut as well because the browser SDK reads these values from
+ * `location`, hash included, and a client-side route or a token can sit
+ * there. The cut is at whichever of `?` and `#` comes first: a `?` after a
+ * `#` is part of the fragment, not a query, so cutting at `?` alone would
+ * leave it behind.
  *
  * @param url - The URL (or breadcrumb field value) to strip.
- * @returns `url` with everything from the first `?` onward removed.
+ * @returns `url` with everything from the first `?` or `#` onward removed.
  */
-function stripQueryString(url: string): string {
-	// `split` on a non-empty separator always yields at least one element;
-	// the `?? url` only satisfies `noUncheckedIndexedAccess`, it is never hit.
-	return url.split('?')[0] ?? url;
+function stripQueryAndFragment(url: string): string {
+	// `split` always yields at least one element; the `?? url` only satisfies
+	// `noUncheckedIndexedAccess`, it is never hit.
+	return url.split(/[?#]/u)[0] ?? url;
 }
 
 /**
@@ -92,7 +99,7 @@ let initialized = false;
 
 /**
  * Filters out console breadcrumbs — which carry whatever any code logged —
- * strips the query string from every URL-shaped breadcrumb field, and
+ * strips the query string and fragment from every URL-shaped breadcrumb field, and
  * deletes the fields that hold a query string or fragment on their own.
  * Split out of `scrubEvent` only to keep that function's own statement count
  * down; the in-place mutation contract is the same one documented there.
@@ -121,7 +128,7 @@ function scrubBreadcrumbs(event: ErrorEvent): void {
 				// SDK; the annotation narrows the read to `unknown` so it is
 				// checked below instead of trusted.
 				const value: unknown = data[key];
-				if (typeof value === 'string') data[key] = stripQueryString(value);
+				if (typeof value === 'string') data[key] = stripQueryAndFragment(value);
 			}
 			crumb.data = data;
 		}
@@ -129,7 +136,7 @@ function scrubBreadcrumbs(event: ErrorEvent): void {
 }
 
 /**
- * Strips cookies, the request body, the query string, and every header
+ * Strips cookies, the request body, the query string and fragment, and every header
  * outside `ALLOWED_HEADERS` from `event.request`. Split out of `scrubEvent`
  * only to keep that function's own statement count down; the in-place
  * mutation contract is the same one documented there.
@@ -144,7 +151,8 @@ function scrubRequest(event: ErrorEvent): void {
 	delete request.cookies;
 	delete request.data;
 	delete request.query_string;
-	if (request.url !== undefined && request.url !== '') request.url = stripQueryString(request.url);
+	if (request.url !== undefined && request.url !== '')
+		request.url = stripQueryAndFragment(request.url);
 	if (request.headers) {
 		request.headers = Object.fromEntries(
 			Object.entries(request.headers).filter(([name]: readonly [string, string]) =>
@@ -166,9 +174,9 @@ function scrubRequest(event: ErrorEvent): void {
  * are required.
  *
  * @param event - The event Sentry is about to send, mutated in place.
- * @returns `event`, with IP address, cookies, request body, query strings (including the
- * query and fragment keys server-side breadcrumbs carry beside their URL), and disallowed
- * headers removed.
+ * @returns `event`, with IP address, cookies, request body, query strings and fragments
+ * (including the query and fragment keys server-side breadcrumbs carry beside their URL),
+ * and disallowed headers removed.
  */
 // oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `scrubEvent` deletes the IP address from `event` in place; that mutation is its documented contract, not an oversight.
 export function scrubEvent(event: ErrorEvent): ErrorEvent {
