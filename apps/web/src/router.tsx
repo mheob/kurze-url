@@ -64,14 +64,19 @@ export function getRouter() {
 	// unhandled rejections: `@sentry/node`'s default integrations register
 	// those as plain `process.on` handlers, which need no loader hook.
 	//
-	// What is missing is automatic instrumentation — the HTTP, database and
-	// framework calls Sentry patches at import time. That is what Sentry's
-	// `--import ./instrument.server.mjs` actually buys: OpenTelemetry has to
-	// load before the modules it patches, and `getRouter` runs long after.
-	// This deployment cannot arrange it anyway (the server bundle is built by
-	// Nitro and run by Vercel, and neither exposes the node command line), and
-	// with tracing off there is nothing to instrument for — but that is the
-	// constraint to solve first if auto-instrumentation is ever wanted.
+	// What is missing is automatic instrumentation of libraries — the
+	// database and framework calls Sentry traces. (Node's own `http` and
+	// `fetch` publish diagnostics channels that Sentry subscribes to at
+	// `init`, so those need nothing earlier.) Since SDK v11 that is a code
+	// transform injecting diagnostics-channel calls into those libraries,
+	// applied in one of two places. At runtime, a module hook does it, which
+	// has to be registered before the libraries load and so needs node's
+	// `--import` (`getRouter` runs long after) — out of reach here, because
+	// the server bundle is built by Nitro and run by Vercel, and neither
+	// exposes the node command line. At build time, the `sentryTanstackStart`
+	// Vite plugin does it, on by default, but only in builds that register the
+	// plugin (`SENTRY_AUTH_TOKEN` set). With tracing off it emits no spans
+	// either way; the build-time route is where to start if that ever changes.
 	initSentry(router.isServer);
 
 	return router;

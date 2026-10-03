@@ -152,6 +152,82 @@ describe('scrubEvent breadcrumb URLs', () => {
 		expect(got.breadcrumbs?.[0]?.data?.from).toBe('/teams/sv-gruenwald/invite');
 		expect(got.breadcrumbs?.[0]?.data?.to).toBe('/teams/sv-gruenwald/verify');
 	});
+
+	/**
+	 * On the server (the SSR bundle's outgoing `http` and `fetch` calls), v11
+	 * splits the query string and fragment off the URL into keys of their
+	 * own, beside an already query-free `url`. Stripping `url` alone leaves a
+	 * search term like this one on its way to Sentry.
+	 */
+	it('drops the query and fragment keys from a server-side breadcrumb', () => {
+		const event: ErrorEvent = {
+			breadcrumbs: [
+				{
+					category: 'http',
+					data: {
+						'http.request.method': 'GET',
+						status_code: 200,
+						url: 'https://api.kurze-url.app/v1/me',
+						'url.fragment': 'members',
+						'url.query': 'q=Schmidt',
+					},
+					level: 'info',
+					type: 'http',
+				},
+			],
+			type: undefined,
+		};
+
+		const got = scrubEvent(event);
+
+		expect(got.breadcrumbs).toStrictEqual([
+			{
+				category: 'http',
+				data: {
+					'http.request.method': 'GET',
+					status_code: 200,
+					url: 'https://api.kurze-url.app/v1/me',
+				},
+				level: 'info',
+				type: 'http',
+			},
+		]);
+	});
+
+	/**
+	 * v10 wrote the same two values under `http.query` and `http.fragment`.
+	 * Swept as well, so a breadcrumb of either shape loses them.
+	 */
+	it('drops the v10 query and fragment keys from a server-side breadcrumb', () => {
+		const event: ErrorEvent = {
+			breadcrumbs: [
+				{
+					category: 'fetch',
+					data: {
+						'http.fragment': '#members',
+						'http.method': 'GET',
+						'http.query': '?token=secret',
+						url: 'https://api.kurze-url.app/v1/teams/1/invite?token=secret',
+					},
+					type: 'http',
+				},
+			],
+			type: undefined,
+		};
+
+		const got = scrubEvent(event);
+
+		expect(got.breadcrumbs).toStrictEqual([
+			{
+				category: 'fetch',
+				data: {
+					'http.method': 'GET',
+					url: 'https://api.kurze-url.app/v1/teams/1/invite',
+				},
+				type: 'http',
+			},
+		]);
+	});
 });
 
 describe(isReportable, () => {
@@ -184,12 +260,12 @@ describe(isReportable, () => {
 
 describe(sentryOptions, () => {
 	/**
-	 * `@sentry/core`'s `resolveDataCollectionOptions` falls back to its own
-	 * permissive `DEFAULTS` — not the `sendDefaultPii: false` off-state — for
-	 * any field a supplied `dataCollection` object does not set. Pinning the
-	 * full field list here means adding a field to the SDK's type without
-	 * setting it here, or deleting one that is set here, fails this test
-	 * instead of silently falling through to "collect".
+	 * `@sentry/core`'s `resolveDataCollectionOptions` resolves every field a
+	 * supplied `dataCollection` object does not set to its own permissive
+	 * `DEFAULTS`. This reads the keys of `sentryOptions`' own object, so it
+	 * catches a field deleted from there; a field a future SDK release adds
+	 * is the type guard's job in `observability.ts`, which this test cannot
+	 * see.
 	 */
 	it('sets every DataCollectionOptions field explicitly', () => {
 		const { dataCollection } = sentryOptions('https://public@o0.ingest.sentry.io/0');
@@ -209,6 +285,7 @@ describe(sentryOptions, () => {
 				'graphQL',
 				'httpBodies',
 				'httpHeaders',
+				'queues',
 				'stackFrameVariables',
 				'urlQueryParams',
 				'userInfo',
@@ -217,6 +294,32 @@ describe(sentryOptions, () => {
 		expect(new Set(Object.keys(httpHeaders))).toStrictEqual(new Set(['request', 'response']));
 		expect(new Set(Object.keys(graphQL))).toStrictEqual(new Set(['document', 'variables']));
 		expect(new Set(Object.keys(genAI))).toStrictEqual(new Set(['inputs', 'outputs']));
+	});
+
+	/**
+	 * The type guard only checks that every field is present, not what it
+	 * holds: `queues: true` or `userInfo: true` type-checks just as well and
+	 * quietly widens collection. Every value here is what v10's
+	 * `sendDefaultPii: false` resolved to, plus `queues: false` for the field
+	 * v11 added, which that off-state never collected.
+	 */
+	it('keeps every dataCollection field at the v10 sendDefaultPii off-state', () => {
+		const { dataCollection } = sentryOptions('https://public@o0.ingest.sentry.io/0');
+		const deny = { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] };
+
+		expect(dataCollection).toStrictEqual({
+			cookies: deny,
+			databaseQueryData: false,
+			frameContextLines: 7,
+			genAI: { inputs: false, outputs: false },
+			graphQL: { document: true, variables: true },
+			httpBodies: [],
+			httpHeaders: { request: deny, response: deny },
+			queues: false,
+			stackFrameVariables: true,
+			urlQueryParams: deny,
+			userInfo: false,
+		});
 	});
 });
 

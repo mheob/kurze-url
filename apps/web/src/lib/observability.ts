@@ -33,6 +33,37 @@ const IP_OR_USER_LIKE_KEYS = ['forwarded', '-ip', 'remote-', 'via', '-user'];
 const BREADCRUMB_URL_KEYS = ['from', 'to', 'url'] as const;
 
 /**
+ * Breadcrumb `data` keys that hold a URL's query string or fragment on their
+ * own. The server SDK (the SSR bundle's outgoing `http` and `fetch` calls)
+ * splits both off the URL, writes an already query-free `url`, and keeps
+ * them beside it: as `url.query` and `url.fragment` since v11, as
+ * `http.query` and `http.fragment` in v10. Its own filter only masks the
+ * values of query parameters whose names look sensitive, so a search term
+ * such as `q=Schmidt` would pass. Stripping `url` alone misses them, so they
+ * are dropped outright, from every breadcrumb, by name — both generations,
+ * for the same reason `BREADCRUMB_URL_KEYS` ignores `category`.
+ */
+const BREADCRUMB_QUERY_KEYS = new Set(['http.fragment', 'http.query', 'url.fragment', 'url.query']);
+
+/**
+ * `init`'s `dataCollection` option, read off the SDK this file imports:
+ * `@sentry/core`, which declares it, is not a direct dependency.
+ */
+type DataCollection = NonNullable<Parameters<typeof init>[0]['dataCollection']>;
+
+/**
+ * `DataCollection` with every field required, and the fields of its nested
+ * `genAI`, `graphQL` and `httpHeaders` objects too, since v11 resolves an
+ * unset nested field to its permissive default exactly as it does a
+ * top-level one. `sentryOptions` checks its object against this with
+ * `satisfies`, so a field a future SDK release adds fails `pnpm typecheck`
+ * instead of silently defaulting to "collect".
+ */
+type ExplicitDataCollection = {
+	[Field in keyof DataCollection]-?: Required<NonNullable<DataCollection[Field]>>;
+};
+
+/**
  * Strips the query string off a URL. Shared by `request.url` and every breadcrumb field that carries a URL.
  *
  * @param url - The URL (or breadcrumb field value) to strip.
@@ -61,7 +92,8 @@ let initialized = false;
 
 /**
  * Filters out console breadcrumbs — which carry whatever any code logged —
- * and strips the query string from every URL-shaped breadcrumb field.
+ * strips the query string from every URL-shaped breadcrumb field, and
+ * deletes the fields that hold a query string or fragment on their own.
  * Split out of `scrubEvent` only to keep that function's own statement count
  * down; the in-place mutation contract is the same one documented there.
  *
@@ -78,8 +110,12 @@ function scrubBreadcrumbs(event: ErrorEvent): void {
 	event.breadcrumbs = event.breadcrumbs.filter((crumb) => crumb.category !== 'console');
 
 	for (const crumb of event.breadcrumbs) {
-		const { data } = crumb;
-		if (data) {
+		if (crumb.data) {
+			const data = Object.fromEntries(
+				Object.entries(crumb.data).filter(
+					([key]: readonly [string, unknown]) => !BREADCRUMB_QUERY_KEYS.has(key),
+				),
+			);
 			for (const key of BREADCRUMB_URL_KEYS) {
 				// `Breadcrumb.data` is typed `{ [key: string]: any }` by the
 				// SDK; the annotation narrows the read to `unknown` so it is
@@ -87,6 +123,7 @@ function scrubBreadcrumbs(event: ErrorEvent): void {
 				const value: unknown = data[key];
 				if (typeof value === 'string') data[key] = stripQueryString(value);
 			}
+			crumb.data = data;
 		}
 	}
 }
@@ -129,7 +166,8 @@ function scrubRequest(event: ErrorEvent): void {
  * are required.
  *
  * @param event - The event Sentry is about to send, mutated in place.
- * @returns `event`, with IP address, cookies, request body, query strings, and disallowed
+ * @returns `event`, with IP address, cookies, request body, query strings (including the
+ * query and fragment keys server-side breadcrumbs carry beside their URL), and disallowed
  * headers removed.
  */
 // oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `scrubEvent` deletes the IP address from `event` in place; that mutation is its documented contract, not an oversight.
@@ -168,30 +206,27 @@ export function reportUnexpected(error: unknown): void {
 }
 
 /**
- * `dataCollection` is the v10 replacement for the deprecated
- * `sendDefaultPii: false`. It is defence in depth next to `scrubEvent`, not
- * a substitute for it.
+ * `dataCollection` is what replaced `sendDefaultPii`, which SDK v11 removed.
+ * It is defence in depth next to `scrubEvent`, not a substitute for it.
  *
  * No tracing and no replay: `tracesSampleRate` stays unset, and replay would
  * be PII capture by design.
  *
- * `@sentry/core`'s `resolveDataCollectionOptions` falls back to its own
- * permissive `DEFAULTS` — not the `sendDefaultPii: false` off-state — for
- * every field this object does not set, the instant `dataCollection` is
- * present at all (`options.dataCollection != null ? DEFAULTS : …`). A
- * partial object here does not narrow collection, it silently widens
- * whatever it leaves out — `databaseQueryData` defaults to `true`, and
- * `@sentry/core` ships a Supabase integration this app uses, so a field
- * left unset today can start attaching query values and returned rows
- * tomorrow with nobody having touched this file.
+ * `@sentry/core`'s `resolveDataCollectionOptions` resolves every field this
+ * object does not set to its own permissive `DEFAULTS`
+ * (`dc.<field> ?? DEFAULTS.<field>`) — the same values v11 uses when
+ * `dataCollection` is left out altogether, and they collect. A partial
+ * object here does not narrow collection, it silently widens whatever it
+ * leaves out — `databaseQueryData` defaults to `true`, and `@sentry/core`
+ * ships a Supabase integration this app uses, so a field left unset today
+ * can start attaching query values and returned rows tomorrow with nobody
+ * having touched this file.
  *
  * So every field of `DataCollection` (`@sentry/core`'s
- * `types/datacollection.d.ts`) is set explicitly below, to the value
- * `sendDefaultPii: false` itself resolves to
- * (`defaultPiiToCollectionOptions(false)`) unless a comment says otherwise.
- * The deprecated `queryParams` field is the one omission: `urlQueryParams`
- * below already resolves first (`dc.urlQueryParams ?? dc.queryParams ?? …`),
- * so `queryParams` is never consulted.
+ * `types/datacollection.d.ts`) is set explicitly below, to the value v10's
+ * `sendDefaultPii: false` resolved to (`defaultPiiToCollectionOptions(false)`,
+ * gone in v11 along with the option) unless a comment says otherwise, and
+ * `satisfies ExplicitDataCollection` refuses an object that leaves one out.
  *
  * @param dsn - The Sentry DSN to send events to.
  * @returns The options object to pass to `Sentry.init`.
@@ -208,10 +243,9 @@ export function sentryOptions(dsn: string): Parameters<typeof init>[0] {
 			// such integration is in use, but this is the field the DEFAULTS
 			// fallback would otherwise flip to `true` unnoticed.
 			databaseQueryData: false,
-			// The type's own `@default 5` is stale — both the on- and
-			// off-state actually resolve this to 7 (a comment in
-			// `defaultPiiToCollectionOptions` notes the mismatch); matching
-			// the off-state's real value, not its doc comment.
+			// v10's off-state resolved this to 7, the ContextLines
+			// integration's own default; v11's `DEFAULTS` say 5. Kept at 7,
+			// so stack traces show the same source context as before.
 			frameContextLines: 7,
 			genAI: { inputs: false, outputs: false },
 			// The off-state's `true`: the SDK redacts literal values out of
@@ -224,6 +258,8 @@ export function sentryOptions(dsn: string): Parameters<typeof init>[0] {
 				request: { deny: IP_OR_USER_LIKE_KEYS },
 				response: { deny: IP_OR_USER_LIKE_KEYS },
 			},
+			// New in v11 and on by default; v10's off-state never collected queue task arguments.
+			queues: false,
 			// The off-state's `true`: stack-frame local variables are not
 			// gated by `sendDefaultPii` either. Left matching the off-state
 			// rather than narrowed further, since that narrowing belongs to
@@ -232,7 +268,7 @@ export function sentryOptions(dsn: string): Parameters<typeof init>[0] {
 			stackFrameVariables: true,
 			urlQueryParams: { deny: IP_OR_USER_LIKE_KEYS },
 			userInfo: false,
-		},
+		} satisfies ExplicitDataCollection,
 		dsn,
 		// Vercel's own VERCEL_ENV and VERCEL_GIT_COMMIT_SHA exist only at
 		// build time and carry no VITE_ prefix, so the browser bundle cannot
@@ -250,7 +286,9 @@ export function sentryOptions(dsn: string): Parameters<typeof init>[0] {
  * server bundle is built by Nitro and run by Vercel, and neither exposes the
  * node command line. With tracing off, plain `Sentry.init` is enough for
  * error capture, which is all this project asked for. If auto-instrumentation
- * is ever wanted, that constraint is what has to be solved first.
+ * is ever wanted, v11's build-time route needs no command line: the
+ * `sentryTanstackStart` Vite plugin injects it into the server bundle
+ * (`router.tsx` has the details).
  *
  * @param isServer - Whether this call runs in the server bundle; tags the event's `serverName`.
  */
