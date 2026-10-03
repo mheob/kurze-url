@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
@@ -16,13 +17,14 @@ import (
 // seedClick writes one rollup row directly. The recorder's own upsert path has
 // its own tests; what matters here is what the read queries make of rows that
 // already exist. Cleanup is inherited: link_click_stats.link_id cascades from
-// link, which cascades from the team newLinkFixture removes.
+// link, which cascades from the team newLinkFixture removes. conn is the pool,
+// or the transaction isolateDelete hands out.
 func seedClick(
-	t *testing.T, pool *pgxpool.Pool, linkID uuid.UUID,
+	t *testing.T, conn db.DBTX, linkID uuid.UUID,
 	day, dimensionType string, dimensionValue *string, clicks, unique int64,
 ) {
 	t.Helper()
-	_, err := pool.Exec(context.Background(),
+	_, err := conn.Exec(context.Background(),
 		`insert into link_click_stats
 		   (link_id, bucket_start, dimension_type, dimension_value, clicks, unique_visitors)
 		 values ($1, $2::date, $3, $4, $5, $6)`,
@@ -31,6 +33,34 @@ func seedClick(
 }
 
 func strptr(v string) *string { return &v }
+
+// isolateDelete opens a transaction for a test of DeleteExpiredClickStats,
+// rolled back when the test ends, and returns it with queries bound to it.
+//
+// The delete is instance-wide and these tests assert exact counts, while
+// `go test ./...` runs other packages' tests in parallel processes against the
+// same database. Two things keep the counts exact, and both are needed:
+//
+//   - Everything such a test seeds goes through the transaction, so no other
+//     test can see, count or delete it, and nothing outlives the test even if
+//     the run is killed.
+//   - Its rows and its cutoff are in the year 2000, older than any row any
+//     test commits. The delete still sees every committed row older than its
+//     cutoff, whoever wrote it: with a cutoff in 2026,
+//     internal/api's TestLinkStatsClampsTheWindowToRetention, which commits a
+//     row dated 2026-01-02, was counted here whenever the two ran at once.
+//
+// A new test that commits click rows or audit entries dated before
+// 2000-06-05 would break that second half.
+func isolateDelete(t *testing.T, pool *pgxpool.Pool) (pgx.Tx, *db.Queries) {
+	t.Helper()
+	tx, err := pool.Begin(context.Background())
+	require.NoError(t, err)
+	// Registered after newLinkFixture's cleanup, so it runs first: the team
+	// delete must not wait on rows this transaction still holds.
+	t.Cleanup(func() { _ = tx.Rollback(context.Background()) })
+	return tx, db.New(tx)
+}
 
 // day parses a YYYY-MM-DD literal into the UTC midnight the date column maps
 // to, so a test can pass the same value to seedClick and to the query.
@@ -197,18 +227,18 @@ func TestGetLinkClickBreakdownsExcludesTheTotalDimension(t *testing.T) {
 // offers — and unlike deleting too little, that cannot be undone.
 func TestDeleteExpiredClickStatsKeepsTheOldestServedDay(t *testing.T) {
 	f := newLinkFixture(t)
-	pool := testPool(t)
 	link := f.create(t, "retention")
+	tx, queries := isolateDelete(t, testPool(t))
 
-	for _, d := range []string{"2026-06-03", "2026-06-04", "2026-06-05", "2026-09-01"} {
-		seedClick(t, pool, link.ID, d, "total", nil, 1, 1)
+	for _, d := range []string{"2000-06-03", "2000-06-04", "2000-06-05", "2000-09-01"} {
+		seedClick(t, tx, link.ID, d, "total", nil, 1, 1)
 	}
 
-	deleted, err := f.queries.DeleteExpiredClickStats(context.Background(), day(t, "2026-06-05"))
+	deleted, err := queries.DeleteExpiredClickStats(context.Background(), day(t, "2000-06-05"))
 	require.NoError(t, err)
 	require.EqualValues(t, 2, deleted, "only the two days strictly before the cutoff")
 
-	rows, err := pool.Query(context.Background(),
+	rows, err := tx.Query(context.Background(),
 		`select bucket_start from link_click_stats where link_id = $1 order by bucket_start`,
 		link.ID)
 	require.NoError(t, err)
@@ -221,7 +251,7 @@ func TestDeleteExpiredClickStatsKeepsTheOldestServedDay(t *testing.T) {
 		remaining = append(remaining, bucket.UTC())
 	}
 	require.NoError(t, rows.Err())
-	require.Equal(t, []time.Time{day(t, "2026-06-05"), day(t, "2026-09-01")}, remaining,
+	require.Equal(t, []time.Time{day(t, "2000-06-05"), day(t, "2000-09-01")}, remaining,
 		"the cutoff day itself survives")
 }
 
@@ -232,11 +262,11 @@ func TestDeleteExpiredClickStatsKeepsTheOldestServedDay(t *testing.T) {
 // evidence that separates a working job from one that stopped running.
 func TestDeleteExpiredClickStatsReportsZeroWithoutErroring(t *testing.T) {
 	f := newLinkFixture(t)
-	pool := testPool(t)
 	link := f.create(t, "nothing-old")
-	seedClick(t, pool, link.ID, "2026-09-01", "total", nil, 5, 5)
+	tx, queries := isolateDelete(t, testPool(t))
+	seedClick(t, tx, link.ID, "2000-09-01", "total", nil, 5, 5)
 
-	deleted, err := f.queries.DeleteExpiredClickStats(context.Background(), day(t, "2026-06-05"))
+	deleted, err := queries.DeleteExpiredClickStats(context.Background(), day(t, "2000-06-05"))
 
 	require.NoError(t, err)
 	require.EqualValues(t, 0, deleted)
@@ -250,23 +280,23 @@ func TestDeleteExpiredClickStatsReportsZeroWithoutErroring(t *testing.T) {
 // it would erase twenty-one months of history the audit log promises to keep.
 func TestDeleteExpiredClickStatsLeavesTheAuditLogAlone(t *testing.T) {
 	f := newLinkFixture(t)
-	pool := testPool(t)
 	link := f.create(t, "audit-untouched")
-	seedClick(t, pool, link.ID, "2026-01-01", "total", nil, 1, 1)
+	tx, queries := isolateDelete(t, testPool(t))
+	seedClick(t, tx, link.ID, "2000-01-01", "total", nil, 1, 1)
 
 	var auditID int64
-	require.NoError(t, pool.QueryRow(context.Background(),
+	require.NoError(t, tx.QueryRow(context.Background(),
 		`insert into audit_log (team_id, actor_user_id, action, entity_type, entity_id, metadata, created_at)
-		 values ($1, $2, 'link.created', 'link', $3, '{}'::jsonb, '2026-01-01T00:00:00Z')
+		 values ($1, $2, 'link.created', 'link', $3, '{}'::jsonb, '2000-01-01T00:00:00Z')
 		 returning id`,
 		f.teamID, f.userID, link.ID).Scan(&auditID))
 
-	deleted, err := f.queries.DeleteExpiredClickStats(context.Background(), day(t, "2026-06-05"))
+	deleted, err := queries.DeleteExpiredClickStats(context.Background(), day(t, "2000-06-05"))
 	require.NoError(t, err)
 	require.EqualValues(t, 1, deleted)
 
 	var surviving int
-	require.NoError(t, pool.QueryRow(context.Background(),
+	require.NoError(t, tx.QueryRow(context.Background(),
 		`select count(*) from audit_log where id = $1`, auditID).Scan(&surviving))
 	require.Equal(t, 1, surviving, "audit_log is out of this job's scope, on purpose")
 }

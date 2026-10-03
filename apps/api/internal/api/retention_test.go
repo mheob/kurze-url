@@ -109,13 +109,13 @@ func (i interceptedDB) Exec(ctx context.Context, sql string, args ...any) (pgcon
 //
 // Both deletes are instance-wide, and `go test ./...` runs internal/db's tests
 // in a parallel process against the same database, with click-delete tests of
-// their own that seed rows as old as 2026-01-01 and assert exact counts. Rows
-// seeded here inside the transaction are invisible to that process, and
-// nothing here commits, so the other package can neither delete nor count
-// them, and nothing a test seeds outlives it even if the run is killed. The
-// other direction is settled per test: a test whose click delete is real pins
-// its clock so its cutoff lies below every row internal/db seeds, and one that
-// does not need the click delete intercepts it.
+// their own that assert exact counts (isolateDelete in click_stats_test.go
+// isolates them the same way). Rows seeded here inside the transaction are
+// invisible to that process, and nothing here commits, so the other package
+// can neither delete nor count them, and nothing a test seeds outlives it even
+// if the run is killed. The other direction is settled per test: a test whose
+// click delete is real pins its clock so its cutoff lies below every row any
+// test commits, and one that does not need the click delete intercepts it.
 func isolate(t *testing.T, f *fixture, results map[string]error) pgx.Tx {
 	t.Helper()
 	tx, err := f.pool.Begin(context.Background())
@@ -134,8 +134,9 @@ func isolate(t *testing.T, f *fixture, results map[string]error) pgx.Tx {
 var skipClickDelete = map[string]error{"DeleteExpiredClickStats": nil}
 
 // aYearEarlier is the clock for the two tests whose click delete is real. Its
-// cutoff, 2025-06-05, lies below every row internal/db's click-delete tests
-// seed, which the fixture's own clock (cutoff 2026-06-05) does not.
+// cutoff, 2025-06-05, lies below every click row any test commits — the
+// oldest is TestLinkStatsClampsTheWindowToRetention's 2026-01-02 — which the
+// fixture's own clock (cutoff 2026-06-05) does not.
 func aYearEarlier() time.Time { return time.Date(2025, 9, 2, 12, 0, 0, 0, time.UTC) }
 
 func seedClickRow(t *testing.T, tx pgx.Tx, linkID uuid.UUID, day string) {
