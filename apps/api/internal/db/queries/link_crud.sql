@@ -31,10 +31,28 @@ join domain d on d.id = i.domain_id;
 select l.id, l.domain_id, l.team_id, d.hostname, l.slug, l.destination_url,
        l.redirect_type, l.state, l.expires_at,
        (l.password_hash is not null)::boolean as has_password,
-       l.analytics_enabled, l.folder_id, l.created_by, l.created_at, l.updated_at
+       l.analytics_enabled, l.folder_id, l.created_by, l.created_at, l.updated_at,
+       l.scan_checked_at, l.scan_destination
 from link l
 join domain d on d.id = l.domain_id
 where l.id = $1 and l.team_id = $2;
+
+-- GetLinkForAPIForUpdate is GetLinkForAPI, copied verbatim and locked, for
+-- updateLink. That handler writes state back from this read, and the Safe
+-- Browsing scanner may flag the link while the PATCH's transaction is open:
+-- unlocked, the PATCH would write the flag straight back to active. FOR UPDATE
+-- OF l, so the domain row stays unlocked.
+
+-- name: GetLinkForAPIForUpdate :one
+select l.id, l.domain_id, l.team_id, d.hostname, l.slug, l.destination_url,
+       l.redirect_type, l.state, l.expires_at,
+       (l.password_hash is not null)::boolean as has_password,
+       l.analytics_enabled, l.folder_id, l.created_by, l.created_at, l.updated_at,
+       l.scan_checked_at, l.scan_destination
+from link l
+join domain d on d.id = l.domain_id
+where l.id = $1 and l.team_id = $2
+for update of l;
 
 -- Paginated. count(*) over () gives the total in the same scan, so the list
 -- and its total_count cannot disagree the way two separate queries can. The
