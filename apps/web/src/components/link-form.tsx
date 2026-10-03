@@ -67,8 +67,8 @@ function hasSavedSlug(saved: string | undefined): saved is string {
  * A blank field is not a change either. On the edit form an empty slug means
  * "keep the current path": the edit route sends none and the API leaves the
  * saved one alone, so nothing is retired and warning that it would be would
- * be false. (Whitespace alone reaches the API as a slug and is refused as
- * malformed, which retires nothing either.)
+ * be false. Whitespace alone counts as blank too: the edit route sends it as
+ * no slug at all, and the API reads it as none on create.
  *
  * @param saved - The slug the link was saved with; absent or empty on the create form, which has nothing to retire.
  * @param current - The slug now in the field.

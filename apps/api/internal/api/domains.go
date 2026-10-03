@@ -78,8 +78,9 @@ type DomainOutput struct {
 	Body   Domain
 }
 
-// ListDomainsInput takes no filters: a list capped at 100 rows and ordered by
-// hostname does not need them.
+// ListDomainsInput takes no filters: a team's custom domains are few, since
+// each one needs its own DNS records and a maintainer step in Vercel, and
+// listing them by hostname at up to 100 per page does not need any.
 type ListDomainsInput struct {
 	authz.ViewerScope
 	PageParams
