@@ -48,6 +48,20 @@ const KNOWN_FIELD_NAMES: ReadonlySet<string> = new Set([
 	'tag_ids',
 ]);
 
+/**
+ * Whether the slug in the field is a different address from the saved one.
+ * The API stores slugs trimmed and lowercase, so a change of case or of
+ * surrounding whitespace alone is the same address and not a change.
+ *
+ * @param saved - The slug the link was saved with; absent or empty on the create form, which has nothing to retire.
+ * @param current - The slug now in the field.
+ * @returns True when saving would move the link to another address.
+ */
+function isSlugChange(saved: string | undefined, current: string): boolean {
+	const savedSlug = saved?.trim().toLowerCase() ?? '';
+	return savedSlug !== '' && current.trim().toLowerCase() !== savedSlug;
+}
+
 interface LinkFormProps {
 	/** Whether the caller may create tags from the picker (editor and up). */
 	readonly canCreateTags?: boolean;
@@ -116,7 +130,7 @@ export interface LinkFormValues {
  * @param props.fieldErrors - Server-reported field errors, keyed by field name.
  * @param props.folderHint - Shown under the folder field when the team has no folders yet, e.g. a link to the folders page; never shown when read-only.
  * @param props.folders - The team's folders; the folder field renders whenever this is passed, even empty.
- * @param props.initial - Initial values to seed the form from, for the edit route.
+ * @param props.initial - Initial values to seed the form from, for the edit route; a non-empty `slug` here is the saved one the slug field warns about changing.
  * @param props.initialVersion - The version `initial` came from; when it changes, the form re-seeds from `initial`.
  * @param props.onCreateTag - Creates a tag by name from the picker; without it, a create attempt shows the generic failure.
  * @param props.onSubmit - Called with the form's values on submit.
@@ -154,6 +168,7 @@ export function LinkForm({
 	const expiresAtErrorId = useId();
 	const folderErrorId = useId();
 	const redirectTypeErrorId = useId();
+	const slugChangeWarningId = useId();
 	const slugErrorId = useId();
 
 	const form = useForm({
@@ -250,6 +265,15 @@ export function LinkForm({
 						{(field) => {
 							const errorId = slugErrorId;
 							const errorMessage = fieldErrors?.slug;
+							const warnsOfChange = !readOnly && isSlugChange(initial?.slug, field.state.value);
+							// Error first, so a screen reader reads what went wrong before the
+							// caution.
+							const describedBy = [
+								errorMessage === undefined ? undefined : errorId,
+								warnsOfChange ? slugChangeWarningId : undefined,
+							]
+								.filter((id) => id !== undefined)
+								.join(' ');
 
 							return (
 								<Field data-invalid={errorMessage !== undefined}>
@@ -257,7 +281,7 @@ export function LinkForm({
 									{/* An empty slug means the API generates one. Said here, because a
 								    blank required-looking field otherwise reads as an oversight. */}
 									<Input
-										aria-describedby={errorMessage !== undefined ? errorId : undefined}
+										aria-describedby={describedBy === '' ? undefined : describedBy}
 										aria-invalid={errorMessage !== undefined ? true : undefined}
 										id={field.name}
 										name={field.name}
@@ -271,6 +295,19 @@ export function LinkForm({
 									{errorMessage === undefined ? null : (
 										<FieldError id={errorId}>{errorMessage}</FieldError>
 									)}
+									{/* A QR code encodes the short URL, and so does every link a Verein
+									    has already shared: changing the slug retires the old address, and
+									    nobody holding a printed flyer can be told. Warned as soon as the
+									    value differs from the saved one, not refused — refusing would
+									    mean remembering that a code was downloaded, a column and a
+									    server-side rule for a hazard this names already. The input's
+									    `aria-describedby` points at it, so a screen reader reads it as the
+									    input's description when the field gains focus. */}
+									{warnsOfChange ? (
+										<FieldDescription id={slugChangeWarningId} role="note">
+											{t('links.slugChangeWarning')}
+										</FieldDescription>
+									) : null}
 								</Field>
 							);
 						}}

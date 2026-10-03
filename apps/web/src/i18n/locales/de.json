@@ -83,6 +83,7 @@
 		"destinationRequired": "Die Ziel-URL ist erforderlich.",
 		"slug": "Kurzpfad",
 		"slugGenerated": "Leer lassen, dann wird einer erzeugt",
+		"slugChangeWarning": "Wenn du den Kurzpfad änderst, funktioniert die alte Adresse nicht mehr: Gedruckte QR-Codes und alle bereits geteilten Links laufen dann ins Leere.",
 		"redirectType": "Weiterleitungstyp",
 		"redirect302": "302 — vorübergehend (empfohlen)",
 		"redirect301": "301 — dauerhaft",
