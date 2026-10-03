@@ -27,6 +27,7 @@ Decided: the maintainer(s) publish one privacy policy for the platform, covering
 
 - Account/auth data (Supabase-managed `auth.users`, team membership) — per `05-database-schema.md`.
 - Click analytics — the hashed-IP+UA unique-visitor counting, GeoIP, 90-day retention, already designed privacy-first in `01-architecture.md`; the policy documents what's _already_ the minimal-collection design, rather than that design needing to change for this doc.
+- The audit log — kept for **two years**, then deleted by the same daily retention job (decided 2026-10-03, `AuditRetentionYears` in the API). Its entries for invited and added members carry that member's email address in their metadata, so this is personal data with a storage period of its own, and the lawyer's Datenschutzerklärung has to state it.
 - Every third-party processor in the stack, since each one is a place data actually flows to: Supabase, Upstash, Vercel, Google Safe Browsing, Resend (per `02-external-services-and-hosting.md`).
 - A note on the redirect flow itself: destination URLs entered by users are sent to Google Safe Browsing for scanning (already decided, `01-architecture.md`) — worth being explicit that this is the _destination_ URL only, not visitor data.
 
