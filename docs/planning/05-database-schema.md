@@ -81,6 +81,8 @@ link (
   expires_at            timestamptz,
   password_hash         text,                              -- nullable; set = link requires a password. See "Password protection" below.
   analytics_enabled     boolean not null default true,     -- added 2026-09-02; see "Analytics opt-out" below
+  scan_checked_at       timestamptz,                       -- added 2026-10-03: when Safe Browsing last checked this link, whatever it found
+  scan_destination      text,                              -- added 2026-10-03: the destination that check judged; differing from destination_url makes the link due
   created_by            uuid not null references auth.users(id),
   created_at            timestamptz not null default now(),
   updated_at            timestamptz not null default now(),
@@ -104,10 +106,15 @@ link_scan_result (
   id                uuid primary key default gen_random_uuid(),
   link_id           uuid not null references link(id) on delete cascade,
   provider          text not null default 'google_safe_browsing',
-  verdict           text not null check (verdict in ('clean','flagged','error')),
+  verdict           text not null check (verdict in ('clean','flagged','error')),  -- 'error' allowed, never written: failures are logged
   scanned_at        timestamptz not null default now(),
-  raw_response      jsonb
+  raw_response      jsonb,
+  destination_url   text not null,                        -- added 2026-10-03: the URL this verdict judged
+  threat_types      text[] not null default '{}'          -- added 2026-10-03
 )
+-- A row is written only when a link's verdict changes (active to flagged or
+-- back), so the table stays small and holds the whole history. link.state
+-- stays the only switch the redirect path reads.
 
 -- Analytics (aggregated only — no raw click/event table)
 
