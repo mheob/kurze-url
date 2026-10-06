@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -19,6 +20,15 @@ import (
 // slow answer that still arrives is worth more than one the sweep has to
 // repeat.
 const backgroundScanTimeout = 10 * time.Second
+
+// scanLockTimeout bounds how long applyVerdict waits for the link's row lock.
+// A PATCH holds it for milliseconds. A holder that takes longer is an instance
+// Vercel froze mid-verdict, which keeps the lock until its connection dies;
+// unbounded, the sweep, which applies one link at a time, would wait on that
+// link until its budget ran out, run after run. Far inside the sweep's budget
+// and the background check's ten seconds: a timeout fails this one link, which
+// stays due, and logs at Error like any other failed write.
+const scanLockTimeout = 2 * time.Second
 
 // afterCommitTimeout bounds the Redis work applyVerdict does once its
 // transaction has committed. It is far below confirmationMargin, the minute a
@@ -76,7 +86,8 @@ const (
 // applyVerdict writes one link's verdict, in one transaction:
 //
 //   - The link is read FOR UPDATE, so the check and the write are one
-//     decision against any concurrent PATCH.
+//     decision against any concurrent PATCH, waiting at most scanLockTimeout
+//     for that lock.
 //   - A verdict for a URL the link no longer points at is discarded: a newer
 //     destination is waiting for its own check. So is one for a link that is
 //     no longer active or flagged, which then becomes due again when it is
@@ -107,8 +118,12 @@ func (d Deps) applyVerdict(ctx context.Context, target scanTarget, result scanni
 	var (
 		outcome        verdictOutcome
 		hostname, slug string
+		lockTimeout    = strconv.FormatInt(scanLockTimeout.Milliseconds(), 10) + "ms"
 	)
 	err := db.InTx(ctx, d.Pool, func(q *db.Queries) error {
+		if err := q.SetLocalLockTimeout(ctx, lockTimeout); err != nil {
+			return err
+		}
 		current, err := q.GetLinkForScan(ctx, db.GetLinkForScanParams{
 			ID: target.LinkID, TeamID: target.TeamID,
 		})
@@ -307,12 +322,13 @@ func (d Deps) applyAndLog(ctx context.Context, target scanTarget, result scannin
 }
 
 // logApplyFailure reports a verdict that could not be written. That is the
-// database failing, so it is an Error and reaches Sentry. Running out of time
-// or being cancelled is the exception and stays a Warn: the background budget
-// is shared with the Google call, and the sweep's with every other link in its
-// batch, so a deadline says the check was slow, not that Postgres is broken.
-// The one place this is decided, for the checks after a write and the sweep
-// alike.
+// database failing, so it is an Error and reaches Sentry, and so is a lock wait
+// that outlasted scanLockTimeout. Running out of time or being cancelled is the
+// exception and stays a Warn: the background budget is shared with the Google
+// call, so a deadline says the check was slow, not that Postgres is broken. The
+// sweep's own deadline never gets here, because applyDue stops before it and
+// counts the link as remaining. The one place this is decided, for the checks
+// after a write and the sweep alike.
 func (d Deps) logApplyFailure(err error, linkID uuid.UUID) {
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 		d.Log.Warn("apply safe browsing verdict", "error", err, "link_id", linkID)

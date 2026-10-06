@@ -24,10 +24,18 @@ func (d Deps) ApplyVerdictForTest(
 	return d.applyVerdict(ctx, scanTarget{LinkID: linkID, TeamID: teamID, URL: url}, result)
 }
 
+// ScanLockTimeout is how long applyVerdict waits for a link's row lock.
+const ScanLockTimeout = scanLockTimeout
+
 // ScanReport is the sweep's report, for assertions.
 type ScanReport = scanReport
 
 // SweepForTest runs one sweep with a batch limit the test chooses.
 func (d Deps) SweepForTest(ctx context.Context, limit int) (ScanReport, error) {
 	return d.sweep(ctx, limit)
+}
+
+// StoppedAtBudget is the report's unexported stoppedAtBudget.
+func (r ScanReport) StoppedAtBudget() bool {
+	return r.stoppedAtBudget
 }

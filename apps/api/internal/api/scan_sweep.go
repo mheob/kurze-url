@@ -54,6 +54,11 @@ type scanReport struct {
 	// included: those are due on every sweep, so this does not reach zero
 	// while any link is blocked.
 	Remaining int64 `json:"remaining"`
+
+	// stoppedAtBudget says the run's own budget ended it before it had been
+	// through its batch. Not in the body, which answers 200 either way;
+	// HandleScan logs it.
+	stoppedAtBudget bool
 }
 
 // HandleScan answers POST /internal/scan: one sweep of due links, the half of
@@ -71,8 +76,11 @@ type scanReport struct {
 // Two ways a run ends early look alike and are not. Running out of its own
 // time budget is an ordinary run: the report says what was done, the rest
 // stays due, and the answer is 200 so the heartbeat fires — the first sweeps
-// after deploy find more due links than one budget holds. Google failing the
-// check as a whole is a failed run, a 502 that withholds the heartbeat.
+// after deploy find more due links than one budget holds. It is logged at
+// Warn all the same, with the counts: a run that keeps stopping there with
+// nothing checked is Google answering too slowly for the batch, a stall the
+// green heartbeat alone would hide. Google failing the check as a whole is a
+// failed run, a 502 that withholds the heartbeat.
 func (d Deps) HandleScan(w http.ResponseWriter, r *http.Request) {
 	if d.Config.ScanToken == "" ||
 		subtle.ConstantTimeCompare(
@@ -103,11 +111,16 @@ func (d Deps) HandleScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	counts := []any{
+		"checked", report.Checked, "flagged", report.Flagged, "unflagged", report.Unflagged,
+		"failed", report.Failed, "remaining", report.Remaining,
+	}
 	// Info, not Debug: in the workflow's history this line is what tells
 	// "ran and found nothing due" from "did not run".
-	d.Log.Info("safe browsing sweep ran",
-		"checked", report.Checked, "flagged", report.Flagged, "unflagged", report.Unflagged,
-		"failed", report.Failed, "remaining", report.Remaining)
+	d.Log.Info("safe browsing sweep ran", counts...)
+	if report.stoppedAtBudget {
+		d.Log.Warn("safe browsing sweep stopped at its budget", counts...)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(report)
@@ -155,7 +168,7 @@ func (d Deps) sweep(ctx context.Context, limit int) (scanReport, error) {
 		// With the budget spent there is nothing to apply, and applyDue says
 		// so on its first look at it: the run reports zero checked and every
 		// link it did not reach as remaining.
-		d.applyDue(budget, due, results, &report)
+		report.stoppedAtBudget = d.applyDue(budget, due, results, &report)
 	}
 
 	countCtx, cancelCount := context.WithTimeout(context.WithoutCancel(ctx), scanCountBudget)
@@ -184,10 +197,10 @@ func distinctDestinations(due []db.ListDueLinksForScanRow) []string {
 }
 
 // applyDue applies the batch's verdicts one link at a time, in due order, and
-// stops at the first link it finds the budget already spent on. A verdict that
-// fails to write counts against Failed and the link stays due, unless the
-// budget ran out inside its own transaction: that link was not reached, so it
-// is Remaining like the ones behind it.
+// stops at the first link it finds the budget already spent on, reporting
+// whether it did. A verdict that fails to write counts against Failed and the
+// link stays due, unless the budget ran out inside its own transaction: that
+// link was not reached, so it is Remaining like the ones behind it.
 //
 // A link whose destination is missing from the results has no verdict. That is
 // a failure, never a clean check: recording one would take it off the
@@ -197,10 +210,10 @@ func (d Deps) applyDue(
 	due []db.ListDueLinksForScanRow,
 	results map[string]scanning.Result,
 	report *scanReport,
-) {
+) (stopped bool) {
 	for _, l := range due {
 		if budget.Err() != nil {
-			return
+			return true
 		}
 		result, ok := results[l.DestinationURL]
 		if !ok {
@@ -214,7 +227,7 @@ func (d Deps) applyDue(
 		}, result)
 		switch {
 		case err != nil && budget.Err() != nil:
-			return
+			return true
 		case err != nil:
 			report.Failed++
 			d.logApplyFailure(err, l.ID)
@@ -229,4 +242,5 @@ func (d Deps) applyDue(
 			report.Unflagged++
 		}
 	}
+	return false
 }

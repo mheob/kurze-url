@@ -242,37 +242,54 @@ func TestDomainMetadataMayNotCarryTheToken(t *testing.T) {
 }
 
 // The Safe Browsing scanner is nobody's account. Its entries carry a null
-// actor, and the metadata it writes passes the denylist: neither threat_types
-// nor destination_url has a forbidden word segment.
+// actor, for a flag and for lifting one alike, and the metadata it writes
+// passes the denylist: neither threat_types nor destination_url has a
+// forbidden word segment.
 func TestLogWritesASystemEntryWithoutAnActor(t *testing.T) {
 	ctx := context.Background()
 	pool := testPool(t)
 	teamID, _ := seedTeam(ctx, t, pool)
-	linkID := uuid.New()
 
-	require.NoError(t, db.InTx(ctx, pool, func(q *db.Queries) error {
-		return audit.Log(ctx, q, audit.Entry{
-			TeamID:     teamID,
-			Action:     audit.ActionLinkFlagged,
-			EntityType: audit.EntityLink,
-			EntityID:   linkID,
-			Metadata: map[string]any{
-				"threat_types":    []string{"SOCIAL_ENGINEERING"},
-				"destination_url": "https://example.org/x",
-			},
+	for _, tc := range []struct {
+		action  audit.Action
+		threats []string
+		want    string
+	}{
+		{
+			audit.ActionLinkFlagged, []string{"SOCIAL_ENGINEERING"},
+			`{"threat_types":["SOCIAL_ENGINEERING"],"destination_url":"https://example.org/x"}`,
+		},
+		{
+			audit.ActionLinkUnflagged, []string{},
+			`{"threat_types":[],"destination_url":"https://example.org/x"}`,
+		},
+	} {
+		t.Run(string(tc.action), func(t *testing.T) {
+			linkID := uuid.New()
+			require.NoError(t, db.InTx(ctx, pool, func(q *db.Queries) error {
+				return audit.Log(ctx, q, audit.Entry{
+					TeamID:     teamID,
+					Action:     tc.action,
+					EntityType: audit.EntityLink,
+					EntityID:   linkID,
+					Metadata: map[string]any{
+						"threat_types":    tc.threats,
+						"destination_url": "https://example.org/x",
+					},
+				})
+			}))
+
+			var (
+				actor *uuid.UUID
+				raw   []byte
+			)
+			require.NoError(t, pool.QueryRow(ctx,
+				`select actor_user_id, metadata from audit_log where team_id = $1 and entity_id = $2`,
+				teamID, linkID).Scan(&actor, &raw))
+			require.Nil(t, actor)
+			require.JSONEq(t, tc.want, string(raw))
 		})
-	}))
-
-	var (
-		actor *uuid.UUID
-		raw   []byte
-	)
-	require.NoError(t, pool.QueryRow(ctx,
-		`select actor_user_id, metadata from audit_log where team_id = $1 and entity_id = $2`,
-		teamID, linkID).Scan(&actor, &raw))
-	require.Nil(t, actor)
-	require.JSONEq(t,
-		`{"threat_types":["SOCIAL_ENGINEERING"],"destination_url":"https://example.org/x"}`, string(raw))
+	}
 }
 
 // The web reads a null actor as "Google Safe Browsing" on the two system
@@ -289,7 +306,8 @@ func TestLogRefusesAnActorThatDoesNotFitTheAction(t *testing.T) {
 		action audit.Action
 	}{
 		{"a member's action without its member", nil, audit.ActionLinkUpdated},
-		{"the system's action with a member", &userID, audit.ActionLinkFlagged},
+		{"the system's flag with a member", &userID, audit.ActionLinkFlagged},
+		{"the system's unflag with a member", &userID, audit.ActionLinkUnflagged},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := db.InTx(ctx, pool, func(q *db.Queries) error {

@@ -23,8 +23,8 @@ const testScanToken = "test-scan-token"
 
 // testScanBudget is the sweep's time budget in the tests that run it out.
 // Short enough to keep the suite quick, long enough that the due-links query
-// ahead of the check is nowhere near it.
-const testScanBudget = 300 * time.Millisecond
+// ahead of the check is nowhere near it, even under -race on a busy machine.
+const testScanBudget = 1500 * time.Millisecond
 
 // scanRequest sends one POST /internal/scan. token == "" sends no header at
 // all, which is a different case from sending a wrong one.
@@ -73,7 +73,14 @@ func sweepFixture(t *testing.T, opts ...func(*linkOptions)) (*fixture, *fakeChec
 	t.Helper()
 	destination := uniqueDestination("sweep")
 	f := newFixture(t, append([]func(*linkOptions){withDestination(destination)}, opts...)...)
+	// A run interrupted before its cleanup leaves its 2001 links behind, and
+	// they would sort ahead of this test's own. Nothing else commits a link
+	// created before 2002 (internal/db's scan tests seed 2000 inside
+	// transactions they roll back), so this deletes only such leftovers.
 	_, err := f.pool.Exec(context.Background(),
+		`delete from link where created_at < '2002-01-01T00:00:00Z'`)
+	require.NoError(t, err)
+	_, err = f.pool.Exec(context.Background(),
 		`update link set created_at = '2001-01-01T00:00:00Z' where id = $1`, f.linkID)
 	require.NoError(t, err)
 
@@ -210,6 +217,7 @@ func TestScanReportsTheBatchLimitAndWhatRemains(t *testing.T) {
 	report, err := f.deps.SweepForTest(context.Background(), 2)
 	require.NoError(t, err)
 
+	require.False(t, report.StoppedAtBudget(), "a batch the run got through did not stop at the budget")
 	require.Equal(t, 2, report.Checked)
 	require.Zero(t, report.Failed, "a batch of two holds exactly this test's two oldest links")
 	require.NotNil(t, scanCheckedAt(t, f.pool, f.linkID))
@@ -229,6 +237,7 @@ func TestScanStopsAtItsBudgetWhileGoogleIsStillAnswering(t *testing.T) {
 	f, checker, destination := sweepFixture(t)
 	second, third := threeDueLinks(t, f, checker, destination)
 	f.deps.ScanBudget = testScanBudget
+	logs := captureLogs(f)
 	checker.onCheck(untilDone)
 	checker.fail(context.DeadlineExceeded)
 
@@ -241,6 +250,13 @@ func TestScanStopsAtItsBudgetWhileGoogleIsStillAnswering(t *testing.T) {
 	require.GreaterOrEqual(t, report.Remaining, int64(3),
 		"the count still runs after the budget is spent")
 	requireNoneChecked(t, f, f.linkID, second, third)
+
+	// 200 keeps the heartbeat green, so the log is the only place a sweep that
+	// keeps stopping here with nothing checked shows up.
+	require.Contains(t, logs.String(), `level=WARN msg="safe browsing sweep stopped at its budget"`)
+	for _, key := range []string{"checked=0", "flagged=0", "unflagged=0", "failed=0", "remaining="} {
+		require.Contains(t, logs.String(), key)
+	}
 }
 
 // The other half of the same budget: Google answered, but too late to write
@@ -281,6 +297,7 @@ func TestSweepKeepsWhatItAppliedBeforeItsBudgetRanOut(t *testing.T) {
 	report, err := f.deps.SweepForTest(ctx, 3)
 	require.NoError(t, err)
 
+	require.True(t, report.StoppedAtBudget())
 	require.Equal(t, 1, report.Checked)
 	require.Equal(t, 1, report.Flagged)
 	require.Zero(t, report.Failed)
@@ -410,6 +427,7 @@ func TestScanLogsWhatItRanAtInfoLevel(t *testing.T) {
 	for _, key := range []string{"checked=1", "flagged=0", "unflagged=0", "failed=", "remaining="} {
 		require.Contains(t, logs.String(), key)
 	}
+	require.NotContains(t, logs.String(), "stopped at its budget")
 }
 
 // The workflow's logs are read by key; decoding into a map is what notices a

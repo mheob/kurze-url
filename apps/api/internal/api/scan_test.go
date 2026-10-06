@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
@@ -391,6 +392,37 @@ func TestApplyVerdictFinishesAnUnflagAfterTheCallersTimeRanOutAtTheCommit(t *tes
 	require.Negative(t, confirmationTTLLeft(t, f.deps.Cache, f.linkID), "the confirmation must be gone")
 	_, err = f.deps.Cache.Raw().Get(background, f.deps.Cache.Key(cacheKey)).Result()
 	require.ErrorIs(t, err, redis.Nil, "the cached flagged link must be gone")
+}
+
+// An instance Vercel froze mid-verdict keeps the link's row lock until its
+// connection dies. The next verdict for that link has to give up within
+// seconds rather than wait, because the sweep applies one link at a time and
+// would otherwise stall behind it until its budget ran out, every run.
+func TestApplyVerdictGivesUpOnALinkAnotherTransactionHoldsLocked(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	teamID := fixtureTeamID(t, f)
+	holder, err := f.pool.Begin(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = holder.Rollback(context.Background()) })
+	_, err = holder.Exec(ctx, `select id from link where id = $1 for update`, f.linkID)
+	require.NoError(t, err)
+
+	// A deadline well past the lock timeout, so a missing timeout fails the
+	// test instead of hanging it.
+	bounded, cancel := context.WithTimeout(ctx, api.ScanLockTimeout+6*time.Second)
+	defer cancel()
+	started := time.Now()
+	_, err = f.deps.ApplyVerdictForTest(bounded, f.linkID, teamID, fixtureDestination, flagged("MALWARE"))
+	elapsed := time.Since(started)
+
+	var pgErr *pgconn.PgError
+	require.ErrorAs(t, err, &pgErr, "got %v after %s", err, elapsed)
+	require.Equal(t, "55P03", pgErr.Code, "lock_not_available")
+	require.Less(t, elapsed, api.ScanLockTimeout+2*time.Second)
+	require.NoError(t, holder.Rollback(ctx))
+	require.Equal(t, "active", linkState(t, f.pool, f.linkID))
+	require.Nil(t, scanCheckedAt(t, f.pool, f.linkID), "the link stays due")
 }
 
 // scanningFixture is a tenancy fixture whose /v1 surface has a fake checker.

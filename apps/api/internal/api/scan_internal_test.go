@@ -29,6 +29,15 @@ func TestConfirmationTTLStaysInsideThirtyMinutes(t *testing.T) {
 	}
 }
 
+// The bounds nest: a lock wait must end well inside every budget a verdict is
+// applied under, and the work after the commit well inside the minute a
+// confirmation's TTL is shortened by, since the TTL counts from the SET.
+func TestTheScanTimeoutsNestInsideEachOther(t *testing.T) {
+	require.Less(t, scanLockTimeout, backgroundScanTimeout)
+	require.Less(t, scanLockTimeout, scanBudget)
+	require.Less(t, afterCommitTimeout, confirmationMargin)
+}
+
 // checkerFunc adapts a function to scanning.Checker, for the tests below that
 // need no database. The database-backed tests use api_test's fakeChecker.
 type checkerFunc func(ctx context.Context, urls []string) (map[string]scanning.Result, error)

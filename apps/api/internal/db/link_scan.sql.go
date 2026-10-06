@@ -241,11 +241,14 @@ type ListDueLinksForScanRow struct {
 // predicate as the scan's Filter. Forcing the planner off sequential scans
 // shows what the existing link_state_idx can do: a Bitmap Index Scan serving
 // `state in ('active', 'flagged')` alone, which matches nearly every link, and
-// everything else stays a Filter. No index can answer the rest, because
-// `scan_destination is distinct from destination_url` compares two columns of
-// one row, and an index on scan_checked_at would make every daily check update
-// an indexed column, which rules out heap-only (HOT) updates. At this
-// instance's size (thousands of rows, 48 sweeps a day) the scan is cheap.
+// everything else stays a Filter, on purpose. `scan_destination is distinct
+// from destination_url` compares two columns of one row, so it cannot be an
+// index key, though a partial index could carry it as its predicate. That
+// would serve only the never-checked half of the OR: the daily half needs an
+// index on scan_checked_at, the column every check writes, and an indexed
+// column written on every check rules out heap-only (HOT) updates of every
+// link once a day. At this instance's size (thousands of rows, 48 sweeps a
+// day) the EXPLAIN's sequential scan is cheap.
 // Re-run the EXPLAIN in docs/superpowers/plans/2026-10-03-safe-browsing.md
 // (Task 1, Step 9) if link ever reaches six figures.
 func (q *Queries) ListDueLinksForScan(ctx context.Context, arg ListDueLinksForScanParams) ([]ListDueLinksForScanRow, error) {
@@ -297,5 +300,21 @@ func (q *Queries) RecordLinkScan(ctx context.Context, arg RecordLinkScanParams) 
 		arg.ID,
 		arg.TeamID,
 	)
+	return err
+}
+
+const setLocalLockTimeout = `-- name: SetLocalLockTimeout :exec
+
+select set_config('lock_timeout', $1::text, true)
+`
+
+// SetLocalLockTimeout bounds how long the rest of the current transaction
+// waits for a lock. set_config with is_local true is SET LOCAL, written as a
+// function call because SET takes no bind parameters. applyVerdict runs it
+// before GetLinkForScan, so a row lock held by an instance Vercel froze
+// mid-verdict fails that one link within seconds instead of stalling the sweep
+// behind it until its budget ends.
+func (q *Queries) SetLocalLockTimeout(ctx context.Context, timeout string) error {
+	_, err := q.db.Exec(ctx, setLocalLockTimeout, timeout)
 	return err
 }

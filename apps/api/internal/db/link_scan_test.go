@@ -439,11 +439,12 @@ func TestGetLinkForAPIReportsTheLastCheckAndItsForUpdateTwinFiltersByTeam(t *tes
 	require.NotNil(t, row.ScanDestination)
 	require.Equal(t, "https://example.org/api", *row.ScanDestination)
 
+	// The twin is GetLinkForAPI copied verbatim and locked, so every column
+	// must agree, not only the scan pair: updateLink writes the whole row back
+	// from it.
 	twin, err := f.queries.GetLinkForAPIForUpdate(ctx, db.GetLinkForAPIForUpdateParams{ID: id, TeamID: f.teamID})
 	require.NoError(t, err)
-	require.Equal(t, id, twin.ID)
-	require.Equal(t, row.ScanCheckedAt, twin.ScanCheckedAt)
-	require.Equal(t, row.ScanDestination, twin.ScanDestination)
+	require.Equal(t, row, db.GetLinkForAPIRow(twin))
 
 	_, err = f.queries.GetLinkForAPIForUpdate(ctx, db.GetLinkForAPIForUpdateParams{ID: id, TeamID: uuid.New()})
 	require.ErrorIs(t, err, pgx.ErrNoRows)

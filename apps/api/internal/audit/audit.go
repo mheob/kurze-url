@@ -17,13 +17,11 @@ import (
 )
 
 // Action is an audit_log.action value: one per mutating endpoint, shaped
-// "entity.verb". Plan 3 adds domain.*, folder.*, tag.* and link.* here
-// alongside the endpoints that emit them.
+// "entity.verb".
 type Action string
 
 // The taxonomy is closed: twenty-three values, each declared here and again
-// in knownActions, and nothing else may be written. Plan 3 adds more
-// alongside the endpoints that emit them.
+// in knownActions, and nothing else may be written.
 const (
 	ActionTeamCreated       Action = "team.created"
 	ActionTeamRenamed       Action = "team.renamed"
