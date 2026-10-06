@@ -132,6 +132,16 @@ func rowFromGet(r db.GetLinkForAPIRow) linkRow {
 	}
 }
 
+func rowFromGetForUpdate(r db.GetLinkForAPIForUpdateRow) linkRow {
+	return linkRow{
+		ID: r.ID, TeamID: r.TeamID, DomainID: r.DomainID, Hostname: r.Hostname,
+		Slug: r.Slug, DestinationURL: r.DestinationURL, RedirectType: r.RedirectType,
+		State: r.State, ExpiresAt: r.ExpiresAt, HasPassword: r.HasPassword,
+		AnalyticsEnabled: r.AnalyticsEnabled, FolderID: r.FolderID, CreatedBy: r.CreatedBy,
+		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+	}
+}
+
 func rowFromSetPassword(r db.SetLinkPasswordRow) linkRow {
 	return linkRow{
 		ID: r.ID, TeamID: r.TeamID, DomainID: r.DomainID, Hostname: r.Hostname,
@@ -575,6 +585,12 @@ func (d Deps) createLink(ctx context.Context, in *CreateLinkInput) (*LinkOutput,
 			// one: a probe of this slug before it existed may have stored the
 			// not-found sentinel under exactly this key.
 			d.invalidateLink(ctx, created.Hostname, created.Slug)
+			// After the commit, and without waiting: the link is live from
+			// this moment whatever Google says, and the sweep catches a check
+			// that never finishes.
+			d.scanSoon(ctx, scanTarget{
+				LinkID: created.ID, TeamID: created.TeamID, URL: created.DestinationURL,
+			})
 
 			body := d.linkResponse(rowFromCreate(created))
 			body.Tags = createdTags
@@ -844,26 +860,42 @@ func (d Deps) updateLink(ctx context.Context, in *UpdateLinkInput) (*LinkOutput,
 	}
 
 	// updated is a linkRow rather than a db.UpdateLinkRow because the no-op
-	// branch below has only a db.GetLinkForAPIRow to offer. The two generated
-	// structs happen to have identical fields today, but converting between
-	// them would silently break the first time a column is added to one query
-	// and not the other.
+	// branch below has only a db.GetLinkForAPIForUpdateRow to offer, and the
+	// two generated structs do not share a shape: the locked read also carries
+	// the scan columns. linkRow is the one shape both convert into.
 	var (
 		updated      linkRow
 		updatedTags  []Tag
-		previous     db.GetLinkForAPIRow
+		previous     db.GetLinkForAPIForUpdateRow
 		changed      []string
 		cacheChanged bool
 	)
 
 	err := db.InTx(ctx, d.Pool, func(q *db.Queries) error {
-		before, err := q.GetLinkForAPI(ctx, db.GetLinkForAPIParams{
+		// FOR UPDATE: state is written back from this read, and the Safe
+		// Browsing scanner may flag the link while this transaction is open.
+		// Unlocked, this PATCH would write that flag straight back to active.
+		// Locked, it either waits for the scanner's commit and sees the flag,
+		// or the scanner waits for this one and then finds the destination it
+		// checked replaced.
+		before, err := q.GetLinkForAPIForUpdate(ctx, db.GetLinkForAPIForUpdateParams{
 			ID: in.Link().ID, TeamID: member.TeamID,
 		})
 		if err != nil {
 			return err
 		}
 		previous = before
+
+		// Only Google lifts a flag, through a later clean check. Disabling is
+		// refused as well, or disable-then-enable would be a way around the
+		// block. A new destination is the one way out, handled below.
+		if before.State == "flagged" && in.Body.State != nil {
+			message := "this link is blocked by Safe Browsing: change its destination, " +
+				"or wait until Google clears the site"
+			return huma.Error409Conflict(message, &huma.ErrorDetail{
+				Location: "body.state", Message: message, Value: "flagged",
+			})
+		}
 
 		params := db.UpdateLinkParams{
 			ID:               before.ID,
@@ -888,6 +920,20 @@ func (d Deps) updateLink(ctx context.Context, in *UpdateLinkInput) (*LinkOutput,
 			changed = append(changed, "destination_url")
 			metadata["destination_url"] = map[string]any{
 				"from": before.DestinationURL, "to": *in.Body.DestinationURL,
+			}
+			// The flag belonged to the old destination. The new one starts
+			// active and is checked as soon as this commits.
+			if before.State == "flagged" {
+				params.State = "active"
+				changed = append(changed, "state")
+				metadata["state"] = map[string]any{"from": "flagged", "to": "active"}
+				// Forget the checked URL, so changing back to the flagged one
+				// before this check lands leaves the link due, not "checked".
+				if err := q.ClearLinkScanDestination(ctx, db.ClearLinkScanDestinationParams{
+					ID: before.ID, TeamID: member.TeamID,
+				}); err != nil {
+					return err
+				}
 			}
 		}
 		if in.Body.RedirectType != nil && int16(*in.Body.RedirectType) != before.RedirectType {
@@ -944,7 +990,7 @@ func (d Deps) updateLink(ctx context.Context, in *UpdateLinkInput) (*LinkOutput,
 		if len(changed) == 0 && !tagsChanging {
 			// Nothing changed; do not write a misleading audit entry, and do
 			// not bump updated_at either.
-			updated = rowFromGet(before)
+			updated = rowFromGetForUpdate(before)
 			return nil
 		}
 
@@ -993,7 +1039,13 @@ func (d Deps) updateLink(ctx context.Context, in *UpdateLinkInput) (*LinkOutput,
 		})
 	})
 
+	var status huma.StatusError
 	switch {
+	case errors.As(err, &status):
+		// Already shaped: the 409 above, or a 422 from resolveFolderRef or
+		// resolveTagRefs. Before this case existed those 422s fell through to
+		// the 500 below.
+		return nil, err
 	case isUniqueViolation(err):
 		return nil, huma.Error409Conflict("that slug is already taken on this domain")
 	case errors.Is(err, pgx.ErrNoRows):
@@ -1008,6 +1060,20 @@ func (d Deps) updateLink(ctx context.Context, in *UpdateLinkInput) (*LinkOutput,
 		if updated.Slug != previous.Slug {
 			// The new key may hold a not-found sentinel from a probe.
 			d.invalidateLink(ctx, updated.Hostname, updated.Slug)
+		}
+	}
+
+	if updated.DestinationURL != previous.DestinationURL {
+		if previous.State == "flagged" {
+			// The confirmation vouched for the old destination. Left in place,
+			// it could block the new one before Google has said a word about it.
+			d.clearThreatConfirmation(ctx, updated.ID)
+		}
+		// Only an active link: applyVerdict skips any other, so the request
+		// would be wasted, and a disabled link becomes due again once it is
+		// re-enabled.
+		if updated.State == "active" {
+			d.scanSoon(ctx, scanTarget{LinkID: updated.ID, TeamID: member.TeamID, URL: updated.DestinationURL})
 		}
 	}
 

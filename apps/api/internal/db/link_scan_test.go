@@ -321,19 +321,58 @@ func TestRecordLinkScanWritesTheCheckButNotUpdatedAt(t *testing.T) {
 	require.True(t, at(t, "2000-01-01T00:00:00Z").Equal(updatedAt))
 }
 
+// A PATCH that lifts a flag forgets which destination the last check judged,
+// and only for its own team's link. scan_checked_at stays: it still says when
+// that check ran.
+func TestClearLinkScanDestinationForgetsTheCheckedURLWithinTheTeam(t *testing.T) {
+	f := newScanFixture(t)
+	ctx := context.Background()
+	id := f.link(t, scanSeed{
+		CreatedAt: "2000-01-01T00:00:00Z", Destination: "https://example.org/flagged",
+		CheckedAt: ptr(scanNow), CheckedURL: ptr("https://example.org/flagged"),
+	})
+	checkedURL := func() (url *string) {
+		require.NoError(t, f.tx.QueryRow(ctx,
+			`select scan_destination from link where id = $1`, id).Scan(&url))
+		return url
+	}
+
+	require.NoError(t, f.queries.ClearLinkScanDestination(ctx, db.ClearLinkScanDestinationParams{
+		ID: id, TeamID: uuid.New(),
+	}))
+	require.Equal(t, ptr("https://example.org/flagged"), checkedURL(), "another team must not touch it")
+
+	require.NoError(t, f.queries.ClearLinkScanDestination(ctx, db.ClearLinkScanDestinationParams{
+		ID: id, TeamID: f.teamID,
+	}))
+	require.Nil(t, checkedURL())
+
+	var checkedAt *time.Time
+	require.NoError(t, f.tx.QueryRow(ctx,
+		`select scan_checked_at from link where id = $1`, id).Scan(&checkedAt))
+	require.NotNil(t, checkedAt)
+	require.True(t, scanNow.Equal(*checkedAt))
+}
+
 func TestGetLatestLinkScanResultReturnsTheNewestRowWithinTheTeam(t *testing.T) {
 	f := newScanFixture(t)
 	ctx := context.Background()
 	id := f.link(t, scanSeed{CreatedAt: "2000-01-01T00:00:00Z"})
 
-	require.NoError(t, f.queries.InsertLinkScanResult(ctx, db.InsertLinkScanResultParams{
-		LinkID: id, TeamID: f.teamID, Verdict: "flagged", DestinationURL: "https://example.org/x",
-		ThreatTypes: []string{"MALWARE"}, ScannedAt: at(t, "2000-02-01T00:00:00Z"),
-	}))
-	require.NoError(t, f.queries.InsertLinkScanResult(ctx, db.InsertLinkScanResultParams{
-		LinkID: id, TeamID: f.teamID, Verdict: "clean", DestinationURL: "https://example.org/x",
-		ThreatTypes: []string{}, ScannedAt: at(t, "2000-03-01T00:00:00Z"),
-	}))
+	for _, params := range []db.InsertLinkScanResultParams{
+		{
+			LinkID: id, TeamID: f.teamID, Verdict: "flagged", DestinationURL: "https://example.org/x",
+			ThreatTypes: []string{"MALWARE"}, ScannedAt: at(t, "2000-02-01T00:00:00Z"),
+		},
+		{
+			LinkID: id, TeamID: f.teamID, Verdict: "clean", DestinationURL: "https://example.org/x",
+			ThreatTypes: []string{}, ScannedAt: at(t, "2000-03-01T00:00:00Z"),
+		},
+	} {
+		written, err := f.queries.InsertLinkScanResult(ctx, params)
+		require.NoError(t, err)
+		require.EqualValues(t, 1, written)
+	}
 
 	latest, err := f.queries.GetLatestLinkScanResult(ctx, db.GetLatestLinkScanResultParams{
 		LinkID: id, TeamID: f.teamID,
@@ -352,7 +391,9 @@ func TestGetLatestLinkScanResultReturnsTheNewestRowWithinTheTeam(t *testing.T) {
 
 // link_scan_result has no team_id of its own, so the insert takes it from the
 // link it selects from: a link that is not the caller's team's gets no row,
-// like every other verdict write.
+// like every other verdict write. The miss is not an error, so the query
+// reports how many rows it wrote, and that count is what lets applyVerdict
+// refuse a verdict change that left no record behind.
 func TestInsertLinkScanResultWritesNothingForAnotherTeamsLink(t *testing.T) {
 	f := newScanFixture(t)
 	ctx := context.Background()
@@ -364,18 +405,22 @@ func TestInsertLinkScanResultWritesNothingForAnotherTeamsLink(t *testing.T) {
 		return n
 	}
 
-	require.NoError(t, f.queries.InsertLinkScanResult(ctx, db.InsertLinkScanResultParams{
+	written, err := f.queries.InsertLinkScanResult(ctx, db.InsertLinkScanResultParams{
 		LinkID: id, TeamID: uuid.New(), Verdict: "flagged", DestinationURL: "https://example.org/x",
 		ThreatTypes: []string{"MALWARE"}, ScannedAt: scanNow,
-	}))
+	})
+	require.NoError(t, err)
+	require.Zero(t, written, "the miss must be visible to the caller, not only in the table")
 	require.Zero(t, count(), "a team that does not own the link must not write its verdict")
 
 	// A clean verdict has no threat types, and a nil slice is how Go says so.
 	// It must land as an empty array, not as the NULL the column refuses.
-	require.NoError(t, f.queries.InsertLinkScanResult(ctx, db.InsertLinkScanResultParams{
+	written, err = f.queries.InsertLinkScanResult(ctx, db.InsertLinkScanResultParams{
 		LinkID: id, TeamID: f.teamID, Verdict: "clean", DestinationURL: "https://example.org/x",
 		ThreatTypes: nil, ScannedAt: scanNow,
-	}))
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, written)
 	require.Equal(t, 1, count())
 }
 

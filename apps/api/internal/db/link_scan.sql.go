@@ -12,6 +12,29 @@ import (
 	"github.com/google/uuid"
 )
 
+const clearLinkScanDestination = `-- name: ClearLinkScanDestination :exec
+
+update link set scan_destination = null
+where id = $1 and team_id = $2
+`
+
+type ClearLinkScanDestinationParams struct {
+	ID     uuid.UUID
+	TeamID uuid.UUID
+}
+
+// ClearLinkScanDestination forgets which destination the last check judged.
+// updateLink calls it when a new destination lifts a flag: otherwise changing
+// the destination back before the new one's check lands would leave the link
+// active on the URL Google flagged, with a recent check on record for exactly
+// that URL, and the sweep would not look at it for a day. With
+// scan_destination null the link is due at once. scan_checked_at is left as
+// it is: it still says when that check ran.
+func (q *Queries) ClearLinkScanDestination(ctx context.Context, arg ClearLinkScanDestinationParams) error {
+	_, err := q.db.Exec(ctx, clearLinkScanDestination, arg.ID, arg.TeamID)
+	return err
+}
+
 const countDueLinksForScan = `-- name: CountDueLinksForScan :one
 
 select count(*)
@@ -120,7 +143,7 @@ func (q *Queries) GetLinkForScan(ctx context.Context, arg GetLinkForScanParams) 
 	return i, err
 }
 
-const insertLinkScanResult = `-- name: InsertLinkScanResult :exec
+const insertLinkScanResult = `-- name: InsertLinkScanResult :execrows
 
 insert into link_scan_result (link_id, verdict, destination_url, threat_types, scanned_at)
 select l.id, $1::text, $2::text,
@@ -141,13 +164,14 @@ type InsertLinkScanResultParams struct {
 // InsertLinkScanResult records a verdict change. link_scan_result has no
 // team_id column, so the row is selected from the link and the team filter
 // sits on that select: a link that is not the given team's gets no row, and
-// the call still succeeds, exactly as RecordLinkScan's update does. Its one
-// caller has just read and locked the link under that team in the same
-// transaction, so a miss is not an outcome it expects. A nil threat_types is
-// stored as an empty array: a clean verdict has none, and the column is not
-// null.
-func (q *Queries) InsertLinkScanResult(ctx context.Context, arg InsertLinkScanResultParams) error {
-	_, err := q.db.Exec(ctx, insertLinkScanResult,
+// the statement still succeeds, exactly as RecordLinkScan's update does. So it
+// reports how many rows it wrote. Its one caller has just read and locked the
+// link under that team in the same transaction, so a miss is not an outcome it
+// expects, and it fails on one rather than commit a flag with no record of
+// why. A nil threat_types is stored as an empty array: a clean verdict has
+// none, and the column is not null.
+func (q *Queries) InsertLinkScanResult(ctx context.Context, arg InsertLinkScanResultParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertLinkScanResult,
 		arg.Verdict,
 		arg.DestinationURL,
 		arg.ThreatTypes,
@@ -155,7 +179,10 @@ func (q *Queries) InsertLinkScanResult(ctx context.Context, arg InsertLinkScanRe
 		arg.LinkID,
 		arg.TeamID,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const listDueLinksForScan = `-- name: ListDueLinksForScan :many

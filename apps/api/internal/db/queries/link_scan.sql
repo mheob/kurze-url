@@ -94,16 +94,29 @@ update link set
   scan_destination = sqlc.arg('checked_destination')::text
 where id = sqlc.arg('id') and team_id = sqlc.arg('team_id');
 
+-- ClearLinkScanDestination forgets which destination the last check judged.
+-- updateLink calls it when a new destination lifts a flag: otherwise changing
+-- the destination back before the new one's check lands would leave the link
+-- active on the URL Google flagged, with a recent check on record for exactly
+-- that URL, and the sweep would not look at it for a day. With
+-- scan_destination null the link is due at once. scan_checked_at is left as
+-- it is: it still says when that check ran.
+
+-- name: ClearLinkScanDestination :exec
+update link set scan_destination = null
+where id = sqlc.arg('id') and team_id = sqlc.arg('team_id');
+
 -- InsertLinkScanResult records a verdict change. link_scan_result has no
 -- team_id column, so the row is selected from the link and the team filter
 -- sits on that select: a link that is not the given team's gets no row, and
--- the call still succeeds, exactly as RecordLinkScan's update does. Its one
--- caller has just read and locked the link under that team in the same
--- transaction, so a miss is not an outcome it expects. A nil threat_types is
--- stored as an empty array: a clean verdict has none, and the column is not
--- null.
+-- the statement still succeeds, exactly as RecordLinkScan's update does. So it
+-- reports how many rows it wrote. Its one caller has just read and locked the
+-- link under that team in the same transaction, so a miss is not an outcome it
+-- expects, and it fails on one rather than commit a flag with no record of
+-- why. A nil threat_types is stored as an empty array: a clean verdict has
+-- none, and the column is not null.
 
--- name: InsertLinkScanResult :exec
+-- name: InsertLinkScanResult :execrows
 insert into link_scan_result (link_id, verdict, destination_url, threat_types, scanned_at)
 select l.id, sqlc.arg('verdict')::text, sqlc.arg('destination_url')::text,
        coalesce(sqlc.arg('threat_types')::text[], '{}'), sqlc.arg('scanned_at')::timestamptz
