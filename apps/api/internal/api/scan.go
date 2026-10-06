@@ -283,20 +283,27 @@ func (d Deps) scanOne(ctx context.Context, target scanTarget) {
 }
 
 // applyAndLog applies a verdict a background check produced. Nobody waits on
-// it, and a failure leaves the link due for the sweep, but a failure here is
-// the database failing, so it is an Error and reaches Sentry. Running out of
-// time is the exception and stays a Warn: the background budget is shared
-// with the Google call, so a deadline says the check was slow, not that
-// Postgres is broken.
+// it, and a failure leaves the link due for the sweep; logApplyFailure says
+// how loudly it is reported.
 func (d Deps) applyAndLog(ctx context.Context, target scanTarget, result scanning.Result) {
-	_, err := d.applyVerdict(ctx, target, result)
-	switch {
-	case err == nil:
-	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
-		d.Log.Warn("apply safe browsing verdict", "error", err, "link_id", target.LinkID)
-	default:
-		d.Log.Error("apply safe browsing verdict", "error", err, "link_id", target.LinkID)
+	if _, err := d.applyVerdict(ctx, target, result); err != nil {
+		d.logApplyFailure(err, target.LinkID)
 	}
+}
+
+// logApplyFailure reports a verdict that could not be written. That is the
+// database failing, so it is an Error and reaches Sentry. Running out of time
+// or being cancelled is the exception and stays a Warn: the background budget
+// is shared with the Google call, and the sweep's with every other link in its
+// batch, so a deadline says the check was slow, not that Postgres is broken.
+// The one place this is decided, for the checks after a write and the sweep
+// alike.
+func (d Deps) logApplyFailure(err error, linkID uuid.UUID) {
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		d.Log.Warn("apply safe browsing verdict", "error", err, "link_id", linkID)
+		return
+	}
+	d.Log.Error("apply safe browsing verdict", "error", err, "link_id", linkID)
 }
 
 // inBackground runs work on its own goroutine, detached from the request so

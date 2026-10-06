@@ -65,6 +65,11 @@ type Deps struct {
 	// time.Now when nil.
 	Now func() time.Time
 
+	// ScanBudget bounds one POST /internal/scan run. Zero means scanBudget;
+	// it is a field so a test can run the sweep out of time in a third of a
+	// second rather than twenty-five, through the real handler.
+	ScanBudget time.Duration
+
 	// PingPostgres and PingRedis back GET /health/deep. Function fields
 	// rather than an interface, and nil meaning "use the real dependency",
 	// following the same convention as Now above: a test needs to fail one

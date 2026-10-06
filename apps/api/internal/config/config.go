@@ -151,6 +151,14 @@ type Config struct {
 	// the redirect surface must start without it.
 	SafeBrowsingAPIKey string
 
+	// ScanToken guards POST /internal/scan, the sweep .github/workflows/scan.yml
+	// calls twice an hour. Empty disables the endpoint outright — it then
+	// answers 404 for every caller — for RetentionToken's reason: a forgotten
+	// value must not leave an endpoint that writes to every link open to
+	// whoever guesses the path. Its own value, not RetentionToken's or
+	// HealthCheckToken's, so one leaked string authorizes one job.
+	ScanToken string
+
 	// SentryDSN empty disables error reporting entirely. Errors are still
 	// logged; they just do not outlive Vercel's log retention.
 	SentryDSN string
@@ -273,6 +281,7 @@ func Load() (Config, error) {
 	cfg.HealthCheckToken = os.Getenv("HEALTH_CHECK_TOKEN")
 	cfg.RetentionToken = os.Getenv("RETENTION_TOKEN")
 	cfg.SafeBrowsingAPIKey = os.Getenv("SAFE_BROWSING_API_KEY")
+	cfg.ScanToken = os.Getenv("SCAN_TOKEN")
 
 	cfg.SentryDSN = os.Getenv("SENTRY_DSN")
 	cfg.Environment = env("VERCEL_ENV", "development")

@@ -23,3 +23,11 @@ func (d Deps) ApplyVerdictForTest(
 ) (VerdictOutcome, error) {
 	return d.applyVerdict(ctx, scanTarget{LinkID: linkID, TeamID: teamID, URL: url}, result)
 }
+
+// ScanReport is the sweep's report, for assertions.
+type ScanReport = scanReport
+
+// SweepForTest runs one sweep with a batch limit the test chooses.
+func (d Deps) SweepForTest(ctx context.Context, limit int) (ScanReport, error) {
+	return d.sweep(ctx, limit)
+}

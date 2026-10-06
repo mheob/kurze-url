@@ -79,3 +79,19 @@ func (c *fakeChecker) Check(ctx context.Context, urls []string) (map[string]scan
 	}
 	return answer, nil
 }
+
+// fail makes every check fail with err.
+func (c *fakeChecker) fail(err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.err = err
+}
+
+// onCheck runs fn inside every check, with the check's own context, before it
+// answers — for a test that needs something to happen while Google is
+// "thinking".
+func (c *fakeChecker) onCheck(fn func(context.Context)) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.during = fn
+}

@@ -308,3 +308,18 @@ func TestSafeBrowsingAPIKeyIsOptional(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "a-key", cfg.SafeBrowsingAPIKey)
 }
+
+// Fail closed, like RETENTION_TOKEN: unset turns the sweep endpoint into a 404.
+func TestScanTokenIsOptional(t *testing.T) {
+	setRequired(t)
+	t.Setenv("SCAN_TOKEN", "")
+
+	cfg, err := config.Load()
+	require.NoError(t, err)
+	require.Empty(t, cfg.ScanToken)
+
+	t.Setenv("SCAN_TOKEN", "a-token")
+	cfg, err = config.Load()
+	require.NoError(t, err)
+	require.Equal(t, "a-token", cfg.ScanToken)
+}
