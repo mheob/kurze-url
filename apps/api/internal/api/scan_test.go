@@ -313,6 +313,86 @@ func TestApplyVerdictWithoutAUsableValidityFlagsButConfirmsNothing(t *testing.T)
 	require.Negative(t, confirmationTTLLeft(t, f.deps.Cache, f.linkID))
 }
 
+// cancelOnCommit is a pgx tracer that cancels a context the moment a COMMIT
+// on its pool succeeds. That is the caller's time running out in the gap
+// between applyVerdict's transaction and the Redis work that must follow it,
+// which a deadline could only hit by chance.
+type cancelOnCommit struct{ cancel context.CancelFunc }
+
+type commitQueryKey struct{}
+
+func (c cancelOnCommit) TraceQueryStart(
+	ctx context.Context, _ *pgx.Conn, data pgx.TraceQueryStartData,
+) context.Context {
+	return context.WithValue(ctx, commitQueryKey{}, strings.EqualFold(strings.TrimSpace(data.SQL), "commit"))
+}
+
+func (c cancelOnCommit) TraceQueryEnd(ctx context.Context, _ *pgx.Conn, data pgx.TraceQueryEndData) {
+	if commit, _ := ctx.Value(commitQueryKey{}).(bool); commit && data.Err == nil {
+		c.cancel()
+	}
+}
+
+// poolCancellingOnCommit is a second pool on the fixture's database whose
+// every successful COMMIT calls cancel.
+func poolCancellingOnCommit(t *testing.T, base *pgxpool.Pool, cancel context.CancelFunc) *pgxpool.Pool {
+	t.Helper()
+	config := base.Config()
+	config.ConnConfig.Tracer = cancelOnCommit{cancel: cancel}
+	pool, err := pgxpool.NewWithConfig(context.Background(), config)
+	require.NoError(t, err)
+	t.Cleanup(pool.Close)
+	return pool
+}
+
+// The flag has committed, and then the caller's time runs out — the sweep's
+// budget, or the ten seconds a background check shares with Google. The
+// confirmation and the cache invalidation must still happen: without them the
+// cached active entry of a link Google just flagged keeps forwarding visitors
+// for up to an hour.
+func TestApplyVerdictFinishesAFlagAfterTheCallersTimeRanOutAtTheCommit(t *testing.T) {
+	f := newFixture(t)
+	require.Equal(t, http.StatusFound, get(t, f, "/hello", nil).Code, "cache the active link first")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	f.deps.Pool = poolCancellingOnCommit(t, f.pool, cancel)
+
+	outcome, err := f.deps.ApplyVerdictForTest(ctx, f.linkID, fixtureTeamID(t, f), fixtureDestination,
+		flagged("MALWARE"))
+	require.NoError(t, err)
+	require.Equal(t, api.VerdictOutcome("flagged"), outcome)
+	require.ErrorIs(t, ctx.Err(), context.Canceled, "the commit must have ended the caller's context")
+
+	_, err = f.deps.Cache.Raw().Get(context.Background(),
+		f.deps.Cache.Key(link.CacheKey(f.hostname, "hello"))).Result()
+	require.ErrorIs(t, err, redis.Nil, "the cached active link must be gone")
+	require.Positive(t, confirmationTTLLeft(t, f.deps.Cache, f.linkID), "the confirmation must be set")
+}
+
+// The same gap when Google clears a link: the confirmation must go, or the
+// link keeps its block page for up to 29 minutes after Google cleared it.
+func TestApplyVerdictFinishesAnUnflagAfterTheCallersTimeRanOutAtTheCommit(t *testing.T) {
+	f := newFixture(t, withState("flagged"))
+	background := context.Background()
+	require.NoError(t, f.deps.Cache.ConfirmThreats(background, f.linkID.String(), []string{"MALWARE"}, 10*time.Minute))
+	cacheKey := link.CacheKey(f.hostname, "hello")
+	require.NoError(t, f.deps.Cache.PutLink(background, cacheKey, link.Cached{
+		ID: f.linkID, State: "flagged", DestinationURL: fixtureDestination,
+	}, time.Hour))
+	ctx, cancel := context.WithCancel(background)
+	defer cancel()
+	f.deps.Pool = poolCancellingOnCommit(t, f.pool, cancel)
+
+	outcome, err := f.deps.ApplyVerdictForTest(ctx, f.linkID, fixtureTeamID(t, f), fixtureDestination, clean())
+	require.NoError(t, err)
+	require.Equal(t, api.VerdictOutcome("unflagged"), outcome)
+	require.ErrorIs(t, ctx.Err(), context.Canceled, "the commit must have ended the caller's context")
+
+	require.Negative(t, confirmationTTLLeft(t, f.deps.Cache, f.linkID), "the confirmation must be gone")
+	_, err = f.deps.Cache.Raw().Get(background, f.deps.Cache.Key(cacheKey)).Result()
+	require.ErrorIs(t, err, redis.Nil, "the cached flagged link must be gone")
+}
+
 // scanningFixture is a tenancy fixture whose /v1 surface has a fake checker.
 func scanningFixture(t *testing.T) (*tenancyFixture, *fakeChecker) {
 	t.Helper()

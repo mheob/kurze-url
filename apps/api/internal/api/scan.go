@@ -20,6 +20,12 @@ import (
 // repeat.
 const backgroundScanTimeout = 10 * time.Second
 
+// afterCommitTimeout bounds the Redis work applyVerdict does once its
+// transaction has committed. It is far below confirmationMargin, the minute a
+// confirmation's TTL is shortened by, because the TTL is counted from the SET
+// rather than from Google's answer.
+const afterCommitTimeout = 3 * time.Second
+
 const (
 	// confirmationMaxAge is the thirty minutes of Google's terms: no warning
 	// and no block on a verdict older than that.
@@ -82,7 +88,8 @@ const (
 //
 // After the commit, a flag sets the Redis confirmation and clears the cached
 // link, and logs at Error, which is how the maintainer hears of it. Lifting a
-// flag clears both. A link that was deleted meanwhile is not an error.
+// flag clears both. That work runs on its own short timeout, detached from
+// ctx. A link that was deleted meanwhile is not an error.
 //
 // Every read and write here filters by target.TeamID, although the scanner
 // belongs to no team: it always knows the link's team, so the tenancy rule
@@ -185,18 +192,25 @@ func (d Deps) applyVerdict(ctx context.Context, target scanTarget, result scanni
 		return "", fmt.Errorf("apply safe browsing verdict: %w", err)
 	}
 
+	// The state has committed, so what follows must happen whatever is left of
+	// the caller's time: the sweep's budget or the background check's ten
+	// seconds may end in the gap. On the caller's context a just-flagged link
+	// would keep forwarding from its cached active entry for up to an hour, and
+	// a just-cleared one would keep its block page for up to 29 minutes.
+	afterCommit, cancel := context.WithTimeout(context.WithoutCancel(ctx), afterCommitTimeout)
+	defer cancel()
 	switch outcome {
 	case verdictFlagged:
-		d.confirmThreats(ctx, target.LinkID, threats, result.ValidFor)
-		d.invalidateLink(ctx, hostname, slug)
+		d.confirmThreats(afterCommit, target.LinkID, threats, result.ValidFor)
+		d.invalidateLink(afterCommit, hostname, slug)
 		d.Log.Error("link flagged by Safe Browsing",
 			"link_id", target.LinkID, "team_id", target.TeamID, "threat_types", threats)
 	case verdictUnflagged:
-		d.clearThreatConfirmation(ctx, target.LinkID)
-		d.invalidateLink(ctx, hostname, slug)
+		d.clearThreatConfirmation(afterCommit, target.LinkID)
+		d.invalidateLink(afterCommit, hostname, slug)
 		d.Log.Info("link unflagged by Safe Browsing", "link_id", target.LinkID, "team_id", target.TeamID)
 	case verdictConfirmed:
-		d.confirmThreats(ctx, target.LinkID, threats, result.ValidFor)
+		d.confirmThreats(afterCommit, target.LinkID, threats, result.ValidFor)
 	}
 	return outcome, nil
 }
