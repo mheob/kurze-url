@@ -157,7 +157,8 @@ func (c *Client) Check(ctx context.Context, urls []string) (map[string]Result, e
 // Google's reading alone would let a listed host hide behind an escaped
 // userinfo; matching net/url's alone would miss the spellings Google's rules
 // exist to catch. Empty when neither reading finds a host: the URL then gets
-// no verdict.
+// no verdict, which is why destination.Validate refuses such a URL through
+// HasLookupHost.
 func lookupExpressions(raw string) []string {
 	var expressions []string
 	if google, err := canonicalize(raw); err == nil {
@@ -171,6 +172,18 @@ func lookupExpressions(raw string) []string {
 		}
 	}
 	return expressions
+}
+
+// HasLookupHost reports whether Check can judge raw at all: whether either
+// reading lookupExpressions takes of it finds a host. net/url reads a host in
+// "https://./" and in the ideographic and full-width dots ("https://。/"),
+// while Google's rules map those dots to "." and then strip every dot, leaving
+// nothing. A link to such a URL would never get a verdict, so it would stay at
+// the head of the sweep's never-checked list forever, and enough of them
+// would fill every batch. destination.Validate refuses it with this, so the
+// rule is the canonicalizer's own and cannot drift from it.
+func HasLookupHost(raw string) bool {
+	return len(lookupExpressions(raw)) > 0
 }
 
 // netURLReading canonicalizes raw with net/url deciding where the host ends.

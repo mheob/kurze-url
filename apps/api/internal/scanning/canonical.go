@@ -12,9 +12,10 @@ import (
 	"golang.org/x/net/publicsuffix"
 )
 
-// ErrNoHost means a URL has no host to check. destination.Validate refuses
-// every such destination, so meeting it means a caller passed something that
-// was never a link destination.
+// ErrNoHost means one reading of a URL found no host to check. Check can
+// still judge the URL by its other reading (see lookupExpressions), so this
+// alone says nothing about a destination; destination.Validate refuses only a
+// URL for which neither reading finds a host (see HasLookupHost).
 var ErrNoHost = errors.New("scanning: url has no host")
 
 // canonicalURL is a URL in the form Safe Browsing hashes, split into the parts

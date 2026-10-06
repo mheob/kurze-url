@@ -359,6 +359,24 @@ func TestAnImmediateCheckWithoutAVerdictLeavesTheLinkDue(t *testing.T) {
 	require.Equal(t, "active", linkState(t, f.pool, created.ID))
 }
 
+// A destination Safe Browsing reads no host in would never get a verdict and
+// would starve the sweep, so it is refused with the 422 every other invalid
+// destination gets — on create and on PATCH alike, since PATCH has no rate
+// limit of its own.
+func TestADestinationNoCheckCanReadIsRefused(t *testing.T) {
+	f := newTenancyFixture(t)
+	const unreadable = "https://\u3002/"
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPost, "/v1/teams/"+f.teamID.String()+"/links",
+		map[string]any{"destination_url": unreadable})
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code, "body: %s", rec.Body.String())
+
+	created := f.createLink(t, "lesbar", "https://example.org/lesbar")
+	rec = f.do(t, f.members[authz.RoleEditor], http.MethodPatch, "/v1/links/"+created.ID.String(),
+		map[string]any{"destination_url": unreadable})
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code, "body: %s", rec.Body.String())
+}
+
 func TestChangingTheDestinationChecksTheNewOneRightAway(t *testing.T) {
 	f, checker := scanningFixture(t)
 	first, second := uniqueDestination("ok"), uniqueDestination("phish")
