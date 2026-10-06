@@ -38,7 +38,7 @@ type Link struct {
 	ShortURL         string     `json:"short_url"`
 	DestinationURL   string     `json:"destination_url"`
 	RedirectType     int        `json:"redirect_type"`
-	State            string     `json:"state"`
+	State            string     `json:"state" enum:"active,disabled,expired,flagged" doc:"expired follows from expires_at. flagged is set by Safe Browsing scanning; only a later clean check by Google, or a new destination, lifts it."`
 	ExpiresAt        *time.Time `json:"expires_at"`
 	HasPassword      bool       `json:"has_password"`
 	AnalyticsEnabled bool       `json:"analytics_enabled"`
@@ -54,6 +54,23 @@ type Link struct {
 	CreatedBy uuid.UUID  `json:"created_by"`
 	CreatedAt time.Time  `json:"created_at"`
 	UpdatedAt time.Time  `json:"updated_at"`
+	// Scan is an object, so it follows the Huma rule FolderID's comment above
+	// describes for a different reason: an omitempty pointer, which Huma
+	// publishes as optional and non-nullable, never a bare tag, which would
+	// publish a required property the handler answers with null (CLAUDE.md,
+	// Huma nullability). Only getLink fills it; every other operation that
+	// answers with a Link leaves it out.
+	Scan *LinkScan `json:"scan,omitempty" doc:"The Safe Browsing verdict on the current destination. Only GET /v1/links/{link_id} carries it, and only once that destination has been checked."`
+}
+
+// LinkScan is the latest Safe Browsing verdict on a link's current
+// destination, nested in GET /v1/links/{link_id} rather than served by an
+// endpoint of its own (docs/planning/06-api-design.md).
+type LinkScan struct {
+	Verdict     string     `json:"verdict" enum:"clean,flagged" doc:"flagged while the link is blocked. Only a later clean check by Google, or a new destination, lifts it."`
+	ThreatTypes []string   `json:"threat_types" doc:"Google's threat types for a flagged link, such as SOCIAL_ENGINEERING or MALWARE; empty when clean. Google adds types over time, so treat one you do not know as a generic threat."`
+	Since       *time.Time `json:"since,omitempty" doc:"When the link entered this verdict for its current destination. Absent while it has been clean since that destination was first checked."`
+	CheckedAt   time.Time  `json:"checked_at" doc:"When Google last checked the current destination, whatever it found."`
 }
 
 // linkRow is the shape every link query returns. sqlc generates a distinct Go
@@ -768,7 +785,7 @@ type UpdateLinkInput struct {
 		DestinationURL   *string     `json:"destination_url,omitempty" maxLength:"2048"`
 		Slug             *string     `json:"slug,omitempty" maxLength:"64"`
 		RedirectType     *int        `json:"redirect_type,omitempty" enum:"301,302"`
-		State            *string     `json:"state,omitempty" enum:"active,disabled" doc:"expired follows from expires_at and flagged is set by scanning; neither is a caller's to write."`
+		State            *string     `json:"state,omitempty" enum:"active,disabled" doc:"expired follows from expires_at and flagged is set by scanning; neither is a caller's to write. A flagged link refuses any state with 409: change its destination, or wait until Google clears it."`
 		ExpiresAt        *time.Time  `json:"expires_at,omitempty"`
 		AnalyticsEnabled *bool       `json:"analytics_enabled,omitempty"`
 		FolderID         *uuid.UUID  `json:"folder_id,omitempty" nullable:"true" doc:"Send null to unfile the link."`
@@ -830,13 +847,61 @@ func (d Deps) getLink(ctx context.Context, in *GetLinkInput) (*LinkOutput, error
 		return nil, huma.Error500InternalServerError("could not load the link")
 	}
 
-	items := []Link{d.linkResponse(rowFromGet(row))}
+	body := d.linkResponse(rowFromGet(row))
+	scan, err := d.linkScan(ctx, member.TeamID, row)
+	if err != nil {
+		d.Log.Error("load link scan verdict", "error", err, "link_id", in.LinkID)
+		return nil, huma.Error500InternalServerError("could not load the link")
+	}
+	body.Scan = scan
+
+	items := []Link{body}
 	if err := d.attachTags(ctx, member.TeamID, items); err != nil {
 		d.Log.Error("attach tags to link", "error", err, "link_id", in.LinkID)
 		return nil, huma.Error500InternalServerError("could not load the link")
 	}
 
 	return &LinkOutput{Status: http.StatusOK, Body: items[0]}, nil
+}
+
+// linkScan projects a link's Safe Browsing state for getLink. It is absent
+// until the link's current destination has been checked: a verdict never
+// describes a URL it did not see, so after a destination change there is
+// nothing to report until Google has looked at the new one. A link whose flag
+// a destination change lifted still has its old scan_checked_at, but
+// scan_destination was cleared with the flag, which is what tells "checked"
+// from "checked something else". since comes from the latest link_scan_result
+// row, and only when that row records the current verdict for the current
+// destination: a link that has been clean since its first check has no row
+// saying when it became clean.
+func (d Deps) linkScan(ctx context.Context, teamID uuid.UUID, row db.GetLinkForAPIRow) (*LinkScan, error) {
+	if row.ScanCheckedAt == nil || row.ScanDestination == nil || *row.ScanDestination != row.DestinationURL {
+		return nil, nil
+	}
+
+	scan := &LinkScan{Verdict: "clean", ThreatTypes: []string{}, CheckedAt: *row.ScanCheckedAt}
+	if row.State == "flagged" {
+		scan.Verdict = "flagged"
+	}
+
+	latest, err := d.Queries.GetLatestLinkScanResult(ctx, db.GetLatestLinkScanResultParams{
+		LinkID: row.ID, TeamID: teamID,
+	})
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return scan, nil
+	case err != nil:
+		return nil, fmt.Errorf("read the latest scan result: %w", err)
+	}
+
+	if latest.Verdict == scan.Verdict && latest.DestinationURL == row.DestinationURL {
+		since := latest.ScannedAt
+		scan.Since = &since
+		if scan.Verdict == "flagged" && latest.ThreatTypes != nil {
+			scan.ThreatTypes = latest.ThreatTypes
+		}
+	}
+	return scan, nil
 }
 
 func (d Deps) updateLink(ctx context.Context, in *UpdateLinkInput) (*LinkOutput, error) {
