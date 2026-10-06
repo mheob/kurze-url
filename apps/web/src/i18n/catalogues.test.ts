@@ -108,6 +108,10 @@ describe('translation catalogues', () => {
 			// languages, so the template is identical — the same reasoning as
 			// `stats.rangeSummary`.
 			'links.inTag',
+			// "Google Safe Browsing" is the name of Google's service, a proper
+			// noun in both languages, the same reasoning as `brand`. It is the
+			// audit log's author for the two entries only the scanner writes.
+			'audit.actorSafeBrowsing',
 		]);
 		const english = new Map(flatten(en));
 		const toCheck = flatten(de).filter(

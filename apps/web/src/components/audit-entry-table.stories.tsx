@@ -98,3 +98,42 @@ export const DetailsOpen: StoryObj<typeof meta> = {
 		await userEvent.click(canvas.getByRole('button', { name: /link changed/iu }));
 	},
 };
+
+/**
+ * The two entries only the Safe Browsing scanner writes, beside an entry whose
+ * author's account was deleted: all three carry no actor id, and only the
+ * action tells them apart.
+ */
+export const SafeBrowsingEntries: StoryObj<typeof meta> = {
+	args: {
+		entries: [
+			{
+				action: 'link.unflagged',
+				created_at: '2026-10-03T10:30:00.000Z',
+				entity_id: 'link-3',
+				entity_type: 'link',
+				id: 7,
+				metadata: { destination_url: 'https://verein.example/anmeldung', threat_types: [] },
+			},
+			{
+				action: 'link.flagged',
+				created_at: '2026-10-03T08:00:00.000Z',
+				entity_id: 'link-3',
+				entity_type: 'link',
+				id: 6,
+				metadata: {
+					destination_url: 'https://verein.example/anmeldung',
+					threat_types: ['SOCIAL_ENGINEERING'],
+				},
+			},
+			{
+				action: 'link.updated',
+				created_at: '2026-10-01T09:00:00.000Z',
+				entity_id: 'link-3',
+				entity_type: 'link',
+				id: 5,
+				metadata: {},
+			},
+		],
+	},
+};
