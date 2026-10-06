@@ -95,3 +95,10 @@ func (c *fakeChecker) onCheck(fn func(context.Context)) {
 	defer c.mu.Unlock()
 	c.during = fn
 }
+
+// slow makes every check take delay, or until its context ends.
+func (c *fakeChecker) slow(delay time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.delay = delay
+}
