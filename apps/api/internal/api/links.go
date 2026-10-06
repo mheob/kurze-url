@@ -1128,18 +1128,20 @@ func (d Deps) updateLink(ctx context.Context, in *UpdateLinkInput) (*LinkOutput,
 		}
 	}
 
-	if updated.DestinationURL != previous.DestinationURL {
-		if previous.State == "flagged" {
-			// The confirmation vouched for the old destination. Left in place,
-			// it could block the new one before Google has said a word about it.
-			d.clearThreatConfirmation(ctx, updated.ID)
-		}
-		// Only an active link: applyVerdict skips any other, so the request
-		// would be wasted, and a disabled link becomes due again once it is
-		// re-enabled.
-		if updated.State == "active" {
-			d.scanSoon(ctx, scanTarget{LinkID: updated.ID, TeamID: member.TeamID, URL: updated.DestinationURL})
-		}
+	if updated.DestinationURL != previous.DestinationURL && previous.State == "flagged" {
+		// The confirmation vouched for the old destination. Left in place, it
+		// could block the new one before Google has said a word about it.
+		d.clearThreatConfirmation(ctx, updated.ID)
+	}
+	// An active link whose destination no check has judged is checked now:
+	// a new destination, and equally a re-enabled link whose destination
+	// changed while it was disabled, which would otherwise forward to an
+	// unchecked URL until the next sweep. Only an active link: applyVerdict
+	// skips any other, so the request would be wasted. previous is the row
+	// before this update, so a lifted flag still names the old destination.
+	if updated.State == "active" &&
+		(previous.ScanDestination == nil || *previous.ScanDestination != updated.DestinationURL) {
+		d.scanSoon(ctx, scanTarget{LinkID: updated.ID, TeamID: member.TeamID, URL: updated.DestinationURL})
 	}
 
 	body := d.linkResponse(updated)

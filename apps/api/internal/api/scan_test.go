@@ -511,6 +511,74 @@ func TestADestinationChangeOnADisabledLinkStartsNoCheck(t *testing.T) {
 		300*time.Millisecond, 20*time.Millisecond)
 }
 
+// Disabling a link, pointing it somewhere else and enabling it again must not
+// be a way to forward visitors to a destination nobody has checked: the
+// destination change starts no check while the link is disabled, so the
+// re-enable has to.
+func TestReEnablingALinkChecksADestinationChangedWhileItWasDisabled(t *testing.T) {
+	f, checker := scanningFixture(t)
+	first, second := uniqueDestination("ok"), uniqueDestination("phish")
+	checker.pass(first)
+	checker.flag(second, "SOCIAL_ENGINEERING")
+	editor := f.members[authz.RoleEditor]
+
+	created := f.createLink(t, "wieder", first)
+	eventuallyChecked(t, f.pool, created.ID, first)
+	path := "/v1/links/" + created.ID.String()
+	for _, body := range []map[string]any{
+		{"state": "disabled"},
+		{"destination_url": second},
+		{"state": "active"},
+	} {
+		rec := f.do(t, editor, http.MethodPatch, path, body)
+		require.Equal(t, http.StatusOK, rec.Code, "%v, body: %s", body, rec.Body.String())
+	}
+
+	eventuallyChecked(t, f.pool, created.ID, second)
+	eventuallyState(t, f.pool, created.ID, "flagged")
+	require.Equal(t, 2, checker.callCount(), "one check on create, one on re-enable, none while disabled")
+}
+
+// Re-enabling a link whose destination was already checked asks Google
+// nothing: the check on record still judges the URL the link points at.
+func TestReEnablingALinkWithACheckedDestinationStartsNoCheck(t *testing.T) {
+	f, checker := scanningFixture(t)
+	destination := uniqueDestination("ok")
+	checker.pass(destination)
+	editor := f.members[authz.RoleEditor]
+
+	created := f.createLink(t, "pause", destination)
+	eventuallyChecked(t, f.pool, created.ID, destination)
+	path := "/v1/links/" + created.ID.String()
+	for _, state := range []string{"disabled", "active"} {
+		rec := f.do(t, editor, http.MethodPatch, path, map[string]any{"state": state})
+		require.Equal(t, http.StatusOK, rec.Code, "state %q, body: %s", state, rec.Body.String())
+	}
+
+	require.Never(t, func() bool { return checker.callCount() > 1 },
+		300*time.Millisecond, 20*time.Millisecond)
+}
+
+// The flag belonged to the old destination; the new one starts active and is
+// checked at once, not left for the next sweep.
+func TestANewDestinationForAFlaggedLinkIsCheckedRightAway(t *testing.T) {
+	f, checker := scanningFixture(t)
+	first, second := uniqueDestination("phish"), uniqueDestination("phish")
+	checker.flag(first, "MALWARE")
+	checker.flag(second, "SOCIAL_ENGINEERING")
+
+	created := f.createLink(t, "weiter", first)
+	eventuallyState(t, f.pool, created.ID, "flagged")
+
+	rec := f.do(t, f.members[authz.RoleEditor], http.MethodPatch, "/v1/links/"+created.ID.String(),
+		map[string]any{"destination_url": second})
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	require.Equal(t, "active", decode[linkBody](t, rec).State)
+
+	eventuallyChecked(t, f.pool, created.ID, second)
+	eventuallyState(t, f.pool, created.ID, "flagged")
+}
+
 func flagLink(t *testing.T, pool *pgxpool.Pool, id uuid.UUID) {
 	t.Helper()
 	_, err := pool.Exec(context.Background(), `update link set state = 'flagged' where id = $1`, id)

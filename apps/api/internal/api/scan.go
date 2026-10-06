@@ -275,9 +275,10 @@ func (d Deps) checkTarget(ctx context.Context, target scanTarget) (scanning.Resu
 }
 
 // scanSoon checks one link in the background right after a write committed:
-// after createLink, and after updateLink changed the destination. Best-effort
-// by design — Vercel does not promise to run work past the response, and the
-// sweep exists for the check that never finishes.
+// after createLink, and after updateLink left an active link on a destination
+// no check has judged, whether new or changed while the link was disabled.
+// Best-effort by design — Vercel does not promise to run work past the
+// response, and the sweep exists for the check that never finishes.
 func (d Deps) scanSoon(ctx context.Context, target scanTarget) {
 	if d.Scanner == nil {
 		return
