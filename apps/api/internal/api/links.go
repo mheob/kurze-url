@@ -555,7 +555,7 @@ func (d Deps) createLink(ctx context.Context, in *CreateLinkInput) (*LinkOutput,
 
 			return audit.Log(ctx, q, audit.Entry{
 				TeamID:      member.TeamID,
-				ActorUserID: member.UserID,
+				ActorUserID: &member.UserID,
 				Action:      audit.ActionLinkCreated,
 				EntityType:  audit.EntityLink,
 				EntityID:    row.ID,
@@ -985,7 +985,7 @@ func (d Deps) updateLink(ctx context.Context, in *UpdateLinkInput) (*LinkOutput,
 
 		return audit.Log(ctx, q, audit.Entry{
 			TeamID:      member.TeamID,
-			ActorUserID: member.UserID,
+			ActorUserID: &member.UserID,
 			Action:      audit.ActionLinkUpdated,
 			EntityType:  audit.EntityLink,
 			EntityID:    row.ID,
@@ -1075,7 +1075,7 @@ func (d Deps) deleteLink(ctx context.Context, in *DeleteLinkInput) (*DeleteLinkO
 
 		return audit.Log(ctx, q, audit.Entry{
 			TeamID:      member.TeamID,
-			ActorUserID: member.UserID,
+			ActorUserID: &member.UserID,
 			Action:      audit.ActionLinkDeleted,
 			EntityType:  audit.EntityLink,
 			EntityID:    before.ID,

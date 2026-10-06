@@ -60,7 +60,7 @@ func TestLogWritesTheEntry(t *testing.T) {
 	require.NoError(t, db.InTx(ctx, pool, func(q *db.Queries) error {
 		return audit.Log(ctx, q, audit.Entry{
 			TeamID:      teamID,
-			ActorUserID: userID,
+			ActorUserID: &userID,
 			Action:      audit.ActionTeamRenamed,
 			EntityType:  audit.EntityTeam,
 			EntityID:    teamID,
@@ -90,7 +90,7 @@ func TestLogWritesAnEmptyObjectForNilMetadata(t *testing.T) {
 	require.NoError(t, db.InTx(ctx, pool, func(q *db.Queries) error {
 		return audit.Log(ctx, q, audit.Entry{
 			TeamID:      teamID,
-			ActorUserID: userID,
+			ActorUserID: &userID,
 			Action:      audit.ActionTeamCreated,
 			EntityType:  audit.EntityTeam,
 			EntityID:    teamID,
@@ -112,7 +112,7 @@ func TestLogRefusesPasswordishMetadata(t *testing.T) {
 		err := db.InTx(ctx, pool, func(q *db.Queries) error {
 			return audit.Log(ctx, q, audit.Entry{
 				TeamID:      teamID,
-				ActorUserID: userID,
+				ActorUserID: &userID,
 				Action:      audit.ActionTeamRenamed,
 				EntityType:  audit.EntityTeam,
 				EntityID:    teamID,
@@ -137,7 +137,7 @@ func TestLogRefusesAnActionOutsideTheTaxonomy(t *testing.T) {
 	err := db.InTx(ctx, pool, func(q *db.Queries) error {
 		return audit.Log(ctx, q, audit.Entry{
 			TeamID:      teamID,
-			ActorUserID: userID,
+			ActorUserID: &userID,
 			Action:      audit.Action("team.frobnicated"),
 			EntityType:  audit.EntityTeam,
 			EntityID:    teamID,
@@ -157,7 +157,7 @@ func TestLogRollsBackWithItsTransaction(t *testing.T) {
 	err := db.InTx(ctx, pool, func(q *db.Queries) error {
 		if err := audit.Log(ctx, q, audit.Entry{
 			TeamID:      teamID,
-			ActorUserID: userID,
+			ActorUserID: &userID,
 			Action:      audit.ActionTeamRenamed,
 			EntityType:  audit.EntityTeam,
 			EntityID:    teamID,
@@ -184,6 +184,8 @@ func TestLinkActionsAreInTheTaxonomy(t *testing.T) {
 		audit.ActionPasswordSet,
 		audit.ActionPasswordChanged,
 		audit.ActionPasswordRemoved,
+		audit.ActionLinkFlagged,
+		audit.ActionLinkUnflagged,
 	} {
 		t.Run(string(action), func(t *testing.T) {
 			require.NotErrorIs(t, audit.CheckAction(action), audit.ErrUnknownAction)
@@ -198,6 +200,8 @@ func TestLinkActionNamesFollowTheEntityDotVerbShape(t *testing.T) {
 	require.Equal(t, audit.Action("link.password_set"), audit.ActionPasswordSet)
 	require.Equal(t, audit.Action("link.password_changed"), audit.ActionPasswordChanged)
 	require.Equal(t, audit.Action("link.password_removed"), audit.ActionPasswordRemoved)
+	require.Equal(t, audit.Action("link.flagged"), audit.ActionLinkFlagged)
+	require.Equal(t, audit.Action("link.unflagged"), audit.ActionLinkUnflagged)
 	require.Equal(t, "link", audit.EntityLink)
 }
 
@@ -235,4 +239,89 @@ func TestDomainMetadataMayNotCarryTheToken(t *testing.T) {
 		Metadata:   map[string]any{"verification_token": "tok-a"},
 	})
 	require.ErrorIs(t, err, audit.ErrForbiddenMetadata)
+}
+
+// The Safe Browsing scanner is nobody's account. Its entries carry a null
+// actor, and the metadata it writes passes the denylist: neither threat_types
+// nor destination_url has a forbidden word segment.
+func TestLogWritesASystemEntryWithoutAnActor(t *testing.T) {
+	ctx := context.Background()
+	pool := testPool(t)
+	teamID, _ := seedTeam(ctx, t, pool)
+	linkID := uuid.New()
+
+	require.NoError(t, db.InTx(ctx, pool, func(q *db.Queries) error {
+		return audit.Log(ctx, q, audit.Entry{
+			TeamID:     teamID,
+			Action:     audit.ActionLinkFlagged,
+			EntityType: audit.EntityLink,
+			EntityID:   linkID,
+			Metadata: map[string]any{
+				"threat_types":    []string{"SOCIAL_ENGINEERING"},
+				"destination_url": "https://example.org/x",
+			},
+		})
+	}))
+
+	var (
+		actor *uuid.UUID
+		raw   []byte
+	)
+	require.NoError(t, pool.QueryRow(ctx,
+		`select actor_user_id, metadata from audit_log where team_id = $1 and entity_id = $2`,
+		teamID, linkID).Scan(&actor, &raw))
+	require.Nil(t, actor)
+	require.JSONEq(t,
+		`{"threat_types":["SOCIAL_ENGINEERING"],"destination_url":"https://example.org/x"}`, string(raw))
+}
+
+// The web reads a null actor as "Google Safe Browsing" on the two system
+// actions and as "A deleted account" on every other, so the actor and the
+// action have to agree when the entry is written.
+func TestLogRefusesAnActorThatDoesNotFitTheAction(t *testing.T) {
+	ctx := context.Background()
+	pool := testPool(t)
+	teamID, userID := seedTeam(ctx, t, pool)
+
+	for _, tc := range []struct {
+		name   string
+		actor  *uuid.UUID
+		action audit.Action
+	}{
+		{"a member's action without its member", nil, audit.ActionLinkUpdated},
+		{"the system's action with a member", &userID, audit.ActionLinkFlagged},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := db.InTx(ctx, pool, func(q *db.Queries) error {
+				return audit.Log(ctx, q, audit.Entry{
+					TeamID:      teamID,
+					ActorUserID: tc.actor,
+					Action:      tc.action,
+					EntityType:  audit.EntityLink,
+					EntityID:    uuid.New(),
+				})
+			})
+			require.ErrorIs(t, err, audit.ErrActorMismatch)
+		})
+	}
+
+	var count int
+	require.NoError(t, pool.QueryRow(ctx,
+		`select count(*) from audit_log where team_id = $1`, teamID).Scan(&count))
+	require.Zero(t, count, "a refused entry must leave no row behind")
+}
+
+// The actor check runs after the metadata check, so an entry that breaks both
+// rules reports the secret rather than the missing actor: the denylist is the
+// refusal that must never be shadowed, and the two tests above that build a
+// member's entry without an actor rely on seeing ErrForbiddenMetadata.
+func TestLogReportsForbiddenMetadataBeforeAnActorMismatch(t *testing.T) {
+	err := audit.Log(context.Background(), nil, audit.Entry{
+		Action:     audit.ActionLinkUpdated,
+		EntityType: audit.EntityLink,
+		Metadata:   map[string]any{"password": "hunter2"},
+	})
+
+	require.ErrorIs(t, err, audit.ErrForbiddenMetadata)
+	require.NotErrorIs(t, err, audit.ErrActorMismatch)
 }

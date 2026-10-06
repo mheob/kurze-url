@@ -149,7 +149,7 @@ func (d Deps) createTeam(ctx context.Context, in *CreateTeamInput) (*TeamOutput,
 
 		return audit.Log(ctx, q, audit.Entry{
 			TeamID:      team.ID,
-			ActorUserID: claims.UserID,
+			ActorUserID: &claims.UserID,
 			Action:      audit.ActionTeamCreated,
 			EntityType:  audit.EntityTeam,
 			EntityID:    team.ID,
@@ -266,7 +266,7 @@ func (d Deps) updateTeam(ctx context.Context, in *UpdateTeamInput) (*TeamOutput,
 
 		return audit.Log(ctx, q, audit.Entry{
 			TeamID:      member.TeamID,
-			ActorUserID: member.UserID,
+			ActorUserID: &member.UserID,
 			Action:      audit.ActionTeamRenamed,
 			EntityType:  audit.EntityTeam,
 			EntityID:    member.TeamID,

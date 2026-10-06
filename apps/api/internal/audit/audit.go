@@ -21,8 +21,9 @@ import (
 // alongside the endpoints that emit them.
 type Action string
 
-// The taxonomy this plan defines. Plan 3 adds more alongside the endpoints
-// that emit them.
+// The taxonomy is closed: twenty-three values, each declared here and again
+// in knownActions, and nothing else may be written. Plan 3 adds more
+// alongside the endpoints that emit them.
 const (
 	ActionTeamCreated       Action = "team.created"
 	ActionTeamRenamed       Action = "team.renamed"
@@ -50,6 +51,15 @@ const (
 	ActionPasswordSet     Action = "link.password_set"
 	ActionPasswordChanged Action = "link.password_changed"
 	ActionPasswordRemoved Action = "link.password_removed"
+
+	// The two actions no person takes. The Safe Browsing scanner writes them
+	// with a nil ActorUserID, and nothing else may: the web reads a null actor
+	// on exactly these two as "Google Safe Browsing" and on every other action
+	// as "A deleted account", because audit_log.actor_user_id is also null for
+	// an author whose account was deleted later. Metadata carries the
+	// threat_types Google reported and the destination_url it judged.
+	ActionLinkFlagged   Action = "link.flagged"
+	ActionLinkUnflagged Action = "link.unflagged"
 
 	// Folder and tag changes made through a link write do not get their own
 	// action: they are part of that write's link.updated row, with the
@@ -86,6 +96,11 @@ var (
 	// ErrForbiddenMetadata enforces the schema comment on audit_log.metadata:
 	// it never carries a plaintext password, a password hash, or an IP address.
 	ErrForbiddenMetadata = errors.New("audit: metadata may not carry secrets or IP addresses")
+
+	// ErrActorMismatch keeps the actor and the action in agreement: a
+	// member's action needs its member, and the system's actions must have
+	// none. See ActionLinkFlagged for why the web depends on it.
+	ErrActorMismatch = errors.New("audit: the actor does not fit the action")
 )
 
 var knownActions = map[Action]struct{}{
@@ -101,6 +116,8 @@ var knownActions = map[Action]struct{}{
 	ActionPasswordSet:       {},
 	ActionPasswordChanged:   {},
 	ActionPasswordRemoved:   {},
+	ActionLinkFlagged:       {},
+	ActionLinkUnflagged:     {},
 	ActionFolderCreated:     {},
 	ActionFolderUpdated:     {},
 	ActionFolderDeleted:     {},
@@ -110,6 +127,12 @@ var knownActions = map[Action]struct{}{
 	ActionDomainClaimed:     {},
 	ActionDomainVerified:    {},
 	ActionDomainDeleted:     {},
+}
+
+// systemActions are the actions written without an actor.
+var systemActions = map[Action]struct{}{
+	ActionLinkFlagged:   {},
+	ActionLinkUnflagged: {},
 }
 
 // forbiddenMetadataKeys are the canonical, lowercase, singular words a
@@ -133,10 +156,11 @@ var forbiddenMetadataKeys = map[string]struct{}{
 	"ip":         {},
 }
 
-// Entry is one audit record. Every field is required except Metadata.
+// Entry is one audit record. Every field is required except Metadata and,
+// for the system's own actions only, ActorUserID: nil there is the system.
 type Entry struct {
 	TeamID      uuid.UUID
-	ActorUserID uuid.UUID
+	ActorUserID *uuid.UUID
 	Action      Action
 	EntityType  string
 	EntityID    uuid.UUID
@@ -162,6 +186,11 @@ func Log(ctx context.Context, q *db.Queries, e Entry) error {
 	if err := checkMetadata(e.Metadata); err != nil {
 		return err
 	}
+	// After the metadata check, not before: an entry that breaks both rules
+	// reports the secret, the refusal that must never be shadowed.
+	if _, system := systemActions[e.Action]; system != (e.ActorUserID == nil) {
+		return fmt.Errorf("%w: %q", ErrActorMismatch, e.Action)
+	}
 
 	raw := []byte(`{}`)
 	if len(e.Metadata) > 0 {
@@ -172,10 +201,10 @@ func Log(ctx context.Context, q *db.Queries, e Entry) error {
 		raw = encoded
 	}
 
-	teamID, actorUserID, entityID := e.TeamID, e.ActorUserID, e.EntityID
+	teamID, entityID := e.TeamID, e.EntityID
 	if err := q.InsertAuditLog(ctx, db.InsertAuditLogParams{
 		TeamID:      &teamID,
-		ActorUserID: &actorUserID,
+		ActorUserID: e.ActorUserID,
 		Action:      string(e.Action),
 		EntityType:  e.EntityType,
 		EntityID:    &entityID,
