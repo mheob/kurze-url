@@ -251,12 +251,38 @@ export type Link = {
     hostname: string;
     id: string;
     redirect_type: number;
+    /**
+     * The Safe Browsing verdict on the current destination. Only GET /v1/links/{link_id} carries it, and only once that destination has been checked.
+     */
+    scan?: LinkScan;
     short_url: string;
     slug: string;
-    state: string;
+    /**
+     * expired follows from expires_at. flagged is set by Safe Browsing scanning; only a later clean check by Google, or a new destination, lifts it.
+     */
+    state: 'active' | 'disabled' | 'expired' | 'flagged';
     tags: Array<Tag> | null;
     team_id: string;
     updated_at: string;
+};
+
+export type LinkScan = {
+    /**
+     * When Google last checked the current destination, whatever it found.
+     */
+    checked_at: string;
+    /**
+     * When the link entered this verdict for its current destination. Absent while it has been clean since that destination was first checked.
+     */
+    since?: string;
+    /**
+     * Google's threat types for a flagged link, such as SOCIAL_ENGINEERING or MALWARE; empty when clean. Google adds types over time, so treat one you do not know as a generic threat.
+     */
+    threat_types: Array<string> | null;
+    /**
+     * flagged while the link is blocked. Only a later clean check by Google, or a new destination, lifts it.
+     */
+    verdict: 'clean' | 'flagged';
 };
 
 export type LinkStats = {
@@ -498,7 +524,7 @@ export type UpdateLinkInputBody = {
     redirect_type?: 301 | 302;
     slug?: string;
     /**
-     * expired follows from expires_at and flagged is set by scanning; neither is a caller's to write.
+     * expired follows from expires_at and flagged is set by scanning; neither is a caller's to write. A flagged link refuses any state with 409: change its destination, or wait until Google clears it.
      */
     state?: 'active' | 'disabled';
     /**
@@ -700,9 +726,16 @@ export type LinkWritable = {
     hostname: string;
     id: string;
     redirect_type: number;
+    /**
+     * The Safe Browsing verdict on the current destination. Only GET /v1/links/{link_id} carries it, and only once that destination has been checked.
+     */
+    scan?: LinkScan;
     short_url: string;
     slug: string;
-    state: string;
+    /**
+     * expired follows from expires_at. flagged is set by Safe Browsing scanning; only a later clean check by Google, or a new destination, lifts it.
+     */
+    state: 'active' | 'disabled' | 'expired' | 'flagged';
     tags: Array<TagWritable> | null;
     team_id: string;
     updated_at: string;
@@ -819,7 +852,7 @@ export type UpdateLinkInputBodyWritable = {
     redirect_type?: 301 | 302;
     slug?: string;
     /**
-     * expired follows from expires_at and flagged is set by scanning; neither is a caller's to write.
+     * expired follows from expires_at and flagged is set by scanning; neither is a caller's to write. A flagged link refuses any state with 409: change its destination, or wait until Google clears it.
      */
     state?: 'active' | 'disabled';
     /**

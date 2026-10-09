@@ -1,0 +1,76 @@
+# Golden rule 3 makes Safe Browsing scanning MVP scope. Every link is checked
+# right after it is created or re-pointed, by a goroutine the API starts after
+# its response, and Vercel does not promise to let that goroutine finish. This
+# workflow is the half that does not depend on it: twice an hour it calls the
+# API's sweep, which checks links never checked for their current destination,
+# every flagged link (so a false positive Google corrects is lifted even if
+# nobody visits the link), and every other link once a day.
+#
+# The heartbeat is the last step and runs only if the sweep succeeded, so one
+# signal covers both hazards, exactly as in retention.yml: a failing sweep
+# withholds the ping, and so does a workflow that never runs at all — GitHub
+# disables scheduled workflows after 60 days of repository inactivity, and a
+# disabled workflow does not fail, it stops.
+#
+# Worth knowing when reading the logs: the first sweeps after this shipped
+# find every existing link due and drain the backlog 200 links at a time, so a
+# large "remaining" then is expected, and so is a sweep that stops at its
+# 25-second budget with links left over — that still answers 200 and still
+# pings. "remaining" also never reaches zero while any link is flagged,
+# because a flagged link is due on every sweep. A 502 means Google did not
+# answer and nothing was written; a 503 means SAFE_BROWSING_API_KEY is unset
+# on the API.
+name: scan
+
+on:
+  schedule:
+    # Off the hour and off the half hour: GitHub queues every scheduled job at
+    # :00 and runs the backlog late.
+    - cron: "7,37 * * * *"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/scan.yml
+
+concurrency:
+  group: scan
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Skipped on pull requests: this calls production, and an unmerged
+      # branch must not be able to flag or unflag production links. On a pull
+      # request the job therefore only proves the file parses, which is what
+      # the path filter above is for.
+      - name: Check due links against Safe Browsing
+        if: github.event_name != 'pull_request'
+        env:
+          SCAN_TOKEN: ${{ secrets.SCAN_TOKEN }}
+        run: |
+          if [ -z "$SCAN_TOKEN" ]; then
+            echo "SCAN_TOKEN is not set" >&2
+            exit 1
+          fi
+          curl --fail --silent --show-error --max-time 60 \
+            --request POST \
+            --header "X-Scan-Token: $SCAN_TOKEN" \
+            https://api.kurze-url.app/internal/scan
+          echo
+
+      # Last, and only on success: see the note at the top of this file.
+      - name: Report to the heartbeat monitor
+        if: github.event_name != 'pull_request'
+        env:
+          SCAN_HEARTBEAT_URL: ${{ secrets.SCAN_HEARTBEAT_URL }}
+        run: |
+          if [ -z "$SCAN_HEARTBEAT_URL" ]; then
+            echo "SCAN_HEARTBEAT_URL is not set" >&2
+            exit 1
+          fi
+          curl --fail --silent --show-error "$SCAN_HEARTBEAT_URL"

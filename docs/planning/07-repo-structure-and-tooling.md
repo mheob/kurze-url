@@ -87,15 +87,16 @@ Path-filtered GitHub Actions workflows — each app gets its own workflow, trigg
 - **`ci-cli.yml`** (triggers: `apps/cli/**`) — `go vet`, `go test ./...`.
 - **`e2e.yml`** — **not on every PR**, resolving the "E2E is slower, may make sense to run less frequently" note from `03-frontend.md`: runs the Playwright + axe-core suite from `03-frontend.md` against the PR's actual Vercel preview URLs (frontend preview, correctly wired to the matching API preview via Related Projects above) once both preview deployments succeed, triggered via a `workflow_run`/deployment-status hook — plus a scheduled nightly run against `main`'s production-equivalent state as a backstop. Avoids paying Playwright's runtime cost on every single push while still catching integration regressions before merge and on a predictable cadence otherwise.
 - **`secret-scan.yml`** — gitleaks (or equivalent) on every PR, repo-wide, not scoped to one app — the cheap backstop against a service-role key, Redis token, or Safe Browsing/Resend API key ending up in a commit, extending the project's existing security-by-design posture (`01-architecture.md`) into the tooling layer itself.
+- **`scan.yml`** (added 2026-10-03) — at :07 and :37 every hour, a token-guarded `POST /internal/scan` against production, then a Better Stack heartbeat only on success. On pull requests it only proves the file parses. See `CLAUDE.md`'s Safe Browsing entry.
 
 ## Secrets management
 
 No secrets committed to the repo; `.env.example` (no real values) per app, `.gitignore` covering `.env*`; `secret-scan.yml` above as the automated backstop.
 
 - **Vercel project environment variables** (scoped Production / Preview / Development), split by project:
-  - `apps/api`: Supabase connection string + service-role key, Supabase JWKS URL (`06-api-design.md`), Upstash Redis URL/token, Google Safe Browsing API key, a Vercel API token (used by the backend itself to call Vercel's Domain API on a user's behalf, per `02-external-services-and-hosting.md`).
+  - `apps/api`: Supabase connection string + service-role key, Supabase JWKS URL (`06-api-design.md`), Upstash Redis URL/token, `SAFE_BROWSING_API_KEY` (Production and Preview; restricted to the Safe Browsing API), `SCAN_TOKEN` (Production), a Vercel API token (used by the backend itself to call Vercel's Domain API on a user's behalf, per `02-external-services-and-hosting.md`).
   - `apps/web`: Supabase URL + anon key (for `supabase-js` on the client, per `03-frontend.md`); the API base URL is resolved automatically per-deployment via Related Projects above rather than being a manually-set secret.
-- **GitHub Actions secrets** (a separate store from Vercel's): `GITHUB_TOKEN` (automatic) for `release-cli.yml`. No Supabase secrets are needed here — the GitHub integration authenticates through Supabase's own app installation rather than a token this repository stores, which is one of the reasons it was preferred over a hand-written `db push` workflow.
+- **GitHub Actions secrets** (a separate store from Vercel's): `GITHUB_TOKEN` (automatic) for `release-cli.yml`. `SCAN_TOKEN` and `SCAN_HEARTBEAT_URL` for `scan.yml`, beside `RETENTION_TOKEN` and `RETENTION_HEARTBEAT_URL` for `retention.yml`. No Supabase secrets are needed here — the GitHub integration authenticates through Supabase's own app installation rather than a token this repository stores, which is one of the reasons it was preferred over a hand-written `db push` workflow.
 - **Supabase dashboard setting**, not a repo/CI secret at all but still credential-like: the Resend API key, entered directly as the custom SMTP password per `02-external-services-and-hosting.md` — never touches the Go backend or CI.
 
 ## CLI release process

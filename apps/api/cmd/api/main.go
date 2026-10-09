@@ -23,6 +23,7 @@ import (
 	"github.com/mheob/kurze-url/apps/api/internal/db"
 	"github.com/mheob/kurze-url/apps/api/internal/domainverify"
 	"github.com/mheob/kurze-url/apps/api/internal/observability"
+	"github.com/mheob/kurze-url/apps/api/internal/scanning"
 	"github.com/mheob/kurze-url/apps/api/internal/supabase"
 )
 
@@ -44,6 +45,13 @@ const (
 // for an outage lasting a whole month.
 const redisQuotaReportInterval = time.Hour
 
+// safeBrowsingQuotaReportInterval is how often each instance tells Sentry that
+// Google is refusing Safe Browsing lookups because the project's quota is
+// spent. An hour, for redisQuotaReportInterval's reason: the condition does
+// not clear by itself, and every flagged redirect, every immediate check and
+// every sweep would otherwise report it again.
+const safeBrowsingQuotaReportInterval = time.Hour
+
 // sentryCoalesceRules are the causes reported to Sentry by cause rather than
 // by message (see observability.CoalesceRule).
 //
@@ -53,11 +61,18 @@ const redisQuotaReportInterval = time.Hour
 // main_test.go builds the handler from this, so a bad edit fails there
 // instead of at boot.
 func sentryCoalesceRules() []observability.CoalesceRule {
-	return []observability.CoalesceRule{{
-		Key:    "redis quota exhausted",
-		Match:  cache.QuotaExceeded,
-		Window: redisQuotaReportInterval,
-	}}
+	return []observability.CoalesceRule{
+		{
+			Key:    "redis quota exhausted",
+			Match:  cache.QuotaExceeded,
+			Window: redisQuotaReportInterval,
+		},
+		{
+			Key:    "safe browsing quota exhausted",
+			Match:  scanning.QuotaExceeded,
+			Window: safeBrowsingQuotaReportInterval,
+		},
+	}
 }
 
 func main() {
@@ -261,6 +276,18 @@ func run(log *slog.Logger) (*slog.Logger, func(), error) {
 		}
 	} else {
 		log.Warn("SUPABASE_SERVICE_ROLE_KEY is unset — team invitations are disabled")
+	}
+
+	// Scanning is optional at startup, like invitations: without a key the
+	// API runs, nothing is scanned, and the consequences are the ones
+	// config.Config.SafeBrowsingAPIKey lists. Built once here, not per
+	// request, so its HTTP client's connections are reused.
+	if cfg.SafeBrowsingAPIKey != "" {
+		deps.Scanner = scanning.NewClient(cfg.SafeBrowsingAPIKey)
+		log.Info("safe browsing scanning enabled")
+	} else {
+		log.Warn("SAFE_BROWSING_API_KEY is unset — destinations are not scanned, " +
+			"POST /internal/scan answers 503, and a flagged link answers 503")
 	}
 
 	// The recorder gets its own context, independent of the signal-cancelled

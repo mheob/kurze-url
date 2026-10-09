@@ -2,7 +2,7 @@ import type { AuditEntry } from '@kurze-url/api-client';
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { resolveActor } from '../lib/audit-actor';
+import { resolveActor, type ActorDisplay } from '../lib/audit-actor';
 import { formatDateTime } from '../lib/format';
 import type { Language } from '../lib/preferences';
 import { Button } from './ui/button';
@@ -26,9 +26,11 @@ const actionLabelKeys: Record<string, string> = {
 	'folder.updated': 'audit.actionFolderUpdated',
 	'link.created': 'audit.actionLinkCreated',
 	'link.deleted': 'audit.actionLinkDeleted',
+	'link.flagged': 'audit.actionLinkFlagged',
 	'link.password_changed': 'audit.actionPasswordChanged',
 	'link.password_removed': 'audit.actionPasswordRemoved',
 	'link.password_set': 'audit.actionPasswordSet',
+	'link.unflagged': 'audit.actionLinkUnflagged',
 	'link.updated': 'audit.actionLinkUpdated',
 	'tag.created': 'audit.actionTagCreated',
 	'tag.deleted': 'audit.actionTagDeleted',
@@ -60,6 +62,17 @@ const entityLabelKeys: Record<string, string> = {
 	tag: 'audit.entityTag',
 	team: 'audit.entityTeam',
 	team_member: 'audit.entityTeamMember',
+};
+
+/**
+ * Every actor that is not a current member, mapped to its catalogue key — a
+ * `Record` over `ActorDisplay`'s own kinds, so a fifth kind added to
+ * `audit-actor.ts` without a label here fails `pnpm typecheck`.
+ */
+const actorLabelKeys: Record<Exclude<ActorDisplay['kind'], 'member'>, string> = {
+	deletedAccount: 'audit.actorDeletedAccount',
+	formerMember: 'audit.actorFormerMember',
+	safeBrowsing: 'audit.actorSafeBrowsing',
 };
 
 /**
@@ -195,11 +208,8 @@ function EntryRow({
 	const entityLabelKey = entityLabelKeys[entry.entity_type];
 	const entityLabel = entityLabelKey === undefined ? entry.entity_type : t(entityLabelKey);
 
-	const actor = resolveActor(entry.actor_user_id, membersById);
-	const actorLabel =
-		actor.kind === 'member'
-			? actor.email
-			: t(actor.kind === 'formerMember' ? 'audit.actorFormerMember' : 'audit.actorDeletedAccount');
+	const actor = resolveActor(entry.actor_user_id, membersById, entry.action);
+	const actorLabel = actor.kind === 'member' ? actor.email : t(actorLabelKeys[actor.kind]);
 
 	// Some actions carry no metadata at all by design — `link.password_set`,
 	// `_changed` and `_removed` are documented as empty on all three in

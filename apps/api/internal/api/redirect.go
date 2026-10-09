@@ -73,8 +73,7 @@ func (d Deps) HandleRedirect(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if status, kind, blocked := unavailable(resolved, now); blocked {
-		pages.RenderError(w, status, locale, kind)
+	if !d.admit(w, r, locale, resolved, hostname, slug, now) {
 		return
 	}
 

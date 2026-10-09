@@ -218,7 +218,7 @@ func (d Deps) addMember(ctx context.Context, in *AddMemberInput) (*AddMemberOutp
 
 		return audit.Log(ctx, q, audit.Entry{
 			TeamID:      actor.TeamID,
-			ActorUserID: actor.UserID,
+			ActorUserID: &actor.UserID,
 			Action:      action,
 			EntityType:  audit.EntityTeamMember,
 			EntityID:    userID,
@@ -399,7 +399,7 @@ func (d Deps) updateMember(ctx context.Context, in *UpdateMemberInput) (*struct{
 
 		return audit.Log(ctx, q, audit.Entry{
 			TeamID:      actor.TeamID,
-			ActorUserID: actor.UserID,
+			ActorUserID: &actor.UserID,
 			Action:      audit.ActionMemberRoleChanged,
 			EntityType:  audit.EntityTeamMember,
 			EntityID:    in.UserID,
@@ -456,7 +456,7 @@ func (d Deps) removeMember(ctx context.Context, in *RemoveMemberInput) (*struct{
 
 		return audit.Log(ctx, q, audit.Entry{
 			TeamID:      actor.TeamID,
-			ActorUserID: actor.UserID,
+			ActorUserID: &actor.UserID,
 			Action:      audit.ActionMemberRemoved,
 			EntityType:  audit.EntityTeamMember,
 			EntityID:    in.UserID,

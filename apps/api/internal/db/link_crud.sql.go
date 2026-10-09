@@ -61,7 +61,7 @@ with inserted as (
   insert into link (domain_id, team_id, slug, destination_url, redirect_type,
                     expires_at, analytics_enabled, created_by, folder_id)
   values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-  returning id, domain_id, team_id, slug, destination_url, redirect_type, state, folder_id, expires_at, password_hash, analytics_enabled, created_by, created_at, updated_at, qr_size, qr_error_correction, qr_margin, qr_logo_url, qr_fg_color, qr_bg_color
+  returning id, domain_id, team_id, slug, destination_url, redirect_type, state, folder_id, expires_at, password_hash, analytics_enabled, created_by, created_at, updated_at, qr_size, qr_error_correction, qr_margin, qr_logo_url, qr_fg_color, qr_bg_color, scan_checked_at, scan_destination
 )
 select i.id, i.domain_id, i.team_id, d.hostname, i.slug, i.destination_url,
        i.redirect_type, i.state, i.expires_at,
@@ -155,7 +155,8 @@ const getLinkForAPI = `-- name: GetLinkForAPI :one
 select l.id, l.domain_id, l.team_id, d.hostname, l.slug, l.destination_url,
        l.redirect_type, l.state, l.expires_at,
        (l.password_hash is not null)::boolean as has_password,
-       l.analytics_enabled, l.folder_id, l.created_by, l.created_at, l.updated_at
+       l.analytics_enabled, l.folder_id, l.created_by, l.created_at, l.updated_at,
+       l.scan_checked_at, l.scan_destination
 from link l
 join domain d on d.id = l.domain_id
 where l.id = $1 and l.team_id = $2
@@ -182,6 +183,8 @@ type GetLinkForAPIRow struct {
 	CreatedBy        uuid.UUID
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+	ScanCheckedAt    *time.Time
+	ScanDestination  *string
 }
 
 func (q *Queries) GetLinkForAPI(ctx context.Context, arg GetLinkForAPIParams) (GetLinkForAPIRow, error) {
@@ -203,6 +206,76 @@ func (q *Queries) GetLinkForAPI(ctx context.Context, arg GetLinkForAPIParams) (G
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ScanCheckedAt,
+		&i.ScanDestination,
+	)
+	return i, err
+}
+
+const getLinkForAPIForUpdate = `-- name: GetLinkForAPIForUpdate :one
+
+select l.id, l.domain_id, l.team_id, d.hostname, l.slug, l.destination_url,
+       l.redirect_type, l.state, l.expires_at,
+       (l.password_hash is not null)::boolean as has_password,
+       l.analytics_enabled, l.folder_id, l.created_by, l.created_at, l.updated_at,
+       l.scan_checked_at, l.scan_destination
+from link l
+join domain d on d.id = l.domain_id
+where l.id = $1 and l.team_id = $2
+for update of l
+`
+
+type GetLinkForAPIForUpdateParams struct {
+	ID     uuid.UUID
+	TeamID uuid.UUID
+}
+
+type GetLinkForAPIForUpdateRow struct {
+	ID               uuid.UUID
+	DomainID         uuid.UUID
+	TeamID           uuid.UUID
+	Hostname         string
+	Slug             string
+	DestinationURL   string
+	RedirectType     int16
+	State            string
+	ExpiresAt        *time.Time
+	HasPassword      bool
+	AnalyticsEnabled bool
+	FolderID         *uuid.UUID
+	CreatedBy        uuid.UUID
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	ScanCheckedAt    *time.Time
+	ScanDestination  *string
+}
+
+// GetLinkForAPIForUpdate is GetLinkForAPI, copied verbatim and locked, for
+// updateLink. That handler writes state back from this read, and the Safe
+// Browsing scanner may flag the link while the PATCH's transaction is open:
+// unlocked, the PATCH would write the flag straight back to active. FOR UPDATE
+// OF l, so the domain row stays unlocked.
+func (q *Queries) GetLinkForAPIForUpdate(ctx context.Context, arg GetLinkForAPIForUpdateParams) (GetLinkForAPIForUpdateRow, error) {
+	row := q.db.QueryRow(ctx, getLinkForAPIForUpdate, arg.ID, arg.TeamID)
+	var i GetLinkForAPIForUpdateRow
+	err := row.Scan(
+		&i.ID,
+		&i.DomainID,
+		&i.TeamID,
+		&i.Hostname,
+		&i.Slug,
+		&i.DestinationURL,
+		&i.RedirectType,
+		&i.State,
+		&i.ExpiresAt,
+		&i.HasPassword,
+		&i.AnalyticsEnabled,
+		&i.FolderID,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ScanCheckedAt,
+		&i.ScanDestination,
 	)
 	return i, err
 }
@@ -363,7 +436,7 @@ with updated as (
     password_hash = $3,
     updated_at = now()
   where link.id = $1 and link.team_id = $2
-  returning id, domain_id, team_id, slug, destination_url, redirect_type, state, folder_id, expires_at, password_hash, analytics_enabled, created_by, created_at, updated_at, qr_size, qr_error_correction, qr_margin, qr_logo_url, qr_fg_color, qr_bg_color
+  returning id, domain_id, team_id, slug, destination_url, redirect_type, state, folder_id, expires_at, password_hash, analytics_enabled, created_by, created_at, updated_at, qr_size, qr_error_correction, qr_margin, qr_logo_url, qr_fg_color, qr_bg_color, scan_checked_at, scan_destination
 )
 select u.id, u.domain_id, u.team_id, d.hostname, u.slug, u.destination_url,
        u.redirect_type, u.state, u.expires_at,
@@ -438,7 +511,7 @@ with updated as (
     folder_id = $9,
     updated_at = now()
   where link.id = $1 and link.team_id = $2
-  returning id, domain_id, team_id, slug, destination_url, redirect_type, state, folder_id, expires_at, password_hash, analytics_enabled, created_by, created_at, updated_at, qr_size, qr_error_correction, qr_margin, qr_logo_url, qr_fg_color, qr_bg_color
+  returning id, domain_id, team_id, slug, destination_url, redirect_type, state, folder_id, expires_at, password_hash, analytics_enabled, created_by, created_at, updated_at, qr_size, qr_error_correction, qr_margin, qr_logo_url, qr_fg_color, qr_bg_color, scan_checked_at, scan_destination
 )
 select u.id, u.domain_id, u.team_id, d.hostname, u.slug, u.destination_url,
        u.redirect_type, u.state, u.expires_at,

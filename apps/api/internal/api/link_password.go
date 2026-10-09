@@ -105,7 +105,7 @@ func (d Deps) setLinkPassword(ctx context.Context, in *SetLinkPasswordInput) (*L
 
 		return audit.Log(ctx, q, audit.Entry{
 			TeamID:      member.TeamID,
-			ActorUserID: member.UserID,
+			ActorUserID: &member.UserID,
 			Action:      action,
 			EntityType:  audit.EntityLink,
 			EntityID:    row.ID,
@@ -171,7 +171,7 @@ func (d Deps) removeLinkPassword(
 
 		return audit.Log(ctx, q, audit.Entry{
 			TeamID:      member.TeamID,
-			ActorUserID: member.UserID,
+			ActorUserID: &member.UserID,
 			Action:      audit.ActionPasswordRemoved,
 			EntityType:  audit.EntityLink,
 			EntityID:    row.ID,

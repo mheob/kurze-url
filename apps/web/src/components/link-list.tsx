@@ -5,7 +5,7 @@
 
 import type { Folder, PageLink, Tag } from '@kurze-url/api-client';
 import { Link } from '@tanstack/react-router';
-import { LockIcon } from 'lucide-react';
+import { LockIcon, ShieldAlertIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { UNFILED_SEARCH_VALUE } from '../lib/folders';
@@ -295,6 +295,14 @@ export function LinkList({
 										<Badge variant="secondary">
 											<LockIcon aria-hidden />
 											{t('links.passwordBadge')}
+										</Badge>
+									) : null}
+									{link.state === 'flagged' ? (
+										// Text, not only the destructive colour, for the password
+										// badge's WCAG 1.4.1 reason; the icon is aria-hidden.
+										<Badge variant="destructive">
+											<ShieldAlertIcon aria-hidden />
+											{t('links.flaggedBadge')}
 										</Badge>
 									) : null}
 								</TableCell>

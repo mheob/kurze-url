@@ -365,6 +365,26 @@ describe(LinkList, () => {
 		await expect(screen.findByText('Password protected')).resolves.toBeInTheDocument();
 	});
 
+	it('marks a link Safe Browsing blocked', async () => {
+		renderList({ data: pageOf([linkWith({ state: 'flagged' })]) });
+
+		// Text, not only the destructive colour, for the same WCAG 1.4.1 reason
+		// as the password badge.
+		await expect(screen.findByText('Blocked')).resolves.toBeInTheDocument();
+	});
+
+	it('marks only the link that is blocked', async () => {
+		renderList({
+			data: pageOf([
+				linkWith({ state: 'flagged' }),
+				linkWith({ id: 'link-2', short_url: 'https://short.invalid/def456', slug: 'def456' }),
+			]),
+		});
+
+		await expect(screen.findByText('Blocked')).resolves.toBeInTheDocument();
+		expect(screen.getAllByText('Blocked')).toHaveLength(1);
+	});
+
 	it('shows the short-domain notice when the links live on an .invalid hostname', async () => {
 		renderList({ data: pageOf([linkWith({ hostname: 'short.invalid' })]) });
 		await expect(screen.findByRole('note')).resolves.toBeInTheDocument();

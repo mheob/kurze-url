@@ -167,9 +167,10 @@ func (d Deps) loadProtectedLink(
 	}
 
 	// State is checked before the password so a disabled or flagged link never
-	// becomes an oracle for guessing its password.
-	if status, kind, blocked := unavailable(resolved, d.now()); blocked {
-		pages.RenderError(w, status, locale, kind)
+	// becomes an oracle for guessing its password. A flagged link with a fresh
+	// confirmation shows the block page here too; one Google has cleared goes
+	// on to the password like an active link.
+	if !d.admit(w, r, locale, resolved, Hostname(r.Host), slug, d.now()) {
 		return link.Cached{}, "", false
 	}
 

@@ -67,6 +67,8 @@ type Link struct {
 	QRLogoURL         *string
 	QrFgColor         *string
 	QrBgColor         *string
+	ScanCheckedAt     *time.Time
+	ScanDestination   *string
 }
 
 type LinkClickStat struct {
@@ -80,12 +82,14 @@ type LinkClickStat struct {
 }
 
 type LinkScanResult struct {
-	ID          uuid.UUID
-	LinkID      uuid.UUID
-	Provider    string
-	Verdict     string
-	ScannedAt   time.Time
-	RawResponse []byte
+	ID             uuid.UUID
+	LinkID         uuid.UUID
+	Provider       string
+	Verdict        string
+	ScannedAt      time.Time
+	RawResponse    []byte
+	DestinationURL string
+	ThreatTypes    []string
 }
 
 type LinkTag struct {
