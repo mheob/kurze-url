@@ -119,6 +119,16 @@ func (g *fakeGoogle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The real API answers in binary protobuf unless the request asks for
+	// JSON with the $alt system parameter; production found that out on its
+	// first sweep (2026-10-17). This is such an answer: cacheDuration 300s
+	// and nothing listed.
+	if r.URL.Query().Get("$alt") != "json" {
+		w.Header().Set("Content-Type", "application/x-protobuf")
+		_, _ = w.Write([]byte{0x12, 0x03, 0x08, 0xac, 0x02})
+		return
+	}
+
 	asked := map[[4]byte]bool{}
 	for _, encoded := range r.URL.Query()["hashPrefixes"] {
 		raw, err := base64.StdEncoding.DecodeString(encoded)
@@ -179,7 +189,8 @@ func TestCheckSendsOnlyFourBytePrefixes(t *testing.T) {
 	require.NoError(t, err)
 
 	query := g.recorded()[0].URL.Query()
-	require.Equal(t, []string{"hashPrefixes"}, slices.Collect(maps.Keys(query)))
+	require.ElementsMatch(t, []string{"$alt", "hashPrefixes"}, slices.Collect(maps.Keys(query)))
+	require.Equal(t, "json", query.Get("$alt"))
 	for _, encoded := range query["hashPrefixes"] {
 		raw, err := base64.StdEncoding.DecodeString(encoded)
 		require.NoError(t, err)
