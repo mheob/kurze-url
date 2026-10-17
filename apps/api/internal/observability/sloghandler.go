@@ -194,6 +194,11 @@ func capture(ctx context.Context, record slog.Record, slot throttleSlot, suppres
 		hub = sentry.CurrentHub()
 	}
 	hub = hub.Clone()
+	// Only error records get here, and CaptureMessage would default the
+	// event to info. Sentry derives an issue's priority from the level, and
+	// its default alert mails high-priority issues only, so an info event is
+	// an issue nobody hears about.
+	hub.Scope().SetLevel(sentry.LevelError)
 
 	if fields := logFields(record, slot, suppressed); len(fields) > 0 {
 		hub.Scope().SetContext(logContextKey, fields)

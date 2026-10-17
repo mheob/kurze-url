@@ -64,6 +64,22 @@ func TestErrorLogsBecomeSentryEvents(t *testing.T) {
 		"redis lookup failed")
 }
 
+// Sentry's default alert mails only high-priority issues, and it derives the
+// priority from the level. CaptureMessage defaults to info, so an error log
+// with no error attached arrived as a low-priority issue nobody was told
+// about: "link flagged by Safe Browsing" did exactly that on 2026-10-17.
+func TestEveryErrorLogIsAnErrorLevelEvent(t *testing.T) {
+	logger, ctx, transport := loggerWithFakeSentry(t)
+
+	logger.ErrorContext(ctx, "link flagged by Safe Browsing", "link_id", "x")
+	logger.ErrorContext(ctx, "redis lookup failed", "error", errors.New("connection refused"))
+
+	require.Len(t, transport.events, 2)
+	for _, event := range transport.events {
+		require.Equal(t, sentry.LevelError, event.Level, "event %q", event.Message)
+	}
+}
+
 // An error attached via Logger.With (rather than passed directly to the
 // logging call) still reaches Sentry, because the handler stays wrapped
 // through WithAttrs — but slog keeps With-attributes on the handler, not on
