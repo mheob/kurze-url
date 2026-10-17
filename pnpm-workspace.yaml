@@ -22,6 +22,8 @@ overrides:
 
   # Unrelated to js-yaml: whatever range a dependency asks for, `vite` and `vitest` resolve
   # to the catalog's pins below, so the tree holds exactly one Vite+ core and one Vitest.
+  # That includes the ranges `vite-plus` itself declares, which is why a catalog entry that
+  # drifts from them installs without a warning (see the comment above `catalog:`).
   vite@*: "catalog:"
   vitest@*: "catalog:"
 
@@ -41,10 +43,16 @@ minimumReleaseAgeExclude:
 # direct ranges in the package.json files stay as they are.
 catalogMode: strict
 
-# The `vite`, `vitest`, `vite-plus` and `@vitest/browser-playwright` entries must move
-# together: `vite-plus` pins `vite` (as Vite+ core) and `vitest` exactly and peers
-# `@vitest/browser-playwright` at the same version, so one bumped alone breaks the install.
-# Renovate updates them as one group (.github/renovate.json).
+# The `vite`, `vitest`, `vite-plus` and `@vitest/browser-playwright` entries must stay at
+# exactly the versions `vite-plus` declares: `dependencies.vite` (as Vite+ core),
+# `dependencies.vitest` and `peerDependencies["@vitest/browser-playwright"]` in its
+# package.json. The `vite@*` and `vitest@*` overrides above force the catalog's versions
+# onto `vite-plus`'s own dependencies, so a mismatch installs silently instead of failing:
+# a lone `vitest` bump sits next to `vite-plus`'s own `@vitest/*` packages at the version
+# it shipped with. Renovate groups the four into one pull request (.github/renovate.json)
+# when they release together, but cannot guarantee it, because Vitest publishes patches
+# before `vite-plus` re-pins them. Check the catalog against
+# `node_modules/vite-plus/package.json` before merging such a pull request.
 catalog:
   vite: npm:@voidzero-dev/vite-plus-core@1.3.0
   vitest: 5.0.5

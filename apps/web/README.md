@@ -14,7 +14,7 @@ Other scripts (run from `apps/web`, or via `pnpm --filter @kurze-url/web <script
 | Script | What it does |
 | --- | --- |
 | `dev` | Vite dev server through Vite+ (`vp dev`), port 3000 |
-| `build` / `start` | Production build, then serve it (`vite preview`), port 3000 |
+| `build` / `start` | Production build through Vite+ (`vp build`), then serve its Nitro output (`node .output/server/index.mjs`), port 3000 |
 | `test` | Vitest, `unit` project only — jsdom, RTL, MSW (`src/**/*.test.ts(x)`) |
 | `test:storybook` | Vitest, `storybook` project — every story rendered in real Chromium via `@storybook/addon-vitest`, gated on accessibility |
 | `test:watch` | `test`, in watch mode |
