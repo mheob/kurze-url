@@ -20,21 +20,13 @@ allowBuilds:
 overrides:
   js-yaml@4.2.0: ^4.3.2
 
-# Three days, in minutes: the window the Renovate preset applies to npm
-# packages (`security:minimumReleaseAgeNpm`, which
-# github>mheob/renovate-config:security extends), so a manual `pnpm add` or
-# `pnpm update` holds back what Renovate would. Until 2026-09-25 only the
-# exclusion list below existed — an exclusion from a gate nothing had set,
-# which pnpm 12's own release notes name as the failure its stricter settings
-# check exists to catch. A security fix that is still too fresh is installed
-# with `--config.minimum-release-age=0` on that one command rather than through
-# a change to this value — but that alone does not get it through CI: pnpm 12
-# also checks the lockfile against this gate, so every later frozen install
-# refuses the fresh entries until they mature. Those exact versions therefore
-# go into the exclusion list below as well, and come out again once they are
-# older than the gate.
-minimumReleaseAge: 4320
-
-# Exclude trusted packages from the age gate
+# No `minimumReleaseAge` here on purpose: since 2026-10-17 this repository uses
+# pnpm's own default, one day, which pnpm applies non-strictly — when no
+# matching version is old enough, it falls back to a younger one rather than
+# failing the install. The explicit three days set on 2026-09-25 matched the
+# Renovate preset's window (`security:minimumReleaseAgeNpm`); Renovate itself
+# still waits that long.
+#
+# Exclude trusted packages from the age gate.
 minimumReleaseAgeExclude:
   - "@mheob/*"
