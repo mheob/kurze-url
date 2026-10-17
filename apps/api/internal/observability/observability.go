@@ -122,9 +122,10 @@ func RedirectPanicMiddleware() func(http.Handler) http.Handler {
 // event captured while the request ran, at most deliveryTimeout. Sentry's Go
 // SDK sends events from a goroutine of its own, and Vercel freezes a Go
 // function between requests — there is no waitUntil for Go — so an event
-// still in flight when a request ends is lost: in its first six weeks the API
-// delivered not one event while its logs showed the errors (found
-// 2026-10-17). A request that captured nothing, which is every redirect that
+// still in flight when a request ends waits for the instance to wake again,
+// which an instance that served a lone request may never do; the
+// post-response Safe Browsing check timed out exactly that way on
+// 2026-10-17. A request that captured nothing, which is every redirect that
 // went well, reads one counter twice and never waits.
 //
 // It sits on the root router, around both surfaces and the internal

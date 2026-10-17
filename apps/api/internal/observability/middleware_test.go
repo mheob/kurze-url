@@ -100,9 +100,7 @@ func TestRedirectPanicMiddlewarePassesASuccessThrough(t *testing.T) {
 }
 
 // Vercel freezes a Go function between requests, so an event the transport is
-// still sending when a request ends may never leave the instance. In its first
-// six weeks the API delivered not one event, while its logs showed the errors
-// (found 2026-10-17).
+// still sending when a request ends may never leave the instance.
 func TestDeliveryMiddlewareWaitsForAnEventTheRequestCaptured(t *testing.T) {
 	transport := bindFakeClient(t)
 	logger := slog.New(observability.NewSlogHandler(slog.NewJSONHandler(io.Discard, nil)))
