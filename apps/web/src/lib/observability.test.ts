@@ -384,6 +384,34 @@ describe(sentryOptions, () => {
 	});
 });
 
+describe('sentryOptions beforeSend', () => {
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
+	/**
+	 * The e2e suite drives every preview through Playwright, which sets
+	 * `navigator.webdriver`. A test that ends or navigates while a server
+	 * function is still loading aborts that fetch, and Sentry read each one
+	 * as `TypeError: Failed to fetch`: 63 events in six weeks, every one from
+	 * HeadlessChrome on a preview, none from a person (2026-10-17).
+	 */
+	it('sends nothing from a browser driven by automation', () => {
+		vi.stubGlobal('navigator', { webdriver: true });
+		const { beforeSend } = sentryOptions('https://public@o0.ingest.sentry.io/0');
+
+		expect(assertDefined(beforeSend)(eventWithEverything(), {})).toBeNull();
+	});
+
+	it('scrubs and sends an event from a browser a person is using', () => {
+		vi.stubGlobal('navigator', { webdriver: false });
+		const { beforeSend } = sentryOptions('https://public@o0.ingest.sentry.io/0');
+
+		const sent = assertDefined(beforeSend)(eventWithEverything(), {});
+		expect(sent).toStrictEqual(scrubEvent(eventWithEverything()));
+	});
+});
+
 /**
  * `initSentry` keeps its own module-level `initialized` flag, so each case
  * here imports a fresh instance of the module via `resetModules` — otherwise
