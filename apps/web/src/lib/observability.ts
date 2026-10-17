@@ -163,6 +163,22 @@ function scrubRequest(event: ErrorEvent): void {
 }
 
 /**
+ * Whether the browser is driven by automation — Playwright, Selenium or any
+ * other WebDriver client — which sets `navigator.webdriver`. The e2e suite
+ * drives every preview this way, and a test that ends or navigates while a
+ * server function is still loading aborts that fetch: Sentry read each one as
+ * `TypeError: Failed to fetch`, 63 events in six weeks, every one from
+ * HeadlessChrome on a preview and none from a person (2026-10-17). Nothing
+ * such a browser reports is a visitor's problem. On the server there is no
+ * such flag.
+ *
+ * @returns Whether events from this browser should be dropped.
+ */
+function isAutomatedBrowser(): boolean {
+	return 'navigator' in globalThis && navigator.webdriver;
+}
+
+/**
  * `beforeSend`, and the thing that actually enforces this project's rule
  * about what may leave a visitor's browser. `dataCollection` below reduces
  * what is collected; this guarantees what is sent.
@@ -244,7 +260,10 @@ export function sentryOptions(dsn: string): Parameters<typeof init>[0] {
 	const release = import.meta.env.VITE_SENTRY_RELEASE;
 
 	return {
-		beforeSend: scrubEvent,
+		// Nothing from an automated browser (see isAutomatedBrowser), and
+		// everything else scrubbed.
+		// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `scrubEvent` mutates `event` in place, its documented contract.
+		beforeSend: (event) => (isAutomatedBrowser() ? null : scrubEvent(event)),
 		dataCollection: {
 			cookies: { deny: IP_OR_USER_LIKE_KEYS },
 			// The off-state's `false` (Supabase, Postgres, MySQL, ORMs …). No
