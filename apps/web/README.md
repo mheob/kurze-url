@@ -13,8 +13,8 @@ Other scripts (run from `apps/web`, or via `pnpm --filter @kurze-url/web <script
 
 | Script | What it does |
 | --- | --- |
-| `dev` | Vite dev server, port 3000 |
-| `build` / `start` | Production build, then serve it (`vite preview`), port 3000 |
+| `dev` | Vite dev server through Vite+ (`vp dev`), port 3000 |
+| `build` / `start` | Production build through Vite+ (`vp build`), then serve its Nitro output (`node .output/server/index.mjs`), port 3000 |
 | `test` | Vitest, `unit` project only — jsdom, RTL, MSW (`src/**/*.test.ts(x)`) |
 | `test:storybook` | Vitest, `storybook` project — every story rendered in real Chromium via `@storybook/addon-vitest`, gated on accessibility |
 | `test:watch` | `test`, in watch mode |
@@ -22,7 +22,7 @@ Other scripts (run from `apps/web`, or via `pnpm --filter @kurze-url/web <script
 
 `src/routeTree.gen.ts` has no script of its own. TanStack Start's Vite plugin regenerates it during `dev` and `build`, and that is the only generator that also writes the file's `declare module '@tanstack/react-start'` block — TanStack Router's own CLI (`tsr generate`) drops it silently, with nothing failing to say so. See the root `CLAUDE.md`.
 
-The root also has `pnpm format`, `pnpm lint`, `pnpm typecheck`, all of which cover this package (oxfmt/oxlint, not Prettier/ESLint — see the root `CLAUDE.md`). Playwright is invoked directly, not through a package.json script: `pnpm --filter @kurze-url/web exec playwright test`.
+The root also has `pnpm format`, `pnpm lint`, `pnpm typecheck`, all of which cover this package. `format` and `lint` run `vp fmt` and `vp lint` — oxfmt and oxlint through Vite+, not Prettier/ESLint, configured once in the root `vite.config.ts` (see the root `CLAUDE.md`) — and `typecheck` is `tsc --noEmit`. Playwright is invoked directly, not through a package.json script: `pnpm --filter @kurze-url/web exec playwright test`.
 
 ## Architecture
 

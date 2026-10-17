@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll } from 'vitest';
+import { afterAll, afterEach, beforeAll } from 'vite-plus/test';
 // jest-dom's matcher augmentation is a side effect by design; there is nothing to assign.
 // oxlint-disable-next-line import/no-unassigned-import
 import '@testing-library/jest-dom/vitest';

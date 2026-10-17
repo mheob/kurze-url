@@ -9,7 +9,7 @@ import {
 import { render, screen } from '@testing-library/react';
 import axe from 'axe-core';
 import { I18nextProvider } from 'react-i18next';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 
 import { AuthedShell } from '../../components/authed-shell';
 import { createI18n } from '../../i18n';

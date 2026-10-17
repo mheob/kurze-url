@@ -379,6 +379,7 @@ but commit -b feat/folders-frontend -m "chore: regenerate client, document folde
 
 ```ts
 import { describe, expect, it } from 'vitest';
+
 import {
 	folderFailureOf,
 	folderFilterOf,
@@ -674,6 +675,7 @@ import {
 import { queryOptions } from '@tanstack/react-query';
 import { createServerFn, createServerOnlyFn } from '@tanstack/react-start';
 import { getRequest } from '@tanstack/react-start/server';
+
 import { FOLDERS_PER_TEAM } from '../lib/folders';
 import { authedApiClient, flushSessionCookies, requireSession } from './session';
 
@@ -934,6 +936,7 @@ it('deletes only after confirming', async () => {
 ```tsx
 import { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+
 import { normalizeFolderName } from '../lib/folders';
 import { Button } from './ui/button';
 import { Field, FieldError, FieldLabel } from './ui/field';
@@ -1036,6 +1039,7 @@ import type { Folder } from '@kurze-url/api-client';
 import { Link } from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+
 import { ConfirmDelete } from './confirm-delete';
 import { FolderForm } from './folder-form';
 import { Button } from './ui/button';
@@ -1735,6 +1739,7 @@ but commit -b feat/folders-frontend -m "feat(web): filter the link list by folde
 ```ts
 import { AxeBuilder } from '@axe-core/playwright';
 import { expect } from '@playwright/test';
+
 import { test } from './fixtures/auth';
 import { waitForHydration } from './fixtures/hydration';
 

@@ -1,6 +1,6 @@
 import type { ErrorEvent } from '@sentry/tanstackstart-react';
 import type * as SentryTanstackStart from '@sentry/tanstackstart-react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import { isReportable, scrubEvent, sentryOptions } from './observability';
 

@@ -1,5 +1,5 @@
 import type { Domain, PageDomain } from '@kurze-url/api-client';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 
 import type { LinkFormValues } from '../../components/link-form';
 import {

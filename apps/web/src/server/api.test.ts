@@ -1,6 +1,6 @@
 import { getHealth } from '@kurze-url/api-client';
 import { http, HttpResponse } from 'msw';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import { server } from '../test/msw';
 import { apiBaseUrl, getApiClient } from './api';

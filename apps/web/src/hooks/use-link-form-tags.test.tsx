@@ -2,7 +2,7 @@ import type { Tag } from '@kurze-url/api-client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderHook, waitFor } from '@testing-library/react';
 import { I18nextProvider } from 'react-i18next';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 
 import { createI18n } from '../i18n';
 import type * as TagsModule from '../server/tags';

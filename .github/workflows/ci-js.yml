@@ -100,8 +100,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # oxfmt and oxlint, not Prettier/ESLint — see the @mheob shared configs
-      # in package.json.
+      # Vite+ (`vp fmt`, `vp lint`) runs oxfmt and oxlint, not Prettier/ESLint.
+      # Both read the root vite.config.ts, which composes the @mheob shared
+      # configs listed in package.json.
       - name: Format check
         run: pnpm format:check
 
@@ -110,6 +111,16 @@ jobs:
 
       - name: Typecheck
         run: pnpm typecheck
+
+      # The `vite@*` and `vitest@*` overrides force the catalog's versions onto
+      # vite-plus's own pins, so a catalog entry that drifts from them installs
+      # without a warning. This reads what pnpm actually installed and fails when
+      # it is not what vite-plus declares (scripts/check-vite-plus-versions.ts).
+      # It runs after a failed step too: a drifted vitest can fail Typecheck first,
+      # and this is the step that names the cause. The job fails either way.
+      - name: Check the Vite+ toolchain versions
+        if: ${{ !cancelled() }}
+        run: pnpm check:vite-plus
 
   storybook:
     name: build & test Storybook

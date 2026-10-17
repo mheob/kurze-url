@@ -1,6 +1,6 @@
 import type { AuditLogPage, PageMember } from '@kurze-url/api-client';
 import { isNotFound } from '@tanstack/react-router';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 
 import { loadAuditLogPage } from './teams.$teamSlug.audit-log';
 

@@ -8,7 +8,7 @@ import {
 import { render, screen } from '@testing-library/react';
 import axe from 'axe-core';
 import { I18nextProvider, useTranslation } from 'react-i18next';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 
 import { createI18n } from '../i18n';
 import type { Membership } from '../routes/_authed';

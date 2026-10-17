@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 
 /**
  * Deliberately not the real `SupabaseClient` shape — only the slice

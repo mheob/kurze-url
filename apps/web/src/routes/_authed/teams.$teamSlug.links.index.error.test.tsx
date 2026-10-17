@@ -9,7 +9,7 @@ import {
 } from '@tanstack/react-router';
 import { render, screen, waitFor } from '@testing-library/react';
 import { I18nextProvider } from 'react-i18next';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 
 import { createI18n } from '../../i18n';
 import { LinksError } from './teams.$teamSlug.links.index';

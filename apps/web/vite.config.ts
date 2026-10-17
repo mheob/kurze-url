@@ -4,7 +4,7 @@ import { devtools } from '@tanstack/devtools-vite';
 import { nitroV2Plugin } from '@tanstack/nitro-v2-vite-plugin';
 import { tanstackStart } from '@tanstack/react-start/plugin/vite';
 import viteReact from '@vitejs/plugin-react';
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vite-plus';
 
 /**
  * Only with a token, so a local build and a fork's build still work — the

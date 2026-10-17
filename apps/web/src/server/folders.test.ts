@@ -1,6 +1,6 @@
 import type { PageFolder } from '@kurze-url/api-client';
 import { http, HttpResponse } from 'msw';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import { statusOf } from '../lib/api-errors';
 import { server } from '../test/msw';
