@@ -7,7 +7,7 @@ import type { Folder, Tag } from '@kurze-url/api-client';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { I18nextProvider } from 'react-i18next';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 
 import { createI18n } from '../i18n';
 import { LinkFilterBar } from './link-filter-bar';

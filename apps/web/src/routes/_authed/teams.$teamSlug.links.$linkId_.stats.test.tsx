@@ -1,6 +1,6 @@
 import type { Link, LinkStats } from '@kurze-url/api-client';
 import { isNotFound } from '@tanstack/react-router';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 
 import { loadLink } from './teams.$teamSlug.links.$linkId';
 import { loadStats, loadStatsPage, statsView } from './teams.$teamSlug.links.$linkId_.stats.tsx';

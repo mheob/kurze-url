@@ -1,7 +1,7 @@
 import type { Link, PageLink } from '@kurze-url/api-client';
 import { isNotFound, isRedirect } from '@tanstack/react-router';
-import type { MockInstance } from 'vitest';
-import { describe, expect, it, vi } from 'vitest';
+import type { MockInstance } from 'vite-plus/test';
+import { describe, expect, it, vi } from 'vite-plus/test';
 
 import type { LinkFormValues } from '../../components/link-form';
 import {

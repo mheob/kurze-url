@@ -2,7 +2,7 @@ import type { Tag } from '@kurze-url/api-client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderHook } from '@testing-library/react';
 import { I18nextProvider } from 'react-i18next';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 
 import type { TagCreateResult } from '../components/tag-picker';
 import { createI18n } from '../i18n';

@@ -66,6 +66,9 @@ export default defineConfig({
 		],
 		// Shared with the `fmt` block. See generated.config.ts for why both tools skip these.
 		ignorePatterns: generatedFiles,
+		// Vite+'s own rule set, loaded as a JS plugin: it is the only place
+		// `prefer-vite-plus-imports` lives, and the shared config knows nothing about it.
+		jsPlugins: [{ name: 'vite-plus', specifier: 'vite-plus/oxlint-plugin' }],
 		// Already what `@mheob/oxlint-config` declares, and oxlint merges `options` through
 		// `extends` field by field, so `--print-config` showed both before this line existed.
 		// Stated here because the Vite+ templates do, so that turning type-aware linting off
@@ -353,6 +356,10 @@ export default defineConfig({
 			// points `sortTailwindcss` at the same `app.css` this file's `entryPoint`
 			// names — that agreement is what makes keeping it worthwhile.
 			'better-tailwindcss/enforce-consistent-line-wrapping': 'off',
+			// The one deliberate addition to the shared rule set (spec decision 11). Test files
+			// take `vi`, `describe` and `expect` from `vite-plus/test`, so a file added later
+			// that reaches for `vitest` directly fails here rather than slipping through.
+			'vite-plus/prefer-vite-plus-imports': 'error',
 		},
 		settings: { 'better-tailwindcss': tailwindPluginOptions },
 	},

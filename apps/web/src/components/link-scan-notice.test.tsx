@@ -1,6 +1,6 @@
 import { act, render, screen } from '@testing-library/react';
 import { I18nextProvider } from 'react-i18next';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import { createI18n } from '../i18n';
 import type { Language } from '../lib/preferences';

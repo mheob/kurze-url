@@ -2,7 +2,7 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { I18nextProvider } from 'react-i18next';
-import { describe, expect, it, type Mock, vi } from 'vitest';
+import { describe, expect, it, type Mock, vi } from 'vite-plus/test';
 
 import { createI18n } from '../i18n';
 import { TagPicker, type TagCreateResult, type TagOption, type TagPickerProps } from './tag-picker';

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 
 import { UnauthenticatedError } from '../server/session';
 import type { Me } from './_authed';

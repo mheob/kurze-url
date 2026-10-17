@@ -1,5 +1,5 @@
 import { isNotFound } from '@tanstack/react-router';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 
 import { requireTeamId } from './_authed';
 
