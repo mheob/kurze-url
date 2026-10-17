@@ -1,7 +1,9 @@
-/* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding of this rule in this
-   file traces to `StatsWindow` (apps/web/src/lib/stats-window.ts), whose two string properties
-   are not marked readonly. That file is Task 3's tested interface, not this task's to edit, and
-   its own tests pin its exact shape — adding readonly there is out of scope here. */
+/* oxlint-disable typescript/prefer-readonly-parameter-types -- the findings of this rule in this
+   file trace to two causes. The first is `StatsWindow` (apps/web/src/lib/stats-window.ts),
+   whose two string properties are not marked readonly. That file is Task 3's tested interface,
+   not this task's to edit, and its own tests pin its exact shape — adding readonly there is out
+   of scope here. The second is the `labelDayButton` parameters, whose types react-day-picker's
+   `Labels` type dictates, so they cannot be made readonly. */
 
 import { parseISO } from 'date-fns';
 import { useState } from 'react';
