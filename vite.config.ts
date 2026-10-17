@@ -363,4 +363,9 @@ export default defineConfig({
 		},
 		settings: { 'better-tailwindcss': tailwindPluginOptions },
 	},
+	// Vitest 5 finds its config in the directory it runs from, so a bare `vp test` typed here
+	// would collect `apps/web`'s files under THIS config — no jsdom, no `src/test/setup.ts` —
+	// and fail on `document is not defined`. Pointing it at `apps/web` makes it run the same
+	// `unit` and `storybook` projects `pnpm --filter @kurze-url/web test` does.
+	test: { projects: ['apps/web'] },
 });
