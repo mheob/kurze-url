@@ -134,24 +134,25 @@ export function authedApiClient(accessToken: string): ReturnType<typeof getApiCl
  * Implementation note on *why* `appendResponseHeader` rather than
  * `setResponseHeader`/`setResponseHeaders`: `set-cookie` is the one header
  * where multiple values are legitimate, not a bug, and both of those replace.
- * `setResponseHeaders` (plural) calls the underlying `Headers.set`, which would
- * silently discard every cookie but the last if more than one is pending.
- * `setResponseHeader` (singular) does support multiple values, but only by
- * first deleting any `set-cookie` the response already carries — safe the first
- * time this is called in a request, but a second call (a route that reads the
- * session more than once) would wipe out the first call's cookies rather than
- * add to them. `appendResponseHeader` merges into what is already there, so
- * this stays correct no matter how many times, or where, it is called within
- * one request.
+ * `setResponseHeaders` (plural), given a `Headers`, gathers every `set-cookie`
+ * value it holds and hands them all to `setResponseHeader`, so both helpers end
+ * in the singular one. That keeps every cookie it was given, but it first
+ * deletes any `set-cookie` the response already carries and marks the header
+ * as replaced rather than merged — safe the first time this is called in a
+ * request, but a second call (a route that reads the session more than once)
+ * would wipe out the first call's cookies rather than add to them.
+ * `appendResponseHeader` merges into what is already there, so this stays
+ * correct no matter how many times, or where, it is called within one request.
  *
  * "Merges" is not "concatenates": values that share a name, domain and path
  * collapse to the last one written, which is what a browser would end up with
  * after applying them in order. Every distinct cookie is kept, so a refreshed
- * `sb-access-token` replaces the stale copy an earlier flush put on the
- * response instead of both reaching the browser, and no cookie another flush
- * wrote is lost. (Until `@tanstack/start-server-core` 1.169.41 removed it,
- * this appended straight onto the per-request response object's own
- * `Headers`, which had the same effect.)
+ * auth-token cookie (`sb-<project-ref>-auth-token`, sometimes chunked as `.0`,
+ * `.1`) replaces the stale copy an earlier flush put on the response instead of
+ * both reaching the browser, and no cookie another flush wrote is lost.
+ * (Before `@tanstack/start-server-core` 1.169.41 took away the accessor for the
+ * per-request response, this function appended raw values to that response's
+ * own `Headers`, so duplicates were sent; the browser's end state was the same.)
  *
  * Wrapped in `createServerOnlyFn`, the same fix `sendMagicLinkFor` already
  * needed in `server/auth.ts`, for a related but distinct reason: this
@@ -163,10 +164,11 @@ export function authedApiClient(accessToken: string): ReturnType<typeof getApiCl
  * this whole file for the client build, including this function's own
  * top-level `appendResponseHeader` import — even though
  * `flushSessionCookies` itself is only ever called from inside `.handler()`
- * closures. Confirmed by building both ways: unwrapped,
- * `pnpm --filter @kurze-url/web build` fails with the identical
- * `[import-protection]` error `sendMagicLinkFor`'s docstring describes,
- * reported against this line; wrapped, it passes.
+ * closures. Confirmed by building both ways, and re-checked against this
+ * import: unwrapped, `pnpm --filter @kurze-url/web build` fails with the same
+ * `[import-protection]` error `sendMagicLinkFor`'s docstring describes
+ * ("Import denied in client environment" for `@tanstack/react-start/server`),
+ * reported against the `appendResponseHeader` call below; wrapped, it passes.
  */
 export const flushSessionCookies = createServerOnlyFn((headers: Readonly<Headers>): void => {
 	const cookies = headers.getSetCookie();
