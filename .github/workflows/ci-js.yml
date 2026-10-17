@@ -112,6 +112,13 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      # The `vite@*` and `vitest@*` overrides force the catalog's versions onto
+      # vite-plus's own pins, so a catalog entry that drifts from them installs
+      # without a warning. This reads what pnpm actually installed and fails when
+      # it is not what vite-plus declares (scripts/check-vite-plus-versions.ts).
+      - name: Check the Vite+ toolchain versions
+        run: pnpm check:vite-plus
+
   storybook:
     name: build & test Storybook
     needs: changes

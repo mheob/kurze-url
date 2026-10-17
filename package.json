@@ -5,6 +5,7 @@
 	"type": "module",
 	"scripts": {
 		"check": "vp check",
+		"check:vite-plus": "node scripts/check-vite-plus-versions.ts",
 		"cve": "cve-lite . --fail-on high --verbose --cache-dir .cache/cve-lite",
 		"db:reset": "supabase db reset",
 		"dev": "node scripts/dev.ts",

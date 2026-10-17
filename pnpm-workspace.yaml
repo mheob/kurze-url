@@ -23,7 +23,8 @@ overrides:
   # Unrelated to js-yaml: whatever range a dependency asks for, `vite` and `vitest` resolve
   # to the catalog's pins below, so the tree holds exactly one Vite+ core and one Vitest.
   # That includes the ranges `vite-plus` itself declares, which is why a catalog entry that
-  # drifts from them installs without a warning (see the comment above `catalog:`).
+  # drifts from them installs without a warning; CI's `check:vite-plus` step fails on it
+  # instead (see the comment above `catalog:`).
   vite@*: "catalog:"
   vitest@*: "catalog:"
 
@@ -52,8 +53,9 @@ catalogMode: strict
 # a lone `vitest` bump sits next to `vite-plus`'s own `@vitest/*` packages at the version
 # it shipped with. Renovate groups the four into one pull request (.github/renovate.json)
 # when they release together, but cannot guarantee it, because Vitest publishes patches
-# before `vite-plus` re-pins them. After `pnpm install` on the pull request's branch, check
-# the catalog against `node_modules/vite-plus/package.json` before merging such a pull request.
+# before `vite-plus` re-pins them. CI's `check:vite-plus` step
+# (scripts/check-vite-plus-versions.ts) fails such a pull request: after `pnpm install` it
+# compares the installed toolchain with what `vite-plus` declares.
 catalog:
   "@axe-core/playwright": ^4.13.0
   "@base-ui/react": ^1.8.0
