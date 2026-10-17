@@ -1434,10 +1434,9 @@ Run: `pnpm --filter @kurze-url/web exec vitest run --project unit src/lib/curren
 - [ ] **Step 3: Implement**
 
 ```ts
+import type { Membership } from '../routes/_authed';
 // apps/web/src/lib/current-team.ts
 import { preferenceCookie } from './preferences';
-
-import type { Membership } from '../routes/_authed';
 
 /**
  * The same mechanism `preferences.ts` uses for language and theme, for the
@@ -1552,7 +1551,6 @@ import { Link } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 
 import { teamCookie } from '../lib/current-team';
-
 import type { Membership } from '../routes/_authed';
 
 interface TeamSwitcherProps {
@@ -2104,15 +2102,15 @@ declare module '@tanstack/react-router' {
 - [ ] **Step 6: Implement the list route**
 
 ```tsx
+import { useSuspenseQuery } from '@tanstack/react-query';
 // apps/web/src/routes/_authed/teams.$teamId.links.index.tsx
 import { createFileRoute } from '@tanstack/react-router';
-import { useSuspenseQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 
 import { CopyButton } from '../../components/copy-button';
 import { ShortUrlNotice } from '../../components/short-url-notice';
-import { assertMembership } from '../_authed';
 import { linksQueryOptions } from '../../server/links';
+import { assertMembership } from '../_authed';
 
 export const Route = createFileRoute('/_authed/teams/$teamId/links/')({
 	// Pagination lives in the URL so the back button works and page 3 can be

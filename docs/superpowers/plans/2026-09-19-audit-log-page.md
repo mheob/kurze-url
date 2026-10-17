@@ -399,9 +399,9 @@ Expected: FAIL — the module does not exist.
 
 ```ts
 import { listAuditLog, type PageAuditEntry } from '@kurze-url/api-client';
+import { queryOptions } from '@tanstack/react-query';
 import { createServerFn, createServerOnlyFn } from '@tanstack/react-start';
 import { getRequest } from '@tanstack/react-start/server';
-import { queryOptions } from '@tanstack/react-query';
 
 import type { AuditFilters } from '../lib/audit-filters';
 import { toQueryRange } from '../lib/audit-filters';
@@ -472,9 +472,9 @@ The same triple, for `listTeamMembers`. The member list is fetched only to turn 
 
 ```ts
 import { listTeamMembers, type PageMember } from '@kurze-url/api-client';
+import { queryOptions } from '@tanstack/react-query';
 import { createServerFn, createServerOnlyFn } from '@tanstack/react-start';
 import { getRequest } from '@tanstack/react-start/server';
-import { queryOptions } from '@tanstack/react-query';
 
 import { authedApiClient } from './api';
 import { flushSessionCookies, requireSession } from './session';

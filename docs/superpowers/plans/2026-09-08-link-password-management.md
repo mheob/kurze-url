@@ -1580,7 +1580,11 @@ Create `apps/web/src/lib/link-password.ts`:
  */
 
 export type LinkPasswordReason =
-	'derived_from_context' | 'too_common' | 'too_long' | 'too_repetitive' | 'too_short';
+	| 'derived_from_context'
+	| 'too_common'
+	| 'too_long'
+	| 'too_repetitive'
+	| 'too_short';
 
 export type LinkPasswordContext = {
 	destinationUrl: string;
