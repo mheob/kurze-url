@@ -22,7 +22,7 @@
 		"@mheob/oxlint-config": "^4.1.1",
 		"@types/node": "^26.6.3",
 		"cve-lite-cli": "^1.37.0",
-		"eslint-plugin-better-tailwindcss": "^4.7.0",
+		"eslint-plugin-better-tailwindcss": "^4.9.1",
 		"eslint-plugin-jsonc": "^3.4.2",
 		"eslint-plugin-regexp": "^3.3.1",
 		"eslint-plugin-storybook": "^10.6.1",
