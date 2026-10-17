@@ -5,7 +5,7 @@
 
 import { parseISO } from 'date-fns';
 import { useState } from 'react';
-import type { DateRange } from 'react-day-picker';
+import { DateLib, type DateLibOptions, type DateRange, type Modifiers } from 'react-day-picker';
 import { useTranslation } from 'react-i18next';
 
 import { formatDay } from '../lib/format';
@@ -72,6 +72,45 @@ function isoDayFromCalendarDate(date: Readonly<Date>): string {
 	const day = String(date.getDate()).padStart(ISO_PAD_LENGTH, '0');
 	return `${year}-${month}-${day}`;
 }
+
+/**
+ * react-day-picker's own `labelDayButton`, with one difference: the day of
+ * the month is written `30`, not `30th`. The cell's visible text is the bare
+ * number, and axe-core 4.14 turned `label-content-name-mismatch` (WCAG 2.5.3,
+ * "Label in Name") on by default: it compares word by word, so the library's
+ * "Sunday, August 30th, 2026" holds the word `30th` and never `30`, and every
+ * day of the grid failed it. The "Today, " prefix and ", selected" suffix are
+ * the library's own, in its own order, so a screen reader hears what it
+ * always did.
+ *
+ * English only, like the rest of the calendar, which is given no locale: the
+ * format pattern and both markers are English. Giving the calendar a German
+ * locale means replacing all three here, not only passing `locale`.
+ *
+ * @param date - The day the button stands for.
+ * @param modifiers - react-day-picker's state flags for that day; only `today` and `selected` are read.
+ * @param options - The date library options, used only when no `dateLib` is given.
+ * @param dateLib - The date library `DayPicker` formats with; built from `options` when absent.
+ * @returns The button's accessible name.
+ */
+// oxlint-disable-next-line max-params -- react-day-picker's `Labels['labelDayButton']` is `(date, modifiers, options, dateLib)`; a function with fewer parameters would drop `dateLib`, which `DayPicker` hands over so each label does not build its own.
+function labelDayButton(
+	date: Date,
+	modifiers: Modifiers,
+	options?: DateLibOptions,
+	dateLib?: DateLib,
+): string {
+	let label = (dateLib ?? new DateLib(options)).format(date, 'EEEE, MMMM d, y');
+	if (modifiers.today) label = `Today, ${label}`;
+	if (modifiers.selected) label = `${label}, selected`;
+	return label;
+}
+
+/**
+ * Module scope so `Calendar` gets the same object on every render; an inline
+ * `{{ labelDayButton }}` would be a new one each time.
+ */
+const CALENDAR_LABELS = { labelDayButton };
 
 export interface StatRangePickerProps {
 	/** The active language, for date formatting. */
@@ -191,6 +230,7 @@ export function StatRangePicker({
 						<PopoverTitle>{t('stats.customRange')}</PopoverTitle>
 						<Calendar
 							disabled={{ after: today, before: parseISO(retentionFloor(today)) }}
+							labels={CALENDAR_LABELS}
 							mode="range"
 							onSelect={(range) => {
 								setPendingRange(range);
