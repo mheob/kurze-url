@@ -36,6 +36,11 @@ overrides:
 minimumReleaseAgeExclude:
   - "@mheob/*"
 
+# How `pnpm add` uses the catalog below: `strict` only allows a dependency's catalog version,
+# and adding one outside the catalog's range fails. It governs `pnpm add` only, so the
+# direct ranges in the package.json files stay as they are.
+catalogMode: strict
+
 # The `vite`, `vitest`, `vite-plus` and `@vitest/browser-playwright` entries must move
 # together: `vite-plus` pins `vite` (as Vite+ core) and `vitest` exactly and peers
 # `@vitest/browser-playwright` at the same version, so one bumped alone breaks the install.
