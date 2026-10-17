@@ -88,6 +88,38 @@ func TestValidateRejectsAHostlessURL(t *testing.T) {
 	require.Error(t, destination.Validate("", self))
 }
 
+// net/url reads a host in each of these, and Safe Browsing reads none: its
+// rules strip every dot, and IDNA turns the ideographic and full-width dots
+// into dots first. A link to one would never get a verdict and would sit at the
+// head of the sweep's never-checked list forever, so it is no destination.
+func TestValidateRefusesAHostSafeBrowsingCannotRead(t *testing.T) {
+	for _, raw := range []string{
+		"https://./",
+		"https://.../x",
+		"https://.:443/",
+		"https://\u3002/",
+		"https://\uff0e/",
+		"https://%E3%80%82/",
+	} {
+		require.ErrorIs(t, destination.Validate(raw, self), destination.ErrMalformed,
+			"%q must be refused", raw)
+	}
+}
+
+// The other side of the refusal above: hosts whose spelling the two readings
+// treat differently, but in both of which a host survives.
+func TestValidateStillAcceptsHostsSafeBrowsingReadsDifferently(t *testing.T) {
+	for _, ok := range []string{
+		"https://b\u00fccher.example/katalog",
+		"https://example.org:8443/x",
+		"https://[2606:4700:4700::1111]/",
+		"https://mitglied:geheim@example.org/intern",
+		"https://example.org./",
+	} {
+		require.NoError(t, destination.Validate(ok, self), "%q must be accepted", ok)
+	}
+}
+
 func TestValidateAcceptsAPublicIPLiteral(t *testing.T) {
 	require.NoError(t, destination.Validate("https://93.184.216.34/", self),
 		"only private and local ranges are refused, not IP literals as such")

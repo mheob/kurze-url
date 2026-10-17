@@ -150,7 +150,7 @@ func (d Deps) createTag(ctx context.Context, in *CreateTagInput) (*TagOutput, er
 
 		return audit.Log(ctx, q, audit.Entry{
 			TeamID:      member.TeamID,
-			ActorUserID: member.UserID,
+			ActorUserID: &member.UserID,
 			Action:      audit.ActionTagCreated,
 			EntityType:  audit.EntityTag,
 			EntityID:    row.ID,
@@ -239,7 +239,7 @@ func (d Deps) updateTag(ctx context.Context, in *UpdateTagInput) (*TagOutput, er
 
 		return audit.Log(ctx, q, audit.Entry{
 			TeamID:      member.TeamID,
-			ActorUserID: member.UserID,
+			ActorUserID: &member.UserID,
 			Action:      audit.ActionTagUpdated,
 			EntityType:  audit.EntityTag,
 			EntityID:    row.ID,
@@ -279,7 +279,7 @@ func (d Deps) deleteTag(ctx context.Context, in *DeleteTagInput) (*DeleteTagOutp
 
 		return audit.Log(ctx, q, audit.Entry{
 			TeamID:      member.TeamID,
-			ActorUserID: member.UserID,
+			ActorUserID: &member.UserID,
 			Action:      audit.ActionTagDeleted,
 			EntityType:  audit.EntityTag,
 			EntityID:    row.ID,

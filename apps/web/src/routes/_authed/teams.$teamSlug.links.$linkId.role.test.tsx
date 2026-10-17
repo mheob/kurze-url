@@ -15,6 +15,7 @@ import { describe, expect, it } from 'vitest';
 import { createI18n } from '../../i18n';
 import { foldersQueryOptions } from '../../server/folders';
 import { tagsQueryOptions } from '../../server/tags';
+import { flaggedScan } from '../../test/link-scan';
 import type { Me } from '../_authed';
 import { Route } from './teams.$teamSlug.links.$linkId';
 
@@ -54,9 +55,10 @@ const LINK: Link = {
  * tag queries are seeded and never stale, so those make no request either.
  *
  * @param role - The signed-in member's role on the team.
+ * @param link - The link the loader returns.
  * @returns Testing Library's render result.
  */
-function renderPage(role: string): ReturnType<typeof render> {
+function renderPage(role: string, link: Link = LINK): ReturnType<typeof render> {
 	const me: Me = {
 		email: 'kasse@verein-a.example',
 		is_maintainer: false,
@@ -87,7 +89,7 @@ function renderPage(role: string): ReturnType<typeof render> {
 	// hangs the real route under this test's own parent.
 	Object.assign(Route.options, {
 		getParentRoute: () => authedRoute,
-		loader: () => LINK,
+		loader: () => link,
 		path: '/teams/$teamSlug/links/$linkId',
 	});
 	const router = createRouter({
@@ -195,6 +197,50 @@ describe('the link page', () => {
 			expect(screen.getByRole('button', { name: 'Remove protection' })).toBeInTheDocument();
 			expect(screen.getByRole('heading', { name: 'Delete link' })).toBeInTheDocument();
 			expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument();
+		});
+	});
+
+	describe('for a link Safe Browsing blocked', () => {
+		it('says so first, between the heading and everything else', async () => {
+			renderPage('viewer', {
+				...LINK,
+				scan: flaggedScan(['SOCIAL_ENGINEERING']),
+				state: 'flagged',
+			});
+
+			const notice = await screen.findByRole('region', { name: 'Suspected phishing site' });
+			// The page's first job for a blocked link is to say so, ahead of the
+			// statistics link and the cards.
+			expect(screen.getByRole('heading', { level: 1, name: 'Details' }).nextElementSibling).toBe(
+				notice,
+			);
+		});
+
+		it('shows an editor the notice above a form that stays editable', async () => {
+			// A new destination is how an editor lifts a block, so the form must
+			// still take one.
+			renderPage('editor', {
+				...LINK,
+				scan: flaggedScan(['MALWARE']),
+				state: 'flagged',
+			});
+
+			const notice = await screen.findByRole('region', { name: 'Possibly harmful software' });
+			const destination = screen.getByLabelText('Destination URL');
+			expect(destination).toBeEnabled();
+			// Above the form, not only somewhere on the page.
+			expect(notice.compareDocumentPosition(destination)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+		});
+
+		it('shows no notice for an active link', async () => {
+			renderPage('viewer');
+
+			await expect(
+				screen.findByRole('heading', { level: 1, name: 'Details' }),
+			).resolves.toBeInTheDocument();
+			expect(
+				screen.queryByRole('region', { name: /suspected|possibly/iu }),
+			).not.toBeInTheDocument();
 		});
 	});
 });

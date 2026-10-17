@@ -16,6 +16,7 @@ import (
 	"github.com/mheob/kurze-url/apps/api/internal/cache"
 	"github.com/mheob/kurze-url/apps/api/internal/config"
 	"github.com/mheob/kurze-url/apps/api/internal/db"
+	"github.com/mheob/kurze-url/apps/api/internal/scanning"
 )
 
 // Inviter is the slice of Supabase's Admin API this package needs. It is
@@ -42,7 +43,15 @@ type Deps struct {
 	// picking the wrong one is a security bug. domainverify.NewVerifier's
 	// *Verifier is the production implementation, wired in cmd/api/main.go.
 	DomainVerifier domainVerifier
-	Log            *slog.Logger
+	// Scanner checks destinations against Google Safe Browsing. Nil means
+	// scanning is off (SAFE_BROWSING_API_KEY is unset), and every caller reads
+	// that as "no verdict", never as clean. Declared as scanning.Checker
+	// rather than a local interface because that is the provider-neutral seam
+	// the design names: Web Risk would be a second implementation of it.
+	// scanning.NewClient's *Client is the production implementation, wired in
+	// cmd/api/main.go.
+	Scanner scanning.Checker
+	Log     *slog.Logger
 
 	// Pool backs db.InTx. Queries above is pool-backed too, but a transaction
 	// needs the pool itself.
@@ -55,6 +64,11 @@ type Deps struct {
 	// Now is injectable so tests can pin expiry behaviour. Defaults to
 	// time.Now when nil.
 	Now func() time.Time
+
+	// ScanBudget bounds one POST /internal/scan run. Zero means scanBudget;
+	// it is a field so a test can run the sweep out of time in a third of a
+	// second rather than twenty-five, through the real handler.
+	ScanBudget time.Duration
 
 	// PingPostgres and PingRedis back GET /health/deep. Function fields
 	// rather than an interface, and nil meaning "use the real dependency",

@@ -486,6 +486,10 @@
 						"format": "int64",
 						"type": "integer"
 					},
+					"scan": {
+						"$ref": "#/components/schemas/LinkScan",
+						"description": "The Safe Browsing verdict on the current destination. Only GET /v1/links/{link_id} carries it, and only once that destination has been checked."
+					},
 					"short_url": {
 						"type": "string"
 					},
@@ -493,6 +497,8 @@
 						"type": "string"
 					},
 					"state": {
+						"description": "expired follows from expires_at. flagged is set by Safe Browsing scanning; only a later clean check by Google, or a new destination, lifts it.",
+						"enum": ["active", "disabled", "expired", "flagged"],
 						"type": "string"
 					},
 					"tags": {
@@ -527,6 +533,35 @@
 					"created_at",
 					"updated_at"
 				],
+				"type": "object"
+			},
+			"LinkScan": {
+				"additionalProperties": false,
+				"properties": {
+					"checked_at": {
+						"description": "When Google last checked the current destination, whatever it found.",
+						"format": "date-time",
+						"type": "string"
+					},
+					"since": {
+						"description": "When the link entered this verdict for its current destination. Absent while it has been clean since that destination was first checked.",
+						"format": "date-time",
+						"type": "string"
+					},
+					"threat_types": {
+						"description": "Google's threat types for a flagged link, such as SOCIAL_ENGINEERING or MALWARE; empty when clean. Google adds types over time, so treat one you do not know as a generic threat.",
+						"items": {
+							"type": "string"
+						},
+						"type": ["array", "null"]
+					},
+					"verdict": {
+						"description": "flagged while the link is blocked. Only a later clean check by Google, or a new destination, lifts it.",
+						"enum": ["clean", "flagged"],
+						"type": "string"
+					}
+				},
+				"required": ["verdict", "threat_types", "checked_at"],
 				"type": "object"
 			},
 			"LinkStats": {
@@ -1118,7 +1153,7 @@
 						"type": "string"
 					},
 					"state": {
-						"description": "expired follows from expires_at and flagged is set by scanning; neither is a caller's to write.",
+						"description": "expired follows from expires_at and flagged is set by scanning; neither is a caller's to write. A flagged link refuses any state with 409: change its destination, or wait until Google clears it.",
 						"enum": ["active", "disabled"],
 						"type": "string"
 					},

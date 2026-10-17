@@ -80,7 +80,7 @@ All checked on 2026-10-03; sources are in the research notes this spec was writt
 
 ## Global constraints
 
-- **Golden rule 2:** an `active` link's redirect calls nothing new. The only new waiting is on a `flagged` link, at most 2 seconds, at most about once per 30 minutes per link per instance.
+- **Golden rule 2:** an `active` link's redirect calls nothing new. The only new waiting is on a `flagged` link, at most 2 seconds, at most once per confirmation lifetime per link per instance (updated during implementation, 2026-10-06: that is `min(cacheDuration, 30 minutes) − 1 minute`, so at most 29 minutes and shorter when Google's `cacheDuration` is short, not a fixed thirty).
 - **No URL leaves the server:** only 4-byte SHA-256 prefixes are sent to Google.
 - **The API key is never part of a URL.** It travels in the `X-Goog-Api-Key` header, because Go's `*url.Error` puts the request URL into error text, which reaches logs and Sentry.
 - **Blocking needs a fresh confirmation:** a flagged link is shown the block page only if Google confirmed the threat within the last 30 minutes, or within `cacheDuration` if that is shorter.
@@ -100,7 +100,7 @@ One migration, authored with `supabase migration new`.
   - A row is written only when a link's verdict changes, from active to flagged or back. The first check that finds a link clean writes nothing.
   - `verdict` keeps its existing check constraint. `error` stays allowed and unused, since errors are logged rather than stored.
   - The table is empty in production, so the new `not null` columns need no backfill.
-- **A partial index for the sweep's due query** over `link (scan_checked_at nulls first) where state in ('active','flagged')`, or whatever shape the plan's `EXPLAIN` shows the query uses.
+- **No index for the sweep's due query** (updated during implementation, 2026-10-06; this line first planned a partial index over `link (scan_checked_at nulls first) where state in ('active','flagged')`). The `EXPLAIN` the plan called for shows a sequential scan with the whole predicate as its filter, and no index can answer the part that compares `scan_destination` with `destination_url`, two columns of one row; an index on `scan_checked_at` would make every daily check update an indexed column and rule out heap-only updates. The reasoning is recorded in the comment above `ListDueLinksForScan` in `link_scan.sql`; revisit it if `link` reaches six figures.
 - `link_scan_result` stays outside the retention job, as `docs/superpowers/specs/2026-09-12-analytics-retention-design.md` decided. Writing on change only keeps it small.
 
 ## The scanning package
@@ -120,10 +120,10 @@ One migration, authored with `supabase migration new`.
 
   Google's published canonicalization examples become a table test, verbatim.
 
-- **Expressions:** up to 5 host suffixes (the exact host, then up to 4 suffixes from the last five components, never the bare TLD; an IP host only exactly) times up to 6 paths (exact path with query, exact path without query, then up to 4 prefixes from the root). At most 30 per URL.
+- **Expressions:** up to 5 host suffixes (the exact host, then up to 4 suffixes from the last five components, never the bare TLD; an IP host only exactly) times up to 6 paths (exact path with query, exact path without query, then up to 4 prefixes from the root). At most 30 per URL. (Updated during implementation, 2026-10-06: the host suffixes follow Google's v5 page, walking up from the public suffix list's eTLD+1 rather than counting five labels from the right; an IPv4-mapped or NAT64 IPv6 host is converted to the IPv4 address it wraps; and an internationalized host goes through IDNA, in a relaxed profile, before the dot handling. Each destination is also read a second way, as `net/url` splits it, and looked up under the union of both readings, because Google unescapes before it splits and `https://x%2F@bad.com/` would otherwise hide `bad.com`: up to 60 expressions for such a URL.)
 - **Lookup:**
   1. SHA-256 each expression and keep the first 4 bytes as a prefix.
-  2. De-duplicate the prefixes across all URLs of one call and send them in one `hashes.search` request, splitting at 1000.
+  2. De-duplicate the prefixes across all URLs of one call and send them in as few `hashes.search` requests as the limit allows, splitting at 250 (updated during implementation, 2026-10-06: Google's own ceiling is 1000, but this is a GET and 1000 padded base64 prefixes are about 26 KB of query string, past the 8 KB many front ends refuse; 250 keeps a request near 6.5 KB).
   3. A URL is reported for a threat type only when one of its own full hashes equals a returned `fullHash`, and only for details whose attributes include neither `CANARY` nor `FRAME_ONLY`.
   4. Unknown threat types are kept as reported strings, not dropped.
 - **Validity:** `ValidFor` is the response's `cacheDuration`.
@@ -183,7 +183,7 @@ After `createLink` commits, and after `updateLink` commits a changed `destinatio
 
 ### PATCH rules for a flagged link
 
-- **A changed `destination_url`** sets `state` back to `active` in the same update, because the flag belonged to the old URL. The new destination is checked immediately. `link.updated`'s `metadata.changed` records both fields.
+- **A changed `destination_url`** sets `state` back to `active` in the same update, because the flag belonged to the old URL. The new destination is checked immediately. `link.updated`'s `metadata.changed` records both fields. (Updated during implementation, 2026-10-06: the same update clears `scan_destination`, so changing the destination back to the flagged URL before the new one's check lands leaves the link due rather than "checked".)
 - **Any other change to `state`** on a flagged link (to `active` or to `disabled`) is refused with 409 and `huma.ErrorDetail{Location: "body.state", Value: "flagged"}`. Disabling is refused too, because disable-then-enable would otherwise be a way around the block.
 - **No more lost flags:** `updateLink` reads the link `FOR UPDATE`. Today it reads without a lock and writes `state` back from that read, so a flag the scanner set in between is overwritten.
 
@@ -217,7 +217,7 @@ The cost:
 
 - An active link costs nothing.
 - A flagged link costs one Redis `GET` per redirect, plus one `SET` per re-check.
-- Waiting is at most 2 seconds, roughly once per 30 minutes per link per instance.
+- Waiting is at most 2 seconds, at most once per confirmation lifetime per link per instance (updated during implementation, 2026-10-06: at most 29 minutes, shorter when Google's `cacheDuration` is short).
 
 This is the one exception to golden rule 2, and `CLAUDE.md` states it with its reason: a flagged link may not be blocked on stale data, and it may not be forwarded unchecked either.
 

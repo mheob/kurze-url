@@ -152,7 +152,7 @@ func (d Deps) createFolder(ctx context.Context, in *CreateFolderInput) (*FolderO
 
 		return audit.Log(ctx, q, audit.Entry{
 			TeamID:      member.TeamID,
-			ActorUserID: member.UserID,
+			ActorUserID: &member.UserID,
 			Action:      audit.ActionFolderCreated,
 			EntityType:  audit.EntityFolder,
 			EntityID:    row.ID,
@@ -244,7 +244,7 @@ func (d Deps) updateFolder(ctx context.Context, in *UpdateFolderInput) (*FolderO
 
 		return audit.Log(ctx, q, audit.Entry{
 			TeamID:      member.TeamID,
-			ActorUserID: member.UserID,
+			ActorUserID: &member.UserID,
 			Action:      audit.ActionFolderUpdated,
 			EntityType:  audit.EntityFolder,
 			EntityID:    row.ID,
@@ -299,7 +299,7 @@ func (d Deps) deleteFolder(ctx context.Context, in *DeleteFolderInput) (*DeleteF
 
 		return audit.Log(ctx, q, audit.Entry{
 			TeamID:      member.TeamID,
-			ActorUserID: member.UserID,
+			ActorUserID: &member.UserID,
 			Action:      audit.ActionFolderDeleted,
 			EntityType:  audit.EntityFolder,
 			EntityID:    row.ID,

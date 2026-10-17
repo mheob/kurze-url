@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/mheob/kurze-url/apps/api/internal/observability"
+	"github.com/mheob/kurze-url/apps/api/internal/scanning"
 )
 
 // redisReply stands in for go-redis's server-reply error, which lives in an
@@ -44,4 +45,23 @@ func TestUpstashsQuotaRefusalIsCoalescedHourly(t *testing.T) {
 
 	require.Len(t, matched, 1)
 	require.Equal(t, redisQuotaReportInterval, matched[0].Window)
+}
+
+// Google's refusal arrives wrapped by whichever caller logged it — the sweep,
+// a redirect's re-check, an immediate check — and must land in its own hourly
+// slot, not the Redis rule's.
+func TestSafeBrowsingsQuotaRefusalIsCoalescedHourly(t *testing.T) {
+	refusal := fmt.Errorf("safe browsing check failed: %w",
+		fmt.Errorf("%w: hashes.search answered 429", scanning.ErrQuotaExceeded))
+
+	var matched []observability.CoalesceRule
+	for _, rule := range sentryCoalesceRules() {
+		if rule.Match(refusal) {
+			matched = append(matched, rule)
+		}
+	}
+
+	require.Len(t, matched, 1)
+	require.Equal(t, "safe browsing quota exhausted", matched[0].Key)
+	require.Equal(t, safeBrowsingQuotaReportInterval, matched[0].Window)
 }

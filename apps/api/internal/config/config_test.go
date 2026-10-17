@@ -292,3 +292,34 @@ func TestAPIHostnameDefaultsToLocalhostOffVercel(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "localhost", cfg.APIHostname)
 }
+
+// Optional like every external service here: unset turns scanning off, it does
+// not stop the API starting.
+func TestSafeBrowsingAPIKeyIsOptional(t *testing.T) {
+	setRequired(t)
+	t.Setenv("SAFE_BROWSING_API_KEY", "")
+
+	cfg, err := config.Load()
+	require.NoError(t, err)
+	require.Empty(t, cfg.SafeBrowsingAPIKey)
+
+	t.Setenv("SAFE_BROWSING_API_KEY", "a-key")
+	cfg, err = config.Load()
+	require.NoError(t, err)
+	require.Equal(t, "a-key", cfg.SafeBrowsingAPIKey)
+}
+
+// Fail closed, like RETENTION_TOKEN: unset turns the sweep endpoint into a 404.
+func TestScanTokenIsOptional(t *testing.T) {
+	setRequired(t)
+	t.Setenv("SCAN_TOKEN", "")
+
+	cfg, err := config.Load()
+	require.NoError(t, err)
+	require.Empty(t, cfg.ScanToken)
+
+	t.Setenv("SCAN_TOKEN", "a-token")
+	cfg, err = config.Load()
+	require.NoError(t, err)
+	require.Equal(t, "a-token", cfg.ScanToken)
+}

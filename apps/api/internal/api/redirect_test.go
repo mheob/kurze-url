@@ -95,6 +95,10 @@ func TestRedirectRefusesAnUnverifiedDomain(t *testing.T) {
 		"an unverified domain must not serve links — the team may not own the hostname")
 }
 
+// The fixture has no scanner, so a flagged link can be neither confirmed nor
+// cleared and answers the neutral 503. The 403 block page needs a
+// confirmation from Google younger than thirty minutes; flagged_test.go
+// covers it and the re-check.
 func TestRedirectRefusesLinksThatAreNotActive(t *testing.T) {
 	for _, tc := range []struct {
 		state  string
@@ -102,7 +106,7 @@ func TestRedirectRefusesLinksThatAreNotActive(t *testing.T) {
 	}{
 		{"disabled", http.StatusGone},
 		{"expired", http.StatusGone},
-		{"flagged", http.StatusForbidden},
+		{"flagged", http.StatusServiceUnavailable},
 	} {
 		t.Run(tc.state, func(t *testing.T) {
 			f := newFixture(t, withState(tc.state))

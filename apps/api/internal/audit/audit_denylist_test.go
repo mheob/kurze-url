@@ -43,7 +43,7 @@ func TestLogDenylistCatchesSmugglingAttempts(t *testing.T) {
 			err := db.InTx(ctx, pool, func(q *db.Queries) error {
 				return audit.Log(ctx, q, audit.Entry{
 					TeamID:      teamID,
-					ActorUserID: userID,
+					ActorUserID: &userID,
 					Action:      audit.ActionTeamRenamed,
 					EntityType:  audit.EntityTeam,
 					EntityID:    teamID,
@@ -91,7 +91,7 @@ func TestLogDenylistAllowsLegitimateKeys(t *testing.T) {
 	require.NoError(t, db.InTx(ctx, pool, func(q *db.Queries) error {
 		return audit.Log(ctx, q, audit.Entry{
 			TeamID:      teamID,
-			ActorUserID: userID,
+			ActorUserID: &userID,
 			Action:      audit.ActionTeamRenamed,
 			EntityType:  audit.EntityTeam,
 			EntityID:    teamID,

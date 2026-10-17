@@ -18,9 +18,10 @@ import {
 	type LinkPasswordReason,
 } from '../../components/link-password-card';
 import { LinkQRCard } from '../../components/link-qr-card';
+import { LinkScanNotice } from '../../components/link-scan-notice';
 import { buttonVariants } from '../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
-import { useLinkFormTags } from '../../hooks/use-link-form-tags';
+import { prefetchTags, useLinkFormTags } from '../../hooks/use-link-form-tags';
 import { classifyApiError, type ApiFailure, type QrRejectionReason } from '../../lib/api-errors';
 import { remapFolderGoneFailure } from '../../lib/folders';
 import { remapTagGoneFailure, sameTagSet } from '../../lib/tags';
@@ -35,7 +36,6 @@ import {
 	setLinkPasswordFn,
 	updateLinkFn,
 } from '../../server/links';
-import { prefetchTags } from '../../server/tags';
 import { requireTeamId } from '../_authed';
 
 /* oxlint-disable typescript/prefer-readonly-parameter-types -- every parameter this rule flags
@@ -716,6 +716,11 @@ function RouteComponent(): React.JSX.Element {
 			    the page is read-only for them, so it must not announce itself as an
 			    edit page above disabled fields. */}
 			<h1>{t(mayEdit ? 'links.edit' : 'links.details')}</h1>
+			{/* First thing below the heading: a blocked link's page has to say so
+			    before anything else. The element is always present — it renders
+			    null for an unblocked link — so it never shifts the keyed cards
+			    below (see the note on keys further down). */}
+			<LinkScanNotice key={`scan-${linkId}`} scan={link.scan} state={link.state} />
 			<RouterLink
 				// oxlint-disable-next-line react/forbid-component-props -- shadcn/ui's own "link styled as a button" idiom, same as `routes/index.tsx`'s two call sites: TanStack Router's `Link` forwards `className` straight to the rendered `<a>`, and `buttonVariants` exists precisely to be applied here.
 				className={buttonVariants({ variant: 'outline' })}

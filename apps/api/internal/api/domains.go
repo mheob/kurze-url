@@ -254,7 +254,7 @@ func (d Deps) createDomain(ctx context.Context, in *CreateDomainInput) (*DomainO
 		// reviewer of this log actually wants to see.
 		return audit.Log(ctx, q, audit.Entry{
 			TeamID:      member.TeamID,
-			ActorUserID: member.UserID,
+			ActorUserID: &member.UserID,
 			Action:      audit.ActionDomainClaimed,
 			EntityType:  audit.EntityDomain,
 			EntityID:    row.ID,
@@ -414,7 +414,7 @@ func (d Deps) verifyDomain(ctx context.Context, in *VerifyDomainInput) (*VerifyD
 		// whose word segments include "token".
 		return audit.Log(ctx, q, audit.Entry{
 			TeamID:      member.TeamID,
-			ActorUserID: member.UserID,
+			ActorUserID: &member.UserID,
 			Action:      audit.ActionDomainVerified,
 			EntityType:  audit.EntityDomain,
 			EntityID:    v.ID,
@@ -563,7 +563,7 @@ func (d Deps) deleteDomain(ctx context.Context, in *DeleteDomainInput) (*DeleteD
 
 		return audit.Log(ctx, q, audit.Entry{
 			TeamID:      member.TeamID,
-			ActorUserID: member.UserID,
+			ActorUserID: &member.UserID,
 			Action:      audit.ActionDomainDeleted,
 			EntityType:  audit.EntityDomain,
 			EntityID:    domain.ID,

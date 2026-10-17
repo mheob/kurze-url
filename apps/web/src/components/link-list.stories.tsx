@@ -94,6 +94,33 @@ export const Populated: StoryObj<typeof meta> = {
 	},
 };
 
+/** A link Google Safe Browsing reports, beside an ordinary one. */
+export const WithBlockedLink: StoryObj<typeof meta> = {
+	args: {
+		data: pageOf({
+			items: [
+				link({ state: 'flagged' }),
+				link({
+					destination_url: 'https://example.org/other',
+					id: 'link-2',
+					short_url: 'https://kurze.url/def456',
+					slug: 'def456',
+				}),
+			],
+			total_count: 2,
+		}),
+		page: 1,
+		teamSlug: 'verein-a',
+	},
+};
+
+// `Dark` below renders rows without a blocked link, so the destructive badge
+// would otherwise never meet the dark palette in front of the a11y addon.
+export const WithBlockedLinkDark: StoryObj<typeof meta> = {
+	args: { ...WithBlockedLink.args },
+	globals: { theme: 'dark' },
+};
+
 /**
  * A viewer's list: no "Create link", and each row's link to the link page
  * reads "Details" because there is nothing to edit there — the filters, tag

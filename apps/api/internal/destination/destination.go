@@ -11,6 +11,8 @@ import (
 	"net"
 	"net/url"
 	"strings"
+
+	"github.com/mheob/kurze-url/apps/api/internal/scanning"
 )
 
 // MaxLength caps a destination. Long enough for any real campaign URL, short
@@ -56,6 +58,14 @@ func Validate(raw string, selfHostnames []string) error {
 	host := strings.ToLower(parsed.Hostname())
 	if host == "" {
 		return fmt.Errorf("%w: no host", ErrMalformed)
+	}
+	// net/url finds a host in "https://./" and in IDNA's ideographic and
+	// full-width dots; Safe Browsing's rules strip them all and find none. A
+	// link no check can judge would sit at the head of the sweep's
+	// never-checked list forever, so it is refused here, by the scanner's own
+	// reading rather than a second copy of it.
+	if !scanning.HasLookupHost(raw) {
+		return fmt.Errorf("%w: %q is not a host a Safe Browsing check can read", ErrMalformed, host)
 	}
 
 	if ip := net.ParseIP(host); ip != nil && !IsPublic(ip) {

@@ -46,7 +46,7 @@ Carried into implementation as explicit open items — all also listed in `CLAUD
 
 1. `audit_log.action` taxonomy.
 2. Alert notification channel (email vs. webhook), and with it the Redis command budget the redirect rate limit provably cannot defend.
-3. Legal texts, plus two flagged questions for a lawyer (interstitial-page Impressum; controller role for click analytics).
+3. Legal texts, plus three flagged questions for a lawyer (interstitial-page Impressum; controller role for click analytics; whether a Safe Browsing hash prefix of a destination URL is personal data).
 4. `public.profile` table — only if the frontend needs it.
 5. Notification for the "existing user added to a second team" path.
 

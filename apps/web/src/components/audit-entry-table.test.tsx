@@ -131,4 +131,38 @@ describe(AuditEntryTable, () => {
 
 		expect(screen.queryByRole('button', { name: /details/iu })).not.toBeInTheDocument();
 	});
+
+	it('names Google Safe Browsing as the author of a block and of its lifting', () => {
+		// Both rows carry no actor id, exactly like a deleted account's entries
+		// do; only the action says nobody's account wrote them.
+		renderWithI18n(
+			<AuditEntryTable
+				entries={[
+					{
+						...ENTRY,
+						action: 'link.flagged',
+						actor_user_id: undefined,
+						id: 8,
+						metadata: { destination_url: 'https://example.org/x', threat_types: ['MALWARE'] },
+					},
+					{
+						...ENTRY,
+						action: 'link.unflagged',
+						actor_user_id: undefined,
+						id: 9,
+						metadata: { destination_url: 'https://example.org/x', threat_types: [] },
+					},
+				]}
+				language="en"
+				membersById={MEMBERS}
+			/>,
+		);
+
+		expect(screen.getAllByRole('cell', { name: 'Google Safe Browsing' })).toHaveLength(2);
+		expect(screen.getByRole('cell', { name: 'Link blocked by Safe Browsing' })).toBeInTheDocument();
+		expect(
+			screen.getByRole('cell', { name: 'Link unblocked by Safe Browsing' }),
+		).toBeInTheDocument();
+		expect(screen.queryByRole('cell', { name: 'A deleted account' })).not.toBeInTheDocument();
+	});
 });

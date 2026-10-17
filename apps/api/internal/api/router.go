@@ -61,6 +61,10 @@ func NewRouter(deps Deps) http.Handler {
 	// With(Recoverer), not root.Use: middleware on root would run on every
 	// redirect.
 	root.With(middleware.Recoverer).Post("/internal/retention", deps.HandleRetention)
+	// POST /internal/scan checks due links against Safe Browsing, twice an
+	// hour from .github/workflows/scan.yml. Placed and guarded exactly like
+	// /internal/retention above, for the same reasons.
+	root.With(middleware.Recoverer).Post("/internal/scan", deps.HandleScan)
 	root.HandleFunc("/*", func(w http.ResponseWriter, r *http.Request) {
 		if Hostname(r.Host) == apiHost {
 			apiSurface.ServeHTTP(w, r)

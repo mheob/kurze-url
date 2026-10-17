@@ -194,10 +194,43 @@ func TestVerifyOnAnUnprotectedLinkIsNotFound(t *testing.T) {
 func TestVerifyOnAnInactiveLinkIsRefusedBeforeCheckingThePassword(t *testing.T) {
 	hash, err := auth.HashPassword("hunter2")
 	require.NoError(t, err)
-	f := newFixture(t, withPasswordHash(hash), withState("flagged"))
+	f := newFixture(t, withPasswordHash(hash), withState("disabled"))
 
-	require.Equal(t, http.StatusForbidden,
+	require.Equal(t, http.StatusGone,
 		postPassword(t, f, "hello", "hunter2", "203.0.113.1").Code)
+}
+
+// A flagged link Google can be asked about by nobody (no scanner here) is
+// refused before the password, on both halves of the verify surface, or it
+// becomes an oracle for its password: a correct guess must not be told apart
+// from a wrong one, and a wrong one must not be charged.
+func TestVerifyOnAnUnconfirmableFlaggedLinkAnswers503BeforeThePassword(t *testing.T) {
+	hash, err := auth.HashPassword("Kartoffelsalat!7")
+	require.NoError(t, err)
+	f := newFixture(t, withPasswordHash(hash), withState("flagged"))
+	f.deps.Config.PasswordFailureRateLimitPerHour = 1
+
+	req := httptest.NewRequest(http.MethodGet, "/hello/verify", nil)
+	req.Host = f.hostname
+	form := httptest.NewRecorder()
+	verifyRouter(f).ServeHTTP(form, req)
+	require.Equal(t, http.StatusServiceUnavailable, form.Code)
+	require.NotContains(t, form.Body.String(), `type="password"`)
+
+	right := postPassword(t, f, "hello", "Kartoffelsalat!7", "203.0.113.1")
+	require.Equal(t, http.StatusServiceUnavailable, right.Code)
+	require.Empty(t, right.Header().Get("Location"))
+	wrong := postPassword(t, f, "hello", "wrong", "203.0.113.2")
+	require.Equal(t, http.StatusServiceUnavailable, wrong.Code)
+	require.Equal(t, right.Body.String(), wrong.Body.String())
+
+	// With a cap of one failure, a charged attempt above would make the next
+	// wrong guess a 429 once the link is active again.
+	_, err = f.pool.Exec(context.Background(), `update link set state = 'active' where id = $1`, f.linkID)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusUnauthorized,
+		postPassword(t, f, "hello", "wrong", "203.0.113.3").Code,
+		"no failure may have been charged while the link was flagged")
 }
 
 // TestVerifySubmitCapsFailuresPerLinkAcrossAddresses pins the axis the per-IP

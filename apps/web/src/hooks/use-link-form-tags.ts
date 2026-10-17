@@ -5,6 +5,12 @@ import { canEdit } from '../lib/team-roles';
 import { tagsQueryOptions } from '../server/tags';
 import { useCreateTag } from './use-create-tag';
 
+// The loader's half of the tag wiring, exported with the hook so the edit page
+// names both from here rather than from `server/tags`, one import fewer —
+// `import/max-dependencies` caps that page at 20, and the hook already imports
+// from `server/tags`.
+export { prefetchTags } from '../server/tags';
+
 /** The tag props both link pages hand `LinkForm`, prop for prop. */
 export interface LinkFormTags {
 	/** Editors and up, matching the API's EditorScope on tag creation. */
