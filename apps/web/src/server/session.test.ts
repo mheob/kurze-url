@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vite-plus/test';
+import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import {
 	UnauthenticatedError,
@@ -25,31 +25,26 @@ interface FakeSupabaseClient {
 	};
 }
 
-/**
- * Only the slice `flushSessionCookies` reaches through: a response object
- * whose `headers` supports `append`, same narrowing rationale as
- * `FakeSupabaseClient` above.
- */
-interface FakeResponse {
-	headers: { append: (name: string, value: string) => void };
-}
-
 const mocks = vi.hoisted(() => ({
+	appendResponseHeader: vi.fn<(name: string, value: string | readonly string[]) => void>(),
 	/* oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `request` is `Request`,
 	 * which nests a mutable `Headers` through its own `.headers` getter; `Readonly<>` is shallow
 	 * and doesn't reach that nested property, unlike the bare `Headers` parameter beside it, which
 	 * the check accepts once wrapped.
 	 */
 	createSupabase: vi.fn<(request: Request, headers: Readonly<Headers>) => FakeSupabaseClient>(),
-	getResponse: vi.fn<() => FakeResponse>(),
 }));
 
 vi.mock('./supabase', () => ({
 	createSupabase: mocks.createSupabase,
 }));
 
+// Exposes `appendResponseHeader` and nothing else on purpose. Vitest throws when code reads an
+// export a mock factory did not define, so a `flushSessionCookies` that reached for
+// `setResponseHeader` (which replaces every cookie already on the response) fails here instead
+// of passing against a mock that quietly allows it.
 vi.mock('@tanstack/react-start/server', () => ({
-	getResponse: mocks.getResponse,
+	appendResponseHeader: mocks.appendResponseHeader,
 }));
 
 function req(): [Request, Headers] {
@@ -99,6 +94,10 @@ describe(requireSession, () => {
 });
 
 describe(flushSessionCookies, () => {
+	beforeEach(() => {
+		mocks.appendResponseHeader.mockClear();
+	});
+
 	/**
 	 * The defect this guards against: `createSupabase(request, headers)`
 	 * writes into a `Headers` object nothing else reads. A no-op
@@ -106,42 +105,39 @@ describe(flushSessionCookies, () => {
 	 * through to the real response — would pass every other test in this
 	 * file (they never inspect `headers` after the call) while leaving a
 	 * freshly created or refreshed session with nowhere to go. This test
-	 * fails on exactly that: an empty `appended` array.
+	 * fails on exactly that: `appendResponseHeader` is never called.
 	 */
-	it('appends every Set-Cookie the adapter wrote onto the real response', () => {
-		const appended: string[] = [];
-		mocks.getResponse.mockReturnValue({
-			headers: {
-				append: (name, value) => {
-					appended.push(`${name}: ${value}`);
-				},
-			},
-		});
-
+	it('hands every set-cookie value to appendResponseHeader in one call', () => {
 		const adapterHeaders = new Headers();
-		adapterHeaders.append('set-cookie', 'sb-access-token=abc; Path=/; HttpOnly');
-		adapterHeaders.append('set-cookie', 'sb-refresh-token=def; Path=/; HttpOnly');
+		adapterHeaders.append('set-cookie', 'a=1; Path=/');
+		adapterHeaders.append('set-cookie', 'b=2; Path=/');
 
 		flushSessionCookies(adapterHeaders);
 
-		expect(appended).toStrictEqual([
-			'set-cookie: sb-access-token=abc; Path=/; HttpOnly',
-			'set-cookie: sb-refresh-token=def; Path=/; HttpOnly',
+		expect(mocks.appendResponseHeader).toHaveBeenCalledExactlyOnceWith('set-cookie', [
+			'a=1; Path=/',
+			'b=2; Path=/',
 		]);
 	});
 
-	it('does nothing to the response when the adapter wrote no cookies', () => {
-		const appended: string[] = [];
-		mocks.getResponse.mockReturnValue({
-			headers: {
-				append: (name, value) => {
-					appended.push(`${name}: ${value}`);
-				},
-			},
-		});
+	/**
+	 * `setResponseHeader('set-cookie', …)` would replace what the response
+	 * already carries, so a route that reads the session twice would lose the
+	 * first flush's cookies. Each flush has to reach `appendResponseHeader` as
+	 * its own call, and the module mock above has no `setResponseHeader` to
+	 * fall back on.
+	 */
+	it('appends again on a second flush instead of replacing', () => {
+		flushSessionCookies(new Headers([['set-cookie', 'a=1; Path=/']]));
+		flushSessionCookies(new Headers([['set-cookie', 'b=2; Path=/']]));
 
+		expect(mocks.appendResponseHeader).toHaveBeenNthCalledWith(1, 'set-cookie', ['a=1; Path=/']);
+		expect(mocks.appendResponseHeader).toHaveBeenNthCalledWith(2, 'set-cookie', ['b=2; Path=/']);
+	});
+
+	it('writes nothing when there is no set-cookie header', () => {
 		flushSessionCookies(new Headers());
 
-		expect(appended).toStrictEqual([]);
+		expect(mocks.appendResponseHeader).not.toHaveBeenCalled();
 	});
 });

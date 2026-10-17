@@ -1,5 +1,5 @@
 import { http, HttpResponse } from 'msw';
-import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import { server } from '../test/msw';
 
@@ -24,16 +24,10 @@ interface FakeSupabaseClient {
 	};
 }
 
-/** Only the slice `flushSessionCookies` reaches through. */
-interface FakeResponse {
-	headers: { append: (name: string, value: string) => void };
-}
-
 const mocks = vi.hoisted(() => ({
+	// Only the flush tests below inspect what this was given.
+	appendResponseHeader: vi.fn(),
 	createSupabase: vi.fn<(request: Request, headers: Readonly<Headers>) => FakeSupabaseClient>(),
-	// Defaulted so the first test doesn't need its own setup — only the flush
-	// test below overrides this to inspect what was appended.
-	getResponse: vi.fn<() => FakeResponse>(() => ({ headers: { append: () => undefined } })),
 }));
 
 vi.mock('./supabase', () => ({
@@ -41,7 +35,7 @@ vi.mock('./supabase', () => ({
 }));
 
 vi.mock('@tanstack/react-start/server', () => ({
-	getResponse: mocks.getResponse,
+	appendResponseHeader: mocks.appendResponseHeader,
 }));
 
 /**
@@ -124,6 +118,13 @@ function recordedSearch(recorded: string | null): string {
 const request = new Request('https://example.test/');
 
 describe('links', () => {
+	// Call history has to start empty in every test: the mocked `createSupabase` writes the same
+	// refreshed cookie on every call, so without this an assertion on it would be satisfied by a
+	// call an earlier test made.
+	beforeEach(() => {
+		mocks.appendResponseHeader.mockClear();
+	});
+
 	afterEach(() => {
 		vi.unstubAllEnvs();
 	});
@@ -203,21 +204,14 @@ describe('links', () => {
 				http.get('http://api.test/v1/teams/team-a/links', () => HttpResponse.json(page())),
 			);
 
-			const appended: string[] = [];
-			mocks.getResponse.mockReturnValue({
-				headers: {
-					append: (name, value) => {
-						appended.push(`${name}: ${value}`);
-					},
-				},
-			});
-
 			await listLinksFor(request, 'team-a', {
 				filter: { folder: { kind: 'all' }, tagId: undefined },
 				page: 1,
 			});
 
-			expect(appended).toStrictEqual(['set-cookie: sb-access-token=refreshed; Path=/; HttpOnly']);
+			expect(mocks.appendResponseHeader).toHaveBeenCalledExactlyOnceWith('set-cookie', [
+				'sb-access-token=refreshed; Path=/; HttpOnly',
+			]);
 		});
 
 		it('sends the folder filter as query parameters', async () => {
@@ -366,18 +360,11 @@ describe('links', () => {
 				),
 			);
 
-			const appended: string[] = [];
-			mocks.getResponse.mockReturnValue({
-				headers: {
-					append: (name, value) => {
-						appended.push(`${name}: ${value}`);
-					},
-				},
-			});
-
 			await createLinkFor(request, 'team-a', { destination_url: 'https://example.org/' });
 
-			expect(appended).toStrictEqual(['set-cookie: sb-access-token=refreshed; Path=/; HttpOnly']);
+			expect(mocks.appendResponseHeader).toHaveBeenCalledExactlyOnceWith('set-cookie', [
+				'sb-access-token=refreshed; Path=/; HttpOnly',
+			]);
 		});
 	});
 
@@ -563,14 +550,6 @@ describe('links', () => {
 		});
 
 		it('flushes refreshed session cookies onto the real response', async () => {
-			const appended: string[] = [];
-			mocks.getResponse.mockReturnValue({
-				headers: {
-					append: (_name: string, value: string) => {
-						appended.push(value);
-					},
-				},
-			});
 			withSession('stats-token');
 			server.use(
 				http.get('*/v1/links/:linkId/stats', () =>
@@ -588,7 +567,9 @@ describe('links', () => {
 
 			await getLinkStatsFor(new Request('https://web.test/'), 'link-1', {});
 
-			expect(appended).toContain('sb-access-token=refreshed; Path=/; HttpOnly');
+			expect(mocks.appendResponseHeader).toHaveBeenCalledWith('set-cookie', [
+				'sb-access-token=refreshed; Path=/; HttpOnly',
+			]);
 		});
 	});
 });

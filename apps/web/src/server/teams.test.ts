@@ -1,5 +1,5 @@
 import { http, HttpResponse } from 'msw';
-import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import { server } from '../test/msw';
 
@@ -20,18 +20,15 @@ interface FakeSupabaseClient {
 	};
 }
 
-/** Only the slice `flushSessionCookies` reaches through. */
-interface FakeResponse {
-	headers: { append: (name: string, value: string) => void };
-}
-
 const mocks = vi.hoisted(() => ({
+	appendResponseHeader: vi.fn(),
 	createSupabase: vi.fn<(request: Request, headers: Readonly<Headers>) => FakeSupabaseClient>(),
-	getResponse: vi.fn<() => FakeResponse>(() => ({ headers: { append: () => undefined } })),
 }));
 
 vi.mock('./supabase', () => ({ createSupabase: mocks.createSupabase }));
-vi.mock('@tanstack/react-start/server', () => ({ getResponse: mocks.getResponse }));
+vi.mock('@tanstack/react-start/server', () => ({
+	appendResponseHeader: mocks.appendResponseHeader,
+}));
 
 /**
  * `createTeamFor`, not `createTeamFn`: the server function calls
@@ -72,6 +69,13 @@ function withSession(accessToken: string): void {
 const request = new Request('https://example.test/');
 
 describe('createTeamFor', () => {
+	// Call history has to start empty in every test: the mocked `createSupabase` writes the same
+	// refreshed cookie on every call, so without this an assertion on it would be satisfied by a
+	// call an earlier test made.
+	beforeEach(() => {
+		mocks.appendResponseHeader.mockClear();
+	});
+
 	afterEach(() => {
 		vi.unstubAllEnvs();
 	});
@@ -136,14 +140,6 @@ describe('createTeamFor', () => {
 		vi.stubEnv('API_HOST', 'http://api.test');
 		withSession('tok');
 
-		const appended: string[] = [];
-		mocks.getResponse.mockReturnValueOnce({
-			headers: {
-				append: (_name, value) => {
-					appended.push(value);
-				},
-			},
-		});
 		server.use(
 			http.post('http://api.test/v1/teams', () =>
 				HttpResponse.json({ id: 'team-1', name: 'Verein A', role: 'owner' }, { status: 201 }),
@@ -152,6 +148,8 @@ describe('createTeamFor', () => {
 
 		await createTeamFor(request, 'Verein A', 'verein-a');
 
-		expect(appended).toContain('sb-access-token=refreshed; Path=/; HttpOnly');
+		expect(mocks.appendResponseHeader).toHaveBeenCalledWith('set-cookie', [
+			'sb-access-token=refreshed; Path=/; HttpOnly',
+		]);
 	});
 });

@@ -103,7 +103,7 @@ async function sendMagicLinkForImpl(email: string, origin: string): Promise<{ se
  * exactly the identity function `@tanstack/start-fn-stubs` defines it as,
  * and calling `sendMagicLinkFor` directly behaves exactly as if this wrapper
  * were not here at all). The wrap exists for the *production client build*:
- * once `flushSessionCookies` (which reaches `getResponse` from
+ * once `flushSessionCookies` (which reaches `appendResponseHeader` from
  * `@tanstack/react-start/server`) is called from inside this function,
  * `vite build`'s import-protection check fails with a real, hard build
  * error — verified by building both ways. The failure is specific to this

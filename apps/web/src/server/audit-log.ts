@@ -34,7 +34,7 @@ const PER_PAGE = 20;
  * Wrapped in `createServerOnlyFn` for the same reason `listLinksFor` is: a
  * separately exported, by-name-referenced helper (from `listAuditLogFn`'s
  * handler below) that calls `flushSessionCookies`, which itself reaches
- * `getResponse` from `@tanstack/react-start/server`.
+ * `appendResponseHeader` from `@tanstack/react-start/server`.
  *
  * @param request - The incoming request, read for its session cookies.
  * @param teamId - The team whose audit log to read.

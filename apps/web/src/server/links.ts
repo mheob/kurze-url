@@ -58,7 +58,7 @@ export interface LinkFilter {
  * Wrapped in `createServerOnlyFn` on the same theory as `sendMagicLinkFor`
  * in `server/auth.ts`: this is a separately exported, by-name-referenced
  * helper (from `listLinksFn`'s handler below) that calls
- * `flushSessionCookies`, which itself reaches `getResponse` from
+ * `flushSessionCookies`, which itself reaches `appendResponseHeader` from
  * `@tanstack/react-start/server` — conventions.md (from Tasks 2–5) says
  * exactly this shape needs the wrap. Tried the removal to confirm, the same
  * way `sendMagicLinkFor`'s own docstring says it was verified:
