@@ -55,7 +55,8 @@ catalogMode: strict
 # when they release together, but cannot guarantee it, because Vitest publishes patches
 # before `vite-plus` re-pins them. CI's `check:vite-plus` step
 # (scripts/check-vite-plus-versions.ts) fails such a pull request: after `pnpm install` it
-# compares the installed toolchain with what `vite-plus` declares.
+# compares the installed `vite`, `vitest` and `@vitest/browser-playwright` with what
+# `vite-plus` declares.
 catalog:
   "@axe-core/playwright": ^4.13.0
   "@base-ui/react": ^1.8.0

@@ -116,7 +116,10 @@ jobs:
       # vite-plus's own pins, so a catalog entry that drifts from them installs
       # without a warning. This reads what pnpm actually installed and fails when
       # it is not what vite-plus declares (scripts/check-vite-plus-versions.ts).
+      # It runs after a failed step too: a drifted vitest can fail Typecheck first,
+      # and this is the step that names the cause. The job fails either way.
       - name: Check the Vite+ toolchain versions
+        if: ${{ !cancelled() }}
         run: pnpm check:vite-plus
 
   storybook:

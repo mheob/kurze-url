@@ -7,8 +7,11 @@
 // `vite-plus` was never released with, and nothing else reports it.
 //
 // It reads what is installed, not what `pnpm-workspace.yaml` says, so it needs no YAML
-// parser and also notices an override that stopped doing its job. Run it after
-// `pnpm install`, as `pnpm check:vite-plus`; CI does, in the "format, lint & typecheck" job.
+// parser. Five installed copies are compared with the three declared versions: the `vite`
+// and `vitest` that `vite-plus` itself resolves, and the `vite`, `vitest` and
+// `@vitest/browser-playwright` that `apps/web` resolves, the one workspace package that
+// declares them. Run it after `pnpm install`, as `pnpm check:vite-plus`; CI does, in the
+// "format, lint & typecheck" job.
 
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -205,6 +208,13 @@ function expectationsFor(
 			fromLabel: 'vite-plus',
 			specifier: 'vitest',
 			version: declared.vitest,
+		},
+		{
+			fromDir: webDir,
+			fromLabel: 'apps/web',
+			name: declared.core.name,
+			specifier: 'vite',
+			version: declared.core.version,
 		},
 		{ fromDir: webDir, fromLabel: 'apps/web', specifier: 'vitest', version: declared.vitest },
 		{
