@@ -12,8 +12,10 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
-	"strings"
+	"strconv"
 	"time"
+
+	"google.golang.org/protobuf/encoding/protowire"
 )
 
 const (
@@ -67,15 +69,22 @@ func NewClient(apiKey string) *Client {
 	}
 }
 
+// searchResponse is a SearchHashesResponse, as
+// google/security/safebrowsing/v5/safebrowsing.proto defines it, with the
+// enums already turned into the names the rest of the app stores.
 type searchResponse struct {
-	FullHashes []struct {
-		FullHash        string `json:"fullHash"`
-		FullHashDetails []struct {
-			ThreatType string   `json:"threatType"`
-			Attributes []string `json:"attributes"`
-		} `json:"fullHashDetails"`
-	} `json:"fullHashes"`
-	CacheDuration string `json:"cacheDuration"`
+	FullHashes    []fullHash
+	CacheDuration time.Duration
+}
+
+type fullHash struct {
+	Hash    []byte
+	Details []fullHashDetail
+}
+
+type fullHashDetail struct {
+	ThreatType string
+	Attributes []string
 }
 
 // Check looks every URL up in as few requests as the prefix limit allows.
@@ -122,16 +131,17 @@ func (c *Client) Check(ctx context.Context, urls []string) (map[string]Result, e
 			return nil, err
 		}
 		// The shortest validity of all the requests: a URL's prefixes may
-		// have been spread across several of them.
-		if duration := parseCacheDuration(response.CacheDuration); start == 0 || duration < validFor {
+		// have been spread across several of them. A negative one may not be
+		// relied on at all.
+		if duration := max(response.CacheDuration, 0); start == 0 || duration < validFor {
 			validFor = duration
 		}
 		for _, full := range response.FullHashes {
-			hash, ok := decodeFullHash(full.FullHash)
-			if !ok {
+			if len(full.Hash) != sha256.Size {
 				continue
 			}
-			for _, detail := range full.FullHashDetails {
+			hash := [sha256.Size]byte(full.Hash)
+			for _, detail := range full.Details {
 				if detail.ThreatType != "" && enforceable(detail.Attributes) {
 					listed[hash] = append(listed[hash], detail.ThreatType)
 				}
@@ -210,16 +220,16 @@ func netURLReading(raw string) (canonicalURL, error) {
 }
 
 func (c *Client) search(ctx context.Context, prefixes []string) (searchResponse, error) {
-	// v5 answers in binary protobuf unless asked otherwise; $alt is Google's
-	// system parameter for the response format, and an Accept header alone
-	// does not change it.
-	query := url.Values{"$alt": {"json"}, "hashPrefixes": prefixes}
+	query := url.Values{"hashPrefixes": prefixes}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.endpoint+"?"+query.Encode(), nil)
 	if err != nil {
 		return searchResponse{}, fmt.Errorf("scanning: build hashes.search request: %w", err)
 	}
 	req.Header.Set(apiKeyHeader, c.apiKey)
-	req.Header.Set("Accept", "application/json")
+	// v5 answers only in binary protobuf. Asking for JSON through Google's
+	// $alt=json system parameter is refused with 400 "Unsupported Output
+	// Format", which production found out on 2026-10-17.
+	req.Header.Set("Accept", "application/x-protobuf")
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -243,8 +253,8 @@ func (c *Client) search(ctx context.Context, prefixes []string) (searchResponse,
 	if err != nil {
 		return searchResponse{}, err
 	}
-	var parsed searchResponse
-	if err := json.Unmarshal(body, &parsed); err != nil {
+	parsed, err := decodeSearchResponse(body)
+	if err != nil {
 		return searchResponse{}, fmt.Errorf("scanning: decode hashes.search response: %w", err)
 	}
 	return parsed, nil
@@ -264,8 +274,11 @@ func refusal(resp *http.Response) error {
 }
 
 // isResourceExhausted recognises the other shape a quota refusal takes in
-// Google's APIs: a 403 whose google.rpc.Status is RESOURCE_EXHAUSTED. A body
-// that cannot be read, or is too large to, does not say so.
+// Google's APIs: a 403 whose google.rpc.Status is RESOURCE_EXHAUSTED. v5 sends
+// that Status as protobuf, where RESOURCE_EXHAUSTED is code 8; the JSON shape
+// is read as well, which Google's front end answers in before the request
+// reaches the API. A body that cannot be read, or is too large to, does not
+// say so.
 func isResourceExhausted(body io.Reader) bool {
 	raw, err := readCapped(body)
 	if err != nil {
@@ -276,7 +289,17 @@ func isResourceExhausted(body io.Reader) bool {
 			Status string `json:"status"`
 		} `json:"error"`
 	}
-	return json.Unmarshal(raw, &problem) == nil && problem.Error.Status == "RESOURCE_EXHAUSTED"
+	if json.Unmarshal(raw, &problem) == nil {
+		return problem.Error.Status == "RESOURCE_EXHAUSTED"
+	}
+	var code uint64
+	err = eachField(raw, func(number protowire.Number, kind protowire.Type, _ []byte, value uint64) error {
+		if number == 1 && kind == protowire.VarintType {
+			code = value
+		}
+		return nil
+	})
+	return err == nil && code == codeResourceExhausted
 }
 
 // readCapped reads a response body of at most maxResponseBytes and refuses a
@@ -304,30 +327,6 @@ func enforceable(attributes []string) bool {
 	return true
 }
 
-// parseCacheDuration reads a protobuf Duration ("300s", "1.5s"). Anything
-// missing, unreadable or negative is zero: a verdict that may not be relied
-// on at all.
-func parseCacheDuration(value string) time.Duration {
-	duration, err := time.ParseDuration(strings.TrimSpace(value))
-	if err != nil || duration < 0 {
-		return 0
-	}
-	return duration
-}
-
-// decodeFullHash accepts every base64 alphabet protobuf's JSON mapping allows.
-func decodeFullHash(encoded string) ([sha256.Size]byte, bool) {
-	for _, encoding := range []*base64.Encoding{
-		base64.StdEncoding, base64.URLEncoding, base64.RawStdEncoding, base64.RawURLEncoding,
-	} {
-		raw, err := encoding.DecodeString(encoded)
-		if err == nil && len(raw) == sha256.Size {
-			return [sha256.Size]byte(raw), true
-		}
-	}
-	return [sha256.Size]byte{}, false
-}
-
 func fullHashes(expressions []string) [][sha256.Size]byte {
 	out := make([][sha256.Size]byte, 0, len(expressions))
 	for _, expression := range expressions {
@@ -343,4 +342,172 @@ func uniqueSorted(values []string) []string {
 	sorted := slices.Clone(values)
 	slices.Sort(sorted)
 	return slices.Compact(sorted)
+}
+
+// codeResourceExhausted is google.rpc.Code's RESOURCE_EXHAUSTED.
+const codeResourceExhausted = 8
+
+// The enum values of google/security/safebrowsing/v5/safebrowsing.proto,
+// under the names the rest of the app stores.
+var (
+	threatTypeNames = map[uint64]string{
+		1: "MALWARE",
+		2: "SOCIAL_ENGINEERING",
+		3: "UNWANTED_SOFTWARE",
+		4: "POTENTIALLY_HARMFUL_APPLICATION",
+	}
+	threatAttributeNames = map[uint64]string{
+		1: "CANARY",
+		2: "FRAME_ONLY",
+	}
+)
+
+// decodeSearchResponse reads a SearchHashesResponse. Three small messages
+// and two enums are all hashes.search answers with, so they are read field by
+// field rather than through generated code, and a field this reader does not
+// know is skipped, as protobuf requires of every reader. A message cut off or
+// otherwise malformed is an error, never an empty answer: "nothing listed"
+// read out of half a message would be a verdict nobody gave.
+func decodeSearchResponse(raw []byte) (searchResponse, error) {
+	var out searchResponse
+	err := eachField(raw, func(number protowire.Number, kind protowire.Type, payload []byte, _ uint64) error {
+		if kind != protowire.BytesType {
+			return nil
+		}
+		switch number {
+		case 1:
+			full, err := decodeFullHash(payload)
+			if err != nil {
+				return err
+			}
+			out.FullHashes = append(out.FullHashes, full)
+		case 2:
+			duration, err := decodeDuration(payload)
+			if err != nil {
+				return err
+			}
+			out.CacheDuration = duration
+		}
+		return nil
+	})
+	return out, err
+}
+
+func decodeFullHash(raw []byte) (fullHash, error) {
+	var out fullHash
+	err := eachField(raw, func(number protowire.Number, kind protowire.Type, payload []byte, _ uint64) error {
+		if kind != protowire.BytesType {
+			return nil
+		}
+		switch number {
+		case 1:
+			out.Hash = payload
+		case 2:
+			detail, err := decodeFullHashDetail(payload)
+			if err != nil {
+				return err
+			}
+			out.Details = append(out.Details, detail)
+		}
+		return nil
+	})
+	return out, err
+}
+
+// decodeFullHashDetail reads one threat type and its attributes. A value this
+// app does not know keeps a name of its own, THREAT_TYPE_<n> or
+// THREAT_ATTRIBUTE_<n>, rather than being dropped: Google tells clients to
+// tolerate values they do not know, and dropping a threat type would turn a
+// report into "clean". THREAT_TYPE_UNSPECIFIED is no threat at all.
+func decodeFullHashDetail(raw []byte) (fullHashDetail, error) {
+	var out fullHashDetail
+	attribute := func(value uint64) {
+		out.Attributes = append(out.Attributes, enumName(threatAttributeNames, "THREAT_ATTRIBUTE_", value))
+	}
+	err := eachField(raw, func(number protowire.Number, kind protowire.Type, payload []byte, value uint64) error {
+		switch {
+		case number == 1 && kind == protowire.VarintType && value != 0:
+			out.ThreatType = enumName(threatTypeNames, "THREAT_TYPE_", value)
+		case number == 2 && kind == protowire.VarintType:
+			attribute(value)
+		case number == 2 && kind == protowire.BytesType:
+			// proto3 packs repeated enums by default.
+			for len(payload) > 0 {
+				packed, n := protowire.ConsumeVarint(payload)
+				if n < 0 {
+					return protowire.ParseError(n)
+				}
+				attribute(packed)
+				payload = payload[n:]
+			}
+		}
+		return nil
+	})
+	return out, err
+}
+
+// decodeDuration reads a google.protobuf.Duration. A value too large for
+// time.Duration wraps negative, which the caller reads as "do not rely on
+// this", the safe direction.
+func decodeDuration(raw []byte) (time.Duration, error) {
+	var seconds, nanos int64
+	err := eachField(raw, func(number protowire.Number, kind protowire.Type, _ []byte, value uint64) error {
+		if kind != protowire.VarintType {
+			return nil
+		}
+		switch number {
+		case 1:
+			seconds = int64(value)
+		case 2:
+			nanos = int64(int32(value))
+		}
+		return nil
+	})
+	return time.Duration(seconds)*time.Second + time.Duration(nanos), err
+}
+
+func enumName(names map[uint64]string, prefix string, value uint64) string {
+	if name, ok := names[value]; ok {
+		return name
+	}
+	return prefix + strconv.FormatUint(value, 10)
+}
+
+// eachField calls visit with every field of a message: the payload of a
+// length-delimited field, or the value of a varint one. Fields of the other
+// wire types are skipped, since nothing read here uses them, and a message
+// that does not parse to its end is an error.
+func eachField(
+	message []byte,
+	visit func(number protowire.Number, kind protowire.Type, payload []byte, value uint64) error,
+) error {
+	for len(message) > 0 {
+		number, kind, n := protowire.ConsumeTag(message)
+		if n < 0 {
+			return protowire.ParseError(n)
+		}
+		message = message[n:]
+
+		var payload []byte
+		var value uint64
+		switch kind {
+		case protowire.BytesType:
+			payload, n = protowire.ConsumeBytes(message)
+		case protowire.VarintType:
+			value, n = protowire.ConsumeVarint(message)
+		default:
+			n = protowire.ConsumeFieldValue(number, kind, message)
+		}
+		if n < 0 {
+			return protowire.ParseError(n)
+		}
+		message = message[n:]
+
+		if kind == protowire.BytesType || kind == protowire.VarintType {
+			if err := visit(number, kind, payload, value); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -19,20 +19,19 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/encoding/protowire"
 
 	"github.com/mheob/kurze-url/apps/api/internal/scanning"
 )
 
 const testKey = "not-a-key"
 
+// detail is one FullHashDetail, written with the enum names Google's proto
+// uses. A name the fake does not know is spelled THREAT_TYPE_<n> or
+// THREAT_ATTRIBUTE_<n>, the way the client reports a value it does not know.
 type detail struct {
-	ThreatType string   `json:"threatType"`
-	Attributes []string `json:"attributes,omitempty"`
-}
-
-type fullHash struct {
-	FullHash        string   `json:"fullHash"`
-	FullHashDetails []detail `json:"fullHashDetails"`
+	ThreatType string
+	Attributes []string
 }
 
 // fakeGoogle stands in for hashes.search. Like the real endpoint, it answers a
@@ -46,11 +45,14 @@ type fakeGoogle struct {
 	// cacheDurations, when set, answers each request with the next entry
 	// instead of cacheDuration, so split requests can disagree.
 	cacheDurations []string
-	status         int
-	body           string
-	location       string
-	delay          time.Duration
-	requests       []*http.Request
+	// unpackedAttributes sends each attribute as its own field instead of
+	// proto3's default packed encoding; a parser must accept both.
+	unpackedAttributes bool
+	status             int
+	body               string
+	location           string
+	delay              time.Duration
+	requests           []*http.Request
 }
 
 func newFakeGoogle(t *testing.T) (*fakeGoogle, *scanning.Client) {
@@ -97,6 +99,7 @@ func (g *fakeGoogle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	g.mu.Lock()
 	g.requests = append(g.requests, r.Clone(context.Background()))
 	status, body, location, delay, cacheDuration := g.status, g.body, g.location, g.delay, g.cacheDuration
+	unpacked := g.unpackedAttributes
 	if len(g.cacheDurations) > 0 {
 		cacheDuration, g.cacheDurations = g.cacheDurations[0], g.cacheDurations[1:]
 	}
@@ -119,13 +122,11 @@ func (g *fakeGoogle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The real API answers in binary protobuf unless the request asks for
-	// JSON with the $alt system parameter; production found that out on its
-	// first sweep (2026-10-17). This is such an answer: cacheDuration 300s
-	// and nothing listed.
-	if r.URL.Query().Get("$alt") != "json" {
-		w.Header().Set("Content-Type", "application/x-protobuf")
-		_, _ = w.Write([]byte{0x12, 0x03, 0x08, 0xac, 0x02})
+	// v5 answers only in binary protobuf, and refuses a request for anything
+	// else, as production found out on 2026-10-17.
+	if r.URL.Query().Has("$alt") {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"error":{"code":400,"message":"Unsupported Output Format","status":"INVALID_ARGUMENT"}}`)
 		return
 	}
 
@@ -139,20 +140,84 @@ func (g *fakeGoogle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		asked[[4]byte(raw)] = true
 	}
 
-	answer := struct {
-		FullHashes    []fullHash `json:"fullHashes,omitempty"`
-		CacheDuration string     `json:"cacheDuration,omitempty"`
-	}{CacheDuration: cacheDuration}
+	// A SearchHashesResponse, field by field as
+	// google/security/safebrowsing/v5/safebrowsing.proto numbers them.
+	var answer []byte
 	for sum, details := range listed {
-		if asked[[4]byte(sum[:4])] {
-			answer.FullHashes = append(answer.FullHashes, fullHash{
-				FullHash:        base64.StdEncoding.EncodeToString(sum[:]),
-				FullHashDetails: details,
-			})
+		if !asked[[4]byte(sum[:4])] {
+			continue
 		}
+		var full []byte
+		full = protowire.AppendTag(full, 1, protowire.BytesType)
+		full = protowire.AppendBytes(full, sum[:])
+		for _, d := range details {
+			full = protowire.AppendTag(full, 2, protowire.BytesType)
+			full = protowire.AppendBytes(full, encodeDetail(d, unpacked))
+		}
+		answer = protowire.AppendTag(answer, 1, protowire.BytesType)
+		answer = protowire.AppendBytes(answer, full)
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(answer)
+	if cacheDuration != "" {
+		duration, err := time.ParseDuration(cacheDuration)
+		if err != nil {
+			panic(err)
+		}
+		var message []byte
+		if seconds := int64(duration / time.Second); seconds != 0 {
+			message = protowire.AppendTag(message, 1, protowire.VarintType)
+			message = protowire.AppendVarint(message, uint64(seconds))
+		}
+		if nanos := int64(duration % time.Second); nanos != 0 {
+			message = protowire.AppendTag(message, 2, protowire.VarintType)
+			message = protowire.AppendVarint(message, uint64(nanos))
+		}
+		answer = protowire.AppendTag(answer, 2, protowire.BytesType)
+		answer = protowire.AppendBytes(answer, message)
+	}
+	w.Header().Set("Content-Type", "application/x-protobuf")
+	_, _ = w.Write(answer)
+}
+
+var (
+	threatTypeNumbers = map[string]uint64{
+		"MALWARE": 1, "SOCIAL_ENGINEERING": 2, "UNWANTED_SOFTWARE": 3, "POTENTIALLY_HARMFUL_APPLICATION": 4,
+	}
+	attributeNumbers = map[string]uint64{"CANARY": 1, "FRAME_ONLY": 2}
+)
+
+// enumNumber looks a name up, or reads the number out of a name spelled
+// <prefix><n>.
+func enumNumber(numbers map[string]uint64, prefix, name string) uint64 {
+	if number, ok := numbers[name]; ok {
+		return number
+	}
+	number, err := strconv.ParseUint(strings.TrimPrefix(name, prefix), 10, 32)
+	if err != nil {
+		panic("fake google: no number for " + name)
+	}
+	return number
+}
+
+func encodeDetail(d detail, unpacked bool) []byte {
+	var message []byte
+	message = protowire.AppendTag(message, 1, protowire.VarintType)
+	message = protowire.AppendVarint(message, enumNumber(threatTypeNumbers, "THREAT_TYPE_", d.ThreatType))
+	if len(d.Attributes) == 0 {
+		return message
+	}
+	if unpacked {
+		for _, attribute := range d.Attributes {
+			message = protowire.AppendTag(message, 2, protowire.VarintType)
+			message = protowire.AppendVarint(message, enumNumber(attributeNumbers, "THREAT_ATTRIBUTE_", attribute))
+		}
+		return message
+	}
+	var packed []byte
+	for _, attribute := range d.Attributes {
+		packed = protowire.AppendVarint(packed, enumNumber(attributeNumbers, "THREAT_ATTRIBUTE_", attribute))
+	}
+	message = protowire.AppendTag(message, 2, protowire.BytesType)
+	return protowire.AppendBytes(message, packed)
 }
 
 func TestCheckSendsTheKeyInAHeaderAndNeverInTheURL(t *testing.T) {
@@ -189,8 +254,7 @@ func TestCheckSendsOnlyFourBytePrefixes(t *testing.T) {
 	require.NoError(t, err)
 
 	query := g.recorded()[0].URL.Query()
-	require.ElementsMatch(t, []string{"$alt", "hashPrefixes"}, slices.Collect(maps.Keys(query)))
-	require.Equal(t, "json", query.Get("$alt"))
+	require.Equal(t, []string{"hashPrefixes"}, slices.Collect(maps.Keys(query)))
 	for _, encoded := range query["hashPrefixes"] {
 		raw, err := base64.StdEncoding.DecodeString(encoded)
 		require.NoError(t, err)
@@ -350,11 +414,11 @@ func TestCheckDoesNotEnforceCanaryOrFrameOnlyEntries(t *testing.T) {
 // Dropping one would turn a report into "clean".
 func TestCheckKeepsAThreatTypeItDoesNotKnow(t *testing.T) {
 	g, client := newFakeGoogle(t)
-	g.list("neu.test/", detail{ThreatType: "THREAT_TYPE_FROM_THE_FUTURE"})
+	g.list("neu.test/", detail{ThreatType: "THREAT_TYPE_9"})
 
 	results, err := client.Check(context.Background(), []string{"https://neu.test/"})
 	require.NoError(t, err)
-	require.Equal(t, []string{"THREAT_TYPE_FROM_THE_FUTURE"}, results["https://neu.test/"].ThreatTypes)
+	require.Equal(t, []string{"THREAT_TYPE_9"}, results["https://neu.test/"].ThreatTypes)
 }
 
 func TestCheckFindsAnInternationalizedHostUnderItsPunycode(t *testing.T) {
@@ -376,7 +440,6 @@ func TestCheckReadsTheCacheDuration(t *testing.T) {
 		{"1.5s", 1500 * time.Millisecond},
 		{"", 0},
 		{"0s", 0},
-		{"soon", 0},
 		{"-5s", 0},
 	} {
 		t.Run(fmt.Sprintf("%q", tc.cacheDuration), func(t *testing.T) {
@@ -390,6 +453,47 @@ func TestCheckReadsTheCacheDuration(t *testing.T) {
 	}
 }
 
+// The bytes production's first sweep received on 2026-10-17, before the
+// client could read them: a SearchHashesResponse holding only a
+// cacheDuration of 300 seconds.
+func TestCheckReadsGooglesAnswerAsProductionReceivedIt(t *testing.T) {
+	g, client := newFakeGoogle(t)
+	g.configure(func(g *fakeGoogle) {
+		g.status, g.body = http.StatusOK, string([]byte{0x12, 0x03, 0x08, 0xac, 0x02})
+	})
+
+	results, err := client.Check(context.Background(), []string{"https://verein.test/"})
+	require.NoError(t, err)
+	require.Equal(t, scanning.Result{ValidFor: 5 * time.Minute}, results["https://verein.test/"])
+}
+
+// A cut-off answer is an error, never a verdict: "nothing listed" read out
+// of half a message would be a clean bill of health nobody gave.
+func TestCheckRefusesATruncatedAnswer(t *testing.T) {
+	g, client := newFakeGoogle(t)
+	g.configure(func(g *fakeGoogle) {
+		g.status, g.body = http.StatusOK, string([]byte{0x0a, 0x24, 0x0a, 0x20, 0x01})
+	})
+
+	_, err := client.Check(context.Background(), []string{"https://verein.test/"})
+	require.Error(t, err)
+}
+
+// proto3 packs repeated enums by default, but a parser must also accept them
+// one field at a time.
+func TestCheckReadsUnpackedAttributes(t *testing.T) {
+	g, client := newFakeGoogle(t)
+	g.configure(func(g *fakeGoogle) { g.unpackedAttributes = true })
+	g.list("canary.test/", detail{ThreatType: "MALWARE", Attributes: []string{"CANARY"}})
+	g.list("listed.test/", detail{ThreatType: "MALWARE", Attributes: []string{"THREAT_ATTRIBUTE_7"}})
+
+	results, err := client.Check(context.Background(),
+		[]string{"https://canary.test/", "https://listed.test/"})
+	require.NoError(t, err)
+	require.Empty(t, results["https://canary.test/"].ThreatTypes)
+	require.Equal(t, []string{"MALWARE"}, results["https://listed.test/"].ThreatTypes)
+}
+
 func TestCheckClassifiesGooglesRefusals(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -399,6 +503,9 @@ func TestCheckClassifiesGooglesRefusals(t *testing.T) {
 	}{
 		{"429", http.StatusTooManyRequests, `{"error":{"status":"RESOURCE_EXHAUSTED"}}`, true},
 		{"403 resource exhausted", http.StatusForbidden, `{"error":{"code":403,"status":"RESOURCE_EXHAUSTED"}}`, true},
+		// v5 sends its errors as protobuf too: a google.rpc.Status with code 8.
+		{"403 resource exhausted as protobuf", http.StatusForbidden, string([]byte{0x08, 0x08, 0x12, 0x01, 'x'}), true},
+		{"403 permission denied as protobuf", http.StatusForbidden, string([]byte{0x08, 0x07, 0x12, 0x0d}) + "secret detail", false},
 		{"403 anything else", http.StatusForbidden, `{"error":{"status":"PERMISSION_DENIED","message":"secret detail"}}`, false},
 		{"503", http.StatusServiceUnavailable, "secret detail", false},
 	} {
