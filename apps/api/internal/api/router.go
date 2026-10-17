@@ -43,6 +43,11 @@ func NewRouter(deps Deps) http.Handler {
 	redirectSurface.Post("/{slug}/verify", deps.HandleVerifySubmit)
 
 	root := chi.NewRouter()
+	// On root, so around everything: both surfaces, the internal endpoints and
+	// /health/deep. Unlike a Recoverer this costs a redirect nothing it can
+	// notice — two atomic reads — and waits only after a request that logged
+	// an error. See DeliveryMiddleware for why Vercel needs it.
+	root.Use(observability.DeliveryMiddleware())
 	// /health answers on every hostname: the uptime monitor and the platform's
 	// own checks do not know which one they are hitting.
 	root.Get("/health", plainHealth)

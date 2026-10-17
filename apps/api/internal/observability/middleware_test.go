@@ -1,6 +1,8 @@
 package observability_test
 
 import (
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -95,4 +97,38 @@ func TestRedirectPanicMiddlewarePassesASuccessThrough(t *testing.T) {
 
 	require.Equal(t, http.StatusFound, rec.Code)
 	require.Empty(t, transport.events)
+}
+
+// Vercel freezes a Go function between requests, so an event the transport is
+// still sending when a request ends may never leave the instance. In its first
+// six weeks the API delivered not one event, while its logs showed the errors
+// (found 2026-10-17).
+func TestDeliveryMiddlewareWaitsForAnEventTheRequestCaptured(t *testing.T) {
+	transport := bindFakeClient(t)
+	logger := slog.New(observability.NewSlogHandler(slog.NewJSONHandler(io.Discard, nil)))
+	handler := observability.DeliveryMiddleware()(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		logger.Error("database unreachable")
+		require.Zero(t, transport.flushes, "the wait comes after the handler, not inside the log call")
+	}))
+
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+
+	require.Len(t, transport.events, 1)
+	require.Equal(t, 1, transport.flushes)
+}
+
+// Golden rule 2: a request that captured nothing, a healthy redirect above
+// all, never waits on Sentry.
+func TestDeliveryMiddlewareNeverWaitsWhenNothingWasCaptured(t *testing.T) {
+	transport := bindFakeClient(t)
+	logger := slog.New(observability.NewSlogHandler(slog.NewJSONHandler(io.Discard, nil)))
+	handler := observability.DeliveryMiddleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		logger.Warn("an expected condition")
+		w.WriteHeader(http.StatusFound)
+	}))
+
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+
+	require.Empty(t, transport.events)
+	require.Zero(t, transport.flushes)
 }

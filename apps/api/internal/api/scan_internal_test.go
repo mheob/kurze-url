@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"testing"
@@ -34,6 +35,7 @@ func TestConfirmationTTLStaysInsideThirtyMinutes(t *testing.T) {
 // confirmation's TTL is shortened by, since the TTL counts from the SET.
 func TestTheScanTimeoutsNestInsideEachOther(t *testing.T) {
 	require.Less(t, scanLockTimeout, backgroundScanTimeout)
+	require.Less(t, scanLockTimeout, immediateScanTimeout)
 	require.Less(t, scanLockTimeout, scanBudget)
 	require.Less(t, afterCommitTimeout, confirmationMargin)
 }
@@ -127,6 +129,54 @@ func TestLogCheckFailureRaisesOnlyASpentQuotaToError(t *testing.T) {
 		require.Equal(t, tc.level, record.Level, "error %v", tc.err)
 		require.Equal(t, tc.message, record.Message, "error %v", tc.err)
 	}
+}
+
+// The check after a write runs inside the request, so by the time scanNow
+// returns it has happened. A client that hangs up must not cancel it, and it
+// must still end on its own well before Vercel's limit.
+func TestScanNowRunsBeforeReturningBoundedAndUncancelled(t *testing.T) {
+	request, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	var (
+		called   bool
+		err      error
+		deadline time.Time
+		bounded  bool
+	)
+	started := time.Now()
+	d := Deps{
+		Log: slog.New(slog.DiscardHandler),
+		Scanner: checkerFunc(func(ctx context.Context, _ []string) (map[string]scanning.Result, error) {
+			called = true
+			err = ctx.Err()
+			deadline, bounded = ctx.Deadline()
+			return nil, errors.New("google is slow today")
+		}),
+	}
+	d.scanNow(request, scanTarget{LinkID: uuid.New(), TeamID: uuid.New(), URL: "https://example.org/"})
+
+	require.True(t, called, "the check must have run before scanNow returned")
+	require.NoError(t, err, "the request's cancellation must not reach the check")
+	require.True(t, bounded)
+	require.WithinDuration(t, started.Add(immediateScanTimeout), deadline, time.Second)
+}
+
+// A panic in the check comes after the write committed. Unrecovered, it would
+// turn a saved link into a 500 the client reads as a failed save.
+func TestScanNowRecoversAPanicAndReportsIt(t *testing.T) {
+	records := make(chan slog.Record, 1)
+	d := Deps{
+		Log: slog.New(recordingHandler{records}),
+		Scanner: checkerFunc(func(context.Context, []string) (map[string]scanning.Result, error) {
+			panic("boom")
+		}),
+	}
+	d.scanNow(context.Background(), scanTarget{LinkID: uuid.New(), TeamID: uuid.New(), URL: "https://example.org/"})
+
+	record := nextRecord(t, records)
+	require.Equal(t, slog.LevelError, record.Level)
+	require.Equal(t, "safe browsing check panicked", record.Message)
 }
 
 // The response has gone out and its context is cancelled; the check must not
