@@ -45,3 +45,23 @@ export const Dark: StoryObj<typeof meta> = {
 	args: { ...Phishing.args },
 	globals: { theme: 'dark' },
 };
+
+/**
+ * A flag whose last check is older than Google's thirty minutes: no warning,
+ * only that the link is blocked until the next check.
+ */
+export const PendingRecheck: StoryObj<typeof meta> = {
+	args: { scan: flaggedScan(['SOCIAL_ENGINEERING'], '2026-10-03T08:00:00.000Z'), state: 'flagged' },
+};
+
+export const PendingRecheckGerman: StoryObj<typeof meta> = {
+	args: { ...PendingRecheck.args },
+	globals: { language: 'de' },
+};
+
+// The neutral notice draws on `bg-muted` and `border-border`, which only a
+// story that sets dark mode checks there.
+export const PendingRecheckDark: StoryObj<typeof meta> = {
+	args: { ...PendingRecheck.args },
+	globals: { theme: 'dark' },
+};

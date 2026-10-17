@@ -1,10 +1,10 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { I18nextProvider } from 'react-i18next';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createI18n } from '../i18n';
 import type { Language } from '../lib/preferences';
-import { ADVISORY_URL, REPORT_ERROR_URL } from '../lib/safe-browsing';
+import { ADVISORY_URL, REPORT_ERROR_URL, WARNING_WINDOW_MS } from '../lib/safe-browsing';
 import { flaggedScan } from '../test/link-scan';
 import { LinkScanNotice } from './link-scan-notice';
 
@@ -39,20 +39,23 @@ describe(LinkScanNotice, () => {
 		expect(container).toBeEmptyDOMElement();
 	});
 
-	it("goes by the link's state, not the scan: a blocked link shows the generic text beside a clean verdict", () => {
+	it("goes by the link's state, not the scan: a blocked link beside a clean verdict says only that it is blocked", () => {
 		// Redirects refuse on `state`, so the page says the link is blocked even
-		// when the scan next to it reads clean, and does so under the generic
-		// qualified text rather than inventing a threat. A clean verdict carries
-		// no `since` when it has held since the first check, which is normal.
+		// when the scan next to it reads clean, but a clean verdict confirms no
+		// threat, so it gets the neutral notice rather than Google's warning. A
+		// clean verdict carries no `since` when it has held since the first
+		// check, which is normal.
 		renderWithI18n(
 			<LinkScanNotice
-				scan={{ checked_at: '2026-10-03T08:00:00.000Z', threat_types: [], verdict: 'clean' }}
+				scan={{ checked_at: new Date().toISOString(), threat_types: [], verdict: 'clean' }}
 				state="flagged"
 			/>,
 		);
 
-		expect(screen.getByRole('region', { name: 'Suspected unsafe site' })).toBeInTheDocument();
-		expect(screen.getByText(/This link is blocked/u)).toBeInTheDocument();
+		expect(
+			screen.getByRole('region', { name: 'Blocked until the next check' }),
+		).toBeInTheDocument();
+		expect(screen.queryByText(/Google Safe Browsing reports/u)).not.toBeInTheDocument();
 	});
 
 	it("names a suspected phishing site and links Google's definition of it", () => {
@@ -133,7 +136,7 @@ describe(LinkScanNotice, () => {
 		// whose scan row names nothing must not take the page down.
 		renderWithI18n(
 			<LinkScanNotice
-				scan={{ checked_at: '2026-10-03T08:00:00.000Z', threat_types: null, verdict: 'flagged' }}
+				scan={{ checked_at: new Date().toISOString(), threat_types: null, verdict: 'flagged' }}
 				state="flagged"
 			/>,
 		);
@@ -146,8 +149,73 @@ describe(LinkScanNotice, () => {
 	it('still says the link is blocked while no verdict has been loaded', () => {
 		renderWithI18n(<LinkScanNotice state="flagged" />);
 
-		expect(screen.getByRole('region', { name: 'Suspected unsafe site' })).toBeInTheDocument();
-		expect(screen.getByText(/This link is blocked/u)).toBeInTheDocument();
+		expect(
+			screen.getByRole('region', { name: 'Blocked until the next check' }),
+		).toBeInTheDocument();
+		expect(screen.getByText(/This link is blocked until/u)).toBeInTheDocument();
+	});
+
+	describe("the thirty-minute rule Google's terms set", () => {
+		afterEach(() => {
+			vi.useRealTimers();
+		});
+
+		it("drops Google's warning once the last check is 29 minutes old", () => {
+			// Google's terms allow a warning only on information younger than
+			// thirty minutes. A sweep that runs late, or Google being down, leaves
+			// the flag older than that, and the page must then say no more than
+			// that the link is blocked.
+			const checkedAt = new Date(Date.now() - WARNING_WINDOW_MS).toISOString();
+			renderWithI18n(
+				<LinkScanNotice scan={flaggedScan(['SOCIAL_ENGINEERING'], checkedAt)} state="flagged" />,
+			);
+
+			expect(
+				screen.getByRole('region', { name: 'Blocked until the next check' }),
+			).toBeInTheDocument();
+			expect(screen.queryByText(/phishing/iu)).not.toBeInTheDocument();
+			expect(screen.queryByRole('link')).not.toBeInTheDocument();
+			expect(screen.getByText(/lifts the block/u)).toBeInTheDocument();
+		});
+
+		it("keeps Google's warning just inside the window", () => {
+			const checkedAt = new Date(Date.now() - WARNING_WINDOW_MS + 60_000).toISOString();
+			renderWithI18n(
+				<LinkScanNotice scan={flaggedScan(['SOCIAL_ENGINEERING'], checkedAt)} state="flagged" />,
+			);
+
+			expect(screen.getByRole('region', { name: 'Suspected phishing site' })).toBeInTheDocument();
+		});
+
+		it('turns neutral while the page stays open', () => {
+			// The page is loaded once and may stay open for an hour; the warning
+			// must not outlive the check behind it just because nothing re-rendered.
+			vi.useFakeTimers({ now: new Date('2026-10-17T08:00:00.000Z') });
+			renderWithI18n(
+				<LinkScanNotice
+					scan={flaggedScan(['MALWARE'], '2026-10-17T08:00:00.000Z')}
+					state="flagged"
+				/>,
+			);
+			expect(screen.getByRole('region', { name: 'Possibly harmful software' })).toBeInTheDocument();
+
+			act(() => {
+				vi.advanceTimersByTime(WARNING_WINDOW_MS);
+			});
+
+			expect(
+				screen.getByRole('region', { name: 'Blocked until the next check' }),
+			).toBeInTheDocument();
+			expect(screen.queryByText(/harmful/iu)).not.toBeInTheDocument();
+		});
+
+		it('is German', () => {
+			renderWithI18n(<LinkScanNotice state="flagged" />, 'de');
+
+			expect(
+				screen.getByRole('region', { name: 'Gesperrt bis zur nächsten Prüfung' }),
+			).toBeInTheDocument();
+		});
 	});
 
 	it('is German', () => {

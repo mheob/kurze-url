@@ -5,6 +5,8 @@ import {
 	SAFE_BROWSING_URL,
 	threatCategories,
 	threatDefinitions,
+	WARNING_WINDOW_MS,
+	warningExpiresAt,
 } from './safe-browsing.ts';
 
 describe(threatCategories, () => {
@@ -82,5 +84,34 @@ describe(threatDefinitions, () => {
 		expect(threatDefinitions('unknown', ['THREAT_TYPE_FROM_THE_FUTURE'])).toStrictEqual([
 			{ labelKey: 'links.scanDefinitionUnknown', url: SAFE_BROWSING_URL },
 		]);
+	});
+});
+
+describe(warningExpiresAt, () => {
+	const checkedAt = '2026-10-17T08:00:00.000Z';
+
+	it('lets a flagged verdict back a warning for 29 minutes after its check', () => {
+		// Google's terms allow a warning only on information younger than thirty
+		// minutes; the API keeps a minute of margin, and so does the page.
+		expect(WARNING_WINDOW_MS).toBe(29 * 60 * 1000);
+		expect(
+			warningExpiresAt({ checked_at: checkedAt, threat_types: ['MALWARE'], verdict: 'flagged' }),
+		).toBe(Date.parse(checkedAt) + WARNING_WINDOW_MS);
+	});
+
+	it('backs no warning with a clean verdict', () => {
+		expect(
+			warningExpiresAt({ checked_at: checkedAt, threat_types: [], verdict: 'clean' }),
+		).toBeUndefined();
+	});
+
+	it('backs no warning without a verdict', () => {
+		expect(warningExpiresAt(undefined)).toBeUndefined();
+	});
+
+	it('backs no warning with a check time it cannot read', () => {
+		expect(
+			warningExpiresAt({ checked_at: 'not a time', threat_types: ['MALWARE'], verdict: 'flagged' }),
+		).toBeUndefined();
 	});
 });

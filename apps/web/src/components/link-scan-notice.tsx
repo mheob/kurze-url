@@ -1,8 +1,8 @@
 /* oxlint-disable typescript/prefer-readonly-parameter-types -- `LinkScan` is generated `@kurze-url/api-client` output whose `threat_types` array is not marked readonly; that is codegen output, never edited by hand. */
 
 import type { Link, LinkScan } from '@kurze-url/api-client';
-import { ShieldAlertIcon } from 'lucide-react';
-import { useId } from 'react';
+import { ClockIcon, ShieldAlertIcon } from 'lucide-react';
+import { useEffect, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -12,6 +12,7 @@ import {
 	threatCategories,
 	threatDefinitions,
 	type ThreatCategory,
+	warningExpiresAt,
 } from '../lib/safe-browsing';
 
 /** Each category's heading, qualified the way Google's terms require: "suspected", "possibly", never a verdict. */
@@ -49,9 +50,15 @@ export interface LinkScanNoticeProps {
  * page offers nothing that would send one.
  *
  * The state, not the scan, decides whether it shows: a link that is `flagged`
- * always gets a notice, and a scan that is missing, names no threat type or
- * names one this app does not know is shown under the generic qualified text
- * rather than as an error.
+ * always gets a notice. The scan decides which one. Google's terms allow a
+ * warning only on information younger than thirty minutes, so Google's
+ * warning appears only while a flagged verdict's last check is younger than
+ * `WARNING_WINDOW_MS`, and turns into a neutral "blocked until the next
+ * check" notice the moment it is not, even on a page left open. A scan that
+ * is missing, clean, or stale gets that neutral notice; one that names no
+ * threat type or one this app does not know gets the generic qualified text
+ * rather than an error. Decided by the maintainer on 2026-10-17, over dating
+ * the warning, because a dated warning is still a warning.
  *
  * @param props - The component's props.
  * @param props.scan - The nested verdict, when the destination has been checked.
@@ -61,7 +68,38 @@ export interface LinkScanNoticeProps {
 export function LinkScanNotice({ scan, state }: LinkScanNoticeProps): React.JSX.Element | null {
 	const { t } = useTranslation();
 	const headingId = useId();
+	const expiresAt = warningExpiresAt(scan);
+	const [now, setNow] = useState(Date.now);
+
+	// Re-render once the warning's window closes, so a page left open does not
+	// keep showing Google's warning on a check that has gone stale.
+	useEffect(() => {
+		if (expiresAt === undefined || expiresAt <= now) return undefined;
+		const timer = setTimeout(() => {
+			setNow(Date.now());
+		}, expiresAt - now);
+		return () => {
+			clearTimeout(timer);
+		};
+	}, [expiresAt, now]);
+
 	if (state !== 'flagged') return null;
+
+	if (expiresAt === undefined || expiresAt <= now) {
+		return (
+			<section
+				aria-labelledby={headingId}
+				className="flex flex-col gap-2 border border-border bg-muted p-3 text-sm text-foreground"
+			>
+				<h2 className="flex items-center gap-2 font-semibold" id={headingId}>
+					<ClockIcon aria-hidden />
+					{t('links.scanPendingHeading')}
+				</h2>
+				<p>{t('links.scanPendingBody')}</p>
+				<p>{t('links.scanPendingNextSteps')}</p>
+			</section>
+		);
+	}
 
 	const threatTypes = scan?.threat_types ?? [];
 	const categories = threatCategories(threatTypes);

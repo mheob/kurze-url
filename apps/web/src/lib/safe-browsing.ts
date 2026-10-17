@@ -1,3 +1,5 @@
+import type { LinkScan } from '@kurze-url/api-client';
+
 interface KnownThreat {
 	readonly category: Exclude<ThreatCategory, 'unknown'>;
 	readonly definition: ThreatDefinition;
@@ -45,6 +47,11 @@ const KNOWN_THREATS: readonly KnownThreat[] = [
 ];
 
 const CATEGORY_ORDER: readonly ThreatCategory[] = ['phishing', 'harmful', 'unknown'];
+
+const MS_PER_MINUTE = 60_000;
+
+/** Thirty minutes, Google's limit, less the minute the API also keeps in hand (see `WARNING_WINDOW_MS`). */
+const WARNING_WINDOW_MINUTES = 29;
 
 /**
  * Google's Safe Browsing advisory, which the attribution line links to. The
@@ -116,4 +123,24 @@ export function threatDefinitions(
 	return KNOWN_THREATS.filter(
 		(known) => known.category === category && threatTypes.includes(known.threatType),
 	).map((known) => known.definition);
+}
+
+/**
+ * How long after its check a flagged verdict may still back Google's warning.
+ * Google's terms allow a warning only on information younger than thirty
+ * minutes. `checked_at` is written a few seconds after Google answered, so the
+ * page keeps the same minute of margin the API keeps for its own confirmation
+ * (`confirmationMargin` in `apps/api/internal/api/scan.go`).
+ */
+export const WARNING_WINDOW_MS = WARNING_WINDOW_MINUTES * MS_PER_MINUTE;
+
+/**
+ * @param scan - The nested verdict from `GET /v1/links/{link_id}`, when there is one.
+ * @returns When the verdict stops backing Google's warning, in epoch milliseconds; `undefined` when it never backed one.
+ */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `LinkScan` is generated `@kurze-url/api-client` output whose `threat_types` array is not marked readonly; `Readonly<>` is shallow and cannot reach it.
+export function warningExpiresAt(scan: LinkScan | undefined): number | undefined {
+	if (scan?.verdict !== 'flagged') return undefined;
+	const checkedAt = Date.parse(scan.checked_at);
+	return Number.isNaN(checkedAt) ? undefined : checkedAt + WARNING_WINDOW_MS;
 }
