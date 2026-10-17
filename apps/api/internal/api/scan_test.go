@@ -446,9 +446,12 @@ func TestCreatingALinkChecksItsDestinationRightAway(t *testing.T) {
 
 	created := f.createLink(t, "sofort", destination)
 	require.Equal(t, "active", created.State,
-		"the link is live from the moment it is created; the check comes after")
+		"the response describes the write; the check comes after it")
 
-	eventuallyState(t, f.pool, created.ID, "flagged")
+	// No waiting: the check ran inside the request, because Vercel freezes a
+	// Go function between requests and a goroutine started for it never
+	// finished in production.
+	require.Equal(t, "flagged", linkState(t, f.pool, created.ID))
 }
 
 // The checker answered, but not about this URL. That is no verdict, and

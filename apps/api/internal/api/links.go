@@ -602,10 +602,9 @@ func (d Deps) createLink(ctx context.Context, in *CreateLinkInput) (*LinkOutput,
 			// one: a probe of this slug before it existed may have stored the
 			// not-found sentinel under exactly this key.
 			d.invalidateLink(ctx, created.Hostname, created.Slug)
-			// After the commit, and without waiting: the link is live from
-			// this moment whatever Google says, and the sweep catches a check
-			// that never finishes.
-			d.scanSoon(ctx, scanTarget{
+			// After the commit: the link is live from this moment whatever
+			// Google says, and the sweep catches a check that does not finish.
+			d.scanNow(ctx, scanTarget{
 				LinkID: created.ID, TeamID: created.TeamID, URL: created.DestinationURL,
 			})
 
@@ -1141,7 +1140,7 @@ func (d Deps) updateLink(ctx context.Context, in *UpdateLinkInput) (*LinkOutput,
 	// before this update, so a lifted flag still names the old destination.
 	if updated.State == "active" &&
 		(previous.ScanDestination == nil || *previous.ScanDestination != updated.DestinationURL) {
-		d.scanSoon(ctx, scanTarget{LinkID: updated.ID, TeamID: member.TeamID, URL: updated.DestinationURL})
+		d.scanNow(ctx, scanTarget{LinkID: updated.ID, TeamID: member.TeamID, URL: updated.DestinationURL})
 	}
 
 	body := d.linkResponse(updated)

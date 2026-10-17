@@ -17,12 +17,18 @@ import (
 // fakeTransport collects events instead of sending them. If the pinned
 // sentry-go version's Transport interface requires more methods than these,
 // add them — the compiler names them precisely.
-type fakeTransport struct{ events []*sentry.Event }
+type fakeTransport struct {
+	events  []*sentry.Event
+	flushes int
+}
 
-func (t *fakeTransport) Configure(sentry.ClientOptions)        {}
-func (t *fakeTransport) SendEvent(event *sentry.Event)         { t.events = append(t.events, event) }
-func (t *fakeTransport) Flush(time.Duration) bool              { return true }
-func (t *fakeTransport) FlushWithContext(context.Context) bool { return true }
+func (t *fakeTransport) Configure(sentry.ClientOptions) {}
+func (t *fakeTransport) SendEvent(event *sentry.Event)  { t.events = append(t.events, event) }
+func (t *fakeTransport) Flush(time.Duration) bool       { t.flushes++; return true }
+
+// FlushWithContext is what sentry.Flush reaches when the client runs a
+// batching component, which sentry-go may switch on without being asked.
+func (t *fakeTransport) FlushWithContext(context.Context) bool { t.flushes++; return true }
 func (t *fakeTransport) Close()                                {}
 
 // loggerWithFakeSentry returns a logger whose error records reach transport,

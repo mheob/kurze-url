@@ -2,17 +2,23 @@ package observability
 
 import (
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/getsentry/sentry-go"
 	sentryhttp "github.com/getsentry/sentry-go/http"
 )
 
-// deliveryTimeout bounds the two places this process ever waits for Sentry:
-// the flush at shutdown, and the flush after a panic. Both are already
-// failure paths, which is the only reason waiting is permitted at all —
-// golden rule 2 forbids it on the redirect path.
+// deliveryTimeout bounds every place this process waits for Sentry: the flush
+// at shutdown, the flush after a panic, and DeliveryMiddleware's flush after a
+// request that captured an event. All three are failure paths, which is the
+// only reason waiting is permitted at all — golden rule 2 forbids it on a
+// redirect that went well.
 const deliveryTimeout = 2 * time.Second
+
+// captured counts the events capture has handed to Sentry, so
+// DeliveryMiddleware can tell whether one was captured while its request ran.
+var captured atomic.Uint64
 
 // Init configures the Sentry client and returns the flush to run at shutdown.
 // An empty dsn returns a no-op and configures nothing, so a local checkout
@@ -54,9 +60,9 @@ func Init(dsn, environment, release string) (func(), error) {
 // without Repanic answers 500 itself and Recoverer never logs the stack
 // trace.
 //
-// WaitForDelivery is one of the two flushes on a request path in this
-// codebase, and it is reached exclusively by a panic — a response that is
-// already 5xx.
+// WaitForDelivery is reached exclusively by a panic — a response that is
+// already 5xx. The other flushes on a request path are
+// RedirectPanicMiddleware's, after a panic too, and DeliveryMiddleware's.
 func APIMiddleware() func(http.Handler) http.Handler {
 	return sentryhttp.New(sentryhttp.Options{
 		Repanic:         true,
@@ -107,6 +113,36 @@ func RedirectPanicMiddleware() func(http.Handler) http.Handler {
 				panic(recovered)
 			}()
 
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// DeliveryMiddleware waits, once the handler has returned, for any Sentry
+// event captured while the request ran, at most deliveryTimeout. Sentry's Go
+// SDK sends events from a goroutine of its own, and Vercel freezes a Go
+// function between requests — there is no waitUntil for Go — so an event
+// still in flight when a request ends is lost: in its first six weeks the API
+// delivered not one event while its logs showed the errors (found
+// 2026-10-17). A request that captured nothing, which is every redirect that
+// went well, reads one counter twice and never waits.
+//
+// It sits on the root router, around both surfaces and the internal
+// endpoints, outside every Recoverer: a 500 Recoverer wrote after a panic has
+// already been flushed by the panic middlewares, which do not go through
+// capture, so it is not flushed twice. An event captured by a request running
+// alongside this one is flushed by whichever of the two ends first. One
+// captured on a goroutine after its request ended is still at the mercy of
+// the freeze.
+func DeliveryMiddleware() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			before := captured.Load()
+			defer func() {
+				if captured.Load() != before {
+					sentry.Flush(deliveryTimeout)
+				}
+			}()
 			next.ServeHTTP(w, r)
 		})
 	}

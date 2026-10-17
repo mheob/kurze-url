@@ -199,6 +199,10 @@ func capture(ctx context.Context, record slog.Record, slot throttleSlot, suppres
 		hub.Scope().SetContext(logContextKey, fields)
 	}
 
+	// Counted for DeliveryMiddleware, which waits for this event to leave
+	// before the request ends.
+	defer captured.Add(1)
+
 	if err := errorAttr(record); err != nil {
 		// Wrapped rather than reported separately so the log message,
 		// which is what a human recognises, participates in Sentry's

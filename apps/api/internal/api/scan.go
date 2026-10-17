@@ -15,10 +15,16 @@ import (
 	"github.com/mheob/kurze-url/apps/api/internal/scanning"
 )
 
-// backgroundScanTimeout bounds one best-effort check started after a write.
-// Ten seconds rather than the redirect path's two: nobody waits on it, and a
-// slow answer that still arrives is worth more than one the sweep has to
-// repeat.
+// immediateScanTimeout bounds the check that runs inside a create or an
+// update, after its write committed. The client waits for it, so it is short;
+// Google usually answers in a few hundred milliseconds, and a check that does
+// not finish in time leaves the link due for the sweep.
+const immediateScanTimeout = 3 * time.Second
+
+// backgroundScanTimeout bounds the one piece of work still started on its own
+// goroutine: lifting a flag after the redirect path's re-check came back
+// clean. Nobody waits on it, and Vercel may freeze the function before it
+// ends, so the sweep lifts the flag if it never does.
 const backgroundScanTimeout = 10 * time.Second
 
 // scanLockTimeout bounds how long applyVerdict waits for the link's row lock.
@@ -26,8 +32,8 @@ const backgroundScanTimeout = 10 * time.Second
 // Vercel froze mid-verdict, which keeps the lock until its connection dies;
 // unbounded, the sweep, which applies one link at a time, would wait on that
 // link until its budget ran out, run after run. Far inside the sweep's budget
-// and the background check's ten seconds: a timeout fails this one link, which
-// stays due, and logs at Error like any other failed write.
+// and the immediate check's three seconds: a timeout fails this one link,
+// which stays due, and logs at Error like any other failed write.
 const scanLockTimeout = 2 * time.Second
 
 // afterCommitTimeout bounds the Redis work applyVerdict does once its
@@ -289,18 +295,29 @@ func (d Deps) checkTarget(ctx context.Context, target scanTarget) (scanning.Resu
 	return result, nil
 }
 
-// scanSoon checks one link in the background right after a write committed:
-// after createLink, and after updateLink left an active link on a destination
-// no check has judged, whether new or changed while the link was disabled.
-// Best-effort by design — Vercel does not promise to run work past the
-// response, and the sweep exists for the check that never finishes.
-func (d Deps) scanSoon(ctx context.Context, target scanTarget) {
+// scanNow checks one link right after a write committed: after createLink,
+// and after updateLink left an active link on a destination no check has
+// judged, whether new or changed while the link was disabled. It runs inside
+// the request, bounded by immediateScanTimeout and detached from the client's
+// cancellation, because Vercel freezes a Go function between requests: the
+// goroutine this used to start after the response never finished in
+// production (2026-10-17), and every new destination waited for the sweep.
+// A check that runs out of time, or fails, leaves the link due, and the
+// sweep checks it.
+func (d Deps) scanNow(ctx context.Context, target scanTarget) {
 	if d.Scanner == nil {
 		return
 	}
-	d.inBackground(ctx, target.LinkID, func(ctx context.Context) {
-		d.scanOne(ctx, target)
-	})
+	// The write has committed; a panic here must not turn it into a 500.
+	defer func() {
+		if r := recover(); r != nil {
+			d.Log.Error("safe browsing check panicked",
+				"error", fmt.Errorf("panic: %v", r), "link_id", target.LinkID)
+		}
+	}()
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), immediateScanTimeout)
+	defer cancel()
+	d.scanOne(ctx, target)
 }
 
 func (d Deps) scanOne(ctx context.Context, target scanTarget) {
@@ -312,9 +329,8 @@ func (d Deps) scanOne(ctx context.Context, target scanTarget) {
 	d.applyAndLog(ctx, target, result)
 }
 
-// applyAndLog applies a verdict a background check produced. Nobody waits on
-// it, and a failure leaves the link due for the sweep; logApplyFailure says
-// how loudly it is reported.
+// applyAndLog applies the verdict of a check after a write. A failure leaves
+// the link due for the sweep; logApplyFailure says how loudly it is reported.
 func (d Deps) applyAndLog(ctx context.Context, target scanTarget, result scanning.Result) {
 	if _, err := d.applyVerdict(ctx, target, result); err != nil {
 		d.logApplyFailure(err, target.LinkID)
@@ -324,7 +340,7 @@ func (d Deps) applyAndLog(ctx context.Context, target scanTarget, result scannin
 // logApplyFailure reports a verdict that could not be written. That is the
 // database failing, so it is an Error and reaches Sentry, and so is a lock wait
 // that outlasted scanLockTimeout. Running out of time or being cancelled is the
-// exception and stays a Warn: the background budget is shared with the Google
+// exception and stays a Warn: the check's budget is shared with the Google
 // call, so a deadline says the check was slow, not that Postgres is broken. The
 // sweep's own deadline never gets here, because applyDue stops before it and
 // counts the link as remaining. The one place this is decided, for the checks
