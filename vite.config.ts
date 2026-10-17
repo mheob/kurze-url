@@ -313,6 +313,14 @@ export default defineConfig({
 				files: ['apps/web/**/*.tsx'],
 				plugins: ['react', 'react-perf'],
 				rules: {
+					'react/jsx-curly-brace-presence': 'off',
+					// Fires on every TanStack route file, because `createFileRoute`
+					// requires the module to export `Route`, and most of them export a
+					// loader beside it. The rule asks for a file that exports only
+					// components; the router asks for the opposite. The one non-route
+					// case is `ui/button.tsx`, where `buttonVariants` beside the
+					// component is shadcn's own shape.
+					'react/only-export-components': 'off',
 					// Both react-perf rules exist to stop a new prop identity on every
 					// render from defeating a memoised child. That premise does not hold
 					// here: there is no `React.memo` anywhere in apps/web and no
@@ -323,19 +331,11 @@ export default defineConfig({
 					// to memoise by default. If a list ever measures slow, memoise that
 					// list deliberately rather than turning this back on wholesale.
 					//
-					// Sorted before the `react/*` entries on purpose: eslint(sort-keys)
-					// compares the whole key, and `-` sorts before `/`.
+					// Sorted after the `react/*` entries on purpose: oxlint 1.88's
+					// eslint(sort-keys) puts `/` before `-`, so `react/` precedes `react-perf/`.
 					'react-perf/jsx-no-new-array-as-prop': 'off',
 					'react-perf/jsx-no-new-function-as-prop': 'off',
 					'react-perf/jsx-no-new-object-as-prop': 'off',
-					'react/jsx-curly-brace-presence': 'off',
-					// Fires on every TanStack route file, because `createFileRoute`
-					// requires the module to export `Route`, and most of them export a
-					// loader beside it. The rule asks for a file that exports only
-					// components; the router asks for the opposite. The one non-route
-					// case is `ui/button.tsx`, where `buttonVariants` beside the
-					// component is shadcn's own shape.
-					'react/only-export-components': 'off',
 				},
 			},
 		],
