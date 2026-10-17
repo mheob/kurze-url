@@ -92,6 +92,7 @@
 		"oxfmt": {
 			"initialization_options": {
 				"settings": {
+					"fmt.configPath": "./vite.config.ts",
 					"run": "onSave"
 				}
 			}
@@ -100,7 +101,7 @@
 			"settings": {
 				"classFunctions": ["cn", "cva"],
 				"experimental.configFile": {
-					"apps/web/src/app/globals.css": "apps/web/src/**"
+					"apps/web/src/styles/app.css": "apps/web/src/**"
 				}
 			}
 		}

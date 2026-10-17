@@ -100,8 +100,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # oxfmt and oxlint, not Prettier/ESLint — see the @mheob shared configs
-      # in package.json.
+      # Vite+ (`vp fmt`, `vp lint`) runs oxfmt and oxlint, not Prettier/ESLint.
+      # Both read the root vite.config.ts, which composes the @mheob shared
+      # configs listed in package.json.
       - name: Format check
         run: pnpm format:check
 
