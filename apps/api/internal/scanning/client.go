@@ -210,7 +210,10 @@ func netURLReading(raw string) (canonicalURL, error) {
 }
 
 func (c *Client) search(ctx context.Context, prefixes []string) (searchResponse, error) {
-	query := url.Values{"hashPrefixes": prefixes}
+	// v5 answers in binary protobuf unless asked otherwise; $alt is Google's
+	// system parameter for the response format, and an Accept header alone
+	// does not change it.
+	query := url.Values{"$alt": {"json"}, "hashPrefixes": prefixes}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.endpoint+"?"+query.Encode(), nil)
 	if err != nil {
 		return searchResponse{}, fmt.Errorf("scanning: build hashes.search request: %w", err)
