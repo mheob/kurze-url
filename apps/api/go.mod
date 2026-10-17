@@ -12,6 +12,7 @@ require (
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/mileusna/useragent v1.3.5
 	github.com/piglig/go-qr v1.1.0
+	github.com/piglig/go-qr/v2 v2.6.0
 	github.com/redis/go-redis/v9 v9.22.0
 	github.com/stretchr/testify v1.12.1
 	github.com/testcontainers/testcontainers-go/modules/redis v0.44.0
