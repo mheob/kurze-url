@@ -13,18 +13,18 @@ import { generatedFiles } from './generated.config.ts';
 // `cwd` it defaults to the process cwd — the repo root, which has no `tailwindcss` package
 // of its own, because it is a dependency of apps/web and pnpm only symlinks declared ones.
 //
-// These options have to be set on THIS config's own top-level `settings`, and repeating
-// them here rather than relying on `tailwindcssConfig()`'s own `settings` is the whole
-// point: oxlint merges `rules` out of an extended config but NOT `settings`. So
+// These options have to be set in the `lint` block's own `settings`, and repeating them
+// there rather than relying on `tailwindcssConfig()`'s own `settings` is the whole point:
+// oxlint merges `rules` out of an extended config but NOT `settings`. So
 // `@mheob/oxlint-config` v4, which passes them exactly that way, gets its eight rule
 // severities honoured and its settings silently dropped — oxlint then prints "Tailwind CSS
 // is not installed. Disabling rule better-tailwindcss/…" eight times and lints no class
-// name at all. Proven by probe: identical options in a top-level `settings` block activate
+// name at all. Proven by probe: identical options in the config's own `settings` activate
 // the plugin, the same block inside an `extends` entry does not.
 //
 // The warnings are the only symptom, and they are easy to read past — every one of these
 // eight rules was off for the project's whole life until 2026-09-13 because of it. If they
-// come back, this block stopped being applied.
+// come back, the `lint` block's `settings` stopped being applied.
 const tailwindPluginOptions = { cwd: 'apps/web', entryPoint: 'src/styles/app.css' };
 
 // `dark` is applied to `<html>` as a plain toggle class (see Task 6's root route) so that
@@ -69,10 +69,10 @@ export default defineConfig({
 		// Vite+'s own rule set, loaded as a JS plugin: it is the only place
 		// `prefer-vite-plus-imports` lives, and the shared config knows nothing about it.
 		jsPlugins: [{ name: 'vite-plus', specifier: 'vite-plus/oxlint-plugin' }],
-		// Already what `@mheob/oxlint-config` declares, and oxlint merges `options` through
-		// `extends` field by field, so `--print-config` showed both before this line existed.
-		// Stated here because the Vite+ templates do, so that turning type-aware linting off
-		// takes an edit to this line rather than a change upstream nobody here reviewed.
+		// Already what `@mheob/oxlint-config` declares. oxlint merges `options` through `extends`
+		// field by field and a value set here overrides the extended one, so stating both pins
+		// type-aware linting on even if the shared config changes them, and turning it off
+		// takes an edit to this line.
 		options: { typeAware: true, typeCheck: true },
 		overrides: [
 			{
@@ -365,7 +365,10 @@ export default defineConfig({
 	},
 	// Vitest 5 finds its config in the directory it runs from, so a bare `vp test` typed here
 	// would collect `apps/web`'s files under THIS config — no jsdom, no `src/test/setup.ts` —
-	// and fail on `document is not defined`. Pointing it at `apps/web` makes it run the same
-	// `unit` and `storybook` projects `pnpm --filter @kurze-url/web test` does.
+	// and fail on `document is not defined`. Pointing it at `apps/web` makes it run that
+	// package's projects instead: a bare `vp test` here runs both of them, the same set as
+	// `apps/web`'s `test` and `test:storybook` scripts together. `--project unit` does not
+	// match at the root, because the projects are named `@kurze-url/web (unit)` there; use
+	// the package scripts to run a single project.
 	test: { projects: ['apps/web'] },
 });
