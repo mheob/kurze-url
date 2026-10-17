@@ -77,11 +77,11 @@ catalog:
   "@tanstack/nitro-v2-vite-plugin": ^1.155.2
   "@tanstack/react-devtools": ^0.10.13
   "@tanstack/react-form": ^1.33.5
-  "@tanstack/react-query": ^5.104.0
-  "@tanstack/react-router": ^1.170.41
+  "@tanstack/react-query": ^5.104.3
+  "@tanstack/react-router": ^1.170.44
   "@tanstack/react-router-devtools": ^1.167.2
   "@tanstack/react-router-ssr-query": ^1.167.3
-  "@tanstack/react-start": ^1.168.60
+  "@tanstack/react-start": ^1.169.2
   "@testing-library/jest-dom": ^7.0.1
   "@testing-library/react": ^16.3.3
   "@testing-library/user-event": ^14.6.7
