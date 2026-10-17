@@ -241,6 +241,73 @@ describe.each(TIMEZONE_CASES)('the range picker under %s', (_label, timezone) =>
 		expect(getDayButton('2026-09-11')).toHaveAttribute('data-range-end', 'true');
 	});
 
+	// axe-core 4.14 enabled `label-content-name-mismatch` (WCAG 2.5.3, "Label in
+	// Name") by default. react-day-picker's own name for a day button reads
+	// "Thursday, September 10th, 2026": a word-by-word comparison finds "10th"
+	// and never the visible "10", so every day of the grid failed it. The days
+	// below cover each ordinal suffix, the 11th to 13th that take "th", and the
+	// last day of the month.
+	it.each([
+		['2026-09-01', '1'],
+		['2026-09-02', '2'],
+		['2026-09-03', '3'],
+		['2026-09-04', '4'],
+		['2026-09-11', '11'],
+		['2026-09-12', '12'],
+		['2026-09-13', '13'],
+		['2026-09-21', '21'],
+		['2026-09-22', '22'],
+		['2026-09-23', '23'],
+		['2026-09-30', '30'],
+	] as const)(
+		'holds the visible number of %s in its accessible name as a whole word',
+		async (isoDay, visibleNumber) => {
+			const user = userEvent.setup();
+			renderWithI18n(
+				<StatRangePicker
+					language="en"
+					onChange={vi.fn<(window: Readonly<StatsWindow>) => void>()}
+					today={TODAY}
+					window={THIRTY_DAYS}
+				/>,
+			);
+
+			await user.click(screen.getByRole('button', { name: 'Choose dates' }));
+
+			const dayButton = getDayButton(isoDay);
+			// What axe compares the name against, pinned so a markup change that
+			// adds text to the cell cannot leave this asserting about the wrong word.
+			expect(dayButton.textContent).toBe(visibleNumber);
+			expect(dayButton).toHaveAccessibleName(new RegExp(String.raw`\b${visibleNumber}\b`, 'u'));
+		},
+	);
+
+	// The same property from the other side: dropping the ordinal must not
+	// drop the markers react-day-picker's default name carries.
+	it("keeps the today and selected markers of a day button's name", async () => {
+		const user = userEvent.setup();
+		renderWithI18n(
+			<StatRangePicker
+				language="en"
+				onChange={vi.fn<(window: Readonly<StatsWindow>) => void>()}
+				today={TODAY}
+				window={THIRTY_DAYS}
+			/>,
+		);
+
+		await user.click(screen.getByRole('button', { name: 'Choose dates' }));
+
+		// 18 Sep is both today and the range's last day.
+		expect(getDayButton('2026-09-18')).toHaveAccessibleName(
+			'Today, Friday, September 18, 2026, selected',
+		);
+		expect(getDayButton('2026-09-10')).toHaveAccessibleName(
+			'Thursday, September 10, 2026, selected',
+		);
+		// After the range and after today: neither marker.
+		expect(getDayButton('2026-09-19')).toHaveAccessibleName('Saturday, September 19, 2026');
+	});
+
 	it('leaves the window unchanged when the popover closes after only one click', async () => {
 		// The other half of the same property: a half-finished pick that never
 		// completes must not have mutated anything the caller can see.

@@ -58,63 +58,63 @@ catalogMode: strict
 # compares the installed `vite`, `vitest` and `@vitest/browser-playwright` with what
 # `vite-plus` declares.
 catalog:
-  "@axe-core/playwright": ^4.13.0
-  "@base-ui/react": ^1.8.0
+  "@axe-core/playwright": ^4.14.0
+  "@base-ui/react": ^1.9.0
   "@fontsource-variable/geist": ^5.3.0
   "@fontsource-variable/geist-mono": ^5.3.0
   "@hey-api/openapi-ts": ^0.99.0
   "@mheob/oxfmt-config": ^1.3.3
   "@mheob/oxlint-config": ^4.1.1
-  "@playwright/test": ^1.63.0
-  "@sentry/tanstackstart-react": ^11.1.0
-  "@storybook/addon-a11y": ^10.6.1
-  "@storybook/addon-vitest": ^10.6.1
-  "@storybook/tanstack-react": ^10.6.1
+  "@playwright/test": ^1.64.1
+  "@sentry/tanstackstart-react": ^11.8.0
+  "@storybook/addon-a11y": ^10.6.2
+  "@storybook/addon-vitest": ^10.6.2
+  "@storybook/tanstack-react": ^10.6.2
   "@supabase/ssr": ^0.12.7
-  "@supabase/supabase-js": ^2.117.2
+  "@supabase/supabase-js": ^2.118.0
   "@tailwindcss/vite": ^4.3.3
   "@tanstack/devtools-vite": ^0.8.5
   "@tanstack/nitro-v2-vite-plugin": ^1.155.2
   "@tanstack/react-devtools": ^0.10.13
   "@tanstack/react-form": ^1.33.5
-  "@tanstack/react-query": ^5.104.0
-  "@tanstack/react-router": ^1.170.41
+  "@tanstack/react-query": ^5.104.3
+  "@tanstack/react-router": ^1.170.44
   "@tanstack/react-router-devtools": ^1.167.2
   "@tanstack/react-router-ssr-query": ^1.167.3
-  "@tanstack/react-start": ^1.168.60
+  "@tanstack/react-start": ^1.169.2
   "@testing-library/jest-dom": ^7.0.1
   "@testing-library/react": ^16.3.3
-  "@testing-library/user-event": ^14.6.7
-  "@types/node": ^26.6.3
+  "@testing-library/user-event": ^14.6.8
+  "@types/node": ^26.6.5
   "@types/pg": ^8.23.1
   "@types/react": ^19.3.0
   "@types/react-dom": ^19.3.0
   "@vercel/related-projects": ^1.1.1
-  "@vitejs/plugin-react": ^6.1.1
+  "@vitejs/plugin-react": ^6.1.2
   "@vitest/browser-playwright": 5.0.5
-  axe-core: ^4.13.0
+  axe-core: ^4.14.0
   class-variance-authority: ^0.7.1
-  cn: ^0.4.0
-  cve-lite-cli: ^1.37.0
+  cn: ^0.5.0
+  cve-lite-cli: ^1.39.0
   date-fns: ^4.4.0
   eslint-plugin-better-tailwindcss: ^4.9.1
   eslint-plugin-jsonc: ^3.4.2
   eslint-plugin-regexp: ^3.3.1
-  eslint-plugin-storybook: ^10.6.1
-  eslint-plugin-yml: ^3.8.1
-  i18next: ^26.4.2
-  jsdom: ^30.1.1
-  lefthook: ^2.1.15
-  lucide-react: ^1.49.0
-  msw: ^3.0.1
+  eslint-plugin-storybook: ^10.6.2
+  eslint-plugin-yml: ^3.9.0
+  i18next: ^26.4.7
+  jsdom: ^30.1.3
+  lefthook: ^2.2.2
+  lucide-react: ^1.58.0
+  msw: ^3.0.3
   pg: ^8.23.1
-  react: ^19.3.0
+  react: ^19.3.1
   react-day-picker: ^10.0.2
-  react-dom: ^19.3.0
-  react-i18next: ^17.0.15
+  react-dom: ^19.3.1
+  react-i18next: ^17.0.19
   recharts: 3.10.1
-  shadcn: ^4.21.0
-  storybook: ^10.6.1
+  shadcn: ^4.22.0
+  storybook: ^10.6.2
   tailwindcss: ^4.3.3
   tw-animate-css: ^1.4.0
   typescript: ^7.0.2

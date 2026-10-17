@@ -1,5 +1,5 @@
 import { http, HttpResponse } from 'msw';
-import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import { server } from '../test/msw';
 
@@ -20,18 +20,15 @@ interface FakeSupabaseClient {
 	};
 }
 
-/** Only the slice `flushSessionCookies` reaches through. */
-interface FakeResponse {
-	headers: { append: (name: string, value: string) => void };
-}
-
 const mocks = vi.hoisted(() => ({
+	appendResponseHeader: vi.fn(),
 	createSupabase: vi.fn<(request: Request, headers: Readonly<Headers>) => FakeSupabaseClient>(),
-	getResponse: vi.fn<() => FakeResponse>(() => ({ headers: { append: () => undefined } })),
 }));
 
 vi.mock('./supabase', () => ({ createSupabase: mocks.createSupabase }));
-vi.mock('@tanstack/react-start/server', () => ({ getResponse: mocks.getResponse }));
+vi.mock('@tanstack/react-start/server', () => ({
+	appendResponseHeader: mocks.appendResponseHeader,
+}));
 
 /**
  * The `*For` half of each pair, never the `createServerFn`-wrapped `*Fn`:
@@ -74,6 +71,13 @@ function withSession(accessToken: string): void {
 const request = new Request('https://example.test/');
 
 describe('domains', () => {
+	// Call history has to start empty in every test: the mocked `createSupabase` writes the same
+	// refreshed cookie on every call, so without this an assertion on it would be satisfied by a
+	// call an earlier test made.
+	beforeEach(() => {
+		mocks.appendResponseHeader.mockClear();
+	});
+
 	afterEach(() => {
 		vi.unstubAllEnvs();
 	});
@@ -112,14 +116,6 @@ describe('domains', () => {
 		it('carries a refreshed session cookie onto the response', async () => {
 			vi.stubEnv('API_HOST', 'http://api.test');
 			withSession('tok');
-			const appended: string[] = [];
-			mocks.getResponse.mockReturnValueOnce({
-				headers: {
-					append: (_name, value) => {
-						appended.push(value);
-					},
-				},
-			});
 			server.use(
 				http.get('http://api.test/v1/teams/team-a/domains', () =>
 					HttpResponse.json({ items: [], page: 1, per_page: 25, total_count: 0 }),
@@ -128,7 +124,9 @@ describe('domains', () => {
 
 			await listDomainsFor(request, 'team-a');
 
-			expect(appended).toContain('sb-access-token=refreshed; Path=/; HttpOnly');
+			expect(mocks.appendResponseHeader).toHaveBeenCalledWith('set-cookie', [
+				'sb-access-token=refreshed; Path=/; HttpOnly',
+			]);
 		});
 	});
 
@@ -168,14 +166,6 @@ describe('domains', () => {
 		it('carries a refreshed session cookie onto the response', async () => {
 			vi.stubEnv('API_HOST', 'http://api.test');
 			withSession('tok');
-			const appended: string[] = [];
-			mocks.getResponse.mockReturnValueOnce({
-				headers: {
-					append: (_name, value) => {
-						appended.push(value);
-					},
-				},
-			});
 			server.use(
 				http.post('http://api.test/v1/teams/team-a/domains', () =>
 					HttpResponse.json({ hostname: 'links.verein.test', id: 'd1' }, { status: 201 }),
@@ -184,7 +174,9 @@ describe('domains', () => {
 
 			await claimDomainFor(request, 'team-a', 'links.verein.test');
 
-			expect(appended).toContain('sb-access-token=refreshed; Path=/; HttpOnly');
+			expect(mocks.appendResponseHeader).toHaveBeenCalledWith('set-cookie', [
+				'sb-access-token=refreshed; Path=/; HttpOnly',
+			]);
 		});
 	});
 
@@ -242,14 +234,6 @@ describe('domains', () => {
 		it('carries a refreshed session cookie onto the response', async () => {
 			vi.stubEnv('API_HOST', 'http://api.test');
 			withSession('tok');
-			const appended: string[] = [];
-			mocks.getResponse.mockReturnValueOnce({
-				headers: {
-					append: (_name, value) => {
-						appended.push(value);
-					},
-				},
-			});
 			server.use(
 				http.post('http://api.test/v1/domains/d1/verify', () =>
 					HttpResponse.json({
@@ -272,7 +256,9 @@ describe('domains', () => {
 
 			await verifyDomainFor(request, 'd1');
 
-			expect(appended).toContain('sb-access-token=refreshed; Path=/; HttpOnly');
+			expect(mocks.appendResponseHeader).toHaveBeenCalledWith('set-cookie', [
+				'sb-access-token=refreshed; Path=/; HttpOnly',
+			]);
 		});
 	});
 
@@ -312,21 +298,15 @@ describe('domains', () => {
 		it('carries a refreshed session cookie onto the response', async () => {
 			vi.stubEnv('API_HOST', 'http://api.test');
 			withSession('tok');
-			const appended: string[] = [];
-			mocks.getResponse.mockReturnValueOnce({
-				headers: {
-					append: (_name, value) => {
-						appended.push(value);
-					},
-				},
-			});
 			server.use(
 				http.delete('http://api.test/v1/domains/d1', () => new HttpResponse(null, { status: 204 })),
 			);
 
 			await deleteDomainFor(request, 'd1');
 
-			expect(appended).toContain('sb-access-token=refreshed; Path=/; HttpOnly');
+			expect(mocks.appendResponseHeader).toHaveBeenCalledWith('set-cookie', [
+				'sb-access-token=refreshed; Path=/; HttpOnly',
+			]);
 		});
 	});
 });

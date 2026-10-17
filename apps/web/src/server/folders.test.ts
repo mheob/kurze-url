@@ -22,18 +22,15 @@ interface FakeSupabaseClient {
 	};
 }
 
-/** Only the slice `flushSessionCookies` reaches through. */
-interface FakeResponse {
-	headers: { append: (name: string, value: string) => void };
-}
-
 const mocks = vi.hoisted(() => ({
+	appendResponseHeader: vi.fn(),
 	createSupabase: vi.fn<(request: Request, headers: Readonly<Headers>) => FakeSupabaseClient>(),
-	getResponse: vi.fn<() => FakeResponse>(() => ({ headers: { append: () => undefined } })),
 }));
 
 vi.mock('./supabase', () => ({ createSupabase: mocks.createSupabase }));
-vi.mock('@tanstack/react-start/server', () => ({ getResponse: mocks.getResponse }));
+vi.mock('@tanstack/react-start/server', () => ({
+	appendResponseHeader: mocks.appendResponseHeader,
+}));
 
 /**
  * The `*For` half of each pair, never the `createServerFn`-wrapped `*Fn`:

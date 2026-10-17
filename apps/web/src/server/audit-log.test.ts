@@ -25,17 +25,11 @@ interface FakeSupabaseClient {
 	};
 }
 
-/** Only the slice `flushSessionCookies` reaches through. */
-interface FakeResponse {
-	headers: { append: (name: string, value: string) => void };
-}
-
 const mocks = vi.hoisted(() => ({
+	// Only here because `flushSessionCookies` still calls it internally and the module
+	// mock below exposes nothing else; no test in this file inspects what it was given.
+	appendResponseHeader: vi.fn(),
 	createSupabase: vi.fn<(request: Request, headers: Readonly<Headers>) => FakeSupabaseClient>(),
-	// Defaulted so the test doesn't need its own setup — `flushSessionCookies`
-	// still calls this internally even when the test never inspects what it
-	// appended.
-	getResponse: vi.fn<() => FakeResponse>(() => ({ headers: { append: () => undefined } })),
 }));
 
 vi.mock('./supabase', () => ({
@@ -43,7 +37,7 @@ vi.mock('./supabase', () => ({
 }));
 
 vi.mock('@tanstack/react-start/server', () => ({
-	getResponse: mocks.getResponse,
+	appendResponseHeader: mocks.appendResponseHeader,
 }));
 
 /**

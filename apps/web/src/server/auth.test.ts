@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vite-plus/test';
+import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 /**
  * Deliberately not the real `SupabaseClient` shape — only the slice
@@ -19,19 +19,9 @@ interface FakeSupabaseClient {
 	};
 }
 
-/**
- * Only the slice `flushSessionCookies` reaches through: a response object
- * whose `headers` supports `append`, same narrowing rationale as
- * `FakeSupabaseClient` above and `session.test.ts`'s own `FakeResponse`.
- */
-interface FakeResponse {
-	headers: { append: (name: string, value: string) => void };
-}
-
 const mocks = vi.hoisted(() => ({
-	// Defaulted so tests that never touch cookies don't need their own setup —
-	// only the flush test below overrides this to inspect what was appended.
-	getResponse: vi.fn<() => FakeResponse>(() => ({ headers: { append: () => undefined } })),
+	// Only the flush test below inspects what this was given.
+	appendResponseHeader: vi.fn(),
 	signInWithOtp: vi.fn<FakeSupabaseClient['auth']['signInWithOtp']>(),
 }));
 
@@ -52,7 +42,7 @@ vi.mock('./supabase', () => ({
 }));
 
 vi.mock('@tanstack/react-start/server', () => ({
-	getResponse: mocks.getResponse,
+	appendResponseHeader: mocks.appendResponseHeader,
 }));
 
 /* oxlint-disable-next-line node/no-top-level-await -- this file is a Vitest test entry, never
@@ -62,6 +52,13 @@ vi.mock('@tanstack/react-start/server', () => ({
 const { ENUMERATION_TIMING_FLOOR_MS, sendMagicLinkFor } = await import('./auth');
 
 describe('sendMagicLinkFor', () => {
+	// Call history has to start empty in every test: the mocked `createSupabase` writes the same
+	// refreshed cookie on every call, so without this an assertion on it would be satisfied by a
+	// call an earlier test made.
+	beforeEach(() => {
+		mocks.appendResponseHeader.mockClear();
+	});
+
 	it('never creates an account', async () => {
 		// This instance is invitation-only: MAINTAINER_USER_IDS gates team
 		// creation and members arrive through inviteUserByEmail. Left at its
@@ -146,23 +143,17 @@ describe('sendMagicLinkFor', () => {
 	 * discarded it — the verifier never reached the browser, so
 	 * `/auth/callback`'s `exchangeCodeForSession` had nothing to consume and
 	 * login was broken end to end. This test fails on exactly that: with the
-	 * `flushSessionCookies(headers)` call removed, `appended` stays empty
-	 * because nothing ever forwards the cookie the mocked `createSupabase`
-	 * wrote onto the real response.
+	 * `flushSessionCookies(headers)` call removed, `appendResponseHeader` is
+	 * never called because nothing ever forwards the cookie the mocked
+	 * `createSupabase` wrote onto the real response.
 	 */
 	it('flushes the PKCE verifier cookie onto the real response', async () => {
 		mocks.signInWithOtp.mockResolvedValue({ error: null });
-		const appended: string[] = [];
-		mocks.getResponse.mockReturnValue({
-			headers: {
-				append: (name, value) => {
-					appended.push(`${name}: ${value}`);
-				},
-			},
-		});
 
 		await sendMagicLinkFor('someone@example.test', 'https://app.test');
 
-		expect(appended).toStrictEqual(['set-cookie: sb-pkce-code-verifier=abc; Path=/; HttpOnly']);
+		expect(mocks.appendResponseHeader).toHaveBeenCalledExactlyOnceWith('set-cookie', [
+			'sb-pkce-code-verifier=abc; Path=/; HttpOnly',
+		]);
 	});
 });
