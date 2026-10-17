@@ -3,8 +3,9 @@
 	"extends": ["github>mheob/renovate-config"],
 	"packageRules": [
 		{
-			"description": "packages/api-client pins TypeScript 6 for its generator, which crashes on 7 (CLAUDE.md). CI never runs the generator, so a bump would pass every check and break the next regeneration.",
-			"matchFileNames": ["packages/api-client/package.json"],
+			"description": "The typescript6 catalog in pnpm-workspace.yaml, used by packages/api-client alone, pins TypeScript 6 for its generator, which crashes on 7 (CLAUDE.md). CI never runs the generator, so a bump would pass every check and break the next regeneration. Renovate gives that entry the depType pnpm.catalog.typescript6, so the default catalog's TypeScript 7 (pnpm.catalog.default) is not capped.",
+			"matchFileNames": ["pnpm-workspace.yaml"],
+			"matchDepTypes": ["pnpm.catalog.typescript6"],
 			"matchPackageNames": ["typescript"],
 			"allowedVersions": "<7"
 		},
@@ -15,7 +16,7 @@
 			"allowedVersions": "<5"
 		},
 		{
-			"description": "The catalog's vite (an npm: alias of @voidzero-dev/vite-plus-core), vitest, vite-plus and @vitest/browser-playwright entries must sit at exactly the versions vite-plus declares: dependencies.vite, dependencies.vitest and peerDependencies['@vitest/browser-playwright'] in its package.json. The vite@* and vitest@* overrides in pnpm-workspace.yaml force the catalog's versions onto vite-plus's own dependencies, so a mismatch installs silently instead of failing. This group keeps the four in one pull request when they release together, but cannot guarantee it: Vitest publishes patches before vite-plus re-pins them, so a group PR can carry only some of them. Whoever merges one checks the catalog against node_modules/vite-plus/package.json first. The alias is matched by its real package name: matchPackageNames reads packageName (@voidzero-dev/vite-plus-core), while the dependency's depName is the alias, vite.",
+			"description": "The catalog's vite (an npm: alias of @voidzero-dev/vite-plus-core), vitest, vite-plus and @vitest/browser-playwright entries must sit at exactly the versions vite-plus declares: dependencies.vite, dependencies.vitest and peerDependencies['@vitest/browser-playwright'] in its package.json. The vite@* and vitest@* overrides in pnpm-workspace.yaml force the catalog's versions onto vite-plus's own dependencies, so a mismatch installs silently instead of failing. This group keeps the four in one pull request when they release together, but cannot guarantee it: Vitest publishes patches before vite-plus re-pins them, so a group PR can carry only some of them. Whoever merges one checks the catalog against node_modules/vite-plus/package.json first, after pnpm install on the pull request's branch. The alias is matched by its real package name: matchPackageNames reads packageName (@voidzero-dev/vite-plus-core), while the dependency's depName is the alias, vite.",
 			"matchPackageNames": [
 				"vite-plus",
 				"@voidzero-dev/vite-plus-core",
