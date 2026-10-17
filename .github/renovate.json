@@ -13,6 +13,16 @@
 			"matchFileNames": ["pnpm-workspace.yaml"],
 			"matchPackageNames": ["js-yaml"],
 			"allowedVersions": "<5"
+		},
+		{
+			"description": "vite-plus pins vitest and peers @vitest/browser-playwright to the exact version it bundles, and the catalog's vite entry is an npm: alias of @voidzero-dev/vite-plus-core, released in step with vite-plus. A lone bump of any one of them breaks the install, so the four move as one pull request. The alias is matched by its real package name: matchPackageNames reads packageName (@voidzero-dev/vite-plus-core), while the dependency's depName is the alias, vite.",
+			"matchPackageNames": [
+				"vite-plus",
+				"@voidzero-dev/vite-plus-core",
+				"vitest",
+				"@vitest/browser-playwright"
+			],
+			"groupName": "vite-plus toolchain"
 		}
 	]
 }
