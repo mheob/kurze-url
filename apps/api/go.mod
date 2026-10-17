@@ -18,6 +18,7 @@ require (
 	golang.org/x/crypto v0.57.0
 	golang.org/x/net v0.60.0
 	golang.org/x/sync v0.23.0
+	google.golang.org/protobuf v1.36.11
 )
 
 require (
