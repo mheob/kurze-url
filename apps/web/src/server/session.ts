@@ -5,13 +5,15 @@ import { getApiClient } from './api';
 import { createSupabase } from './supabase';
 
 /**
- * The three headers `@supabase/ssr` passes `setAll` next to the cookies of a
- * session it creates or refreshes (`applyServerStorage` in its
- * `dist/main/cookies.js`): `Cache-Control: private, no-cache, no-store,
- * must-revalidate, max-age=0`, `Expires: 0` and `Pragma: no-cache`. They are
- * `Headers` names, so lowercase and case-insensitive here, and exactly this
- * set: the cookie adapter copies into `headers` whatever the library hands it,
- * but what leaves for the response is decided in `flushSessionCookies`.
+ * The three headers `@supabase/ssr` passes `setAll` every time it writes
+ * session cookies (`applyServerStorage` in its `dist/main/cookies.js`): a
+ * created or refreshed session, sign-out's cleared cookies, and the PKCE
+ * verifier cookie `signInWithOtp` sets. Their values are `Cache-Control:
+ * private, no-cache, no-store, must-revalidate, max-age=0`, `Expires: 0` and
+ * `Pragma: no-cache`. Named here as `Headers` keys, so lowercase and
+ * case-insensitive, and exactly this set: the cookie adapter copies into
+ * `headers` whatever the library hands it, but what leaves for the response is
+ * decided in `flushSessionCookies`.
  */
 const SESSION_CACHE_HEADERS = ['cache-control', 'expires', 'pragma'] as const;
 
@@ -144,8 +146,9 @@ export function authedApiClient(accessToken: string): ReturnType<typeof getApiCl
  *
  * The cache headers travel with the cookies, and that half is as load-bearing
  * as the cookies themselves. `@supabase/ssr` sends `Cache-Control`, `Expires`
- * and `Pragma` (`SESSION_CACHE_HEADERS`) alongside every session it creates or
- * refreshes so that a CDN or reverse proxy never caches a response carrying
+ * and `Pragma` (`SESSION_CACHE_HEADERS`) every time it writes session cookies,
+ * a new or refreshed session, sign-out's cleared cookies and the PKCE verifier
+ * included, so that a CDN or reverse proxy never caches a response carrying
  * one person's session cookie and serves it to someone else. The cookie
  * adapter faithfully lands them in the local `Headers`, so a flush that
  * forwarded `set-cookie` alone dropped them there, with no error and no
@@ -160,9 +163,11 @@ export function authedApiClient(accessToken: string): ReturnType<typeof getApiCl
  * therefore not a state the library reaches, and forwarding it would overwrite
  * a `Cache-Control` the response already had, on a response that has no
  * session cookie to protect. Each of the three is written only if it is
- * present: the library sends them once per client (`hasSentHeaders` in
- * `createStorageFromOptions`), so a second `setAll` on the same client brings
- * cookies and no headers, and the local `Headers` still holds the first call's.
+ * present, because a `setAll` can carry cookies without them:
+ * `clearAuthCookiesAtScopes` passes `{}`, and so does a hand-built `Headers`
+ * in a test. `hasSentHeaders` (in `createStorageFromOptions`) is not the cause,
+ * since a second `setAll` on the same client brings none but the local
+ * `Headers` keeps the first call's values.
  *
  * Implementation note on *why* `appendResponseHeader` for `set-cookie` rather
  * than `setResponseHeader`/`setResponseHeaders`: `set-cookie` is the one
@@ -210,12 +215,16 @@ export function authedApiClient(accessToken: string): ReturnType<typeof getApiCl
  * this whole file for the client build, including this function's own
  * top-level `appendResponseHeader` and `setResponseHeader` import — even
  * though `flushSessionCookies` itself is only ever called from inside
- * `.handler()` closures. Confirmed by building both ways, and re-checked
- * against this import: unwrapped, `pnpm --filter @kurze-url/web build` fails
- * with the same `[import-protection]` error `sendMagicLinkFor`'s docstring
- * describes ("Import denied in client environment" for
- * `@tanstack/react-start/server`), reported against the
- * `appendResponseHeader` call below; wrapped, it passes.
+ * `.handler()` closures. Confirmed by building both ways when this file
+ * imported `appendResponseHeader` alone: unwrapped, `pnpm --filter
+ * @kurze-url/web build` fails with the same `[import-protection]` error
+ * `sendMagicLinkFor`'s docstring describes ("Import denied in client
+ * environment" for `@tanstack/react-start/server`), reported against the
+ * `appendResponseHeader` call below; wrapped, it passes. After
+ * `setResponseHeader` joined the import only the wrapped build was re-run, and
+ * it passes. The unwrapped failure was not repeated for it: import protection
+ * is keyed on the module path, `@tanstack/react-start/server`, which did not
+ * change.
  */
 export const flushSessionCookies = createServerOnlyFn((headers: Readonly<Headers>): void => {
 	const cookies = headers.getSetCookie();

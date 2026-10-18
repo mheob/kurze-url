@@ -131,8 +131,9 @@ describe(flushSessionCookies, () => {
 	 * already carries, so a route that reads the session twice would lose the
 	 * first flush's cookies. Each flush has to reach `appendResponseHeader` as
 	 * its own call, and the mock does expose `setResponseHeader` (the cache
-	 * headers need it), so the second assertion is what stands in for the
-	 * missing-export guard: it must never be given `set-cookie`.
+	 * headers need it), so the last assertion is what stands in for the
+	 * missing-export guard. Neither flush carries a cache header, so nothing at
+	 * all may reach `setResponseHeader`, which covers `set-cookie` in any casing.
 	 */
 	it('appends again on a second flush instead of replacing', () => {
 		flushSessionCookies(new Headers([['set-cookie', 'a=1; Path=/']]));
@@ -140,7 +141,7 @@ describe(flushSessionCookies, () => {
 
 		expect(mocks.appendResponseHeader).toHaveBeenNthCalledWith(1, 'set-cookie', ['a=1; Path=/']);
 		expect(mocks.appendResponseHeader).toHaveBeenNthCalledWith(2, 'set-cookie', ['b=2; Path=/']);
-		expect(mocks.setResponseHeader).not.toHaveBeenCalledWith('set-cookie', expect.anything());
+		expect(mocks.setResponseHeader).not.toHaveBeenCalled();
 	});
 
 	it('writes nothing when there is no set-cookie header', () => {
