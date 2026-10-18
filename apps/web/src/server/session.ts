@@ -1,8 +1,21 @@
 import { createServerOnlyFn } from '@tanstack/react-start';
-import { appendResponseHeader } from '@tanstack/react-start/server';
+import { appendResponseHeader, setResponseHeader } from '@tanstack/react-start/server';
 
 import { getApiClient } from './api';
 import { createSupabase } from './supabase';
+
+/**
+ * The three headers `@supabase/ssr` passes `setAll` every time it writes
+ * session cookies (`applyServerStorage` in its `dist/main/cookies.js`): a
+ * created or refreshed session, sign-out's cleared cookies, and the PKCE
+ * verifier cookie `signInWithOtp` sets. Their values are `Cache-Control:
+ * private, no-cache, no-store, must-revalidate, max-age=0`, `Expires: 0` and
+ * `Pragma: no-cache`. Named here as `Headers` keys, so lowercase and
+ * case-insensitive, and exactly this set: the cookie adapter copies into
+ * `headers` whatever the library hands it, but what leaves for the response is
+ * decided in `flushSessionCookies`.
+ */
+const SESSION_CACHE_HEADERS = ['cache-control', 'expires', 'pragma'] as const;
 
 /**
  * Distinguishable from an API 401 on purpose. This one means "no session on
@@ -131,18 +144,56 @@ export function authedApiClient(accessToken: string): ReturnType<typeof getApiCl
  * flushSessionCookies(headers);
  * ```
  *
- * Implementation note on *why* `appendResponseHeader` rather than
- * `setResponseHeader`/`setResponseHeaders`: `set-cookie` is the one header
- * where multiple values are legitimate, not a bug, and both of those replace.
- * `setResponseHeaders` (plural), given a `Headers`, gathers every `set-cookie`
- * value it holds and hands them all to `setResponseHeader`, so both helpers end
- * in the singular one. That keeps every cookie it was given, but it first
- * deletes any `set-cookie` the response already carries and marks the header
- * as replaced rather than merged — safe the first time this is called in a
- * request, but a second call (a route that reads the session more than once)
- * would wipe out the first call's cookies rather than add to them.
+ * The cache headers travel with the cookies, and that half is as load-bearing
+ * as the cookies themselves. `@supabase/ssr` sends `Cache-Control`, `Expires`
+ * and `Pragma` (`SESSION_CACHE_HEADERS`) every time it writes session cookies,
+ * a new or refreshed session, sign-out's cleared cookies and the PKCE verifier
+ * included, so that a CDN or reverse proxy never caches a response carrying
+ * one person's session cookie and serves it to someone else. The cookie
+ * adapter faithfully lands them in the local `Headers`, so a flush that
+ * forwarded `set-cookie` alone dropped them there, with no error and no
+ * visible difference: the cookie arrived, and the response in front of it was
+ * left cacheable. **A response that carries a fresh session cookie must never
+ * be cacheable**, which is what forwarding them restores.
+ *
+ * They go out only when a cookie goes out, mirroring `@supabase/ssr`, which
+ * sends them only together with cookies (`applyServerStorage` returns before
+ * `setAll` when it has none to write, so the library never produces the
+ * other combination). A `Headers` holding cache headers and no cookie is
+ * therefore not a state the library reaches, and forwarding it would overwrite
+ * a `Cache-Control` the response already had, on a response that has no
+ * session cookie to protect. Each of the three is written only if it is
+ * present, because a `setAll` can carry cookies without them:
+ * `clearAuthCookiesAtScopes` passes `{}`, and so does a hand-built `Headers`
+ * in a test. `hasSentHeaders` (in `createStorageFromOptions`) is not the cause,
+ * since a second `setAll` on the same client brings none but the local
+ * `Headers` keeps the first call's values.
+ *
+ * Implementation note on *why* `appendResponseHeader` for `set-cookie` rather
+ * than `setResponseHeader`/`setResponseHeaders`: `set-cookie` is the one
+ * header where multiple values are legitimate, not a bug, and both of those
+ * replace. `setResponseHeaders` (plural), given a `Headers`, gathers every
+ * `set-cookie` value it holds and hands them all to `setResponseHeader`, so
+ * both helpers end in the singular one. That keeps every cookie it was given,
+ * but it first deletes any `set-cookie` the response already carries and marks
+ * the header as replaced rather than merged — safe the first time this is
+ * called in a request, but a second call (a route that reads the session more
+ * than once) would wipe out the first call's cookies rather than add to them.
  * `appendResponseHeader` merges into what is already there, so this stays
  * correct no matter how many times, or where, it is called within one request.
+ *
+ * The cache headers are the opposite case, so they use `setResponseHeader`.
+ * For anything but `set-cookie` it is `Headers.set` on the response's pending
+ * state, and the value replaces whatever the response held: each of the three
+ * carries a single value, so replacing is the intent. `appendResponseHeader`
+ * would join them onto an existing `Cache-Control` as `<earlier>, private,
+ * no-cache, ...` (both are read from `@tanstack/start-server-core` 1.169.43's
+ * `internal-request-response.js`), and calling it twice would repeat the
+ * value. Replacing also makes a second flush in the same request idempotent
+ * for these three, where it is additive for cookies. Do not "tidy" the two
+ * calls into one helper: `setResponseHeader('set-cookie', …)` is the
+ * replace-every-cookie bug above, and `appendResponseHeader` for the cache
+ * headers is the duplicated-value one.
  *
  * "Merges" is not "concatenates": values that share a name, domain and path
  * collapse to the last one written, which is what a browser would end up with
@@ -162,16 +213,25 @@ export function authedApiClient(accessToken: string): ReturnType<typeof getApiCl
  * body, so it is never stripped from the client bundle. That live,
  * client-reachable reference to this module is what makes Rolldown resolve
  * this whole file for the client build, including this function's own
- * top-level `appendResponseHeader` import — even though
- * `flushSessionCookies` itself is only ever called from inside `.handler()`
- * closures. Confirmed by building both ways, and re-checked against this
- * import: unwrapped, `pnpm --filter @kurze-url/web build` fails with the same
- * `[import-protection]` error `sendMagicLinkFor`'s docstring describes
- * ("Import denied in client environment" for `@tanstack/react-start/server`),
- * reported against the `appendResponseHeader` call below; wrapped, it passes.
+ * top-level `appendResponseHeader` and `setResponseHeader` import — even
+ * though `flushSessionCookies` itself is only ever called from inside
+ * `.handler()` closures. Confirmed by building both ways when this file
+ * imported `appendResponseHeader` alone: unwrapped, `pnpm --filter
+ * @kurze-url/web build` fails with the same `[import-protection]` error
+ * `sendMagicLinkFor`'s docstring describes ("Import denied in client
+ * environment" for `@tanstack/react-start/server`), reported against the
+ * `appendResponseHeader` call below; wrapped, it passes. After
+ * `setResponseHeader` joined the import only the wrapped build was re-run, and
+ * it passes. The unwrapped failure was not repeated for it: import protection
+ * is keyed on the module path, `@tanstack/react-start/server`, which did not
+ * change.
  */
 export const flushSessionCookies = createServerOnlyFn((headers: Readonly<Headers>): void => {
 	const cookies = headers.getSetCookie();
 	if (cookies.length === 0) return;
 	appendResponseHeader('set-cookie', cookies);
+	for (const name of SESSION_CACHE_HEADERS) {
+		const value = headers.get(name);
+		if (value !== null) setResponseHeader(name, value);
+	}
 });
