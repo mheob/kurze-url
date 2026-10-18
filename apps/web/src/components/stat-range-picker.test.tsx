@@ -59,6 +59,48 @@ const TIMEZONE_CASES = [
 	['America/New_York', 'America/New_York'],
 ] as const;
 
+/**
+ * Each day-of-month shape a day button's name can take, paired with the
+ * number the cell shows: every English ordinal suffix, the 11th to 13th that
+ * take "th", and the last day of the month. German writes every one of them
+ * the same way ("1.", "11.", "30."), but the list is shared so both languages
+ * are held to the same days.
+ */
+const DAY_SHAPES = [
+	['2026-09-01', '1'],
+	['2026-09-02', '2'],
+	['2026-09-03', '3'],
+	['2026-09-04', '4'],
+	['2026-09-11', '11'],
+	['2026-09-12', '12'],
+	['2026-09-13', '13'],
+	['2026-09-21', '21'],
+	['2026-09-22', '22'],
+	['2026-09-23', '23'],
+	['2026-09-30', '30'],
+] as const;
+
+/**
+ * The weekday column headers per language, in the order they render, with
+ * the name of the trigger that opens the calendar in that language. English
+ * weeks start on Sunday and German ones on Monday, which is the locale's own
+ * `weekStartsOn`, not a choice this component makes.
+ */
+const WEEKDAY_HEADERS = [
+	{
+		abbreviations: ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'],
+		language: 'en',
+		names: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+		trigger: 'Choose dates',
+	},
+	{
+		abbreviations: ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'],
+		language: 'de',
+		names: ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'],
+		trigger: 'Zeitraum wählen',
+	},
+] as const;
+
 describe.each(TIMEZONE_CASES)('the range picker under %s', (_label, timezone) => {
 	beforeEach(() => {
 		if (timezone !== undefined) vi.stubEnv('TZ', timezone);
@@ -145,7 +187,7 @@ describe.each(TIMEZONE_CASES)('the range picker under %s', (_label, timezone) =>
 		// Each day cell is a `<td data-day="YYYY-MM-DD">` (react-day-picker's
 		// own attribute, ISO-formatted regardless of locale) wrapping a
 		// `<button>` whose accessible name is a full descriptive string (e.g.
-		// "Today, Friday, September 18th, 2026, selected"), not the bare day
+		// "Today, Friday, September 18, 2026, selected"), not the bare day
 		// number — so the cell is looked up by `data-day` rather than by role
 		// and visible text. `PopoverContent` renders through a portal to
 		// `document.body`, outside `render`'s own `container`, so the lookup
@@ -245,21 +287,9 @@ describe.each(TIMEZONE_CASES)('the range picker under %s', (_label, timezone) =>
 	// Name") by default. react-day-picker's own name for a day button reads
 	// "Thursday, September 10th, 2026": a word-by-word comparison finds "10th"
 	// and never the visible "10", so every day of the grid failed it. The days
-	// below cover each ordinal suffix, the 11th to 13th that take "th", and the
-	// last day of the month.
-	it.each([
-		['2026-09-01', '1'],
-		['2026-09-02', '2'],
-		['2026-09-03', '3'],
-		['2026-09-04', '4'],
-		['2026-09-11', '11'],
-		['2026-09-12', '12'],
-		['2026-09-13', '13'],
-		['2026-09-21', '21'],
-		['2026-09-22', '22'],
-		['2026-09-23', '23'],
-		['2026-09-30', '30'],
-	] as const)(
+	// in `DAY_SHAPES` cover each ordinal suffix, the 11th to 13th that take
+	// "th", and the last day of the month.
+	it.each(DAY_SHAPES)(
 		'holds the visible number of %s in its accessible name as a whole word',
 		async (isoDay, visibleNumber) => {
 			const user = userEvent.setup();
@@ -306,6 +336,111 @@ describe.each(TIMEZONE_CASES)('the range picker under %s', (_label, timezone) =>
 		);
 		// After the range and after today: neither marker.
 		expect(getDayButton('2026-09-19')).toHaveAccessibleName('Saturday, September 19, 2026');
+	});
+
+	// The German interface's calendar. German writes the day of the month as
+	// "30." — an ordinal too, but one whose dot axe's word comparison treats as
+	// punctuation rather than as part of the word, unlike English "30th". The
+	// pattern pins the German order (day, then month) as well, so an English
+	// name that happens to contain the number cannot pass for a German one.
+	it.each(DAY_SHAPES)(
+		'holds the visible number of %s in its German accessible name as a whole word',
+		async (isoDay, visibleNumber) => {
+			const user = userEvent.setup();
+			renderWithI18n(
+				<StatRangePicker
+					language="de"
+					onChange={vi.fn<(window: Readonly<StatsWindow>) => void>()}
+					today={TODAY}
+					window={THIRTY_DAYS}
+				/>,
+				'de',
+			);
+
+			await user.click(screen.getByRole('button', { name: 'Zeitraum wählen' }));
+
+			const dayButton = getDayButton(isoDay);
+			expect(dayButton.textContent).toBe(visibleNumber);
+			expect(dayButton).toHaveAccessibleName(
+				new RegExp(String.raw`\b${visibleNumber}\. September 2026\b`, 'u'),
+			);
+		},
+	);
+
+	it("translates the today and selected markers of a day button's name", async () => {
+		const user = userEvent.setup();
+		renderWithI18n(
+			<StatRangePicker
+				language="de"
+				onChange={vi.fn<(window: Readonly<StatsWindow>) => void>()}
+				today={TODAY}
+				window={THIRTY_DAYS}
+			/>,
+			'de',
+		);
+
+		await user.click(screen.getByRole('button', { name: 'Zeitraum wählen' }));
+
+		// The same three days as the English test above, in the same marker
+		// positions react-day-picker's own German locale uses.
+		expect(getDayButton('2026-09-18')).toHaveAccessibleName(
+			'Heute, Freitag, 18. September 2026, ausgewählt',
+		);
+		expect(getDayButton('2026-09-10')).toHaveAccessibleName(
+			'Donnerstag, 10. September 2026, ausgewählt',
+		);
+		expect(getDayButton('2026-09-19')).toHaveAccessibleName('Samstag, 19. September 2026');
+	});
+
+	// react-day-picker renders the weekday row inside an `aria-hidden` `<thead>`,
+	// so no role query reaches it: the cells are read from the DOM instead. A
+	// screen reader never hears them, but they are on screen.
+	it.each(WEEKDAY_HEADERS)(
+		'writes the weekday headers in the $language locale',
+		async ({ abbreviations, language, names, trigger }) => {
+			const user = userEvent.setup();
+			renderWithI18n(
+				<StatRangePicker
+					language={language}
+					onChange={vi.fn<(window: Readonly<StatsWindow>) => void>()}
+					today={TODAY}
+					window={THIRTY_DAYS}
+				/>,
+				language,
+			);
+
+			await user.click(screen.getByRole('button', { name: trigger }));
+
+			const headers = [...document.querySelectorAll<HTMLTableCellElement>('table thead th')];
+			// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `HTMLTableCellElement` is a DOM lib type, not one this codebase declares.
+			expect(headers.map((header) => header.getAttribute('aria-label'))).toStrictEqual(names);
+			// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `HTMLTableCellElement` is a DOM lib type, not one this codebase declares.
+			expect(headers.map((header) => header.textContent)).toStrictEqual(abbreviations);
+		},
+	);
+
+	// September is spelled the same in both languages, so the caption is read
+	// two months back, where English "July" and German "Juli" differ. The
+	// navigation buttons' own names come from the locale too.
+	it('captions the month and labels the navigation in German', async () => {
+		const user = userEvent.setup();
+		renderWithI18n(
+			<StatRangePicker
+				language="de"
+				onChange={vi.fn<(window: Readonly<StatsWindow>) => void>()}
+				today={TODAY}
+				window={THIRTY_DAYS}
+			/>,
+			'de',
+		);
+
+		await user.click(screen.getByRole('button', { name: 'Zeitraum wählen' }));
+		await user.click(screen.getByRole('button', { name: 'Zum vorherigen Monat' }));
+		await user.click(screen.getByRole('button', { name: 'Zum vorherigen Monat' }));
+
+		expect(screen.getByRole('grid', { name: 'Juli 2026' })).toBeInTheDocument();
+		expect(screen.getByText('Juli 2026')).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Zum nächsten Monat' })).toBeInTheDocument();
 	});
 
 	it('leaves the window unchanged when the popover closes after only one click', async () => {

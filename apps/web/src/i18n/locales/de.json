@@ -384,6 +384,8 @@
 		"preset90": "90 Tage",
 		"rangeSummary": "{{from}} – {{to}}",
 		"customRange": "Zeitraum wählen",
+		"calendarToday": "Heute",
+		"calendarSelected": "ausgewählt",
 		"rangeRetentionNote": "Statistiken werden 90 Tage lang aufbewahrt.",
 		"backToLink": "Zurück zum Link",
 		"viewStatistics": "Statistik",

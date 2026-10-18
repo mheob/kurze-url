@@ -2,12 +2,22 @@
    file trace to two causes. The first is `StatsWindow` (apps/web/src/lib/stats-window.ts),
    whose two string properties are not marked readonly. That file is Task 3's tested interface,
    not this task's to edit, and its own tests pin its exact shape — adding readonly there is out
-   of scope here. The second is the `labelDayButton` parameters, whose types react-day-picker's
-   `Labels` type dictates, so they cannot be made readonly. */
+   of scope here. The second is the parameters of the `labelDayButton` that `dayButtonLabeller`
+   returns, whose types react-day-picker's `Labels` type dictates, so they cannot be made
+   readonly. */
 
 import { parseISO } from 'date-fns';
-import { useState } from 'react';
-import { DateLib, type DateLibOptions, type DateRange, type Modifiers } from 'react-day-picker';
+import { useMemo, useState } from 'react';
+import {
+	DateLib,
+	type DateLibOptions,
+	type DateRange,
+	type Labels,
+	type Locale,
+	type Modifiers,
+} from 'react-day-picker';
+import { de } from 'react-day-picker/locale/de';
+import { enUS } from 'react-day-picker/locale/en-US';
 import { useTranslation } from 'react-i18next';
 
 import { formatDay } from '../lib/format';
@@ -76,46 +86,72 @@ function isoDayFromCalendarDate(date: Readonly<Date>): string {
 }
 
 /**
- * react-day-picker's own `labelDayButton`, with one difference: the day of
+ * The calendar's locale per language: react-day-picker's own locales, not
+ * date-fns' bare ones. Each is the date-fns locale (month and weekday names,
+ * the week starting on Monday in German) plus the library's own translations
+ * of every label it renders — the previous/next buttons, the grid, the
+ * weekday headers — so this file overrides only the one label it has to,
+ * `labelDayButton` below. A date-fns locale alone would translate the dates
+ * and leave those labels English.
+ *
+ * Imported one locale per subpath, never through the `react-day-picker/locale`
+ * barrel. The server bundle keeps react-day-picker external, so Node runs
+ * that barrel as written: it loads all 95 of the library's locale modules,
+ * and the 531 date-fns files behind them, to use two locales.
+ */
+const CALENDAR_LOCALES: Readonly<Record<Language, Locale>> = { de, en: enUS };
+
+/**
+ * The date-fns pattern a day button's name is written in, per language.
+ *
+ * English is react-day-picker's own `PPPP` with one difference: the day of
  * the month is written `30`, not `30th`. The cell's visible text is the bare
  * number, and axe-core 4.14 turned `label-content-name-mismatch` (WCAG 2.5.3,
  * "Label in Name") on by default: it compares word by word, so the library's
  * "Sunday, August 30th, 2026" holds the word `30th` and never `30`, and every
- * day of the grid failed it. The "Today, " prefix and ", selected" suffix are
- * the library's own, in its own order, so a screen reader hears what it
- * always did.
+ * day of the grid failed it.
  *
- * English only, like the rest of the calendar, which is given no locale: the
- * format pattern and both markers are English. Giving the calendar a German
- * locale means replacing all three here, not only passing `locale`.
- *
- * @param date - The day the button stands for.
- * @param modifiers - react-day-picker's state flags for that day; only `today` and `selected` are read.
- * @param options - The date library options, used only when no `dateLib` is given.
- * @param dateLib - The date library `DayPicker` formats with; built from `options` when absent.
- * @returns The button's accessible name.
+ * German is `PPPP` unchanged, "Sonntag, 30. August 2026". The German ordinal
+ * is the number and a dot, and axe turns every character that is neither a
+ * letter nor a digit into a space before it splits the name into words, so
+ * `30.` yields the word `30` and the rule passes. The `CalendarOpenGerman`
+ * story runs it against the whole grid.
  */
-// oxlint-disable-next-line max-params -- react-day-picker's `Labels['labelDayButton']` is `(date, modifiers, options, dateLib)`; a function with fewer parameters would drop `dateLib`, which `DayPicker` hands over so each label does not build its own.
-function labelDayButton(
-	date: Date,
-	modifiers: Modifiers,
-	options?: DateLibOptions,
-	dateLib?: DateLib,
-): string {
-	let label = (dateLib ?? new DateLib(options)).format(date, 'EEEE, MMMM d, y');
-	if (modifiers.today) label = `Today, ${label}`;
-	if (modifiers.selected) label = `${label}, selected`;
-	return label;
-}
+const DAY_BUTTON_PATTERNS: Readonly<Record<Language, string>> = {
+	de: 'PPPP',
+	en: 'EEEE, MMMM d, y',
+};
 
 /**
- * Module scope so `Calendar` gets the same object on every render; an inline
- * `{{ labelDayButton }}` would be a new one each time.
+ * Builds react-day-picker's `labelDayButton` for one language. It writes the
+ * date in that language's pattern, then adds the today marker in front and
+ * the selected marker behind, in the order react-day-picker's own English and
+ * German locales use, so a screen reader hears what it always did. The
+ * markers are passed in rather than written here because they are copy: they
+ * come from the translation catalogue, and the date from the calendar's own
+ * locale, which `DayPicker` hands over as `dateLib`.
+ *
+ * @param pattern - The date-fns pattern for the date, from `DAY_BUTTON_PATTERNS`.
+ * @param todayMarker - The word that marks today, already translated.
+ * @param selectedMarker - The word that marks a selected day, already translated.
+ * @returns The label function `Calendar`'s `labels` prop takes.
  */
-const CALENDAR_LABELS = { labelDayButton };
+function dayButtonLabeller(
+	pattern: string,
+	todayMarker: string,
+	selectedMarker: string,
+): Labels['labelDayButton'] {
+	// oxlint-disable-next-line max-params -- react-day-picker's `Labels['labelDayButton']` is `(date, modifiers, options, dateLib)`; a function with fewer parameters would drop `dateLib`, which `DayPicker` hands over so each label does not build its own.
+	return (date: Date, modifiers: Modifiers, options?: DateLibOptions, dateLib?: DateLib) => {
+		let label = (dateLib ?? new DateLib(options)).format(date, pattern);
+		if (modifiers.today) label = `${todayMarker}, ${label}`;
+		if (modifiers.selected) label = `${label}, ${selectedMarker}`;
+		return label;
+	};
+}
 
 export interface StatRangePickerProps {
-	/** The active language, for date formatting. */
+	/** The active language, for date formatting and the calendar's locale. */
 	readonly language: Language;
 	/** Called with the newly chosen window, from a preset or a completed calendar range. */
 	readonly onChange: (window: StatsWindow) => void;
@@ -165,8 +201,14 @@ export interface StatRangePickerProps {
  * clears the buffer on every open and close, so a half-finished pick left
  * behind by a closed popover cannot resurface the next time it opens.
  *
+ * The calendar speaks the interface's language. Its locale and the pattern
+ * of each day button's name follow the `language` prop, the same value that
+ * `formatDay` formats the summary with, while the today and selected markers
+ * in that name come from the catalogue through `t`. The app sets both from
+ * the one language preference, so they agree.
+ *
  * @param props - The component's props.
- * @param props.language - The active language, for date formatting.
+ * @param props.language - The active language, for date formatting and the calendar's locale.
  * @param props.onChange - Called with the newly chosen window.
  * @param props.today - The current instant, injected for testability.
  * @param props.window - The window the response reported.
@@ -181,6 +223,19 @@ export function StatRangePicker({
 	const { t } = useTranslation();
 	const activePreset = matchingPreset(window, today);
 	const [pendingRange, setPendingRange] = useState<DateRange | undefined>(undefined);
+
+	// `labels` is one of `DayPicker`'s own `useMemo` dependencies, so it stays
+	// the same object across renders, as the module-level constant it replaced
+	// did. The memo's keys are the language and the two markers, plain strings
+	// that change only when the language does.
+	const todayMarker = t('stats.calendarToday');
+	const selectedMarker = t('stats.calendarSelected');
+	const calendarLabels = useMemo(
+		() => ({
+			labelDayButton: dayButtonLabeller(DAY_BUTTON_PATTERNS[language], todayMarker, selectedMarker),
+		}),
+		[language, todayMarker, selectedMarker],
+	);
 
 	const selectedRange: DateRange = pendingRange ?? {
 		from: parseISO(window.from),
@@ -232,7 +287,8 @@ export function StatRangePicker({
 						<PopoverTitle>{t('stats.customRange')}</PopoverTitle>
 						<Calendar
 							disabled={{ after: today, before: parseISO(retentionFloor(today)) }}
-							labels={CALENDAR_LABELS}
+							labels={calendarLabels}
+							locale={CALENDAR_LOCALES[language]}
 							mode="range"
 							onSelect={(range) => {
 								setPendingRange(range);
