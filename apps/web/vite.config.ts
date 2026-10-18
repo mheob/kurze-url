@@ -1,9 +1,9 @@
 import { sentryTanstackStart } from '@sentry/tanstackstart-react/vite';
 import tailwindcss from '@tailwindcss/vite';
 import { devtools } from '@tanstack/devtools-vite';
-import { nitroV2Plugin } from '@tanstack/nitro-v2-vite-plugin';
 import { tanstackStart } from '@tanstack/react-start/plugin/vite';
 import viteReact from '@vitejs/plugin-react';
+import { nitro } from 'nitro/vite';
 import { defineConfig } from 'vite-plus';
 
 /**
@@ -16,9 +16,15 @@ import { defineConfig } from 'vite-plus';
  * publishes this app's source next to its bundle, which is worse than the
  * minified traces the upload was meant to fix.
  *
- * All three output directories are listed, not just the two Vercel produces:
- * `./.output` is what a local or self-hosted `pnpm build` writes (Nitro's
- * default), and a glob that misses it deletes nothing there.
+ * The maps this deletes are the client's. Nitro 3 builds the client
+ * environment straight into its public directory, so they land in
+ * `.vercel/output/static` on Vercel and in `.output/public` for a local or
+ * self-hosted `pnpm build` (Nitro's default). Each needs its own glob, because
+ * a glob that misses a directory deletes nothing there; the third, `./dist`,
+ * is explained where it stands. The server writes no maps at all: Nitro's
+ * `sourcemap` is pinned off below and also governs the SSR build, which Nitro
+ * bundles as one of its services, so the `hidden` setting this plugin applies
+ * reaches the client alone.
  */
 const sentryPlugins =
 	process.env.SENTRY_AUTH_TOKEN !== undefined && process.env.SENTRY_AUTH_TOKEN !== ''
@@ -29,6 +35,9 @@ const sentryPlugins =
 					project: process.env.SENTRY_PROJECT,
 					sourcemaps: {
 						filesToDeleteAfterUpload: [
+							// Not for Nitro 3, which writes nothing to `dist/`. Only for a build
+							// in which Nitro never ran, the failure described above `plugins`:
+							// Vercel's preset would then publish `dist`, maps included.
 							'./dist/**/*.map',
 							'./.output/**/*.map',
 							'./.vercel/output/**/*.map',
@@ -51,11 +60,16 @@ const config = defineConfig({
 		'import.meta.env.VITE_SENTRY_RELEASE': JSON.stringify(process.env.VERCEL_GIT_COMMIT_SHA ?? ''),
 	},
 	// `tanstackStart` alone emits a plain Vite build: `dist/client` plus a
-	// `dist/server/server.js` that nothing knows how to run. Nitro turns that
-	// server bundle into whatever the host expects — on Vercel, a serverless
-	// function plus static assets under `.vercel/output`. Without it Vercel's
-	// TanStack Start preset (`vite build`, output `dist`) publishes the build
-	// as static files, and every route 404s because SSR never runs.
+	// `dist/server/server.js` that nothing knows how to run. Nitro 3's Vite
+	// plugin takes over the build instead: it writes the client environment
+	// straight into the host's static directory and bundles the SSR
+	// environment into the server the host expects, so no `dist/` is written.
+	// On Vercel that is `.vercel/output`, with static assets under `static/`
+	// and one function, `functions/__server.func`; anywhere else it is
+	// `.output`, whose `server/index.mjs` is what `start`, `preview` and
+	// Playwright's `webServer` run. Without Nitro, Vercel's TanStack Start
+	// preset (`vite build`, output `dist`) publishes the build as static files,
+	// and every route 404s because SSR never runs.
 	//
 	// The preset is left to Nitro's own host detection rather than pinned to
 	// `vercel`, so `pnpm build` stays a Node server locally. compatibilityDate
@@ -65,7 +79,31 @@ const config = defineConfig({
 		devtools(),
 		tailwindcss(),
 		tanstackStart(),
-		nitroV2Plugin({ compatibilityDate: '2026-09-04' }),
+		// `sourcemap: false` is Nitro 3's default, written out so that it stays
+		// the answer. getsentry/sentry-javascript#25360, an open pull request,
+		// makes the Sentry plugin turn Nitro's server maps on and upload them
+		// unless a Nitro config sets `sourcemap`, so a routine, auto-merged
+		// Sentry minor would otherwise overturn the 2026-10-03 decision recorded
+		// in CLAUDE.md. That pull request's release is when to revisit it.
+		//
+		// `publicAssets` makes `/assets` a public-asset base that does not fall
+		// through, which is how Nitro tells a served chunk from a missing one.
+		// Without it a missing chunk falls through to the SSR 404 page, and the
+		// `/assets/**` route rule marks that page immutable for a year, so a
+		// browser holding stale HTML after a deploy or a rollback keeps the 404.
+		// With it Nitro answers a miss with a 404 that carries no cache header at
+		// runtime, and on Vercel the CDN answers it with `no-store` before the
+		// function is reached. `maxAge` keeps served chunks immutable for a year.
+		// `dir` (`public/assets`, which does not exist) only says where extra
+		// files for `/assets` would be copied from; Vite writes the chunks into
+		// Nitro's public output itself.
+		nitro({
+			compatibilityDate: '2026-09-04',
+			publicAssets: [
+				{ baseURL: '/assets', dir: 'public/assets', fallthrough: false, maxAge: 31_536_000 },
+			],
+			sourcemap: false,
+		}),
 		viteReact(),
 		// Last, as Sentry's own setup guide requires.
 		...sentryPlugins,

@@ -68,3 +68,40 @@ for (const theme of THEMES) {
 		});
 	}
 }
+
+/*
+ * Chunk URLs are content-hashed, so a chunk that is served may be cached as
+ * immutable for a year, and a chunk that is missing must never be. A browser
+ * holding HTML from an older deployment, or from the one a rollback promotes
+ * again, asks for chunks this deployment does not have; an immutable 404 would
+ * keep that page broken for a year. `vite.config.ts` makes `/assets` a Nitro
+ * public-asset base that does not fall through, which is what tells the two
+ * apart. On a Vercel preview the CDN answers the miss before the function is
+ * reached (`no-store`); locally the Nitro runtime answers it, with no cache
+ * header at all.
+ */
+test('never caches a missing chunk as immutable', async ({ request }) => {
+	const response = await request.get(`/assets/does-not-exist-${crypto.randomUUID()}.js`);
+
+	expect(response.status()).toBe(404);
+	expect(response.headers()['cache-control'] ?? '').not.toContain('immutable');
+});
+
+test('serves a real chunk as immutable, and not its source map', async ({ request }) => {
+	// A chunk this deployment really has: the login page references its own.
+	const login = await request.get('/login');
+	const html = await login.text();
+	const chunk = /\/assets\/[\w-]+\.js/u.exec(html)?.[0];
+	if (chunk === undefined) throw new Error('/login references no /assets/*.js chunk');
+
+	const response = await request.get(chunk);
+	expect(response.status()).toBe(200);
+	expect(response.headers()['cache-control']).toContain('immutable');
+
+	// Sentry uploads the client maps and deletes them before deployment, so the
+	// map is a missing file like any other: a 404, not cached as immutable.
+	const map = await request.get(`${chunk}.map`);
+	expect(map.status()).toBe(404);
+	expect(map.headers()['cache-control'] ?? '').not.toContain('immutable');
+	expect(await map.text()).not.toContain('"mappings"');
+});

@@ -24,6 +24,12 @@
 				"@vitest/browser-playwright"
 			],
 			"groupName": "vite-plus toolchain"
+		},
+		{
+			"description": "Nitro 3 ships as date-stamped betas, pinned exactly in pnpm-workspace.yaml's catalog, and a new one can break the web build in ways no required check notices: source maps reaching .vercel/output/static, a changed Sentry upload, or a different function runtime or region. Each new beta is a non-major update, so the preset's non-major group would carry it without the major ⚠️ label, and Kodiak would merge it once green. This rule makes it wait for approval on the Dependency Dashboard and takes it out of that group with groupName null, so the approved update gets a pull request of its own. The null is required, and it works only because this rule comes after the preset's group-non-major rule: packageRules apply in order, and if nitro stayed in the group, the whole group would inherit dependencyDashboardApproval and wait for an approval nobody gives. The preset's own security.json does the same for GitHub Actions.",
+			"matchPackageNames": ["nitro"],
+			"dependencyDashboardApproval": true,
+			"groupName": null
 		}
 	]
 }
