@@ -33,18 +33,23 @@ const mocks = vi.hoisted(() => ({
 	 * the check accepts once wrapped.
 	 */
 	createSupabase: vi.fn<(request: Request, headers: Readonly<Headers>) => FakeSupabaseClient>(),
+	setResponseHeader: vi.fn<(name: string, value: string | readonly string[]) => void>(),
 }));
 
 vi.mock('./supabase', () => ({
 	createSupabase: mocks.createSupabase,
 }));
 
-// Exposes `appendResponseHeader` and nothing else on purpose. Vitest throws when code reads an
-// export a mock factory did not define, so a `flushSessionCookies` that reached for
-// `setResponseHeader` (which replaces every cookie already on the response) fails here instead
-// of passing against a mock that quietly allows it.
+// Exposes the two helpers `flushSessionCookies` uses and nothing else on purpose. Vitest throws
+// when code reads an export a mock factory did not define, so a flush that reached for
+// `setResponseHeaders` or `setCookie` fails here instead of passing against a mock that quietly
+// allows it. `setResponseHeader` is on the list because the cache headers need it, and it is also
+// the helper that would replace every cookie already on the response if it were given
+// `set-cookie`; the missing export no longer guards that, so the `set-cookie` tests below assert
+// that nothing but the three cache headers ever reaches it.
 vi.mock('@tanstack/react-start/server', () => ({
 	appendResponseHeader: mocks.appendResponseHeader,
+	setResponseHeader: mocks.setResponseHeader,
 }));
 
 function req(): [Request, Headers] {
@@ -96,6 +101,7 @@ describe(requireSession, () => {
 describe(flushSessionCookies, () => {
 	beforeEach(() => {
 		mocks.appendResponseHeader.mockClear();
+		mocks.setResponseHeader.mockClear();
 	});
 
 	/**
@@ -124,8 +130,9 @@ describe(flushSessionCookies, () => {
 	 * `setResponseHeader('set-cookie', …)` would replace what the response
 	 * already carries, so a route that reads the session twice would lose the
 	 * first flush's cookies. Each flush has to reach `appendResponseHeader` as
-	 * its own call, and the module mock above has no `setResponseHeader` to
-	 * fall back on.
+	 * its own call, and the mock does expose `setResponseHeader` (the cache
+	 * headers need it), so the second assertion is what stands in for the
+	 * missing-export guard: it must never be given `set-cookie`.
 	 */
 	it('appends again on a second flush instead of replacing', () => {
 		flushSessionCookies(new Headers([['set-cookie', 'a=1; Path=/']]));
@@ -133,11 +140,113 @@ describe(flushSessionCookies, () => {
 
 		expect(mocks.appendResponseHeader).toHaveBeenNthCalledWith(1, 'set-cookie', ['a=1; Path=/']);
 		expect(mocks.appendResponseHeader).toHaveBeenNthCalledWith(2, 'set-cookie', ['b=2; Path=/']);
+		expect(mocks.setResponseHeader).not.toHaveBeenCalledWith('set-cookie', expect.anything());
 	});
 
 	it('writes nothing when there is no set-cookie header', () => {
 		flushSessionCookies(new Headers());
 
 		expect(mocks.appendResponseHeader).not.toHaveBeenCalled();
+	});
+
+	/**
+	 * What `@supabase/ssr` hands `setAll` next to the cookies of a refreshed or
+	 * new session (`applyServerStorage`, `dist/main/cookies.js`), landed in the
+	 * local `Headers` by `createCookieAdapter`. They exist so that no CDN or
+	 * reverse proxy caches a response carrying one person's session cookie and
+	 * serves it to someone else. Dropping them, which is what `flushSessionCookies`
+	 * did while it forwarded `set-cookie` alone, leaves the cookie on a response
+	 * that anything in front of this app is free to cache.
+	 *
+	 * `setResponseHeader` replaces, which is right for headers that carry one
+	 * value. `appendResponseHeader` here would make `Cache-Control` read
+	 * `<whatever was there>, private, no-cache, ...`, and the exactly-once
+	 * assertion on it is what rules that out.
+	 */
+	it('forwards the cache headers next to the cookies', () => {
+		const adapterHeaders = new Headers();
+		adapterHeaders.append('set-cookie', 'a=1; Path=/');
+		adapterHeaders.set('cache-control', 'private, no-cache, no-store, must-revalidate, max-age=0');
+		adapterHeaders.set('expires', '0');
+		adapterHeaders.set('pragma', 'no-cache');
+
+		flushSessionCookies(adapterHeaders);
+
+		expect(mocks.appendResponseHeader).toHaveBeenCalledExactlyOnceWith('set-cookie', [
+			'a=1; Path=/',
+		]);
+		expect(mocks.setResponseHeader).toHaveBeenCalledTimes(3);
+		expect(mocks.setResponseHeader).toHaveBeenCalledWith(
+			'cache-control',
+			'private, no-cache, no-store, must-revalidate, max-age=0',
+		);
+		expect(mocks.setResponseHeader).toHaveBeenCalledWith('expires', '0');
+		expect(mocks.setResponseHeader).toHaveBeenCalledWith('pragma', 'no-cache');
+	});
+
+	it('forwards each cache header that is present and skips the ones that are not', () => {
+		flushSessionCookies(
+			new Headers([
+				['set-cookie', 'a=1; Path=/'],
+				['cache-control', 'no-store'],
+			]),
+		);
+
+		expect(mocks.setResponseHeader).toHaveBeenCalledExactlyOnceWith('cache-control', 'no-store');
+	});
+
+	/**
+	 * "Exactly the set `@supabase/ssr` uses": the adapter copies whatever the
+	 * library passes into this `Headers`, but forwarding is a decision made here.
+	 * A header outside the three would be replacing something on a response this
+	 * function has no business touching.
+	 */
+	it('forwards nothing but the three cache headers', () => {
+		flushSessionCookies(
+			new Headers([
+				['set-cookie', 'a=1; Path=/'],
+				['cache-control', 'no-store'],
+				['content-type', 'text/plain'],
+				['x-anything', 'else'],
+			]),
+		);
+
+		expect(mocks.setResponseHeader).toHaveBeenCalledExactlyOnceWith('cache-control', 'no-store');
+	});
+
+	it('writes only the cookies when no cache header came with them', () => {
+		flushSessionCookies(new Headers([['set-cookie', 'a=1; Path=/']]));
+
+		expect(mocks.appendResponseHeader).toHaveBeenCalledExactlyOnceWith('set-cookie', [
+			'a=1; Path=/',
+		]);
+		expect(mocks.setResponseHeader).not.toHaveBeenCalled();
+	});
+
+	it('writes nothing at all when the Headers is empty', () => {
+		flushSessionCookies(new Headers());
+
+		expect(mocks.appendResponseHeader).not.toHaveBeenCalled();
+		expect(mocks.setResponseHeader).not.toHaveBeenCalled();
+	});
+
+	/**
+	 * Mirrors `@supabase/ssr`, which never produces this state: it sends the
+	 * cache headers only together with cookies (`applyServerStorage` returns
+	 * before `setAll` when it has none to write). Forwarding them anyway would
+	 * overwrite a `Cache-Control` the response already had, on a response that
+	 * carries no session cookie to protect.
+	 */
+	it('does not forward cache headers when no cookie came with them', () => {
+		flushSessionCookies(
+			new Headers([
+				['cache-control', 'private, no-cache, no-store, must-revalidate, max-age=0'],
+				['expires', '0'],
+				['pragma', 'no-cache'],
+			]),
+		);
+
+		expect(mocks.appendResponseHeader).not.toHaveBeenCalled();
+		expect(mocks.setResponseHeader).not.toHaveBeenCalled();
 	});
 });
