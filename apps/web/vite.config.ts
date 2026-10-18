@@ -20,11 +20,11 @@ import { defineConfig } from 'vite-plus';
  * environment straight into its public directory, so they land in
  * `.vercel/output/static` on Vercel and in `.output/public` for a local or
  * self-hosted `pnpm build` (Nitro's default). Each needs its own glob, because
- * a glob that misses a directory deletes nothing there. Nothing is written to
- * `dist/` any more, so no glob points there. The server writes no maps at all:
- * Nitro's `sourcemap` defaults to false and also governs the SSR build, which
- * Nitro bundles as one of its services, so the `hidden` setting this plugin
- * applies reaches the client alone.
+ * a glob that misses a directory deletes nothing there; the third, `./dist`,
+ * is explained where it stands. The server writes no maps at all: Nitro's
+ * `sourcemap` is pinned off below and also governs the SSR build, which Nitro
+ * bundles as one of its services, so the `hidden` setting this plugin applies
+ * reaches the client alone.
  */
 const sentryPlugins =
 	process.env.SENTRY_AUTH_TOKEN !== undefined && process.env.SENTRY_AUTH_TOKEN !== ''
@@ -34,7 +34,14 @@ const sentryPlugins =
 					org: process.env.SENTRY_ORG,
 					project: process.env.SENTRY_PROJECT,
 					sourcemaps: {
-						filesToDeleteAfterUpload: ['./.output/**/*.map', './.vercel/output/**/*.map'],
+						filesToDeleteAfterUpload: [
+							// Not for Nitro 3, which writes nothing to `dist/`. Only for a build
+							// in which Nitro never ran, the failure described above `plugins`:
+							// Vercel's preset would then publish `dist`, maps included.
+							'./dist/**/*.map',
+							'./.output/**/*.map',
+							'./.vercel/output/**/*.map',
+						],
 					},
 				}),
 			]
@@ -72,7 +79,13 @@ const config = defineConfig({
 		devtools(),
 		tailwindcss(),
 		tanstackStart(),
-		nitro({ compatibilityDate: '2026-09-04' }),
+		// `sourcemap: false` is Nitro 3's default, written out so that it stays
+		// the answer. getsentry/sentry-javascript#25360, an open pull request,
+		// makes the Sentry plugin turn Nitro's server maps on and upload them
+		// unless a Nitro config sets `sourcemap`, so a routine, auto-merged
+		// Sentry minor would otherwise overturn the 2026-10-03 decision recorded
+		// in CLAUDE.md. That pull request's release is when to revisit it.
+		nitro({ compatibilityDate: '2026-09-04', sourcemap: false }),
 		viteReact(),
 		// Last, as Sentry's own setup guide requires.
 		...sentryPlugins,
