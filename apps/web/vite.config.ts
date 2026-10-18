@@ -85,7 +85,25 @@ const config = defineConfig({
 		// unless a Nitro config sets `sourcemap`, so a routine, auto-merged
 		// Sentry minor would otherwise overturn the 2026-10-03 decision recorded
 		// in CLAUDE.md. That pull request's release is when to revisit it.
-		nitro({ compatibilityDate: '2026-09-04', sourcemap: false }),
+		//
+		// `publicAssets` makes `/assets` a public-asset base that does not fall
+		// through, which is how Nitro tells a served chunk from a missing one.
+		// Without it a missing chunk falls through to the SSR 404 page, and the
+		// `/assets/**` route rule marks that page immutable for a year, so a
+		// browser holding stale HTML after a deploy or a rollback keeps the 404.
+		// With it Nitro answers a miss with a 404 that carries no cache header at
+		// runtime, and on Vercel the CDN answers it with `no-store` before the
+		// function is reached. `maxAge` keeps served chunks immutable for a year.
+		// `dir` (`public/assets`, which does not exist) only says where extra
+		// files for `/assets` would be copied from; Vite writes the chunks into
+		// Nitro's public output itself.
+		nitro({
+			compatibilityDate: '2026-09-04',
+			publicAssets: [
+				{ baseURL: '/assets', dir: 'public/assets', fallthrough: false, maxAge: 31_536_000 },
+			],
+			sourcemap: false,
+		}),
 		viteReact(),
 		// Last, as Sentry's own setup guide requires.
 		...sentryPlugins,
