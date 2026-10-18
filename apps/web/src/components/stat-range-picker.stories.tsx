@@ -48,3 +48,28 @@ export const CalendarOpen: StoryObj<typeof meta> = {
 		await expect(screen.getByRole('dialog', { name: 'Choose dates' })).toBeInTheDocument();
 	},
 };
+
+/**
+ * The open calendar in the German interface, which is what puts the German
+ * day-button names in front of the a11y addon's axe run. German writes the
+ * day of the month as an ordinal ("18."), and axe 4.14's
+ * `label-content-name-mismatch` (WCAG 2.5.3) compares the visible "18"
+ * against the name word by word; this story is the proof that the dot does
+ * not cost the word, the way English "18th" did. The `language` arg drives
+ * the calendar's locale and the global drives the catalogue, the two halves
+ * the app always sets together. The assertion on today's name keeps the
+ * story from passing on an English calendar inside a German page.
+ */
+export const CalendarOpenGerman: StoryObj<typeof meta> = {
+	args: { language: 'de' },
+	globals: { language: 'de' },
+	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Storybook's own `play` function context type; not this codebase's to mark readonly.
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await userEvent.click(canvas.getByRole('button', { name: 'Zeitraum wählen' }));
+		await expect(screen.getByRole('dialog', { name: 'Zeitraum wählen' })).toBeInTheDocument();
+		await expect(
+			screen.getByRole('button', { name: 'Heute, Freitag, 18. September 2026, ausgewählt' }),
+		).toBeInTheDocument();
+	},
+};
