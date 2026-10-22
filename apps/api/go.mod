@@ -2,6 +2,8 @@ module github.com/mheob/kurze-url/apps/api
 
 go 1.27.0
 
+toolchain go1.27.3
+
 require (
 	github.com/MicahParks/keyfunc/v3 v3.8.2
 	github.com/danielgtaylor/huma/v2 v2.39.1
