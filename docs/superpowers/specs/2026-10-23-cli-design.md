@@ -63,7 +63,7 @@ All four act with the person's own rights in their own teams. They speak English
 These would make the CLI a failure even if it worked:
 
 - **No CLI-specific API endpoint.** The CLI is a thin client over `/v1`, the principle `06-api-design.md` records. Name resolution such as team slug to UUID, folder name to UUID or slug to link happens in the CLI, from existing endpoints. The web app resolves team slugs the same way (`requireTeamId`).
-- **No Supabase access beyond the auth endpoints.** No database, no service role, no secret in the binary. The Supabase project URL and the OAuth client ID are public values.
+- **No Supabase access beyond the auth endpoints.** No database, no service role, no secret in the binary. The Supabase project URL, its publishable key and the OAuth client ID are public values.
 - **No token in `config.yaml`.** Credentials live in the keychain or in their own `0600` file, never next to settings someone might paste into an issue.
 - **No silent fallback to stored tokens on a shared machine.** When the keychain is unavailable, `login` says once that the token goes to a file, and where.
 - **No telemetry.**
@@ -100,9 +100,9 @@ Write each result into this spec's "Verified" section before Part 2 starts.
 
 ### Verified (2026-10-23)
 
-**How it was measured:** `pnpm probe:oauth` (`scripts/oauth-server-probe.ts`) ran against the local stack, Supabase CLI with GoTrue's OAuth 2.1 server switched on in `supabase/config.toml`, on 2026-10-23. Re-run it after a Supabase upgrade: the server is still in beta.
+**How it was measured:** `pnpm probe:oauth` (`scripts/oauth-server-probe.ts`) ran against the local stack, Supabase CLI with GoTrue's OAuth 2.1 server switched on in `supabase/config.toml`, on 2026-10-23. The RFC 8414 discovery path's 404 comes from a `curl` during that change. Re-run the probe after a Supabase upgrade: the server is still in beta.
 
-**Scope:** these are the local stack's answers. Production and Preview run the same server, but their token lifetime and reuse interval are dashboard settings. The release checklist (see "Testing") repeats `login`, `logout` and a command against Production.
+**Scope:** these are the local stack's answers. Production and Preview run the same server behind Supabase's hosted gateway, and their token lifetime and reuse interval are dashboard settings. The release checklist (see "Testing") repeats `login`, `logout` and a command against Production.
 
 | Finding | Measured | What it decides |
 | --- | --- | --- |
@@ -110,11 +110,12 @@ Write each result into this spec's "Verified" section before Part 2 starts.
 | Registered loopback URI | `http://127.0.0.1:53682/callback` gets a 302 to `<site_url>/oauth/consent?authorization_id=…` | — |
 | Same host, unregistered port (`:53999`) | **400**, no redirect | Ports are matched exactly. **Fixed ports:** the CLI tries 53682, 53683 and 53684 in order, all three registered. It fails with a clear message when none is free |
 | `localhost` instead of `127.0.0.1` | **400** | The CLI binds and registers `127.0.0.1` only |
-| `aud` / `iss` / `role` of a CLI access token | `authenticated` / `<project>/auth/v1` / `authenticated`. It also carries `client_id` and `session_id` | **API unchanged:** the existing verifier accepts CLI tokens, so Part 1's audience change is not needed. `client_id` would allow scoping CLI tokens later (option B) |
+| What the API's verifier checks, on a CLI access token | `aud` `authenticated`, `iss` `<project>/auth/v1`, header `alg` `ES256` with a `kid` listed in the JWKS, and `sub` a UUID. `role` is `authenticated`, and the token also carries `client_id` and `session_id` | **API unchanged:** every check in `apps/api/internal/auth/jwt.go` passes, so Part 1's audience change is not needed. `client_id` would allow scoping CLI tokens later (option B) |
+| The OAuth calls without the `apikey` header | Discovery 200; authorize 302; code exchange and refresh reach GoTrue (400 `invalid_grant` / `refresh_token_not_found` for the deliberately invalid values); logout reaches GoTrue (403 `bad_jwt` for an invalid token). No gateway refusal | The local gateway does not require the key. The hosted gateway is not measured here, so the CLI still sends the project's **publishable key** as `apikey` on every Supabase auth call (my call). It is public: the web app ships it to every browser (Part 3, "Environments") |
 | Access-token lifetime | 3600 s locally (`jwt_expiry`) | The CLI refreshes when fewer than 60 s remain, and on a 401 (my call) |
-| Refresh rotation | `rotates: true` | The spec's rule stands: write the new refresh token back at once |
-| Old refresh token, used again right after rotating | 200 within the 10 s reuse interval | Two CLI processes refreshing at the same moment both succeed |
-| The same old token, 12 s later | **Also 200** | GoTrue still honoured it after the interval, most likely because it was still the parent of the active token. The CLI does not rely on this, but a leaked token is not dead the moment it rotates. That is one more reason for the keychain |
+| Refresh rotation | Every refresh returns a new refresh token | The spec's rule stands: write the new refresh token back at once |
+| The **parent** of the active refresh token, used again (session rotated twice: original → child → active) | 200 and **the active token back**, both right away and 12 s later, past the 10 s interval | Two CLI processes that refresh from the same stored token at the same moment both end up holding the same active token, so their write-backs agree |
+| The **grandparent** (the original), used again | Within the interval: 200, but a token other than the active one. After the interval: **400**, while the active token still refreshes (200): the session is not revoked | A process holding a token two rotations old fails. On a refresh failure the CLI therefore re-reads the stored token once and retries if another process rotated it, and only then asks for `login` (my call). A leaked older token is refused once the interval has passed, but the token's parent stays usable indefinitely, which is one more reason for the keychain |
 | Second authorize after a consent was given | Lands on `/oauth/consent` again. `getAuthorizationDetails` returns only `redirect_url`, with no `authorization_id` | The consent page tells the two apart by the missing `authorization_id`, and redirects at once (Part 2) |
 | CLI `POST /auth/v1/logout?scope=local` with its access token | The CLI's refresh then fails with **400**, and the browser's session still refreshes with **200** | **`logout`** uses exactly this call. No separate revocation endpoint is needed |
 | A browser signs out with `scope=local` | The CLI's session still refreshes with **200** | The web's local-by-default sign-out leaves the CLI alone, as Part 2 intends |
@@ -142,7 +143,7 @@ Do this once in each Supabase project's dashboard before Part 2's e2e can pass. 
 4. **Authentication → URL Configuration:** the magic-link callback must still be admitted when it carries the `next` parameter Part 2 adds (`/auth/callback?next=…`).
    - The local stack lists exact URLs (`http://127.0.0.1:3000/auth/callback`).
    - Part 2 finds out locally whether an exact entry matches with a query string or needs a `**` suffix. Then give Production's and Preview's entries the same form.
-5. **Token settings:** keep refresh-token rotation on and the reuse interval at its default (10 s). The findings above were measured with those.
+5. **Token settings:** keep refresh-token rotation on and the reuse interval at its default (10 s). The refresh findings above were measured with those: the grandparent's reuse turned from 200 to 400 across that interval.
 
 ## Part 2 — Consent page in the web app
 
@@ -332,12 +333,12 @@ teams:
 
 - **Keychain:** `zalando/go-keyring`, service `kurze-url`, one entry per environment, so production and preview logins do not overwrite each other.
 - **Fallback file:** `os.UserConfigDir()/kurze-url/credentials-<environment>.json` with mode `0600`. The CLI uses it only when the keychain is unavailable, and `login` says so once.
-- **Refresh:** a refreshed refresh token is written back at once, and atomically when it goes to the file.
+- **Refresh:** a refreshed refresh token is written back at once, and atomically when it goes to the file. When a refresh fails, the CLI re-reads the stored token once and retries if another process has rotated it in the meantime. It asks for `login` only after that (see "Verified").
 
 ### Environments
 
-- **Defaults:** production. The API is `https://api.kurze-url.app`. The production Supabase URL, the production CLI client ID and the shared hostname `go.kurze-url.app` are compiled in.
-- **Overrides,** for development and preview: `KURZE_URL_API_URL`, `KURZE_URL_SUPABASE_URL`, `KURZE_URL_CLIENT_ID` and `KURZE_URL_SHARED_HOST`.
+- **Defaults:** production. The API is `https://api.kurze-url.app`. The production Supabase URL, its publishable key, the production CLI client ID and the shared hostname `go.kurze-url.app` are compiled in. The publishable key travels as `apikey` on every Supabase auth call (see "Verified").
+- **Overrides,** for development and preview: `KURZE_URL_API_URL`, `KURZE_URL_SUPABASE_URL`, `KURZE_URL_SUPABASE_PUBLISHABLE_KEY`, `KURZE_URL_CLIENT_ID` and `KURZE_URL_SHARED_HOST`.
 - **Protected previews:** API previews sit behind Vercel's deployment protection. When `KURZE_URL_VERCEL_BYPASS` is set, every API request carries it as `x-vercel-protection-bypass`. (My call.)
 - **Credential key:** the environment name in the credential key comes from the Supabase URL, so switching overrides never reuses another environment's token.
 
