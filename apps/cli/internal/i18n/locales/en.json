@@ -1,1 +1,8 @@
-{}
+{
+	"login.openManually": "Could not open a browser. Open this address to sign in: {url}",
+	"login.page.failureBody": "The terminal says how to continue.",
+	"login.page.failureTitle": "Sign-in cancelled",
+	"login.page.successBody": "The CLI is now connected to your account. You can close this window and continue in the terminal.",
+	"login.page.successTitle": "Signed in",
+	"login.waiting": "Waiting for the sign-in in your browser. Press Ctrl+C to cancel."
+}

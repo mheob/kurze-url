@@ -1,1 +1,8 @@
-{}
+{
+	"login.openManually": "Der Browser konnte nicht geöffnet werden. Öffne diese Adresse, um dich anzumelden: {url}",
+	"login.page.failureBody": "Im Terminal steht, wie es weitergeht.",
+	"login.page.failureTitle": "Anmeldung abgebrochen",
+	"login.page.successBody": "Die CLI ist jetzt mit deinem Konto verbunden. Du kannst dieses Fenster schließen und im Terminal weitermachen.",
+	"login.page.successTitle": "Angemeldet",
+	"login.waiting": "Warte auf die Anmeldung im Browser. Mit Strg+C brichst du ab."
+}
