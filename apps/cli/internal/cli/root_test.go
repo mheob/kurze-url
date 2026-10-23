@@ -123,6 +123,23 @@ func TestUnknownCompletionShellIsAUsageError(t *testing.T) {
 	require.Contains(t, s.stderr.String(), "unknown command")
 }
 
+// Cobra builds the four shell subcommands with its own bare cobra.NoArgs, so
+// an extra argument used to be a plain failure: exit 1 and no hint.
+func TestExtraArgumentToACompletionShellIsAUsageError(t *testing.T) {
+	for _, shell := range []string{"bash", "zsh", "fish", "powershell"} {
+		t.Run(shell, func(t *testing.T) {
+			s := newStreams()
+
+			code := s.run("completion", shell, "extra")
+
+			require.Equal(t, 2, code)
+			require.Empty(t, s.stdout.String())
+			require.Contains(t, s.stderr.String(),
+				"Run 'kurze-url completion "+shell+" --help' for usage.")
+		})
+	}
+}
+
 func TestBareCompletionIsAUsageError(t *testing.T) {
 	s := newStreams()
 

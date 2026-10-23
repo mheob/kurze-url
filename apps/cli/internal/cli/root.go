@@ -73,15 +73,22 @@ func newRoot(d *Deps) *cobra.Command {
 
 	root.AddCommand(newVersionCmd(d))
 
-	// Cobra's own "completion bash|zsh|fish|powershell" stays, but it ships
-	// as a non-runnable command with a bare cobra.NoArgs, so "completion
-	// nope" would print help and exit 0. Cobra adds it on its own during
-	// execution and skips it when one exists, so adding it here, early,
-	// lets it be given a group's shape too.
+	// Cobra's own "completion bash|zsh|fish|powershell" stays, but it builds
+	// the command with a bare cobra.NoArgs and without a RunE, so
+	// "completion nope" would print help and exit 0, and the four shell
+	// subcommands report an extra argument as a plain failure (exit 1, no
+	// hint). The parent gets a group's shape and each shell keeps its own
+	// RunE with a wrapped validator. Cobra adds the command on its own
+	// during execution and skips it when one exists, so adding it here,
+	// early, is what lets it be changed at all.
 	root.InitDefaultCompletionCmd()
 	for _, cmd := range root.Commands() {
-		if cmd.Name() == "completion" {
-			asGroup(cmd)
+		if cmd.Name() != "completion" {
+			continue
+		}
+		asGroup(cmd)
+		for _, shell := range cmd.Commands() {
+			shell.Args = usageArgs(cobra.NoArgs)
 		}
 	}
 
