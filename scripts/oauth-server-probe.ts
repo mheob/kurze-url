@@ -6,16 +6,20 @@
 // rotation, the sign-out scopes and a revoked grant reach a CLI session. This script drives a
 // complete public-client flow over plain HTTP and prints what it observed as one JSON object:
 // it registers a client, authorizes with PKCE, approves the consent as a signed-in user,
-// exchanges the code, refreshes, and signs out in each scope. The spec's "Verified" section is
-// written from that output, and re-running it is how a later Supabase release gets re-checked.
+// exchanges the code, refreshes, and signs out in each scope. It also sends the OAuth calls
+// once without the `apikey` header, the way a browser and a plain OAuth client send them, to
+// show whether the CLI needs the publishable key. The spec's "Verified" section is written
+// from that output, and re-running it is how a later Supabase release gets re-checked.
 //
 // Run it with the local stack up (`supabase start`): `pnpm probe:oauth`. It reads the stack's
-// URL and keys from `supabase status -o json` and refuses any API URL whose host is not
-// 127.0.0.1 or localhost, before the first request — `--api-url` exists to prove that refusal.
-// No key, token, authorization code or PKCE verifier is ever printed; the report carries
-// lengths, claim names and claim values that are not credentials. The user and the client it
-// creates are deleted again even when a step fails (`--fail-after-client` forces one, by
-// sending a wrong PKCE verifier to the token endpoint).
+// URL and keys from `supabase status -o json` and refuses any API URL, and any endpoint the
+// discovery document names, whose host is not 127.0.0.1 or localhost — before the first
+// request for the former, before any credential leaves for the latter. `--api-url` exists to
+// prove that refusal. No key, token, authorization code or PKCE verifier is ever printed; the
+// report carries lengths, claim names and claim values that are not credentials. The user and
+// the client it creates are deleted again even when a step fails (`--fail-after-client` forces
+// one, by sending a wrong PKCE verifier to the token endpoint), and a failed delete makes the
+// run exit 1.
 
 import { execFileSync } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
@@ -40,6 +44,7 @@ const MILLISECONDS_PER_SECOND = 1000;
 const DEFAULT_REUSE_INTERVAL_SECONDS = 10;
 // Past the interval, so the reuse is judged by the rule and not by the clock's rounding.
 const REUSE_MARGIN_SECONDS = 2;
+const UUID_PATTERN = /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/u;
 const CONFIG_PATTERNS = {
 	reuseInterval: /^refresh_token_reuse_interval\s*=\s*(?<value>\d+)/mu,
 	siteUrl: /^site_url\s*=\s*"(?<value>[^"]+)"/mu,
@@ -49,6 +54,9 @@ type Headers = Readonly<Record<string, string>>;
 type Json = Readonly<Record<string, unknown>>;
 type Reply = Readonly<{ body: Json; location: string | undefined; status: number }>;
 type Tokens = Readonly<{ access: string; refresh: string }>;
+type Outcome = Readonly<{ reason: string | null; status: number }>;
+type Reuse = Readonly<{ returnsActive: boolean; status: number }>;
+type Chain = Readonly<{ access: string; chain: readonly [string, string, string] }>;
 type Redirect = Readonly<{
 	error: string | null;
 	locationOrigin: string | null;
@@ -70,6 +78,8 @@ type Probe = Readonly<{
 	auth: string;
 	authorizationEndpoint: string;
 	clientId: string;
+	codeChallengeMethods: readonly string[];
+	discoveryUrl: string;
 	email: string;
 	password: string;
 	tokenEndpoint: string;
@@ -88,8 +98,8 @@ function flagValue(name: string): string | undefined {
 	return cliArgs.includes(name) ? cliArgs[cliArgs.indexOf(name) + 1] : undefined;
 }
 
-function assertLocal(apiUrl: string): void {
-	const { hostname } = new URL(apiUrl);
+function assertLocal(url: string): void {
+	const { hostname } = new URL(url);
 	if (!LOCAL_HOSTS.has(hostname)) {
 		throw new Error(`refusing ${hostname}: this probe only talks to the local Supabase stack`);
 	}
@@ -97,6 +107,12 @@ function assertLocal(apiUrl: string): void {
 
 function isRecord(value: unknown): value is Json {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function strings(value: unknown): readonly string[] {
+	return Array.isArray(value)
+		? value.filter((item): item is string => typeof item === 'string')
+		: [];
 }
 
 function parseJson(text: string): unknown {
@@ -135,6 +151,10 @@ function configValue(key: keyof typeof CONFIG_PATTERNS): string | null {
 	return CONFIG_PATTERNS[key].exec(text)?.groups?.value ?? null;
 }
 
+function reuseIntervalSeconds(): number {
+	return Number(configValue('reuseInterval') ?? DEFAULT_REUSE_INTERVAL_SECONDS);
+}
+
 async function send(request: Request): Promise<Reply> {
 	const contentType =
 		request.form === undefined ? 'application/json' : 'application/x-www-form-urlencoded';
@@ -156,14 +176,19 @@ async function send(request: Request): Promise<Reply> {
 	};
 }
 
-// Names what went wrong without echoing a body that might carry a credential.
-function fail(step: string, reply: Reply): never {
-	const code = [reply.body.error_code, reply.body.error, reply.body.code].find(
+// The server's own words for a refusal (an error code or a gateway message such as "No API key
+// found in request"), never a body that might carry a credential.
+function reasonOf(reply: Reply): string | null {
+	const { body } = reply;
+	const reason = [body.error_code, body.error, body.message, body.msg, body.code].find(
 		(value) => typeof value === 'string',
 	);
-	throw new Error(
-		`${step} answered ${reply.status}${typeof code === 'string' ? ` (${code})` : ''}`,
-	);
+	return typeof reason === 'string' ? reason : null;
+}
+
+function fail(step: string, reply: Reply): never {
+	const reason = reasonOf(reply);
+	throw new Error(`${step} answered ${reply.status}${reason === null ? '' : ` (${reason})`}`);
 }
 
 function pkce(): Readonly<{ challenge: string; verifier: string }> {
@@ -171,16 +196,17 @@ function pkce(): Readonly<{ challenge: string; verifier: string }> {
 	return { challenge: createHash('sha256').update(verifier).digest('base64url'), verifier };
 }
 
-function claimsOf(accessToken: string): Json {
-	const [, payload = ''] = accessToken.split('.');
-	const parsed = parseJson(Buffer.from(payload, 'base64url').toString('utf8'));
+function decodePart(token: string, index: number): Json {
+	const part = token.split('.')[index] ?? '';
+	const parsed = parseJson(Buffer.from(part, 'base64url').toString('utf8'));
 	return isRecord(parsed) ? parsed : {};
 }
 
-function describe(reply: Reply): Redirect {
-	if (reply.location === undefined)
+function describe(reply: Reply, base: string): Redirect {
+	if (reply.location === undefined) {
 		return { error: null, locationOrigin: null, locationPath: null, status: reply.status };
-	const target = new URL(reply.location);
+	}
+	const target = new URL(reply.location, base);
 	return {
 		error: target.searchParams.get('error'),
 		locationOrigin: target.origin,
@@ -191,6 +217,11 @@ function describe(reply: Reply): Redirect {
 
 function asUser(probe: Probe, token: string): Headers {
 	return { apikey: probe.anonKey, authorization: `Bearer ${token}` };
+}
+
+async function outcome(request: Request): Promise<Outcome> {
+	const reply = await send(request);
+	return { reason: reasonOf(reply), status: reply.status };
 }
 
 async function createUser(probe: Probe): Promise<string> {
@@ -235,7 +266,7 @@ async function webSession(probe: Probe): Promise<Tokens> {
 	return { access: String(reply.body.access_token), refresh: String(reply.body.refresh_token) };
 }
 
-async function authorize(probe: Probe, redirectUri: string, challenge: string): Promise<Reply> {
+function authorizeUrl(probe: Probe, redirectUri: string, challenge: string): string {
 	const query = new URLSearchParams({
 		client_id: probe.clientId,
 		code_challenge: challenge,
@@ -244,20 +275,28 @@ async function authorize(probe: Probe, redirectUri: string, challenge: string): 
 		response_type: 'code',
 		state: randomUUID(),
 	});
+	return `${probe.authorizationEndpoint}?${query.toString()}`;
+}
+
+async function authorize(probe: Probe, redirectUri: string, challenge: string): Promise<Reply> {
 	return send({
 		headers: probe.anon,
 		method: 'GET',
-		url: `${probe.authorizationEndpoint}?${query.toString()}`,
+		url: authorizeUrl(probe, redirectUri, challenge),
 	});
 }
 
-async function refreshStatus(probe: Probe, refreshToken: string): Promise<number> {
+async function refreshWith(probe: Probe, refreshToken: string): Promise<Reply> {
 	const form = {
 		client_id: probe.clientId,
 		grant_type: 'refresh_token',
 		refresh_token: refreshToken,
 	};
-	const reply = await send({ form, headers: probe.anon, method: 'POST', url: probe.tokenEndpoint });
+	return send({ form, headers: probe.anon, method: 'POST', url: probe.tokenEndpoint });
+}
+
+async function refreshStatus(probe: Probe, refreshToken: string): Promise<number> {
+	const reply = await refreshWith(probe, refreshToken);
 	return reply.status;
 }
 
@@ -284,7 +323,7 @@ async function codeFrom(
 	started: Reply,
 ): Promise<Omit<Login, 'tokens'> & { code: string }> {
 	if (started.location === undefined) fail('authorize', started);
-	const landing = new URL(started.location);
+	const landing = new URL(started.location, probe.authorizationEndpoint);
 	if (landing.pathname !== CONSENT_PATH)
 		return { code: landing.searchParams.get('code') ?? '', detailsKeys: [], remembered: true };
 	const authorizationUrl = `${probe.auth}/oauth/authorizations/${landing.searchParams.get('authorization_id') ?? ''}`;
@@ -298,7 +337,10 @@ async function codeFrom(
 		details.body.authorization_id === undefined && typeof details.body.redirect_url === 'string';
 	const approved = remembered ? details : await approve(probe, consentToken, authorizationUrl);
 	return {
-		code: new URL(String(approved.body.redirect_url)).searchParams.get('code') ?? '',
+		code:
+			new URL(String(approved.body.redirect_url), probe.authorizationEndpoint).searchParams.get(
+				'code',
+			) ?? '',
 		detailsKeys: Object.keys(details.body).toSorted(),
 		remembered,
 	};
@@ -319,11 +361,8 @@ async function exchange(probe: Probe, code: string, verifier: string): Promise<T
 
 async function cliLogin(probe: Probe, consentToken: string): Promise<Login> {
 	const { challenge, verifier } = pkce();
-	const { code, detailsKeys, remembered } = await codeFrom(
-		probe,
-		consentToken,
-		await authorize(probe, REGISTERED_REDIRECT, challenge),
-	);
+	const started = await authorize(probe, REGISTERED_REDIRECT, challenge);
+	const { code, detailsKeys, remembered } = await codeFrom(probe, consentToken, started);
 	if (code === '') throw new Error('the redirect after consent carried no code');
 	return { detailsKeys, remembered, tokens: await exchange(probe, code, verifier) };
 }
@@ -338,15 +377,78 @@ async function logout(probe: Probe, accessToken: string, scope: 'global' | 'loca
 }
 
 async function redirectFindings(probe: Probe): Promise<Json> {
+	const base = probe.authorizationEndpoint;
 	return {
-		localhostName: describe(await authorize(probe, LOCALHOST_REDIRECT, pkce().challenge)),
-		otherPort: describe(await authorize(probe, OTHER_PORT_REDIRECT, pkce().challenge)),
-		registeredPort: describe(await authorize(probe, REGISTERED_REDIRECT, pkce().challenge)),
+		localhostName: describe(await authorize(probe, LOCALHOST_REDIRECT, pkce().challenge), base),
+		otherPort: describe(await authorize(probe, OTHER_PORT_REDIRECT, pkce().challenge), base),
+		registeredPort: describe(await authorize(probe, REGISTERED_REDIRECT, pkce().challenge), base),
 	};
 }
 
-function tokenFindings(tokens: Tokens): Json {
-	const claims = claimsOf(tokens.access);
+// The OAuth calls once more without `apikey`: a browser following the authorize URL sends no
+// headers, and a plain OAuth client adds none. A gateway refusal ("No API key found in
+// request") means the CLI has to carry the publishable key; GoTrue's own refusal of the
+// deliberately invalid code, token or JWT means the call got through.
+async function gatewayFindings(probe: Probe): Promise<Json> {
+	const none = {};
+	const codeForm = {
+		client_id: probe.clientId,
+		code: 'probe-invalid-code',
+		code_verifier: pkce().verifier,
+		grant_type: 'authorization_code',
+		redirect_uri: REGISTERED_REDIRECT,
+	};
+	const refreshForm = {
+		client_id: probe.clientId,
+		grant_type: 'refresh_token',
+		refresh_token: 'probe-invalid',
+	};
+	const logoutHeaders = { authorization: 'Bearer probe-invalid-token' };
+	return {
+		authorize: await outcome({
+			headers: none,
+			method: 'GET',
+			url: authorizeUrl(probe, REGISTERED_REDIRECT, pkce().challenge),
+		}),
+		codeExchange: await outcome({
+			form: codeForm,
+			headers: none,
+			method: 'POST',
+			url: probe.tokenEndpoint,
+		}),
+		discovery: await outcome({ headers: none, method: 'GET', url: probe.discoveryUrl }),
+		logout: await outcome({
+			headers: logoutHeaders,
+			method: 'POST',
+			url: `${probe.auth}/logout?scope=local`,
+		}),
+		refresh: await outcome({
+			form: refreshForm,
+			headers: none,
+			method: 'POST',
+			url: probe.tokenEndpoint,
+		}),
+	};
+}
+
+async function jwksKids(probe: Probe): Promise<readonly string[]> {
+	const reply = await send({
+		headers: probe.anon,
+		method: 'GET',
+		url: `${probe.auth}/.well-known/jwks.json`,
+	});
+	if (!isSuccess(reply.status)) fail('jwks', reply);
+	const keys: unknown = reply.body.keys;
+	return Array.isArray(keys)
+		? strings(keys.filter((key) => isRecord(key)).map((key: Json) => key.kid))
+		: [];
+}
+
+// What the API's verifier (apps/api/internal/auth/jwt.go) checks beyond `aud` and `iss`: an ES256
+// signature by a key in the JWKS, and a UUID subject.
+function tokenFindings(tokens: Tokens, kids: readonly string[]): Json {
+	const claims = decodePart(tokens.access, 1);
+	const header = decodePart(tokens.access, 0);
 	const combinedJsonBytes = Buffer.byteLength(
 		JSON.stringify({
 			access_token: tokens.access,
@@ -370,37 +472,66 @@ function tokenFindings(tokens: Tokens): Json {
 				session_id_present: typeof claims.session_id === 'string',
 			},
 			combinedJsonBytes,
+			header: {
+				alg: header.alg,
+				kidInJwks: typeof header.kid === 'string' && kids.includes(header.kid),
+				subIsUuid: typeof claims.sub === 'string' && UUID_PATTERN.test(claims.sub),
+			},
 			refreshBytes: Buffer.byteLength(tokens.refresh),
 		},
 	};
 }
 
-// Session 1: the claims, the sizes, and rotation within and after the reuse interval.
-async function refreshFindings(probe: Probe, consentToken: string): Promise<Json> {
+async function rotate(probe: Probe, refreshToken: string): Promise<string> {
+	const reply = await refreshWith(probe, refreshToken);
+	if (!isSuccess(reply.status)) fail('refresh', reply);
+	const next = reply.body.refresh_token;
+	if (typeof next !== 'string' || next === refreshToken)
+		throw new Error('refresh did not rotate the refresh token');
+	return next;
+}
+
+// A fresh CLI session rotated twice: the original token, its child, and the active grandchild.
+async function rotateTwice(probe: Probe, consentToken: string): Promise<Chain> {
 	const { tokens } = await cliLogin(probe, consentToken);
-	const form = {
-		client_id: probe.clientId,
-		grant_type: 'refresh_token',
-		refresh_token: tokens.refresh,
-	};
-	const rotated = await send({
-		form,
-		headers: probe.anon,
-		method: 'POST',
-		url: probe.tokenEndpoint,
-	});
-	if (!isSuccess(rotated.status)) fail('refresh', rotated);
-	const reuseWithinInterval = await refreshStatus(probe, tokens.refresh);
-	const waitedSeconds =
-		Number(configValue('reuseInterval') ?? DEFAULT_REUSE_INTERVAL_SECONDS) + REUSE_MARGIN_SECONDS;
+	const child = await rotate(probe, tokens.refresh);
+	const active = await rotate(probe, child);
+	return { access: tokens.access, chain: [tokens.refresh, child, active] };
+}
+
+async function reuse(probe: Probe, refreshToken: string, active: string): Promise<Reuse> {
+	const reply = await refreshWith(probe, refreshToken);
+	return { returnsActive: reply.body.refresh_token === active, status: reply.status };
+}
+
+// The same two reuses once the interval has passed, then whether the active token survived them.
+async function afterIntervalFindings(probe: Probe, consentToken: string): Promise<Json> {
+	const { chain } = await rotateTwice(probe, consentToken);
+	const waitedSeconds = reuseIntervalSeconds() + REUSE_MARGIN_SECONDS;
 	await sleep(waitedSeconds * MILLISECONDS_PER_SECOND);
-	const reuseAfterInterval = { status: await refreshStatus(probe, tokens.refresh), waitedSeconds };
-	const refresh = {
-		reuseAfterInterval,
-		reuseWithinInterval,
-		rotates: String(rotated.body.refresh_token) !== tokens.refresh,
+	const [original, child, active] = chain;
+	const reuseParentAfter = await reuse(probe, child, active);
+	const reuseGrandparentAfter = await reuse(probe, original, active);
+	return {
+		activeAfterGrandparentReuse: await refreshStatus(probe, active),
+		reuseGrandparentAfter,
+		reuseParentAfter,
+		waitedSeconds,
 	};
-	return { ...tokenFindings(tokens), refresh };
+}
+
+// Session 1: the claims and sizes, then reuse of an older refresh token inside the interval.
+async function refreshFindings(probe: Probe, consentToken: string): Promise<Json> {
+	const within = await rotateTwice(probe, consentToken);
+	const kids = await jwksKids(probe);
+	const [original, child, active] = within.chain;
+	const reuseParentWithin = await reuse(probe, child, active);
+	const reuseGrandparentWithin = await reuse(probe, original, active);
+	const after = await afterIntervalFindings(probe, consentToken);
+	return {
+		...tokenFindings({ access: within.access, refresh: original }, kids),
+		refresh: { ...after, reuseGrandparentWithin, reuseParentWithin, rotates: true },
+	};
 }
 
 // A second browser signs out locally while a CLI session is open: the reverse of the CLI's
@@ -421,10 +552,9 @@ async function localLogoutFindings(
 	const second = await cliLogin(probe, consentToken);
 	await logout(probe, second.tokens.access, 'local');
 	const cliLocalEndsCli = await refreshStatus(probe, second.tokens.refresh);
-	const json = { refresh_token: browser.refresh };
 	const browserRefresh = await send({
 		headers: probe.anon,
-		json,
+		json: { refresh_token: browser.refresh },
 		method: 'POST',
 		url: `${probe.auth}/token?grant_type=refresh_token`,
 	});
@@ -465,69 +595,82 @@ async function endingFindings(
 	};
 }
 
-async function removeFixtures(probe: Probe, fixtures: Readonly<Fixtures>): Promise<void> {
-	const targets = [
-		fixtures.clientId === undefined
-			? undefined
-			: `${probe.auth}/admin/oauth/clients/${fixtures.clientId}`,
-		fixtures.userId === undefined ? undefined : `${probe.auth}/admin/users/${fixtures.userId}`,
-	].filter((url) => url !== undefined);
-	for (const url of targets) {
-		// eslint-disable-next-line no-await-in-loop -- two deletes, and their order keeps the client from outliving its user
+// Each delete is attempted on its own and never throws, so one failure neither skips the other
+// nor replaces the error that ended the run; a failure makes the run exit 1.
+async function removeOne(probe: Probe, url: string): Promise<void> {
+	try {
 		const reply = await send({ headers: probe.admin, method: 'DELETE', url });
-		if (!isSuccess(reply.status))
-			process.stderr.write(
-				`oauth-probe | could not delete ${new URL(url).pathname} (${reply.status})\n`,
-			);
+		if (!isSuccess(reply.status)) throw new Error(`answered ${reply.status}`);
+	} catch (error) {
+		const why = error instanceof Error ? error.message : String(error);
+		process.stderr.write(`oauth-probe | could not delete ${new URL(url).pathname}: ${why}\n`);
+		process.exitCode = 1;
 	}
+}
+
+async function removeFixtures(probe: Probe, fixtures: Readonly<Fixtures>): Promise<void> {
+	if (fixtures.clientId !== undefined) {
+		await removeOne(probe, `${probe.auth}/admin/oauth/clients/${fixtures.clientId}`);
+	}
+	if (fixtures.userId !== undefined)
+		await removeOne(probe, `${probe.auth}/admin/users/${fixtures.userId}`);
 }
 
 async function prepare(): Promise<Probe> {
 	const stack = readStack();
 	const anon = { apikey: stack.anonKey };
-	const discovery = await send({
-		headers: anon,
-		method: 'GET',
-		url: `${stack.apiUrl}${DISCOVERY_PATH}`,
-	});
+	const discoveryUrl = `${stack.apiUrl}${DISCOVERY_PATH}`;
+	const discovery = await send({ headers: anon, method: 'GET', url: discoveryUrl });
 	if (!isSuccess(discovery.status)) fail('discovery', discovery);
+	const authorizationEndpoint = String(discovery.body.authorization_endpoint);
+	const tokenEndpoint = String(discovery.body.token_endpoint);
+	assertLocal(authorizationEndpoint);
+	assertLocal(tokenEndpoint);
 	return {
 		admin: { apikey: stack.serviceRoleKey, authorization: `Bearer ${stack.serviceRoleKey}` },
 		anon,
 		anonKey: stack.anonKey,
 		auth: `${stack.apiUrl}/auth/v1`,
-		authorizationEndpoint: String(discovery.body.authorization_endpoint),
+		authorizationEndpoint,
 		clientId: '',
+		codeChallengeMethods: strings(discovery.body.code_challenge_methods_supported),
+		discoveryUrl,
 		email: `oauth-probe-${randomUUID()}@example.test`,
 		password: randomBytes(PASSWORD_BYTES).toString('base64url'),
-		tokenEndpoint: String(discovery.body.token_endpoint),
+		tokenEndpoint,
+	};
+}
+
+async function protocolFindings(probe: Probe): Promise<Json> {
+	return {
+		discovery: {
+			authorizationEndpoint: probe.authorizationEndpoint,
+			codeChallengeMethods: probe.codeChallengeMethods,
+			path: DISCOVERY_PATH,
+			tokenEndpoint: probe.tokenEndpoint,
+		},
+		gateway: await gatewayFindings(probe),
+		redirect: await redirectFindings(probe),
 	};
 }
 
 async function measure(probe: Probe): Promise<Json> {
 	const consent = await webSession(probe);
 	const browser = await webSession(probe);
-	const redirect = await redirectFindings(probe);
+	const protocol = await protocolFindings(probe);
 	const first = await refreshFindings(probe, consent.access);
 	const local = await localLogoutFindings(probe, consent.access, browser);
 	const ending = await endingFindings(probe, consent.access, String(local.browserAccess));
 	const logoutFindings = { ...(isRecord(local.logout) ? local.logout : {}), ...ending };
-	const config = {
-		refreshTokenReuseIntervalSeconds: Number(configValue('reuseInterval')),
-		siteUrl: configValue('siteUrl'),
-	};
-	const discovery = {
-		authorizationEndpoint: probe.authorizationEndpoint,
-		path: DISCOVERY_PATH,
-		tokenEndpoint: probe.tokenEndpoint,
-	};
 	return {
-		config,
+		...protocol,
+		config: {
+			refreshTokenReuseIntervalSeconds: reuseIntervalSeconds(),
+			siteUrl: configValue('siteUrl'),
+		},
 		consent: local.consent,
-		discovery,
 		keychain: first.keychain,
 		logout: logoutFindings,
-		redirect,
 		refresh: first.refresh,
 		token: first.token,
 	};
@@ -539,10 +682,11 @@ async function run(): Promise<Json> {
 	try {
 		fixtures.userId = await createUser(base);
 		fixtures.clientId = await registerClient(base);
-		if (failAfterClient)
+		if (failAfterClient) {
 			process.stderr.write(
 				'oauth-probe | --fail-after-client: the code exchange will be refused\n',
 			);
+		}
 		return await measure({ ...base, clientId: fixtures.clientId });
 	} finally {
 		await removeFixtures(base, fixtures);
