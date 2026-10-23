@@ -1,7 +1,10 @@
-import type {
-	AuthOAuthAuthorizationDetailsResponse,
-	AuthOAuthConsentResponse,
-	SupabaseClient,
+import {
+	type AuthError,
+	type AuthOAuthAuthorizationDetailsResponse,
+	type AuthOAuthConsentResponse,
+	isAuthApiError,
+	isAuthSessionMissingError,
+	type SupabaseClient,
 } from '@supabase/supabase-js';
 import { createServerFn, createServerOnlyFn } from '@tanstack/react-start';
 import { getRequest } from '@tanstack/react-start/server';
@@ -20,6 +23,8 @@ import { createSupabase } from './supabase';
  * What the consent page is told. `unauthenticated` and `invalid` are states to render, not
  * failures: a signed-out visitor goes to `/login`, and an expired or unknown authorization is an
  * ordinary thing for a person to arrive with, so neither throws and neither belongs in Sentry.
+ * Both mean the auth server answered and said no. The auth server failing to answer (a network
+ * error, a 5xx) is neither of them: it is thrown, see `isRefusal`.
  */
 type ConsentState =
 	| {
@@ -57,6 +62,9 @@ interface ConsentDecisionRequest {
 
 const INVALID = { kind: 'invalid' } as const;
 const UNAUTHENTICATED = { kind: 'unauthenticated' } as const;
+
+/** The lowest HTTP status that is a server failing, as opposed to a server refusing a request. */
+const FIRST_SERVER_ERROR_STATUS = 500;
 
 /**
  * The redirect after a decision is the page's to follow, not the SDK's: the server function answers
@@ -114,22 +122,58 @@ function redirectTo(url: unknown): ConsentDecision {
 }
 
 /**
+ * Whether an `{ error }` result means the auth server answered and said no. `@supabase/auth-js`
+ * never throws for its own failures: it returns them, a refused connection as an
+ * `AuthRetryableFetchError` and a 5xx as that or as an `AuthApiError` with a status of 500 or
+ * more. Only an `AuthApiError` below 500 is the server judging the request (a token it refuses, an
+ * authorization it cannot place), which is the person's situation and a state to render; anything
+ * else is the auth server or the path to it failing, and showing that as "the link has expired"
+ * would hide an outage from the one place that reports it.
+ *
+ * @param error - The `error` of a result the SDK returned.
+ * @returns True for an `AuthApiError` whose status is below 500.
+ */
+function isRefusal(error: AuthError): boolean {
+	return isAuthApiError(error) && error.status < FIRST_SERVER_ERROR_STATUS;
+}
+
+/**
+ * @param error - The `error` of an authorization call's result.
+ * @returns `invalid` when the auth server refused (`isRefusal`).
+ * @throws {AuthError} The error itself, unchanged, when it is anything else: the route's error
+ *   boundary reports it to Sentry, where a swallowed one would leave a Supabase outage looking like
+ *   a page of expired links.
+ */
+function invalidUnlessFailed(error: AuthError): typeof INVALID {
+	if (isRefusal(error)) return INVALID;
+	throw error;
+}
+
+/**
  * `getUser` rather than `getSession`: it asks Supabase whether the session is still good, where
  * `getSession` only reads the cookie, and approving a CLI login on a revoked session would hand
  * out a token to someone who is no longer signed in. It is also what refreshes an expiring session
  * into `headers`, so the caller must flush them.
  *
+ * Signed out is no user without an error, the SDK's own "no session" error, or the auth server
+ * refusing the token with a 4xx. Any other error is the auth server failing (`isRefusal`) and is
+ * thrown: reading it as "signed out" would send a person whose session is fine to `/login`, and
+ * hide the outage.
+ *
  * @param request - The incoming request, read for its session cookies.
  * @param headers - Written into if the session is refreshed; the caller must flush it.
  * @returns A client bound to this request, or undefined when nobody is signed in.
+ * @throws {AuthError} The `error` of `getUser`, unchanged, when the auth server failed to answer.
  */
 async function signedInClient(
 	request: Request,
 	headers: Readonly<Headers>,
 ): Promise<SupabaseClient | undefined> {
 	const supabase = createSupabase(request, headers);
-	const { data } = await supabase.auth.getUser();
-	return data.user === null ? undefined : supabase;
+	const { data, error } = await supabase.auth.getUser();
+	if (error === null) return data.user === null ? undefined : supabase;
+	if (isAuthSessionMissingError(error) || isRefusal(error)) return undefined;
+	throw error;
 }
 
 /**
@@ -139,10 +183,12 @@ async function signedInClient(
  * server on 2026-10-23 (`docs/superpowers/specs/2026-10-23-cli-design.md`, "Verified").
  *
  * @param result - Supabase's answer to `getAuthorizationDetails`.
- * @returns The state the page renders or follows.
+ * @returns The state the page renders or follows; `invalid` when the auth server refused.
+ * @throws {AuthError} The result's error, unchanged, when the auth server failed to answer
+ *   (`isRefusal`).
  */
 function consentStateOf(result: AuthOAuthAuthorizationDetailsResponse): ConsentState {
-	if (result.error !== null) return INVALID;
+	if (result.error !== null) return invalidUnlessFailed(result.error);
 	const { data } = result;
 	if (!('authorization_id' in data)) return redirectTo(data.redirect_url);
 	if (!isNonEmptyString(data.authorization_id)) return INVALID;
@@ -158,9 +204,13 @@ function consentStateOf(result: AuthOAuthAuthorizationDetailsResponse): ConsentS
  * @param result - Supabase's answer to `approveAuthorization` or `denyAuthorization`.
  * @returns The CLI's redirect URL (the code on approval, `access_denied` on denial), or `invalid`
  *   when Supabase refused, which for a decision means the authorization is gone or already used.
+ * @throws {AuthError} The result's error, unchanged, when the auth server failed to answer
+ *   (`isRefusal`).
  */
 function decisionOf(result: AuthOAuthConsentResponse): ConsentDecision {
-	return result.error === null ? redirectTo(result.data.redirect_url) : INVALID;
+	return result.error === null
+		? redirectTo(result.data.redirect_url)
+		: invalidUnlessFailed(result.error);
 }
 
 /**
@@ -175,8 +225,12 @@ function decisionOf(result: AuthOAuthConsentResponse): ConsentDecision {
  * `flushSessionCookies` sits in `finally`, not after the work, because a refresh `getUser` wrote
  * has already used up the old refresh token: if the call after it throws and the cookies are
  * dropped, the browser keeps a token Supabase has seen used, which it treats as reuse once its
- * grace period ends. The exception itself is not caught. It is a real failure and may reach
- * Sentry.
+ * grace period ends.
+ *
+ * What throws is the auth server failing, not the SDK throwing: `@supabase/auth-js` returns its own
+ * failures as `{ error }`, so `signedInClient` and `consentStateOf` turn every one that is not a 4xx
+ * `AuthApiError` (or, for `getUser`, a missing session) into an exception, and nothing here catches
+ * it. It is a real failure and reaches Sentry through the route's error boundary.
  *
  * Wrapped in `createServerOnlyFn` for the same import-protection reason as `sendMagicLinkFor`.
  */
@@ -207,7 +261,8 @@ const loadConsentFor = createServerOnlyFn(
  * Only the exact strings `approve` and `deny` are actions. Anything else is `invalid` and decides
  * nothing: a deny is as irreversible as an approval (the CLI is told `access_denied` and the
  * authorization is spent), so a request that does not match the types must not be read as either.
- * Ids, flushing and exceptions are as in `loadConsentFor`.
+ * Ids, flushing and exceptions are as in `loadConsentFor`: a 4xx `AuthApiError` from the decision
+ * is `invalid`, and any other error from it is thrown.
  */
 const decideConsentFor = createServerOnlyFn(
 	async (
@@ -258,7 +313,12 @@ function readDecision(data: unknown): ConsentDecisionRequest {
 
 /**
  * `getRequest()` and a fresh `Headers` inline, not inside `loadConsentFor`, as in `signOut`.
- * `GET`: loading the consent state changes nothing, so a reload or a back button is harmless.
+ * `GET`, though it is not side-effect free: for an authorization the person has consented to
+ * already, GoTrue answers `redirect_url` and mints a new authorization code on that very request.
+ * That is harmless here because every redirect URI registered for the CLI is a loopback address
+ * (`127.0.0.1`), so only a listener on the person's own machine can receive a code, and a reload or
+ * a back button just mints another. What the request never does is decide anything: only
+ * `decideConsent` grants or refuses.
  *
  * The validator is typed with the caller's input but reads it as `unknown` (`readAuthorizationId`),
  * because nothing else checks what a request actually carried.

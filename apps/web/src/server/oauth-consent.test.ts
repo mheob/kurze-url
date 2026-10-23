@@ -1,3 +1,10 @@
+import {
+	type AuthError,
+	AuthApiError,
+	AuthRetryableFetchError,
+	AuthSessionMissingError,
+	AuthUnknownError,
+} from '@supabase/supabase-js';
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 /* oxlint-disable typescript/prefer-readonly-parameter-types -- every finding of this rule in this
@@ -10,11 +17,19 @@ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
  * Deliberately not the real `SupabaseClient` shape — only the slice the consent functions reach
  * through, typed the way `auth.test.ts` types its own fake. `data` is loose because the real
  * result is a union of the details, the redirect and `null`, and each test hands over exactly the
- * shape it is about.
+ * shape it is about. `error` is the SDK's own `AuthError` and the tests build it from the SDK's
+ * own classes: `@supabase/auth-js` never throws for a failure of the auth server, it returns the
+ * error, and what the code does with one depends on its class and status.
  */
 interface FakeResult {
 	readonly data: Readonly<Record<string, unknown>> | null;
-	readonly error: Readonly<{ message: string }> | null;
+	readonly error: AuthError | null;
+}
+
+/** What `getUser` answers: the user, or none and why. */
+interface FakeUserResult {
+	readonly data: { readonly user: Readonly<{ id: string }> | null };
+	readonly error: AuthError | null;
 }
 
 interface FakeDecisionOptions {
@@ -23,9 +38,7 @@ interface FakeDecisionOptions {
 
 interface FakeSupabaseClient {
 	readonly auth: {
-		readonly getUser: () => Promise<{
-			readonly data: { readonly user: Readonly<{ id: string }> | null };
-		}>;
+		readonly getUser: () => Promise<FakeUserResult>;
 		readonly oauth: {
 			readonly approveAuthorization: (
 				authorizationId: string,
@@ -89,10 +102,53 @@ const DETAILS: FakeResult = {
 /** What it answers once the person has consented already: no `authorization_id` at all. */
 const ALREADY_CONSENTED: FakeResult = { data: { redirect_url: REDIRECT_URL }, error: null };
 
-const SERVER_REFUSAL: FakeResult = { data: null, error: { message: 'authorization not found' } };
+/**
+ * The auth server answered and said no: an authorization it cannot place or that is spent. The
+ * status is a representative 4xx; the exact one GoTrue uses for an unknown id is not measured, and
+ * the code under test does not depend on it.
+ */
+const SERVER_REFUSAL: FakeResult = {
+	data: null,
+	error: new AuthApiError('authorization not found', 404, undefined),
+};
 
-const SIGNED_IN = { data: { user: { id: 'user-1' } } } as const;
-const SIGNED_OUT = { data: { user: null } } as const;
+const SIGNED_IN: FakeUserResult = { data: { user: { id: 'user-1' } }, error: null };
+const SIGNED_OUT: FakeUserResult = { data: { user: null }, error: null };
+
+/**
+ * Every way `getUser` says nobody is signed in: no user and no error, the SDK's own "no session"
+ * error, and the auth server refusing the access token with a 4xx (an expired or revoked one).
+ */
+const SIGNED_OUT_ANSWERS: readonly (readonly [string, FakeUserResult])[] = [
+	['no user and no error', SIGNED_OUT],
+	['an AuthSessionMissingError', { data: { user: null }, error: new AuthSessionMissingError() }],
+	[
+		'a 403 AuthApiError for a bad token',
+		{ data: { user: null }, error: new AuthApiError('invalid JWT', 403, 'bad_jwt') },
+	],
+	[
+		'a 401 AuthApiError',
+		{ data: { user: null }, error: new AuthApiError('unauthorized', 401, undefined) },
+	],
+];
+
+/**
+ * Failures that are the auth server failing, not the person's situation: the SDK returns them as
+ * `{ error }` and never throws them, so the code under test has to. The first is what a refused
+ * connection or a timeout becomes; a 503 reaches it as the same class, because the SDK wraps 500
+ * to 504 and 520 to 530 as retryable and uses `AuthApiError` for the other 5xx; the third row is
+ * that `AuthApiError` shape at its lowest status, 500, and the next its 503 form.
+ */
+const AUTH_OUTAGES: readonly (readonly [string, AuthError])[] = [
+	['a network failure', new AuthRetryableFetchError('fetch failed', 0)],
+	['a retryable 503', new AuthRetryableFetchError('Service Unavailable', 503)],
+	['an AuthApiError with status 500', new AuthApiError('internal error', 500, undefined)],
+	['an AuthApiError with status 503', new AuthApiError('unavailable', 503, undefined)],
+	['an AuthUnknownError', new AuthUnknownError('not JSON', new SyntaxError('Unexpected token'))],
+];
+
+/** The statuses below 500 that are all "the server answered and refused", edges included. */
+const REFUSAL_STATUSES = [400, 403, 404, 422, 499] as const;
 
 const OPTIONS = { skipBrowserRedirect: true } as const;
 
@@ -154,6 +210,39 @@ describe('loadConsentFor', () => {
 		expect(mocks.getAuthorizationDetails).not.toHaveBeenCalled();
 	});
 
+	it.each(SIGNED_OUT_ANSWERS)(
+		'answers unauthenticated when getUser answers %s, and never asks for the details',
+		async (_name, answer) => {
+			mocks.getUser.mockResolvedValue(answer);
+
+			await expect(loadConsentFor(request, new Headers(), AUTHORIZATION_ID)).resolves.toStrictEqual(
+				{ kind: 'unauthenticated' },
+			);
+
+			expect(mocks.getAuthorizationDetails).not.toHaveBeenCalled();
+		},
+	);
+
+	/**
+	 * The auth server being down is not a signed-out person, and it is not an expired link either:
+	 * it is a failure, which has to leave as an exception (the route's error boundary reports it
+	 * to Sentry) and not as a state to render. The refreshed cookie still leaves, because the token
+	 * it replaces is spent.
+	 */
+	it.each(AUTH_OUTAGES)(
+		'rejects with the failure when getUser answers %s, asks for nothing more, and still flushes',
+		async (_name, failure) => {
+			mocks.getUser.mockResolvedValue({ data: { user: null }, error: failure });
+
+			await expect(loadConsentFor(request, new Headers(), AUTHORIZATION_ID)).rejects.toBe(failure);
+
+			expect(mocks.getAuthorizationDetails).not.toHaveBeenCalled();
+			expect(mocks.appendResponseHeader).toHaveBeenCalledExactlyOnceWith('set-cookie', [
+				SESSION_COOKIE,
+			]);
+		},
+	);
+
 	/**
 	 * Review Focus 2: a missing or empty `authorization_id` is a state to render, not a failure,
 	 * and it is answered before Supabase is even constructed.
@@ -177,6 +266,20 @@ describe('loadConsentFor', () => {
 
 		expect(mocks.getAuthorizationDetails).toHaveBeenCalledExactlyOnceWith('unknown-id');
 	});
+
+	it.each(REFUSAL_STATUSES)(
+		'answers invalid when the details come back with an AuthApiError of status %i',
+		async (status) => {
+			mocks.getAuthorizationDetails.mockResolvedValue({
+				data: null,
+				error: new AuthApiError('refused', status, undefined),
+			});
+
+			await expect(loadConsentFor(request, new Headers(), AUTHORIZATION_ID)).resolves.toStrictEqual(
+				{ kind: 'invalid' },
+			);
+		},
+	);
 
 	it('answers consent with the client name and the signed-in address', async () => {
 		mocks.getAuthorizationDetails.mockResolvedValue(DETAILS);
@@ -224,20 +327,23 @@ describe('loadConsentFor', () => {
 	});
 
 	/**
-	 * A thrown exception is a real failure and may reach Sentry, so it is not turned into
-	 * `invalid`; the refreshed session cookie still leaves, though, because the token it replaces
-	 * is spent.
+	 * The SDK returns the auth server's own failures as `{ error }` instead of throwing them, so a
+	 * Supabase outage would read as "the link has expired" and never reach Sentry. Anything that is
+	 * not the server answering 4xx therefore leaves as an exception, which is a real failure and may
+	 * reach Sentry; the refreshed session cookie still leaves, because the token it replaces is spent.
 	 */
-	it('lets an exception from Supabase through, and still flushes the cookies', async () => {
-		const failure = new Error('network down');
-		mocks.getAuthorizationDetails.mockRejectedValue(failure);
+	it.each(AUTH_OUTAGES)(
+		'rejects with the failure when the details come back with %s, and still flushes',
+		async (_name, failure) => {
+			mocks.getAuthorizationDetails.mockResolvedValue({ data: null, error: failure });
 
-		await expect(loadConsentFor(request, new Headers(), AUTHORIZATION_ID)).rejects.toBe(failure);
+			await expect(loadConsentFor(request, new Headers(), AUTHORIZATION_ID)).rejects.toBe(failure);
 
-		expect(mocks.appendResponseHeader).toHaveBeenCalledExactlyOnceWith('set-cookie', [
-			SESSION_COOKIE,
-		]);
-	});
+			expect(mocks.appendResponseHeader).toHaveBeenCalledExactlyOnceWith('set-cookie', [
+				SESSION_COOKIE,
+			]);
+		},
+	);
 
 	it.each(UNUSABLE_IDS)(
 		'answers invalid for %s as the authorization id, without any Supabase call',
@@ -336,6 +442,43 @@ describe('decideConsentFor', () => {
 		},
 	);
 
+	it.each(SIGNED_OUT_ANSWERS)(
+		'answers unauthenticated when getUser answers %s, and decides nothing',
+		async (_name, answer) => {
+			mocks.getUser.mockResolvedValue(answer);
+
+			await expect(
+				decideConsentFor(request, new Headers(), {
+					action: 'approve',
+					authorizationId: AUTHORIZATION_ID,
+				}),
+			).resolves.toStrictEqual({ kind: 'unauthenticated' });
+
+			expect(mocks.approveAuthorization).not.toHaveBeenCalled();
+			expect(mocks.denyAuthorization).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each(AUTH_OUTAGES)(
+		'rejects with the failure when getUser answers %s, decides nothing, and still flushes',
+		async (_name, failure) => {
+			mocks.getUser.mockResolvedValue({ data: { user: null }, error: failure });
+
+			await expect(
+				decideConsentFor(request, new Headers(), {
+					action: 'approve',
+					authorizationId: AUTHORIZATION_ID,
+				}),
+			).rejects.toBe(failure);
+
+			expect(mocks.approveAuthorization).not.toHaveBeenCalled();
+			expect(mocks.denyAuthorization).not.toHaveBeenCalled();
+			expect(mocks.appendResponseHeader).toHaveBeenCalledExactlyOnceWith('set-cookie', [
+				SESSION_COOKIE,
+			]);
+		},
+	);
+
 	it.each(['approve', 'deny'] as const)(
 		'answers invalid when Supabase answers %s with an error',
 		async (action) => {
@@ -345,6 +488,69 @@ describe('decideConsentFor', () => {
 			await expect(
 				decideConsentFor(request, new Headers(), { action, authorizationId: AUTHORIZATION_ID }),
 			).resolves.toStrictEqual({ kind: 'invalid' });
+		},
+	);
+
+	it.each(REFUSAL_STATUSES)(
+		'answers invalid when the decision comes back with an AuthApiError of status %i',
+		async (status) => {
+			const refusal = { data: null, error: new AuthApiError('refused', status, undefined) };
+			mocks.approveAuthorization.mockResolvedValue(refusal);
+			mocks.denyAuthorization.mockResolvedValue(refusal);
+
+			await expect(
+				decideConsentFor(request, new Headers(), {
+					action: 'approve',
+					authorizationId: AUTHORIZATION_ID,
+				}),
+			).resolves.toStrictEqual({ kind: 'invalid' });
+			await expect(
+				decideConsentFor(request, new Headers(), {
+					action: 'deny',
+					authorizationId: AUTHORIZATION_ID,
+				}),
+			).resolves.toStrictEqual({ kind: 'invalid' });
+		},
+	);
+
+	/**
+	 * Same rule as the load: the SDK hands the auth server's failure back as `{ error }`, and only
+	 * a 4xx answer from it means the authorization is gone. A 5xx or a failed connection must not
+	 * be shown as "the link has expired" after the person pressed Allow.
+	 */
+	it.each(AUTH_OUTAGES)(
+		'rejects with the failure when approving comes back with %s, and still flushes',
+		async (_name, failure) => {
+			mocks.approveAuthorization.mockResolvedValue({ data: null, error: failure });
+
+			await expect(
+				decideConsentFor(request, new Headers(), {
+					action: 'approve',
+					authorizationId: AUTHORIZATION_ID,
+				}),
+			).rejects.toBe(failure);
+
+			expect(mocks.appendResponseHeader).toHaveBeenCalledExactlyOnceWith('set-cookie', [
+				SESSION_COOKIE,
+			]);
+		},
+	);
+
+	it.each(AUTH_OUTAGES)(
+		'rejects with the failure when denying comes back with %s, and still flushes',
+		async (_name, failure) => {
+			mocks.denyAuthorization.mockResolvedValue({ data: null, error: failure });
+
+			await expect(
+				decideConsentFor(request, new Headers(), {
+					action: 'deny',
+					authorizationId: AUTHORIZATION_ID,
+				}),
+			).rejects.toBe(failure);
+
+			expect(mocks.appendResponseHeader).toHaveBeenCalledExactlyOnceWith('set-cookie', [
+				SESSION_COOKIE,
+			]);
 		},
 	);
 
@@ -373,22 +579,6 @@ describe('decideConsentFor', () => {
 			action: 'approve',
 			authorizationId: AUTHORIZATION_ID,
 		});
-
-		expect(mocks.appendResponseHeader).toHaveBeenCalledExactlyOnceWith('set-cookie', [
-			SESSION_COOKIE,
-		]);
-	});
-
-	it('lets an exception from Supabase through, and still flushes the cookies', async () => {
-		const failure = new Error('network down');
-		mocks.denyAuthorization.mockRejectedValue(failure);
-
-		await expect(
-			decideConsentFor(request, new Headers(), {
-				action: 'deny',
-				authorizationId: AUTHORIZATION_ID,
-			}),
-		).rejects.toBe(failure);
 
 		expect(mocks.appendResponseHeader).toHaveBeenCalledExactlyOnceWith('set-cookie', [
 			SESSION_COOKIE,
