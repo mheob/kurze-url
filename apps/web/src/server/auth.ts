@@ -195,27 +195,29 @@ async function signOutForImpl(
  * the enumeration guarantee is the interesting behaviour, and it should not
  * need a framework harness to assert.
  *
- * Wrapped in `createServerOnlyFn` — not merely for its runtime guard, which
- * is not what's load-bearing here (Vitest never compiles this file with
- * TanStack Start's Vite plugin, so in every test `createServerOnlyFn` is
- * exactly the identity function `@tanstack/start-fn-stubs` defines it as,
- * and calling `sendMagicLinkFor` directly behaves exactly as if this wrapper
- * were not here at all). The wrap exists for the *production client build*:
- * once `flushSessionCookies` (which reaches `appendResponseHeader` from
- * `@tanstack/react-start/server`) is called from inside this function,
- * `vite build`'s import-protection check fails with a real, hard build
- * error — verified by building both ways. The failure is specific to this
- * shape (a plain, separately-exported helper referenced *by name* from a
- * `createServerFn().handler()` in another file, done deliberately so the
- * enumeration guarantee is testable without a request) — `fetchMe`'s own
- * `flushSessionCookies` call (`routes/_authed.tsx`), written inline inside
- * its `.handler()` closure rather than delegated to a named helper, does
- * not trip it. `signOutFor` below has this function's shape and is wrapped
- * the same way. `createServerOnlyFn` is TanStack Start's own documented
- * answer to exactly this case (its compiler recognises the call and elides
- * it from the client bundle instead of leaving the reachable import for
- * Rolldown to trip over) — it is also the fix suggested by the import-
- * protection error's own message.
+ * Wrapped in `createServerOnlyFn`, though the build no longer needs it:
+ * building with this helper and `signOutFor` unwrapped passes, import
+ * protection included (measured on 2026-10-23). It did need it when it was
+ * written, before `flushSessionCookies` was wrapped too: unwrapped, the build
+ * then failed with an `[import-protection]` error ("Import denied in client
+ * environment" for `@tanstack/react-start/server`, which this helper reaches
+ * through `flushSessionCookies`). Most likely that wrap is what changed it,
+ * the same apparent reason `listLinksFor` passed unwrapped (`server/links.ts`).
+ * Either way, the only reference to this helper sits inside a
+ * `createServerFn().handler()`, whose body the client build does not ship.
+ *
+ * The wrap makes "server only" a property of the helper rather than of where
+ * it happens to be called from. In the client build TanStack Start's
+ * compiler replaces the call with a function that throws ("createServerOnlyFn()
+ * functions can only be called on the server!"), so if client code ever
+ * imports the helper, its body and the server-only module it reaches
+ * (`appendResponseHeader` from `@tanstack/react-start/server`, through
+ * `flushSessionCookies`) still stay out of the browser, and the call fails
+ * loudly instead of running there. Under Vitest, which never compiles this
+ * file with Start's Vite plugin, `createServerOnlyFn` is the identity
+ * function `@tanstack/start-fn-stubs` defines it as, so the tests call the
+ * helper as if it were not wrapped. `signOutFor` below has this function's
+ * shape and is wrapped the same way.
  */
 export const sendMagicLinkFor = createServerOnlyFn(sendMagicLinkForImpl);
 
@@ -257,7 +259,9 @@ export function readSignOutScope(data: unknown): SignOutRequest {
  *
  * Wrapped in `createServerOnlyFn` for the reason `sendMagicLinkFor`'s docstring gives, because it
  * has the same shape: a named helper that reaches `flushSessionCookies` and is referenced from a
- * `createServerFn().handler()`. Under Vitest it is the identity function.
+ * `createServerFn().handler()`. The build passes without the wrap; it keeps the helper out of the
+ * browser bundle and throwing there should client code ever import it. Under Vitest it is the
+ * identity function.
  */
 export const signOutFor = createServerOnlyFn(signOutForImpl);
 
