@@ -374,10 +374,11 @@ enabled = false
 # Obtain from https://clerk.com/setup/supabase
 # domain = "example.clerk.accounts.dev"
 
-# OAuth server configuration
+# OAuth server configuration. The CLI logs in through it (docs/superpowers/specs/2026-10-23-cli-design.md).
+# This file configures the local stack only: Production and Preview are switched on in their dashboards.
 [auth.oauth_server]
 # Enable OAuth server functionality
-enabled = false
+enabled = true
 # Path for OAuth consent flow UI
 authorization_url_path = "/oauth/consent"
 # Allow dynamic client registration
