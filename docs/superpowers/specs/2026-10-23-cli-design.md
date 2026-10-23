@@ -152,7 +152,7 @@ Do this once in each Supabase project's dashboard before Part 2's e2e can pass. 
 **Route `/oauth/consent?authorization_id=…`.** It lives outside the team namespace and needs a session but no team.
 
 - **Not signed in:** redirect to `/login`, keeping the full consent URL as `next`.
-  - **Callback:** the magic link's `emailRedirectTo` carries `next`. `auth.callback.tsx` redirects there after `exchangeCodeForSession` instead of to `/`.
+  - **Callback:** the magic link's `emailRedirectTo` carries `next`. `auth.callback.tsx` redirects there after `exchangeCodeForSession` instead of to `/`. A failed exchange goes back to `/login` and keeps a safe `next`, the same way for every cause of failure, so a magic link opened in another browser (no PKCE verifier there) still ends on the consent page at the second attempt.
   - **Open-redirect guard:** `next` is honoured only when it is a same-origin path starting with `/oauth/consent?`. Anything else falls back to `/`.
 - **Signed in:**
   - It calls `supabase.auth.oauth.getAuthorizationDetails(authorization_id)`, present in the installed `@supabase/auth-js` 2.118 as `AuthOAuthServerApi`.
@@ -164,7 +164,7 @@ Do this once in each Supabase project's dashboard before Part 2's e2e can pass. 
     - the warning to allow this only right after running `kurze-url login` yourself;
     - the signed-in address;
     - Deny and Allow buttons. Allow calls `approveAuthorization`, Deny calls `denyAuthorization`, and both follow the returned `redirect_url`.
-- **Errors:** an unknown or expired `authorization_id`, or a failing call, renders an error card in both languages. It reports nothing to Sentry that `classifyApiError` would classify as user-visible.
+- **Errors:** an unknown or expired `authorization_id`, which the auth server refuses with a 4xx, renders an error card in both languages and reports nothing to Sentry. A session that ends before a call goes to `/login` with the same `next`. The auth server failing (a network error, a 5xx, a 408 or a 429) is thrown instead: it reaches the app's root error page, which reports it to Sentry, because an error card would show an outage as an expired link. Nothing `classifyApiError` would classify as user-visible is reported.
 - **i18n:** a new `oauthConsent` key group in `en.json` and `de.json`.
 - **Accessibility:** one `<main>` and an `<h1>` inside `CardTitle`, the same as `login.tsx`. Keyboard operable.
 - **Stories:** cover the card, the error card and the loading state, under the a11y addon.
