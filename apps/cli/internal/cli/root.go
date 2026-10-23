@@ -1,0 +1,89 @@
+// Package cli is the kurze-url command tree: the cobra commands, their
+// wiring to the outside world through Deps, and the mapping from what a
+// command returned to the process's exit code.
+package cli
+
+import (
+	"errors"
+	"fmt"
+
+	"github.com/spf13/cobra"
+)
+
+// programName is the binary's name as the person types it. It prefixes every
+// failure line and the version line, and it is the root command's Use.
+const programName = "kurze-url"
+
+// Run executes one invocation and returns the process's exit code: 0 on
+// success, 1 on any failure, 2 on a usage error. The caller passes the
+// result to os.Exit; Run itself never exits, so tests can call it.
+func Run(d *Deps, args []string) int {
+	return run(newRoot(d), d, args)
+}
+
+// run executes root with args and reports a failure on d.Stderr. It is split
+// from Run so that tests can mount a throwaway command on the real root and
+// still go through the real error handling.
+func run(root *cobra.Command, d *Deps, args []string) int {
+	root.SetArgs(args)
+
+	cmd, err := root.ExecuteC()
+	if err != nil {
+		report(d, cmd, err)
+	}
+	return exitCode(err)
+}
+
+// report prints a failure the way every command does: one line naming the
+// program and the problem, and, for a usage error, a second line pointing at
+// the help of the command the person got wrong.
+//
+// cmd is the command cobra stopped at, which for an unknown subcommand is its
+// parent, so the hint always names a command that exists.
+func report(d *Deps, cmd *cobra.Command, err error) {
+	// A failed write to stderr has nowhere left to be reported.
+	_, _ = fmt.Fprintf(d.Stderr, "%s: %s\n", programName, err.Error())
+
+	var usage *UsageError
+	if errors.As(err, &usage) {
+		_, _ = fmt.Fprintf(d.Stderr, "Run '%s --help' for usage.\n", cmd.CommandPath())
+	}
+}
+
+// newRoot builds the command tree.
+//
+// Cobra's own error and usage printing are silenced, because Run prints
+// failures itself in one format and cobra would otherwise add a second
+// "Error:" line and the whole usage text to every mistake. The root has the
+// shape of a group (see newGroup) for the same reason as any group: without
+// it, "kurze-url nope" would exit 0 or 1 instead of 2.
+func newRoot(d *Deps) *cobra.Command {
+	root := newGroup(programName, "Create and inspect short links from the terminal")
+	root.SilenceErrors = true
+	root.SilenceUsage = true
+	root.SetOut(d.Stdout)
+	root.SetErr(d.Stderr)
+	root.SetIn(d.Stdin)
+
+	// A bad flag is a usage error like a bad argument. Children inherit
+	// this from the root.
+	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
+		return &UsageError{Err: err}
+	})
+
+	root.AddCommand(newVersionCmd(d))
+
+	// Cobra's own "completion bash|zsh|fish|powershell" stays, but it ships
+	// as a non-runnable command with a bare cobra.NoArgs, so "completion
+	// nope" would print help and exit 0. Cobra adds it on its own during
+	// execution and skips it when one exists, so adding it here, early,
+	// lets it be given a group's shape too.
+	root.InitDefaultCompletionCmd()
+	for _, cmd := range root.Commands() {
+		if cmd.Name() == "completion" {
+			asGroup(cmd)
+		}
+	}
+
+	return root
+}
