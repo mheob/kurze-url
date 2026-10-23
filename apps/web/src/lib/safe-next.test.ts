@@ -11,12 +11,6 @@ describe(isSafeNext, () => {
 		expect(isSafeNext('/oauth/consent?authorization_id=0b5c1d2e-3f4a&foo=bar')).toBe(true);
 	});
 
-	// The lone-surrogate refusal below must not reach a surrogate pair, which is one ordinary
-	// character: only the unpaired half is a problem.
-	it('accepts a character outside the basic plane, which is a valid surrogate pair', () => {
-		expect(isSafeNext('/oauth/consent?authorization_id=abc&label=\u{1F600}')).toBe(true);
-	});
-
 	// Each row is a way to make a login link send the visitor somewhere other
 	// than this app's own consent page. Every one must fall back to `/`.
 	it.each([
@@ -44,9 +38,24 @@ describe(isSafeNext, () => {
 		['an encoded CRLF in the query', '/oauth/consent?authorization_id=1%0d%0aSet-Cookie:a=b'],
 		['an upper-case encoded CRLF in the query', '/oauth/consent?authorization_id=1%0D%0A'],
 		['an encoded CRLF in front of the path', '%0d%0a/oauth/consent?authorization_id=1'],
-		// `encodeURIComponent` throws a URIError on a lone surrogate, which would turn
-		// the login's callback URL into a 500 instead of a refusal.
+		// Only printable ASCII is accepted. A redirect puts `next` in a `Location` header, and
+		// `Headers.set` throws a TypeError ("Cannot convert argument to a ByteString") for any character
+		// above U+00FF, which would fail the callback after the session was created: those rows must be
+		// refused up front, and the Latin-1 one is refused with them for the sake of one simple rule.
+		['a Latin-1 character', '/oauth/consent?authorization_id=abc&label=\u00E9'],
+		['a character above U+00FF, the euro sign', '/oauth/consent?authorization_id=abc&label=\u20AC'],
+		[
+			'a character outside the basic plane, an emoji',
+			'/oauth/consent?authorization_id=abc&label=\u{1F600}',
+		],
+		[
+			'a line separator, which is not a control character',
+			'/oauth/consent?authorization_id=1\u2028',
+		],
+		// `encodeURIComponent` also throws, a URIError, on a lone surrogate.
 		['a lone surrogate, which cannot be percent-encoded', '/oauth/consent?authorization_id=\uD800'],
+		// What `URLSearchParams.get` turns the raw bytes of a lone surrogate (`%ED%A0%80`) into.
+		['a replacement character', '/oauth/consent?authorization_id=\uFFFD'],
 	])('refuses %s', (_name, next) => {
 		expect(isSafeNext(next)).toBe(false);
 	});

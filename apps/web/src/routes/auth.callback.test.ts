@@ -82,11 +82,26 @@ describe('the auth callback', () => {
 		['an off-site path that starts with two slashes', '//evil.example/oauth/consent?x'],
 		['a path of this app that is not the consent page', '/links'],
 		['an empty value', ''],
+		// `redirect()` cannot put a character above U+00FF in a `Location` header: it throws, after
+		// the session was created, so such a value has to be refused before it gets that far.
+		['a path with a character above U+00FF', '/oauth/consent?authorization_id=abc&label=\u20AC'],
+		['a path with an emoji', '/oauth/consent?authorization_id=abc&label=\u{1F600}'],
 	])('ignores a next that points to %s', async (_name, next) => {
 		mocks.exchangeCodeForSession.mockResolvedValue({ error: null });
 
 		await expect(
 			destinationOf(`${ORIGIN}/auth/callback?code=c1&next=${encodeURIComponent(next)}`),
+		).resolves.toBe('/');
+	});
+
+	// Raw bytes that are not UTF-8 (a lone surrogate, `%ED%A0%80`) never reach `isSafeNext` as they
+	// were written: `URLSearchParams` decodes them to U+FFFD, which the guard refuses like any other
+	// non-ASCII character.
+	it('ignores a next whose raw bytes are not valid UTF-8', async () => {
+		mocks.exchangeCodeForSession.mockResolvedValue({ error: null });
+
+		await expect(
+			destinationOf(`${ORIGIN}/auth/callback?code=c1&next=%2Foauth%2Fconsent%3Fx%3D%ED%A0%80`),
 		).resolves.toBe('/');
 	});
 

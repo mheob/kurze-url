@@ -10,13 +10,22 @@ const CONSENT_PREFIX = `${CONSENT_PATH}?`;
 const DUMMY_ORIGIN = 'https://next.invalid';
 
 /**
- * A backslash, any control character (C0, DEL and C1), or a lone surrogate. In a `u` regex a valid
- * surrogate pair reads as one code point, so `\p{Cs}` matches only the unpaired half that no URL
- * can carry and that makes `encodeURIComponent` throw a `URIError`: the login would answer 500
- * where it should refuse. The same test as `String.prototype.isWellFormed`, which the app's own
- * `lib` setting does not yet type.
+ * A backslash, or anything outside printable ASCII (U+0020 to U+007E). Printable ASCII is what the
+ * redirect needs: `redirect()` puts `next` in a `Location` header, and `Headers.set` throws a
+ * `TypeError` ("Cannot convert argument to a ByteString") for any character above U+00FF, which
+ * would fail the auth callback after the session was created. The same rule covers the rest of
+ * what a header or a URL must not carry: the C0, DEL and C1 control characters (a tab or newline
+ * is stripped by URL parsers and splits a header), U+2028 and the other separators that are not
+ * control characters, and a lone surrogate (which also makes `encodeURIComponent` throw a
+ * `URIError`). A valid consent link has no use for any of it, since Supabase's authorization IDs
+ * are UUIDs and anything else a link carries is percent-encoded.
+ *
+ * Written as "a control character or a non-ASCII code point", which is the same set as the range
+ * `[^\u0020-\u007E]`: the formatter rewrites that range into literal characters and the linter
+ * then refuses it as obscure. In a `u` regex each class matches a whole code point, so a surrogate
+ * pair (an emoji) is refused as one character.
  */
-const FORBIDDEN_CHARACTERS = /[\\\p{Cc}\p{Cs}]/u;
+const FORBIDDEN_CHARACTERS = /[\\\p{Cc}\P{ASCII}]/u;
 
 /**
  * An encoded control character, such as the `%0d%0a` of a header-splitting
@@ -35,11 +44,12 @@ const ENCODED_CONTROL_CHARACTER = /%(?:[01][\da-f]|7f)/iu;
  * strips tabs and newlines before it reads anything, and treats `\` as `/`, so
  * a value can pass a plain `startsWith` and still be read as another host or
  * smuggle a line break into a header. The guard therefore also refuses a
- * backslash, any control character and an encoded one, and a lone surrogate
- * (which no URL can carry, and which `encodeURIComponent` throws on), and
- * finally resolves the value against a dummy origin and requires that it keeps
- * that origin and the path `/oauth/consent`. A second leading `/` needs no
- * check of its own: the prefix already puts an `o` there.
+ * backslash, anything outside printable ASCII (which covers every control
+ * character, a lone surrogate, and the characters `redirect()` cannot put in a
+ * `Location` header) and an encoded control character, and finally resolves
+ * the value against a dummy origin and requires that it keeps that origin and
+ * the path `/oauth/consent`. A second leading `/` needs no check of its own:
+ * the prefix already puts an `o` there.
  *
  * Case matters (`/OAuth/Consent` is a different path from the route) and so
  * does the query: the bare path is refused because the consent page cannot do

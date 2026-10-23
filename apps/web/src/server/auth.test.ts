@@ -116,6 +116,7 @@ describe('sendMagicLinkFor', () => {
 		['an off-site address', '//evil.example'],
 		['an absolute URL', 'https://evil.example/oauth/consent?x'],
 		['a lone surrogate', '/oauth/consent?authorization_id=\uD800'],
+		['a non-ASCII character', '/oauth/consent?authorization_id=abc&label=\u20AC'],
 	])('drops an unsafe next: %s', async (_name, next) => {
 		mocks.signInWithOtp.mockResolvedValue({ error: null });
 
