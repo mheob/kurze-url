@@ -76,7 +76,7 @@ These would make the CLI a failure even if it worked:
 - **Production and Preview:** the same, set by the maintainer in each project's dashboard (Authentication → OAuth Server). It is a manual step, because those projects are not configured from this repository.
 - **The client:** one OAuth client per Supabase project, named "kurze-url CLI".
   - It is **public**, with token endpoint auth method `none`, and PKCE is mandatory.
-  - Its redirect URIs are registered as a small fixed set of loopback URLs, for example `http://127.0.0.1:53682/callback`, `…:53683/callback` and `…:53684/callback`.
+  - Its redirect URIs are exactly `http://127.0.0.1:53682/callback`, `http://127.0.0.1:53683/callback` and `http://127.0.0.1:53684/callback`. The server matches them exactly; see "Verified" below.
 - **Redirect allowlist:** the Production project's "Redirect URLs" also have to admit the magic-link callback with the `next` parameter described in Part 2.
 
 ### Verification before anything else is built (risks)
@@ -97,6 +97,52 @@ These would make the CLI a failure even if it worked:
    - **Keychain size:** check whether the access and refresh token together fit the Windows Credential Manager's per-entry limit. If not, the keychain holds only the refresh token and the access token is refreshed per run.
 
 Write each result into this spec's "Verified" section before Part 2 starts.
+
+### Verified (2026-10-23)
+
+**How it was measured:** `pnpm probe:oauth` (`scripts/oauth-server-probe.ts`) ran against the local stack, Supabase CLI with GoTrue's OAuth 2.1 server switched on in `supabase/config.toml`, on 2026-10-23. Re-run it after a Supabase upgrade: the server is still in beta.
+
+**Scope:** these are the local stack's answers. Production and Preview run the same server, but their token lifetime and reuse interval are dashboard settings. The release checklist (see "Testing") repeats `login`, `logout` and a command against Production.
+
+| Finding | Measured | What it decides |
+| --- | --- | --- |
+| Discovery document | `/auth/v1/.well-known/oauth-authorization-server`; the RFC 8414 path `/.well-known/oauth-authorization-server/auth/v1` answers 404. It lists `S256` (and `plain`) | The CLI reads its endpoints from there: authorize `…/auth/v1/oauth/authorize`, token `…/auth/v1/oauth/token`. It always sends S256 |
+| Registered loopback URI | `http://127.0.0.1:53682/callback` gets a 302 to `<site_url>/oauth/consent?authorization_id=…` | — |
+| Same host, unregistered port (`:53999`) | **400**, no redirect | Ports are matched exactly. **Fixed ports:** the CLI tries 53682, 53683 and 53684 in order, all three registered. It fails with a clear message when none is free |
+| `localhost` instead of `127.0.0.1` | **400** | The CLI binds and registers `127.0.0.1` only |
+| `aud` / `iss` / `role` of a CLI access token | `authenticated` / `<project>/auth/v1` / `authenticated`. It also carries `client_id` and `session_id` | **API unchanged:** the existing verifier accepts CLI tokens, so Part 1's audience change is not needed. `client_id` would allow scoping CLI tokens later (option B) |
+| Access-token lifetime | 3600 s locally (`jwt_expiry`) | The CLI refreshes when fewer than 60 s remain, and on a 401 (my call) |
+| Refresh rotation | `rotates: true` | The spec's rule stands: write the new refresh token back at once |
+| Old refresh token, used again right after rotating | 200 within the 10 s reuse interval | Two CLI processes refreshing at the same moment both succeed |
+| The same old token, 12 s later | **Also 200** | GoTrue still honoured it after the interval, most likely because it was still the parent of the active token. The CLI does not rely on this, but a leaked token is not dead the moment it rotates. That is one more reason for the keychain |
+| Second authorize after a consent was given | Lands on `/oauth/consent` again. `getAuthorizationDetails` returns only `redirect_url`, with no `authorization_id` | The consent page tells the two apart by the missing `authorization_id`, and redirects at once (Part 2) |
+| CLI `POST /auth/v1/logout?scope=local` with its access token | The CLI's refresh then fails with **400**, and the browser's session still refreshes with **200** | **`logout`** uses exactly this call. No separate revocation endpoint is needed |
+| A browser signs out with `scope=local` | The CLI's session still refreshes with **200** | The web's local-by-default sign-out leaves the CLI alone, as Part 2 intends |
+| A browser signs out with `scope=global` | The CLI's refresh fails with **400** | "Sign out everywhere" does include the CLI. The checkbox text is accurate |
+| Grant revoked (`DELETE /auth/v1/user/oauth/grants?client_id=…`) | The CLI's refresh fails with **400** | Revoking the grant ends the CLI's access too. A "revoke CLI access" control in the web app is possible later, and not in v1 |
+| Token sizes | access 952 bytes, refresh 12 bytes, both with the expiry as JSON 1026 bytes, against the 2560-byte Windows limit | **Keychain:** it holds the access token, the refresh token and the expiry in one entry |
+
+### Maintainer setup (Production and Preview)
+
+Do this once in each Supabase project's dashboard before Part 2's e2e can pass. None of these values is secret.
+
+1. **Authentication → OAuth Server:**
+   - turn the server on;
+   - set the authorization path to `/oauth/consent`;
+   - leave dynamic client registration off.
+
+   The consent URL is the project's Site URL plus that path. For Production that is the web app's origin.
+
+2. **Authentication → OAuth Apps → Add a new client:**
+   - name `kurze-url CLI`;
+   - type **Public**;
+   - redirect URIs exactly `http://127.0.0.1:53682/callback`, `http://127.0.0.1:53683/callback` and `http://127.0.0.1:53684/callback`, with no wildcard and no `localhost`;
+   - grant types authorization code and refresh token.
+3. **Client IDs:** the Production client ID is compiled into the CLI as its default (Part 3). The Preview client ID is what `KURZE_URL_CLIENT_ID` is set to when the CLI talks to Preview, and what the consent e2e uses.
+4. **Authentication → URL Configuration:** the magic-link callback must still be admitted when it carries the `next` parameter Part 2 adds (`/auth/callback?next=…`).
+   - The local stack lists exact URLs (`http://127.0.0.1:3000/auth/callback`).
+   - Part 2 finds out locally whether an exact entry matches with a query string or needs a `**` suffix. Then give Production's and Preview's entries the same form.
+5. **Token settings:** keep refresh-token rotation on and the reuse interval at its default (10 s). The findings above were measured with those.
 
 ## Part 2 — Consent page in the web app
 
