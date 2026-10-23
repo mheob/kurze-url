@@ -81,6 +81,7 @@ func newRoot(d *Deps) *cobra.Command {
 		newLogoutCmd(d),
 		newWhoamiCmd(d),
 		newTeamCmd(d),
+		newLinkCmd(d),
 		newConfigCmd(d),
 	)
 
