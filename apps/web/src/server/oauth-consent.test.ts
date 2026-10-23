@@ -112,6 +112,13 @@ const SERVER_REFUSAL: FakeResult = {
 	error: new AuthApiError('authorization not found', 404, undefined),
 };
 
+/**
+ * The session ended between `getUser` and the call that needs it: the SDK finds no session left,
+ * or GoTrue answers `session_not_found` (another tab signed out everywhere), which the SDK turns
+ * into this same error.
+ */
+const SESSION_GONE: FakeResult = { data: null, error: new AuthSessionMissingError() };
+
 const SIGNED_IN: FakeUserResult = { data: { user: { id: 'user-1' } }, error: null };
 const SIGNED_OUT: FakeUserResult = { data: { user: null }, error: null };
 
@@ -134,10 +141,13 @@ const SIGNED_OUT_ANSWERS: readonly (readonly [string, FakeUserResult])[] = [
 
 /**
  * Failures that are the auth server failing, not the person's situation: the SDK returns them as
- * `{ error }` and never throws them, so the code under test has to. The first is what a refused
- * connection or a timeout becomes; a 503 reaches it as the same class, because the SDK wraps 500
- * to 504 and 520 to 530 as retryable and uses `AuthApiError` for the other 5xx; the third row is
- * that `AuthApiError` shape at its lowest status, 500, and the next its 503 form.
+ * `{ error }` and never throws them, so the code under test has to. A refused connection or a
+ * timeout becomes an `AuthRetryableFetchError` with status 0, and so does a 500 to 504 or a 520 to
+ * 530; the SDK uses `AuthApiError` for a 5xx only outside those ranges, from 505. The two
+ * `AuthApiError` 5xx rows are therefore synthetic: 500 is the boundary `isRefusal` draws and 503
+ * the common outage, so the rule holds whichever class a later SDK picks. A 408 and a 429 do
+ * arrive as `AuthApiError`, below 500, whenever the body is JSON: the auth server timing out or
+ * throttling, which is no more the person's situation than a 503 is.
  */
 const AUTH_OUTAGES: readonly (readonly [string, AuthError])[] = [
 	['a network failure', new AuthRetryableFetchError('fetch failed', 0)],
@@ -145,6 +155,8 @@ const AUTH_OUTAGES: readonly (readonly [string, AuthError])[] = [
 	['an AuthApiError with status 500', new AuthApiError('internal error', 500, undefined)],
 	['an AuthApiError with status 503', new AuthApiError('unavailable', 503, undefined)],
 	['an AuthUnknownError', new AuthUnknownError('not JSON', new SyntaxError('Unexpected token'))],
+	['a 408 AuthApiError', new AuthApiError('request timed out', 408, 'request_timeout')],
+	['a 429 AuthApiError', new AuthApiError('too many requests', 429, 'over_request_rate_limit')],
 ];
 
 /** The statuses below 500 that are all "the server answered and refused", edges included. */
@@ -280,6 +292,22 @@ describe('loadConsentFor', () => {
 			);
 		},
 	);
+
+	/**
+	 * A session that ends after `getUser` said it was good is a signed-out person, not a failure:
+	 * the page sends them to `/login` with the same `next`, as it does when `getUser` finds none.
+	 */
+	it('answers unauthenticated when the session is gone by the time the details are read', async () => {
+		mocks.getAuthorizationDetails.mockResolvedValue(SESSION_GONE);
+
+		await expect(loadConsentFor(request, new Headers(), AUTHORIZATION_ID)).resolves.toStrictEqual({
+			kind: 'unauthenticated',
+		});
+
+		expect(mocks.appendResponseHeader).toHaveBeenCalledExactlyOnceWith('set-cookie', [
+			SESSION_COOKIE,
+		]);
+	});
 
 	it('answers consent with the client name and the signed-in address', async () => {
 		mocks.getAuthorizationDetails.mockResolvedValue(DETAILS);
@@ -510,6 +538,26 @@ describe('decideConsentFor', () => {
 					authorizationId: AUTHORIZATION_ID,
 				}),
 			).resolves.toStrictEqual({ kind: 'invalid' });
+		},
+	);
+
+	/**
+	 * Same as the load: a session that ends between `getUser` and the decision sends the person to
+	 * `/login` with the same `next`, instead of the error page after they pressed a button.
+	 */
+	it.each(['approve', 'deny'] as const)(
+		'answers unauthenticated when the session is gone by the time %s is sent',
+		async (action) => {
+			mocks.approveAuthorization.mockResolvedValue(SESSION_GONE);
+			mocks.denyAuthorization.mockResolvedValue(SESSION_GONE);
+
+			await expect(
+				decideConsentFor(request, new Headers(), { action, authorizationId: AUTHORIZATION_ID }),
+			).resolves.toStrictEqual({ kind: 'unauthenticated' });
+
+			expect(mocks.appendResponseHeader).toHaveBeenCalledExactlyOnceWith('set-cookie', [
+				SESSION_COOKIE,
+			]);
 		},
 	);
 
