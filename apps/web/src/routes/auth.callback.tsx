@@ -7,9 +7,10 @@ import { flushSessionCookies } from '../server/session';
 import { createSupabase } from '../server/supabase';
 
 /**
- * What the code exchange tells the loader: whether it worked, and, only when it did, the safe
- * `next` to go on to. `next` is never set for a failed exchange, so a visitor without a session
- * cannot be sent anywhere `next` points.
+ * What the code exchange tells the loader: whether it worked, and the request's `next` when
+ * `isSafeNext` allows it. A safe `next` is set whether or not the exchange worked; only
+ * `redirectAfterSignIn` decides what it means, and a visitor without a session is never sent where
+ * it points, only back to `/login` carrying it.
  */
 interface SignInOutcome {
 	readonly next: string | undefined;
@@ -29,13 +30,15 @@ interface SignInOutcome {
  * this is the open-redirect guard's decisive check, not `sendMagicLinkFor`'s
  * earlier one.
  *
- * @returns Whether the exchange worked, and the `next` to follow when it did and `isSafeNext` allows it.
+ * @returns Whether the exchange worked, and the request's `next` when `isSafeNext` allows it.
  */
 async function exchangeCodeImpl(): Promise<SignInOutcome> {
 	const request = getRequest();
 	const { searchParams } = new URL(request.url);
+	const requested = searchParams.get('next');
+	const next = isSafeNext(requested) ? requested : undefined;
 	const code = searchParams.get('code');
-	if (code === null || code === '') return { next: undefined, ok: false };
+	if (code === null || code === '') return { next, ok: false };
 
 	const headers = new Headers();
 	const supabase = createSupabase(request, headers);
@@ -44,16 +47,15 @@ async function exchangeCodeImpl(): Promise<SignInOutcome> {
 	// response, or the session is created and immediately lost — see
 	// `flushSessionCookies`'s docstring for why this call is not optional.
 	flushSessionCookies(headers);
-	const next = searchParams.get('next');
-	return { next: error === null && isSafeNext(next) ? next : undefined, ok: error === null };
+	return { next, ok: error === null };
 }
 
 /**
- * Extracted from the server function for the same reason `sendMagicLinkFor` is, and wrapped in
- * `createServerOnlyFn` for the same two: a test can call it without a request (`createServerFn`
- * needs a Start context, which Vitest has none of), and the client build elides it instead of
- * tripping import protection on the server-only imports it reaches. See `sendMagicLinkFor`'s
- * docstring in `server/auth.ts` for the long version.
+ * Extracted from the server function for the same reason `sendMagicLinkFor` is: a test can call it
+ * without a request (`createServerFn` needs a Start context, which Vitest has none of). Wrapped in
+ * `createServerOnlyFn` for the reason that helper's docstring in `server/auth.ts` gives: not for
+ * the build, which passes without it, but so the client build replaces it with a stub that throws,
+ * keeping it and the server-only imports it reaches out of the browser bundle.
  */
 export const exchangeCode = createServerOnlyFn(exchangeCodeImpl);
 
@@ -70,24 +72,34 @@ const exchangeCodeForSession = createServerFn({ method: 'GET' }).handler(
 );
 
 /**
- * A failed exchange must not land here where a successful one does —
- * that indistinguishability is exactly what let a signed-out visitor
- * look signed-in. Sending it back to /login instead, with no detail on
- * *why* it failed, keeps this from becoming a second enumeration
- * oracle alongside `sendMagicLinkFor`'s (reused vs. expired vs. missing
- * verifier all look the same from here). `next` does not soften that: it
- * is only ever set for a successful exchange.
+ * A failed exchange must not land where a successful one does — that
+ * indistinguishability is exactly what let a signed-out visitor look
+ * signed-in. It goes back to /login instead, with no detail on *why* it
+ * failed, which keeps this from becoming a second enumeration oracle
+ * alongside `sendMagicLinkFor`'s (reused vs. expired vs. missing verifier
+ * all look the same from here).
  *
- * A safe `next` is followed with `href`, not `to`: it is a path with a query
- * string, and `to` is a route pattern. Anything else lands on `/`, as before.
+ * It carries a safe `next` back to /login, because a magic link opened in
+ * another browser fails for want of the PKCE verifier, and the retry has to
+ * end on the consent page the CLI is waiting on rather than on `/`. That
+ * gives nothing away: `next` came from the visitor's own query string, and
+ * every failure carries it the same way. The login page only hands it on to
+ * the next magic link, so the guards judge it again before anything follows
+ * it.
+ *
+ * After a successful exchange a safe `next` is followed with `href`, not
+ * `to`: it is a path with a query string, and `to` is a route pattern.
+ * Anything else lands on `/`, as before.
  *
  * @param outcome - What the code exchange reported.
- * @param outcome.next - The safe path to follow, when there is one.
+ * @param outcome.next - The safe consent path the request carried, when there is one.
  * @param outcome.ok - Whether the exchange created a session.
  * @returns The redirect to throw.
  */
 export function redirectAfterSignIn({ next, ok }: SignInOutcome): ReturnType<typeof redirect> {
-	return redirect(next === undefined ? { to: ok ? '/' : '/login' } : { href: next });
+	if (!ok)
+		return redirect(next === undefined ? { to: '/login' } : { search: { next }, to: '/login' });
+	return redirect(next === undefined ? { to: '/' } : { href: next });
 }
 
 export const Route = createFileRoute('/auth/callback')({

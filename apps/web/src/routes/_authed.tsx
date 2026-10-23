@@ -59,10 +59,11 @@ export interface Me {
  * helper like `sendMagicLinkFor` and `signOutFor` in `server/auth.ts`. That second shape exists
  * only for logic that needs testing independent of a request (`sendMagicLinkFor`'s
  * enumeration-timing guarantee, `signOutFor`'s scope); nothing here does — the only thing this
- * task's brief asks to be unit-tested is the pure `requireTeamId` below. Extracting this body
- * into a named helper would need `createServerOnlyFn` to keep the client
- * bundle buildable (see `sendMagicLinkFor`'s docstring for why); left inline,
- * it doesn't.
+ * task's brief asks to be unit-tested is the pure `requireTeamId` below. A named helper
+ * extracted from this body would be wrapped in `createServerOnlyFn` like those two, not
+ * because the build needs it (it passes without), but so the helper stays out of the browser
+ * bundle whoever imports it (see `sendMagicLinkFor`'s docstring); inside the handler, which the
+ * client build does not ship, the body already does.
  *
  * `memberships` is normalized from the generated client's
  * `Array<TeamMembership> | null` (Huma serialises a nil Go slice as JSON

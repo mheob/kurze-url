@@ -23,8 +23,9 @@ import { createSupabase } from './supabase';
  * What the consent page is told. `unauthenticated` and `invalid` are states to render, not
  * failures: a signed-out visitor goes to `/login`, and an expired or unknown authorization is an
  * ordinary thing for a person to arrive with, so neither throws and neither belongs in Sentry.
- * Both mean the auth server answered and said no. The auth server failing to answer (a network
- * error, a 5xx) is neither of them: it is thrown, see `isRefusal`.
+ * Both mean the auth server answered and said no, or that there is no session left to ask with.
+ * The auth server failing to answer (a network error, a 5xx, a 408 or a 429) is neither of them:
+ * it is thrown, see `isRefusal`.
  */
 type ConsentState =
 	| {
@@ -65,6 +66,22 @@ const UNAUTHENTICATED = { kind: 'unauthenticated' } as const;
 
 /** The lowest HTTP status that is a server failing, as opposed to a server refusing a request. */
 const FIRST_SERVER_ERROR_STATUS = 500;
+
+/** 408 Request Timeout: the server gave up waiting. */
+const REQUEST_TIMEOUT_STATUS = 408;
+
+/** 429 Too Many Requests: the server is throttling. */
+const TOO_MANY_REQUESTS_STATUS = 429;
+
+/**
+ * The 4xx that are the server's own condition rather than a judgement of the request. Retrying the
+ * same request later can succeed, so neither says anything about the person's token or
+ * authorization.
+ */
+const TRANSIENT_CLIENT_ERROR_STATUSES: ReadonlySet<number> = new Set([
+	REQUEST_TIMEOUT_STATUS,
+	TOO_MANY_REQUESTS_STATUS,
+]);
 
 /**
  * The redirect after a decision is the page's to follow, not the SDK's: the server function answers
@@ -128,23 +145,35 @@ function redirectTo(url: unknown): ConsentDecision {
  * more. Only an `AuthApiError` below 500 is the server judging the request (a token it refuses, an
  * authorization it cannot place), which is the person's situation and a state to render; anything
  * else is the auth server or the path to it failing, and showing that as "the link has expired"
- * would hide an outage from the one place that reports it.
+ * would hide an outage from the one place that reports it. A 408 or a 429 is that failure too,
+ * although it is below 500: a server timing out or throttling has not judged the request at all.
  *
  * @param error - The `error` of a result the SDK returned.
- * @returns True for an `AuthApiError` whose status is below 500.
+ * @returns True for an `AuthApiError` whose status is below 500, other than 408 and 429.
  */
 function isRefusal(error: AuthError): boolean {
-	return isAuthApiError(error) && error.status < FIRST_SERVER_ERROR_STATUS;
+	return (
+		isAuthApiError(error) &&
+		error.status < FIRST_SERVER_ERROR_STATUS &&
+		!TRANSIENT_CLIENT_ERROR_STATUSES.has(error.status)
+	);
 }
 
 /**
+ * The session can end between `signedInClient` and the call after it: the SDK then finds none to
+ * send, or GoTrue answers `session_not_found` (another tab signed out everywhere), and the SDK
+ * returns an `AuthSessionMissingError` for both. That is a signed-out person, as when `getUser`
+ * finds no session, so it goes to `/login` with the same `next`.
+ *
  * @param error - The `error` of an authorization call's result.
- * @returns `invalid` when the auth server refused (`isRefusal`).
+ * @returns `unauthenticated` when the session is gone, `invalid` when the auth server refused
+ *   (`isRefusal`).
  * @throws {AuthError} The error itself, unchanged, when it is anything else: the route's error
  *   boundary reports it to Sentry, where a swallowed one would leave a Supabase outage looking like
  *   a page of expired links.
  */
-function invalidUnlessFailed(error: AuthError): typeof INVALID {
+function stateOfError(error: AuthError): typeof INVALID | typeof UNAUTHENTICATED {
+	if (isAuthSessionMissingError(error)) return UNAUTHENTICATED;
 	if (isRefusal(error)) return INVALID;
 	throw error;
 }
@@ -156,7 +185,7 @@ function invalidUnlessFailed(error: AuthError): typeof INVALID {
  * into `headers`, so the caller must flush them.
  *
  * Signed out is no user without an error, the SDK's own "no session" error, or the auth server
- * refusing the token with a 4xx. Any other error is the auth server failing (`isRefusal`) and is
+ * refusing the token (`isRefusal`). Any other error is the auth server failing and is
  * thrown: reading it as "signed out" would send a person whose session is fine to `/login`, and
  * hide the outage.
  *
@@ -183,12 +212,13 @@ async function signedInClient(
  * server on 2026-10-23 (`docs/superpowers/specs/2026-10-23-cli-design.md`, "Verified").
  *
  * @param result - Supabase's answer to `getAuthorizationDetails`.
- * @returns The state the page renders or follows; `invalid` when the auth server refused.
+ * @returns The state the page renders or follows; `invalid` when the auth server refused, and
+ *   `unauthenticated` when the session ended before the call (`stateOfError`).
  * @throws {AuthError} The result's error, unchanged, when the auth server failed to answer
  *   (`isRefusal`).
  */
 function consentStateOf(result: AuthOAuthAuthorizationDetailsResponse): ConsentState {
-	if (result.error !== null) return invalidUnlessFailed(result.error);
+	if (result.error !== null) return stateOfError(result.error);
 	const { data } = result;
 	if (!('authorization_id' in data)) return redirectTo(data.redirect_url);
 	if (!isNonEmptyString(data.authorization_id)) return INVALID;
@@ -202,15 +232,14 @@ function consentStateOf(result: AuthOAuthAuthorizationDetailsResponse): ConsentS
 
 /**
  * @param result - Supabase's answer to `approveAuthorization` or `denyAuthorization`.
- * @returns The CLI's redirect URL (the code on approval, `access_denied` on denial), or `invalid`
- *   when Supabase refused, which for a decision means the authorization is gone or already used.
+ * @returns The CLI's redirect URL (the code on approval, `access_denied` on denial), `invalid`
+ *   when Supabase refused, which for a decision means the authorization is gone or already used, or
+ *   `unauthenticated` when the session ended before the call (`stateOfError`).
  * @throws {AuthError} The result's error, unchanged, when the auth server failed to answer
  *   (`isRefusal`).
  */
 function decisionOf(result: AuthOAuthConsentResponse): ConsentDecision {
-	return result.error === null
-		? redirectTo(result.data.redirect_url)
-		: invalidUnlessFailed(result.error);
+	return result.error === null ? redirectTo(result.data.redirect_url) : stateOfError(result.error);
 }
 
 /**
@@ -228,11 +257,11 @@ function decisionOf(result: AuthOAuthConsentResponse): ConsentDecision {
  * grace period ends.
  *
  * What throws is the auth server failing, not the SDK throwing: `@supabase/auth-js` returns its own
- * failures as `{ error }`, so `signedInClient` and `consentStateOf` turn every one that is not a 4xx
- * `AuthApiError` (or, for `getUser`, a missing session) into an exception, and nothing here catches
- * it. It is a real failure and reaches Sentry through the route's error boundary.
+ * failures as `{ error }`, so `signedInClient` and `consentStateOf` turn every one that is neither a
+ * refusal (`isRefusal`) nor a missing session into an exception, and nothing here catches it. It is
+ * a real failure and reaches Sentry through the route's error boundary.
  *
- * Wrapped in `createServerOnlyFn` for the same import-protection reason as `sendMagicLinkFor`.
+ * Wrapped in `createServerOnlyFn` for the reason `sendMagicLinkFor`'s docstring gives.
  */
 const loadConsentFor = createServerOnlyFn(
 	async (
@@ -261,8 +290,8 @@ const loadConsentFor = createServerOnlyFn(
  * Only the exact strings `approve` and `deny` are actions. Anything else is `invalid` and decides
  * nothing: a deny is as irreversible as an approval (the CLI is told `access_denied` and the
  * authorization is spent), so a request that does not match the types must not be read as either.
- * Ids, flushing and exceptions are as in `loadConsentFor`: a 4xx `AuthApiError` from the decision
- * is `invalid`, and any other error from it is thrown.
+ * Ids, flushing and exceptions are as in `loadConsentFor`: a refusal of the decision is `invalid`,
+ * a session that ended before it is `unauthenticated`, and any other error from it is thrown.
  */
 const decideConsentFor = createServerOnlyFn(
 	async (
