@@ -28,6 +28,11 @@ overrides:
   vite@*: "catalog:"
   vitest@*: "catalog:"
 
+  # `@types/pg` and `@types/set-cookie-parser` ask for `@types/node` as `*`, which resolves
+  # to the newest major. This keeps every copy on the catalog's major, the Node the code runs
+  # on (`.node-version`, and Vercel's `24.x`), so no type describes an API the runtime lacks.
+  "@types/node@*": "catalog:"
+
 # No `minimumReleaseAge` here on purpose: since 2026-10-17 this repository uses
 # pnpm's own default, one day, which pnpm applies non-strictly — when no
 # matching version is old enough, it falls back to a younger one rather than
@@ -84,7 +89,7 @@ catalog:
   "@testing-library/jest-dom": ^7.0.1
   "@testing-library/react": ^16.3.3
   "@testing-library/user-event": ^14.6.8
-  "@types/node": ^26.6.5
+  "@types/node": ^24.19.2
   "@types/pg": ^8.23.1
   "@types/react": ^19.3.0
   "@types/react-dom": ^19.3.0
