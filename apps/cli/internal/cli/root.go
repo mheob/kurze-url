@@ -81,6 +81,7 @@ func newRoot(d *Deps) *cobra.Command {
 		newLogoutCmd(d),
 		newWhoamiCmd(d),
 		newTeamCmd(d),
+		newConfigCmd(d),
 	)
 
 	// Cobra's own "completion bash|zsh|fish|powershell" stays, but it builds
