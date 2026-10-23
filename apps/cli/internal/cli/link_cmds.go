@@ -39,6 +39,8 @@ func newLinkCmd(d *Deps) *cobra.Command {
 	link.AddCommand(
 		newLinkCreateCmd(d),
 		newLinkListCmd(d),
+		newLinkStatsCmd(d),
+		newLinkQRCmd(d),
 	)
 	return link
 }
