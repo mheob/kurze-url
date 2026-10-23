@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, useSearch } from '@tanstack/react-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -15,7 +15,23 @@ import { sendMagicLink } from '../server/auth';
 // have allowed.
 type SendStatus = 'failed' | 'idle' | 'pending' | 'sent';
 
-export function LoginForm(): React.JSX.Element {
+interface LoginFormProps {
+	/**
+	 * Where the magic link should bring the visitor once it has signed them in: the consent page a
+	 * CLI login started from. Passed on as it came, because the server function is the one that
+	 * decides whether it is safe to follow.
+	 */
+	readonly next?: string;
+}
+
+/**
+ * The sign-in form: an address in, a magic link out.
+ *
+ * @param props - The form's props.
+ * @param props.next - Where the magic link should lead after sign-in, from the `next` search param.
+ * @returns The form, inside a `<main>` landmark.
+ */
+export function LoginForm({ next }: LoginFormProps): React.JSX.Element {
 	const { t } = useTranslation();
 	const [status, setStatus] = useState<SendStatus>('idle');
 	const [email, setEmail] = useState('');
@@ -56,7 +72,7 @@ export function LoginForm(): React.JSX.Element {
 								// this form from becoming an account-enumeration oracle.
 								void (async () => {
 									try {
-										await sendMagicLink({ data: { email } });
+										await sendMagicLink({ data: { email, next } });
 										setStatus('sent');
 									} catch {
 										setStatus('failed');
@@ -96,4 +112,32 @@ export function LoginForm(): React.JSX.Element {
 	);
 }
 
-export const Route = createFileRoute('/login')({ component: LoginForm });
+/**
+ * The route's component: reads `next` from the URL and hands it to the form, which stays free of
+ * the router so a story or a test can render it with a plain prop.
+ *
+ * @returns The sign-in form for this URL.
+ */
+function LoginPage(): React.JSX.Element {
+	const { next } = useSearch({ from: '/login' });
+	return <LoginForm next={next} />;
+}
+
+/**
+ * Only a string can be a `next`. A search string can hold anything (TanStack parses numbers and
+ * JSON literals out of it), and what is not a string is dropped rather than coerced: whether the
+ * string is then followed is `isSafeNext`'s decision, on the server, not this parser's.
+ *
+ * @param search - The parsed search string.
+ * @returns The search params this route understands.
+ */
+function validateLoginSearch(search: Readonly<Record<string, unknown>>): {
+	readonly next?: string;
+} {
+	return { next: typeof search.next === 'string' ? search.next : undefined };
+}
+
+export const Route = createFileRoute('/login')({
+	component: LoginPage,
+	validateSearch: validateLoginSearch,
+});

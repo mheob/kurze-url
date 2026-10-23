@@ -1,6 +1,7 @@
 import { createServerFn, createServerOnlyFn } from '@tanstack/react-start';
 import { getRequest, getRequestUrl } from '@tanstack/react-start/server';
 
+import { isSafeNext } from '../lib/safe-next';
 import { flushSessionCookies } from './session';
 import { createSupabase } from './supabase';
 
@@ -47,6 +48,37 @@ async function delay(ms: number): Promise<void> {
 }
 
 /**
+ * What the login form sends. `next` is whatever the browser's `/login?next=` held, so nothing
+ * about it is trusted here: `sendMagicLinkFor` decides whether it may be followed.
+ */
+interface SendMagicLinkInput {
+	readonly email: string;
+	readonly next?: string;
+}
+
+/**
+ * The URL the magic link brings the visitor back to. A CLI login sends a signed-out visitor to
+ * `/login?next=<consent path>`, and `/auth/callback` has to know that path once the code is
+ * exchanged, so it travels in the callback's own query string. Supabase admits that URL only
+ * when its `additional_redirect_urls` entry for the callback ends in `**`, and otherwise
+ * answers with the Site URL and no error (runbook item 4 of
+ * `docs/superpowers/specs/2026-10-23-cli-design.md`; `supabase/config.toml` for the local stack).
+ *
+ * `next` is judged here, as well as when `/auth/callback` reads it back, so an unsafe value never
+ * reaches a mail at all and `encodeURIComponent` is never given one it would throw on. An unsafe
+ * `next` is dropped silently rather than refused: the form answers the same whatever it was given,
+ * because an answer that varied would be one more thing to tell addresses apart by.
+ *
+ * @param origin - This request's origin.
+ * @param next - The visitor's requested destination after sign-in, if any; honoured only when `isSafeNext` allows it.
+ * @returns `<origin>/auth/callback`, with `?next=` and the encoded destination when there is a safe one.
+ */
+function callbackUrl(origin: string, next: string | undefined): string {
+	const callback = `${origin}/auth/callback`;
+	return isSafeNext(next) ? `${callback}?next=${encodeURIComponent(next)}` : callback;
+}
+
+/**
  * The `Headers` built here are *not* discarded, even though this is a
  * synthetic `new Request(origin)` with none of the real visitor's cookies to
  * read: `signInWithOtp`'s PKCE flow writes the code verifier cookie through
@@ -64,9 +96,14 @@ async function delay(ms: number): Promise<void> {
  *
  * @param email - The address to send the magic link to; never confirmed to exist or not.
  * @param origin - This request's origin, used for the redirect URL and the synthetic request Supabase reads cookies from.
+ * @param next - Where to send the visitor after the magic link signs them in, when `callbackUrl` accepts it; anything else is ignored.
  * @returns `{ sent: true }` unconditionally, whether or not the address is known.
  */
-async function sendMagicLinkForImpl(email: string, origin: string): Promise<{ sent: true }> {
+async function sendMagicLinkForImpl(
+	email: string,
+	origin: string,
+	next?: string,
+): Promise<{ sent: true }> {
 	const headers = new Headers();
 	const supabase = createSupabase(new Request(origin), headers);
 
@@ -78,7 +115,7 @@ async function sendMagicLinkForImpl(email: string, origin: string): Promise<{ se
 	await Promise.allSettled([
 		supabase.auth.signInWithOtp({
 			email,
-			options: { emailRedirectTo: `${origin}/auth/callback`, shouldCreateUser: false },
+			options: { emailRedirectTo: callbackUrl(origin, next), shouldCreateUser: false },
 		}),
 		delay(ENUMERATION_TIMING_FLOOR_MS),
 	]);
@@ -128,9 +165,9 @@ export const sendMagicLinkFor = createServerOnlyFn(sendMagicLinkForImpl);
  * `getPreferences` uses for `getRequestHeader`.
  */
 export const sendMagicLink = createServerFn({ method: 'POST' })
-	.validator((data: { readonly email: string }) => data)
-	.handler(async ({ data }: { readonly data: { readonly email: string } }) =>
-		sendMagicLinkFor(data.email, getRequestUrl().origin),
+	.validator((data: SendMagicLinkInput) => data)
+	.handler(async ({ data }: { readonly data: SendMagicLinkInput }) =>
+		sendMagicLinkFor(data.email, getRequestUrl().origin, data.next),
 	);
 
 /**

@@ -11,6 +11,12 @@ describe(isSafeNext, () => {
 		expect(isSafeNext('/oauth/consent?authorization_id=0b5c1d2e-3f4a&foo=bar')).toBe(true);
 	});
 
+	// The lone-surrogate refusal below must not reach a surrogate pair, which is one ordinary
+	// character: only the unpaired half is a problem.
+	it('accepts a character outside the basic plane, which is a valid surrogate pair', () => {
+		expect(isSafeNext('/oauth/consent?authorization_id=abc&label=\u{1F600}')).toBe(true);
+	});
+
 	// Each row is a way to make a login link send the visitor somewhere other
 	// than this app's own consent page. Every one must fall back to `/`.
 	it.each([
@@ -38,6 +44,9 @@ describe(isSafeNext, () => {
 		['an encoded CRLF in the query', '/oauth/consent?authorization_id=1%0d%0aSet-Cookie:a=b'],
 		['an upper-case encoded CRLF in the query', '/oauth/consent?authorization_id=1%0D%0A'],
 		['an encoded CRLF in front of the path', '%0d%0a/oauth/consent?authorization_id=1'],
+		// `encodeURIComponent` throws a URIError on a lone surrogate, which would turn
+		// the login's callback URL into a 500 instead of a refusal.
+		['a lone surrogate, which cannot be percent-encoded', '/oauth/consent?authorization_id=\uD800'],
 	])('refuses %s', (_name, next) => {
 		expect(isSafeNext(next)).toBe(false);
 	});

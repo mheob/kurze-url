@@ -79,6 +79,77 @@ describe('sendMagicLinkFor', () => {
 		);
 	});
 
+	/**
+	 * A CLI login sends a signed-out visitor to `/login?next=<consent path>`, and the magic link
+	 * has to bring them back there. `next` rides in the callback URL Supabase is asked to put
+	 * in the mail, encoded as one query value.
+	 */
+	it('puts a safe next into the callback URL', async () => {
+		mocks.signInWithOtp.mockResolvedValue({ error: null });
+
+		await sendMagicLinkFor(
+			'someone@example.test',
+			'https://app.test',
+			'/oauth/consent?authorization_id=abc',
+		);
+
+		const next = encodeURIComponent('/oauth/consent?authorization_id=abc');
+		expect(mocks.signInWithOtp).toHaveBeenCalledWith(
+			expect.objectContaining({
+				/* oxlint-disable-next-line typescript/no-unsafe-assignment -- vitest types
+				 * `expect.objectContaining`'s return as `any`, so assigning it into a typed
+				 * object literal is what every use of this matcher looks like.
+				 */
+				options: expect.objectContaining({
+					emailRedirectTo: `https://app.test/auth/callback?next=${next}`,
+				}),
+			}),
+		);
+	});
+
+	/**
+	 * The guard runs on the way out as well as on the way back (`/auth/callback`): a value that
+	 * would be refused there has no business in a mail either, and a lone surrogate would make
+	 * `encodeURIComponent` throw, which is a 500 where a refusal belongs.
+	 */
+	it.each([
+		['an off-site address', '//evil.example'],
+		['an absolute URL', 'https://evil.example/oauth/consent?x'],
+		['a lone surrogate', '/oauth/consent?authorization_id=\uD800'],
+	])('drops an unsafe next: %s', async (_name, next) => {
+		mocks.signInWithOtp.mockResolvedValue({ error: null });
+
+		await expect(
+			sendMagicLinkFor('someone@example.test', 'https://app.test', next),
+		).resolves.toStrictEqual({ sent: true });
+
+		expect(mocks.signInWithOtp).toHaveBeenCalledWith(
+			expect.objectContaining({
+				/* oxlint-disable-next-line typescript/no-unsafe-assignment -- vitest types
+				 * `expect.objectContaining`'s return as `any`, so assigning it into a typed
+				 * object literal is what every use of this matcher looks like.
+				 */
+				options: expect.objectContaining({ emailRedirectTo: 'https://app.test/auth/callback' }),
+			}),
+		);
+	});
+
+	it('asks for the plain callback URL when there is no next', async () => {
+		mocks.signInWithOtp.mockResolvedValue({ error: null });
+
+		await sendMagicLinkFor('someone@example.test', 'https://app.test');
+
+		expect(mocks.signInWithOtp).toHaveBeenCalledWith(
+			expect.objectContaining({
+				/* oxlint-disable-next-line typescript/no-unsafe-assignment -- vitest types
+				 * `expect.objectContaining`'s return as `any`, so assigning it into a typed
+				 * object literal is what every use of this matcher looks like.
+				 */
+				options: expect.objectContaining({ emailRedirectTo: 'https://app.test/auth/callback' }),
+			}),
+		);
+	});
+
 	it('reports the same result for an unknown address as a known one', async () => {
 		// With account creation off, Supabase distinguishes known from unknown.
 		// The UI must not: otherwise the login form becomes an oracle for

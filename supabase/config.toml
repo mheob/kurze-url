@@ -158,15 +158,18 @@ enabled = true
 site_url = "http://127.0.0.1:3000"
 # The public URL that Auth serves on. Defaults to the API external URL with `/auth/v1` appended.
 # external_url = ""
-# A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-# `signInWithOtp` asks for `<origin>/auth/callback`, and GoTrue silently falls back to
-# site_url when the requested URL is not listed here — the magic link then lands on the
-# home page with no code to exchange, which reads as "the link did nothing". Both hosts
-# are listed because the dev server answers on either one and the origin is whichever the
-# developer typed. The scheme is http: this is a local server with no certificate.
+# URLs that auth providers are permitted to redirect to post authentication.
+# `signInWithOtp` asks for `<origin>/auth/callback`, and a CLI login adds `?next=<consent
+# path>` to it. GoTrue silently falls back to site_url when the requested URL is not admitted
+# here — the magic link then lands on the home page with no code to exchange, which reads as
+# "the link did nothing". An entry without the trailing `**` admits the plain callback and not
+# the one carrying `?next=`; checked locally on 2026-10-23. Both hosts are listed because the dev
+# server answers on either one and the origin is whichever the developer typed. A URL on
+# site_url's own hostname (127.0.0.1) was admitted whatever its path, so only the `localhost`
+# entry is a real test of this list. The scheme is http: this is a local server with no certificate.
 additional_redirect_urls = [
-	"http://127.0.0.1:3000/auth/callback",
-	"http://localhost:3000/auth/callback",
+	"http://127.0.0.1:3000/auth/callback**",
+	"http://localhost:3000/auth/callback**",
 ]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
