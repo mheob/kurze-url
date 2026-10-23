@@ -16,6 +16,7 @@
 		"lint": "vp lint",
 		"lint:fix": "vp lint --fix",
 		"prepare": "git rev-parse --git-dir > /dev/null 2>&1 && lefthook install || echo 'skipping lefthook: not a git repository'",
+		"probe:oauth": "node scripts/oauth-server-probe.ts",
 		"test": "pnpm --recursive test",
 		"typecheck": "tsc --noEmit"
 	},
