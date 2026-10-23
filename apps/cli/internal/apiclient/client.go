@@ -12,6 +12,7 @@
 // an error here. The client retries in exactly one case, a 401, because a
 // 401 means the API did nothing; after a network error, a timeout or a 5xx
 // it cannot know whether a POST was applied, so it never sends one twice.
+// For the same reason it never follows a redirect (see New).
 package apiclient
 
 import (
@@ -58,7 +59,8 @@ type Options struct {
 	// BaseURL is the API's origin, such as https://api.kurze-url.app.
 	BaseURL string
 	// HTTPClient sends the requests. Nil means a client with a 30 second
-	// timeout.
+	// timeout. New never modifies it, and it refuses redirects unless the
+	// client sets its own CheckRedirect (see New).
 	HTTPClient *http.Client
 	// Tokens supplies the bearer token. It is required.
 	Tokens TokenSource
@@ -81,10 +83,29 @@ type Client struct {
 }
 
 // New returns a client for the API at o.BaseURL.
+//
+// Redirects are not followed: a 3xx comes back as a *ProblemError carrying
+// its status. The API has no reason to redirect, and following one would be
+// wrong in three ways at once. Go strips Authorization when a redirect leaves
+// the host but forwards every other header, so the Vercel bypass secret
+// would go to whoever the Location names. A 301, 302 or 303 turns a POST
+// into a GET, so CreateLink could decode an unrelated page's JSON as a Link
+// and report success. And a 307 or 308 re-sends the POST body, which is a
+// retry the package promises never to make.
+//
+// A client the caller supplies is copied before this is applied, so the
+// caller's own value is left as it was, and a CheckRedirect it already sets
+// is respected, because that is a decision and not a default.
 func New(o Options) *Client {
-	hc := o.HTTPClient
-	if hc == nil {
+	var hc *http.Client
+	if o.HTTPClient == nil {
 		hc = &http.Client{Timeout: defaultTimeout}
+	} else {
+		own := *o.HTTPClient
+		hc = &own
+	}
+	if hc.CheckRedirect == nil {
+		hc.CheckRedirect = refuseRedirects
 	}
 	return &Client{
 		// A trailing slash would turn "/v1/me" into "//v1/me".
@@ -94,6 +115,12 @@ func New(o Options) *Client {
 		bypass:    o.VercelBypass,
 		userAgent: o.UserAgent,
 	}
+}
+
+// refuseRedirects is the redirect policy New installs: stop at the first
+// response and hand it back, so a 3xx reaches the caller as it is.
+func refuseRedirects(*http.Request, []*http.Request) error {
+	return http.ErrUseLastResponse
 }
 
 // Me returns the signed-in user and their teams.

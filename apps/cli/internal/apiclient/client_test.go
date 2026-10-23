@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -13,6 +14,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -278,19 +280,157 @@ func TestA500IsNotRetried(t *testing.T) {
 	require.EqualValues(t, 0, tokens.refreshCalls.Load())
 }
 
+// failingTransport fails every attempt and counts them, so a test can tell
+// "tried once and gave up" from "never tried" and from "tried again".
+type failingTransport struct{ attempts atomic.Int32 }
+
+func (f *failingTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	f.attempts.Add(1)
+	return nil, errors.New("connection reset by peer")
+}
+
+// bothVerbs are the two calls every no-retry test runs: a GET, and the POST
+// that must never be sent twice because the first one may have been applied.
+var bothVerbs = []struct {
+	name string
+	call func(ctx context.Context, c *apiclient.Client) error
+}{
+	{"GET", func(ctx context.Context, c *apiclient.Client) error {
+		_, err := c.Me(ctx)
+		return err
+	}},
+	{"POST", func(ctx context.Context, c *apiclient.Client) error {
+		_, err := c.CreateLink(ctx, "team-1", apiclient.CreateLinkRequest{DestinationURL: "https://example.org/"})
+		return err
+	}},
+}
+
 func TestANetworkErrorIsNotRetried(t *testing.T) {
-	f := newFakeAPI(t, func(_ int, _ seenRequest, w http.ResponseWriter) {
-		writeJSON(w, http.StatusOK, `{}`)
+	for _, verb := range bothVerbs {
+		t.Run("the connection dies after the request arrived/"+verb.name, func(t *testing.T) {
+			// The dangerous case: the server has the request, so a POST may
+			// well have been applied, and the client never sees an answer.
+			f := newFakeAPI(t, func(_ int, _ seenRequest, w http.ResponseWriter) {
+				conn, _, err := w.(http.Hijacker).Hijack()
+				if err == nil {
+					_ = conn.Close()
+				}
+			})
+			tokens := &fakeTokens{}
+
+			err := verb.call(t.Context(), newClient(f, tokens))
+
+			require.Error(t, err)
+			require.Len(t, f.requests(), 1, "a request that may have been applied is never sent again")
+			require.EqualValues(t, 0, tokens.refreshCalls.Load())
+			var perr *apiclient.ProblemError
+			require.False(t, errors.As(err, &perr), "a transport failure is not a problem document")
+		})
+
+		t.Run("the transport fails/"+verb.name, func(t *testing.T) {
+			transport := &failingTransport{}
+			client := apiclient.New(apiclient.Options{
+				BaseURL:    "http://api.invalid",
+				HTTPClient: &http.Client{Transport: transport},
+				Tokens:     &fakeTokens{},
+			})
+
+			err := verb.call(t.Context(), client)
+
+			require.Error(t, err)
+			require.EqualValues(t, 1, transport.attempts.Load(), "one attempt, then the error is the caller's")
+		})
+	}
+}
+
+func TestATimeoutIsNotRetried(t *testing.T) {
+	for _, verb := range bothVerbs {
+		t.Run(verb.name, func(t *testing.T) {
+			release := make(chan struct{})
+			f := newFakeAPI(t, func(int, seenRequest, http.ResponseWriter) { <-release })
+			// Registered after the server's own cleanup, so it runs first:
+			// the server cannot close while a handler is still blocked.
+			t.Cleanup(func() { close(release) })
+			client := apiclient.New(apiclient.Options{
+				BaseURL:    f.srv.URL,
+				HTTPClient: &http.Client{Timeout: 100 * time.Millisecond},
+				Tokens:     &fakeTokens{},
+			})
+
+			err := verb.call(t.Context(), client)
+
+			var netErr net.Error
+			require.ErrorAs(t, err, &netErr)
+			require.True(t, netErr.Timeout(), "the error must say it was a timeout: %v", err)
+			require.Len(t, f.requests(), 1, "a request that timed out may have been applied, so it is never sent again")
+		})
+	}
+}
+
+// redirectingAPI starts two servers: the API, which answers every request
+// with a redirect of the given status, and a stranger it redirects to. The
+// stranger answers 200 with a JSON document a careless client would happily
+// decode as a Link.
+func redirectingAPI(t *testing.T, status int) (api, stranger *fakeAPI) {
+	t.Helper()
+	stranger = newFakeAPI(t, func(_ int, _ seenRequest, w http.ResponseWriter) {
+		writeJSON(w, http.StatusOK, `{"id":"from-the-stranger"}`)
 	})
-	client := newClient(f, &fakeTokens{})
-	f.srv.Close()
+	api = newFakeAPI(t, func(_ int, r seenRequest, w http.ResponseWriter) {
+		w.Header().Set("Location", stranger.srv.URL+r.Path)
+		w.WriteHeader(status)
+	})
+	return api, stranger
+}
 
-	_, err := client.Me(t.Context())
+func TestARedirectIsReturnedAndNeverFollowed(t *testing.T) {
+	// A followed redirect forwards x-vercel-protection-bypass to the new
+	// host (Go strips only Authorization), turns a POST into a GET on 301,
+	// 302 and 303 so the answer of an unrelated page is decoded as a Link,
+	// and re-sends the POST body on 307 and 308. None of that is wanted from
+	// an API that has no reason to redirect.
+	for _, status := range []int{
+		http.StatusMovedPermanently, http.StatusFound, http.StatusSeeOther,
+		http.StatusTemporaryRedirect, http.StatusPermanentRedirect,
+	} {
+		for _, verb := range bothVerbs {
+			for _, supplied := range []bool{false, true} {
+				name := fmt.Sprintf("%d/%s/supplied client %t", status, verb.name, supplied)
+				t.Run(name, func(t *testing.T) {
+					api, stranger := redirectingAPI(t, status)
+					opts := apiclient.Options{
+						BaseURL:      api.srv.URL,
+						Tokens:       &fakeTokens{},
+						VercelBypass: "bypass-secret",
+					}
+					if supplied {
+						opts.HTTPClient = api.srv.Client()
+					}
 
-	require.Error(t, err)
-	require.Empty(t, f.requests())
-	var perr *apiclient.ProblemError
-	require.False(t, errors.As(err, &perr), "a transport failure is not a problem document")
+					err := verb.call(t.Context(), apiclient.New(opts))
+
+					require.Equal(t, status, asProblem(t, err).Status)
+					require.Len(t, api.requests(), 1)
+					require.Empty(t, stranger.requests(), "the redirect target must never see a request")
+					if supplied {
+						require.Nil(t, opts.HTTPClient.CheckRedirect, "the caller's own client must not be modified")
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestACallersOwnRedirectPolicyIsLeftAlone(t *testing.T) {
+	// The default is only for a client that has no opinion. One that sets
+	// CheckRedirect has made the decision itself.
+	api, stranger := redirectingAPI(t, http.StatusFound)
+	hc := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return nil }}
+
+	_, err := apiclient.New(apiclient.Options{BaseURL: api.srv.URL, HTTPClient: hc, Tokens: &fakeTokens{}}).Me(t.Context())
+
+	require.NoError(t, err)
+	require.Len(t, stranger.requests(), 1)
 }
 
 func TestAFailedRefreshIsWrapped(t *testing.T) {
