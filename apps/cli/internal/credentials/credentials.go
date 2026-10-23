@@ -151,7 +151,7 @@ func (c *Chain) Save(tokens Tokens) error {
 	kerr := keyring.Set(service, c.envName, string(data))
 	if kerr == nil {
 		c.fellBack.Store(false)
-		if err := removeFile(c.FilePath()); err != nil {
+		if _, err := removeFile(c.FilePath()); err != nil {
 			return fmt.Errorf("remove the stale credentials file: %w", err)
 		}
 		return nil
@@ -166,19 +166,36 @@ func (c *Chain) Save(tokens Tokens) error {
 
 // Delete removes the tokens from the keychain and the file. Both are always
 // attempted, so a failing keychain cannot stop the file from going, and
-// nothing being there is not an error. Any other failure is returned, joined
-// when both stores fail, because a token that survives a logout must not do
-// so quietly.
+// nothing being there is not an error.
+//
+// A keychain failure other than "not found" is returned, with one exception:
+// when a fallback file existed and was removed by this very call. Save writes
+// the file only when the keychain refused the tokens, so the tokens lived in
+// the file and a keychain that cannot be reached held none. That is every
+// logout on a headless machine, and reporting a failure there would be wrong
+// every time. Without such a file nothing shows the keychain empty, and a
+// locked one may still hold a token, so the failure is returned: a logout must
+// not report success while a token survives it. Failures are joined when both
+// stores fail.
 func (c *Chain) Delete() error {
 	if err := c.check(); err != nil {
 		return err
 	}
-	var errs []error
-	if err := keyring.Delete(service, c.envName); err != nil && !errors.Is(err, keyring.ErrNotFound) {
-		errs = append(errs, fmt.Errorf("delete from the keychain: %w", err))
+	kerr := keyring.Delete(service, c.envName)
+	if errors.Is(kerr, keyring.ErrNotFound) {
+		kerr = nil
 	}
-	if err := removeFile(c.FilePath()); err != nil {
-		errs = append(errs, fmt.Errorf("delete the credentials file: %w", err))
+	removed, ferr := removeFile(c.FilePath())
+	if removed {
+		kerr = nil
+	}
+
+	var errs []error
+	if kerr != nil {
+		errs = append(errs, fmt.Errorf("delete from the keychain: %w", kerr))
+	}
+	if ferr != nil {
+		errs = append(errs, fmt.Errorf("delete the credentials file: %w", ferr))
 	}
 	return errors.Join(errs...)
 }

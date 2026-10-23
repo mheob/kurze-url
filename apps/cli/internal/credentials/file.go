@@ -88,11 +88,17 @@ func writeFile(path string, data []byte) error {
 	return nil
 }
 
-// removeFile deletes the file at path. A file that is not there is the
-// expected state, not an error.
-func removeFile(path string) error {
-	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
+// removeFile deletes the file at path and reports whether there was one to
+// delete. A file that is not there is the expected state, not an error, and
+// removed is false for it; Delete needs the difference, because a file that
+// existed is the proof that the tokens were stored there.
+func removeFile(path string) (removed bool, err error) {
+	err = os.Remove(path)
+	if err == nil {
+		return true, nil
 	}
-	return nil
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	return false, err
 }

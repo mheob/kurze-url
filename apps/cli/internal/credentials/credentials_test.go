@@ -221,17 +221,30 @@ func TestDeleteWithNothingStoredIsNotAnError(t *testing.T) {
 	require.NoError(t, credentials.New("a", t.TempDir()).Delete())
 }
 
-func TestDeleteStillRemovesTheFileWhenTheKeychainFails(t *testing.T) {
-	// The file is what is left behind on a machine whose keychain is down, so
-	// a failing keychain must not stop it from being removed. The failure is
-	// still reported, because a token may remain in a keychain this process
-	// could not reach.
+func TestDeleteWithAFallbackFileIgnoresAnUnreachableKeychain(t *testing.T) {
+	// The tokens lived in the file, because that is where a Save goes when
+	// the keychain is down, so a keychain that cannot even be reached held
+	// none. On a headless machine this is every logout, and reporting a
+	// failure there would be wrong every time.
 	brokenKeychain(t)
 	dir := t.TempDir()
 	store := credentials.New("a", dir)
 	require.NoError(t, store.Save(sampleTokens()))
 
-	err := store.Delete()
+	require.NoError(t, store.Delete())
+
+	require.Empty(t, directoryEntries(t, dir))
+	_, err := store.Load()
+	require.ErrorIs(t, err, credentials.ErrNotFound)
+}
+
+func TestDeleteWithoutAFallbackFileReportsAnUnreachableKeychain(t *testing.T) {
+	// Nothing proves the keychain holds no token: it may only be locked. A
+	// logout that then answered success would let a token survive it.
+	brokenKeychain(t)
+	dir := t.TempDir()
+
+	err := credentials.New("a", dir).Delete()
 
 	require.ErrorIs(t, err, errKeychainDown)
 	require.Empty(t, directoryEntries(t, dir))
