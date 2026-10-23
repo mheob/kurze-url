@@ -16,9 +16,14 @@ interface FakeSupabaseClient {
 			readonly email: string;
 			readonly options: { readonly shouldCreateUser: boolean; readonly emailRedirectTo: string };
 		}) => Promise<{ error: { message: string } | null }>;
-		signOut: (options: { readonly scope: 'global' | 'local' }) => Promise<{ error: null }>;
+		signOut: (options: {
+			readonly scope: 'global' | 'local';
+		}) => Promise<{ error: { message: string; status: number } | null }>;
 	};
 }
+
+/** What `signOut` returns when the revoke call fails: an `AuthError` carries a message and a status. */
+const REVOKE_REFUSED = { message: 'Too Many Requests', status: 429 };
 
 /** What the fake `signOut` writes into the `Headers` it was built with: the session cookie, cleared. */
 const CLEARED_SESSION_COOKIE = 'sb-session=; Max-Age=0; Path=/';
@@ -281,6 +286,45 @@ describe('signOutFor', () => {
 		await signOutWith('global');
 
 		expect(mocks.signOut).toHaveBeenCalledExactlyOnceWith({ scope: 'global' });
+	});
+
+	/**
+	 * `auth-js`'s `_signOut` clears the local session and still returns `{ error }` when the revoke
+	 * call fails with anything but a 401, 403 or 404 (a 429, a 5xx, a network failure). For
+	 * `global` that is a sign-out that did not do what it promised: the other sessions, the CLI's
+	 * among them, are still alive. So it must not look like success, and the cleared cookies must
+	 * not be flushed either, or the browser would drop a session the server still honours.
+	 */
+	it('rejects, and flushes nothing, when a global sign-out is refused', async () => {
+		mocks.signOut.mockResolvedValue({ error: REVOKE_REFUSED });
+
+		await expect(signOutWith('global')).rejects.toThrow('global sign-out failed');
+
+		expect(mocks.appendResponseHeader).not.toHaveBeenCalled();
+	});
+
+	/**
+	 * `local` promises only that this browser's session is gone, and the SDK has cleared it whatever
+	 * the revoke call answered, so the error changes nothing: the page signs out and the cookies go.
+	 */
+	it('still signs out, and flushes, when a local sign-out is refused', async () => {
+		mocks.signOut.mockResolvedValue({ error: REVOKE_REFUSED });
+
+		await expect(signOutWith('local')).resolves.toBeUndefined();
+
+		expect(mocks.appendResponseHeader).toHaveBeenCalledExactlyOnceWith('set-cookie', [
+			'sb-pkce-code-verifier=abc; Path=/; HttpOnly',
+			CLEARED_SESSION_COOKIE,
+		]);
+	});
+
+	it('flushes the cleared session cookies after a successful global sign-out', async () => {
+		await signOutWith('global');
+
+		expect(mocks.appendResponseHeader).toHaveBeenCalledExactlyOnceWith('set-cookie', [
+			'sb-pkce-code-verifier=abc; Path=/; HttpOnly',
+			CLEARED_SESSION_COOKIE,
+		]);
 	});
 
 	/**

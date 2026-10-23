@@ -163,10 +163,17 @@ interface SignOutRequest {
  * browser would keep sending the same still-valid session cookie on its next request: a sign-out
  * that silently does not sign anyone out.
  *
+ * Only `global` reports a refused revoke. `auth-js` clears the local session and still returns
+ * `{ error }` when the revoke call fails with anything but a 401, 403 or 404 (a 429, a 5xx, a
+ * network failure), so for `global` the other sessions, the CLI's among them, may be alive while
+ * everything looks signed out. That throws, before the flush, so the browser keeps the session the
+ * server may still honour and the caller's error state shows instead of a navigation away.
+ *
  * @param request - The incoming request, read for its session cookies.
  * @param headers - The `Headers` the cleared cookies are written into; flushed before this returns.
  * @param scope - `local` to end only this browser's session, `global` to end all of them.
  * @returns Nothing; the work is the revocation and the flushed cookies.
+ * @throws {Error} When `scope` is `global` and Supabase refused the revocation; nothing is flushed then.
  */
 async function signOutForImpl(
 	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `Request` nests a mutable `Headers` through its own `.headers` getter, which `Readonly<>`, being shallow, does not reach; not a type this file can edit.
@@ -175,7 +182,11 @@ async function signOutForImpl(
 	scope: SignOutScope,
 ): Promise<void> {
 	const supabase = createSupabase(request, headers);
-	await supabase.auth.signOut({ scope });
+	const { error } = await supabase.auth.signOut({ scope });
+	// `local` stays lenient: whatever the revoke call said, the SDK has cleared this browser's session, which is all `local` promises.
+	if (scope === 'global' && error !== null) {
+		throw new Error('global sign-out failed', { cause: error });
+	}
 	flushSessionCookies(headers);
 }
 

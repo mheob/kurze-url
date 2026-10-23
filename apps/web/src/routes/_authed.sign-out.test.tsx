@@ -104,4 +104,22 @@ describe('signing out of the authenticated layout', () => {
 
 		expect(mocks.signOut).toHaveBeenCalledExactlyOnceWith({ data: { scope: 'global' } });
 	});
+
+	/**
+	 * A global sign-out Supabase refused rejects (`signOutFor`), and the layout's existing error
+	 * state is what tells the person: they stay signed in, with the box still ticked, and see the
+	 * alert instead of being sent away as if it had worked.
+	 */
+	it('shows the error, and stays put, when signing out everywhere fails', async () => {
+		mocks.signOut.mockRejectedValue(new Error('global sign-out failed'));
+		renderLayout();
+
+		await userEvent.click(await screen.findByRole('checkbox', { name: 'Sign out everywhere' }));
+		await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+
+		await expect(screen.findByRole('alert')).resolves.toHaveTextContent(
+			'Something went wrong. Please try again.',
+		);
+		expect(screen.getByRole('checkbox', { name: 'Sign out everywhere' })).toBeChecked();
+	});
 });
