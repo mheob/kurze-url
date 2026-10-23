@@ -214,6 +214,19 @@ describe('the consent route', () => {
 			});
 		});
 
+		// A page that loads invalid has not been interacted with, so it must not take focus.
+		it('leaves focus alone for a page that loads invalid', async () => {
+			mocks.loadConsent.mockResolvedValue({ kind: 'invalid' });
+			renderConsentRoute('/oauth/consent?authorization_id=gone');
+
+			const heading = await screen.findByRole('heading', {
+				name: "This request can't be completed",
+			});
+
+			expect(heading).not.toHaveFocus();
+			expect(document.body).toHaveFocus();
+		});
+
 		it('renders the request for the client and the person it names', async () => {
 			mocks.loadConsent.mockResolvedValue(CONSENT);
 			renderConsentRoute('/oauth/consent?authorization_id=abc');
@@ -392,6 +405,23 @@ describe('the consent route', () => {
 			).resolves.toBeInTheDocument();
 			expect(screen.queryByRole('button')).not.toBeInTheDocument();
 			expect(assign).not.toHaveBeenCalled();
+		});
+
+		// Pressing Allow disables the focused button and the request then turns out to be gone, which
+		// replaces the card: focus would fall to `<body>` and nothing would be announced (WCAG 2.4.3,
+		// 4.1.3), so it moves to the heading that now names the new state.
+		it('moves focus to the heading when the authorization turns out to be gone', async () => {
+			mocks.decideConsent.mockResolvedValue({ kind: 'invalid' });
+			await loadedConsent();
+
+			await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
+
+			const heading = await screen.findByRole('heading', {
+				name: "This request can't be completed",
+			});
+			await waitFor(() => {
+				expect(heading).toHaveFocus();
+			});
 		});
 
 		it('refuses to follow a decision that redirects somewhere other than http or https', async () => {

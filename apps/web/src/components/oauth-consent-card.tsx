@@ -1,4 +1,5 @@
 import { ShieldAlertIcon } from 'lucide-react';
+import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { ConsentState } from '../server/oauth-consent';
@@ -39,6 +40,14 @@ export interface OAuthConsentCardProps {
  * primary action sits where a dialog's confirmation does and the default tab order reads "refuse,
  * then accept".
  *
+ * Pressing Allow or Deny disables the button that has focus, and an authorization that then proves
+ * to be gone turns this very card into the explanation: focus would fall to `<body>` and nothing
+ * would announce the change (WCAG 2.4.3, 4.1.3). So when `state` becomes `invalid` under a card
+ * that was showing a request, focus moves to the heading, which now names the new state; it takes
+ * `tabIndex={-1}` to be focusable without joining the tab order. A card that is `invalid` from its
+ * first render leaves focus where the browser put it: a page that loads does not take focus, and
+ * nothing has been decided yet.
+ *
  * @param props - The card's props.
  * @param props.deciding - Whether a decision is in flight, which disables both buttons.
  * @param props.onDecide - Called with `approve` or `deny` when a button is pressed.
@@ -51,6 +60,13 @@ export function OAuthConsentCard({
 	state,
 }: OAuthConsentCardProps): React.JSX.Element {
 	const { t } = useTranslation();
+	const heading = useRef<HTMLHeadingElement>(null);
+	const previousKind = useRef(state.kind);
+
+	useEffect(() => {
+		if (state.kind === 'invalid' && previousKind.current === 'consent') heading.current?.focus();
+		previousKind.current = state.kind;
+	}, [state.kind]);
 
 	return (
 		<main className="flex min-h-screen items-center justify-center bg-background px-6 py-12 text-foreground">
@@ -60,7 +76,7 @@ export function OAuthConsentCard({
 						{/* `CardTitle` hardcodes a `<div>`, so the page's only heading is a real
 						    `<h1>` inside it, as `login.tsx` does for the same reason. */}
 						<CardTitle>
-							<h1>
+							<h1 ref={heading} tabIndex={-1}>
 								{state.kind === 'consent'
 									? t('oauthConsent.title')
 									: t('oauthConsent.invalidTitle')}

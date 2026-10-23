@@ -148,6 +148,10 @@ async function settleDecision(
  * route's error boundary, where the app reports unexpected failures and shows its generic message.
  * A reload asks the server again.
  *
+ * An `invalid` phase swaps the request for the error card under the same mounted card, and the card
+ * itself moves focus to its heading when that happens (the focused button was disabled by
+ * `deciding`, so focus would otherwise be lost and the change never announced).
+ *
  * @param props - The component's props.
  * @param props.consent - The request the server confirmed for this signed-in person.
  * @returns The consent card, or the error card once the authorization has proved to be gone.

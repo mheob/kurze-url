@@ -26,13 +26,13 @@ const invalid = { kind: 'invalid' } as const;
  *
  * @param props - The props this test cares about; the rest is a card nobody is deciding on.
  * @param language - Which catalogue to load.
- * @returns Testing Library's render result.
+ * @returns The card inside its provider, to render or to rerender with.
  */
-function renderCard(
+function cardWith(
 	props: Partial<OAuthConsentCardProps>,
 	language: Language = 'en',
-): ReturnType<typeof render> {
-	return render(
+): React.ReactElement {
+	return (
 		<I18nextProvider i18n={createI18n(language)}>
 			<OAuthConsentCard
 				deciding={false}
@@ -40,8 +40,20 @@ function renderCard(
 				state={consent}
 				{...props}
 			/>
-		</I18nextProvider>,
+		</I18nextProvider>
 	);
+}
+
+/**
+ * @param props - The props this test cares about; the rest is a card nobody is deciding on.
+ * @param language - Which catalogue to load.
+ * @returns Testing Library's render result.
+ */
+function renderCard(
+	props: Partial<OAuthConsentCardProps>,
+	language: Language = 'en',
+): ReturnType<typeof render> {
+	return render(cardWith(props, language));
 }
 
 describe(OAuthConsentCard, () => {
@@ -139,6 +151,36 @@ describe(OAuthConsentCard, () => {
 		).toBeInTheDocument();
 		expect(screen.queryByRole('button')).not.toBeInTheDocument();
 		expect(screen.queryByRole('note')).not.toBeInTheDocument();
+	});
+
+	/**
+	 * Pressing Allow disables the focused button, and a request that then turns out to be gone
+	 * replaces the whole card: without a move, focus falls to `<body>` and nothing is announced
+	 * (WCAG 2.4.3, 4.1.3). The heading is where a screen reader reads the new state from.
+	 */
+	it('moves focus to the heading when the request turns invalid under a mounted card', async () => {
+		const view = renderCard({});
+		await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
+		view.rerender(cardWith({ deciding: true }));
+		view.rerender(cardWith({ state: invalid }));
+
+		expect(screen.getByRole('heading', { name: "This request can't be completed" })).toHaveFocus();
+	});
+
+	// A person who arrives on an invalid link has done nothing yet, and a page that loads must not
+	// take focus from wherever the browser put it.
+	it('leaves focus alone when the card is invalid from the start', () => {
+		renderCard({ state: invalid });
+
+		expect(document.body).toHaveFocus();
+	});
+
+	it('leaves focus alone while a decision is in flight', async () => {
+		const view = renderCard({});
+		await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
+		view.rerender(cardWith({ deciding: true }));
+
+		expect(screen.getByRole('heading', { name: 'Allow CLI access' })).not.toHaveFocus();
 	});
 
 	it('reads in German', () => {
