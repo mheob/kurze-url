@@ -14,6 +14,7 @@ import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthedNewTeamRouteImport } from './routes/_authed/new-team'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
+import { Route as OauthConsentRouteImport } from './routes/oauth.consent'
 import { Route as AuthedTeamsTeamSlugAuditLogRouteImport } from './routes/_authed/teams.$teamSlug.audit-log'
 import { Route as AuthedTeamsTeamSlugDomainsRouteImport } from './routes/_authed/teams.$teamSlug.domains'
 import { Route as AuthedTeamsTeamSlugFoldersRouteImport } from './routes/_authed/teams.$teamSlug.folders'
@@ -46,6 +47,11 @@ const AuthedNewTeamRoute = AuthedNewTeamRouteImport.update({
 const AuthCallbackRoute = AuthCallbackRouteImport.update({
   id: '/auth/callback',
   path: '/auth/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OauthConsentRoute = OauthConsentRouteImport.update({
+  id: '/oauth/consent',
+  path: '/oauth/consent',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthedTeamsTeamSlugAuditLogRoute =
@@ -107,6 +113,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/new-team': typeof AuthedNewTeamRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/oauth/consent': typeof OauthConsentRoute
   '/teams/$teamSlug/audit-log': typeof AuthedTeamsTeamSlugAuditLogRoute
   '/teams/$teamSlug/domains': typeof AuthedTeamsTeamSlugDomainsRoute
   '/teams/$teamSlug/folders': typeof AuthedTeamsTeamSlugFoldersRoute
@@ -122,6 +129,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/new-team': typeof AuthedNewTeamRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/oauth/consent': typeof OauthConsentRoute
   '/teams/$teamSlug/audit-log': typeof AuthedTeamsTeamSlugAuditLogRoute
   '/teams/$teamSlug/domains': typeof AuthedTeamsTeamSlugDomainsRoute
   '/teams/$teamSlug/folders': typeof AuthedTeamsTeamSlugFoldersRoute
@@ -139,6 +147,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/_authed/new-team': typeof AuthedNewTeamRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/oauth/consent': typeof OauthConsentRoute
   '/_authed/teams/$teamSlug/audit-log': typeof AuthedTeamsTeamSlugAuditLogRoute
   '/_authed/teams/$teamSlug/domains': typeof AuthedTeamsTeamSlugDomainsRoute
   '/_authed/teams/$teamSlug/folders': typeof AuthedTeamsTeamSlugFoldersRoute
@@ -156,6 +165,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/new-team'
     | '/auth/callback'
+    | '/oauth/consent'
     | '/teams/$teamSlug/audit-log'
     | '/teams/$teamSlug/domains'
     | '/teams/$teamSlug/folders'
@@ -171,6 +181,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/new-team'
     | '/auth/callback'
+    | '/oauth/consent'
     | '/teams/$teamSlug/audit-log'
     | '/teams/$teamSlug/domains'
     | '/teams/$teamSlug/folders'
@@ -187,6 +198,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/_authed/new-team'
     | '/auth/callback'
+    | '/oauth/consent'
     | '/_authed/teams/$teamSlug/audit-log'
     | '/_authed/teams/$teamSlug/domains'
     | '/_authed/teams/$teamSlug/folders'
@@ -203,6 +215,7 @@ export interface RootRouteChildren {
   AuthedRoute: typeof AuthedRouteWithChildren
   LoginRoute: typeof LoginRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
+  OauthConsentRoute: typeof OauthConsentRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -240,6 +253,13 @@ declare module '@tanstack/react-router' {
       path: '/auth/callback'
       fullPath: '/auth/callback'
       preLoaderRoute: typeof AuthCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/oauth/consent': {
+      id: '/oauth/consent'
+      path: '/oauth/consent'
+      fullPath: '/oauth/consent'
+      preLoaderRoute: typeof OauthConsentRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authed/teams/$teamSlug/audit-log': {
@@ -343,6 +363,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthedRoute: AuthedRouteWithChildren,
   LoginRoute: LoginRoute,
   AuthCallbackRoute: AuthCallbackRoute,
+  OauthConsentRoute: OauthConsentRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

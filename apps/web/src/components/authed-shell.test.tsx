@@ -53,7 +53,7 @@ function renderShell(props: {
 	readonly isMaintainer?: boolean;
 	readonly language?: 'de' | 'en';
 	readonly memberships?: readonly Membership[];
-	readonly onSignOut?: () => void;
+	readonly onSignOut?: (everywhere: boolean) => void;
 	readonly signingOut?: boolean;
 	readonly theme?: 'dark' | 'light';
 }): ReturnType<typeof render> {
@@ -62,7 +62,7 @@ function renderShell(props: {
 		isMaintainer = false,
 		language = 'en',
 		memberships: membershipsProp = memberships,
-		onSignOut = vi.fn<() => void>(),
+		onSignOut = vi.fn<(everywhere: boolean) => void>(),
 		signingOut = false,
 		theme = 'light',
 	} = props;
@@ -122,11 +122,11 @@ describe(AuthedShell, () => {
 
 	it('offers a sign-out control that calls the caller-supplied handler', async () => {
 		// Finding 2: `signOut` in `server/auth.ts` had no caller at all.
-		const onSignOut = vi.fn<() => void>();
+		const onSignOut = vi.fn<(everywhere: boolean) => void>();
 		renderShell({ onSignOut });
 
 		await userEvent.click(await screen.findByRole('button', { name: 'Sign out' }));
-		expect(onSignOut).toHaveBeenCalledOnce();
+		expect(onSignOut).toHaveBeenCalledExactlyOnceWith(false);
 	});
 
 	it('disables the sign-out control while a sign-out is already in flight', async () => {

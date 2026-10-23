@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router';
 import { FolderIcon, GlobeIcon, HistoryIcon, LinkIcon, TagIcon, UsersIcon } from 'lucide-react';
+import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { Theme } from '../lib/preferences';
@@ -8,6 +9,8 @@ import { LanguageSwitcher } from './language-switcher';
 import { TeamSwitcher } from './team-switcher';
 import { ThemeToggle } from './theme-toggle';
 import { Button, buttonVariants } from './ui/button';
+import { Checkbox } from './ui/checkbox';
+import { Field, FieldLabel } from './ui/field';
 import {
 	Sidebar,
 	SidebarContent,
@@ -25,7 +28,9 @@ interface AppSidebarProps {
 	// no way back to `/new-team` from inside the app.
 	readonly isMaintainer: boolean;
 	readonly memberships: readonly Membership[];
-	readonly onSignOut: () => void;
+	// `true` when the person ticked "Sign out everywhere": the caller ends every session they
+	// have, not only this browser's.
+	readonly onSignOut: (everywhere: boolean) => void;
 	readonly signingOut: boolean;
 	// `ThemeToggle`'s footer control needs this; `AuthedShell` sources it from
 	// `usePreferences()` and threads it down, rather than this component
@@ -71,6 +76,12 @@ interface AppSidebarProps {
  * `memberships`, looked up by `currentTeamSlug`, rather than a new prop —
  * `AppSidebar` already receives everything it needs to derive it.
  *
+ * The "Sign out everywhere" box is this component's own state, not a prop: nothing outside the
+ * footer reads it, and it is only ever read at the moment the button is pressed, which is when it
+ * is handed to `onSignOut`. It starts unchecked on purpose: a plain sign-out ends only this
+ * browser's session, and a global one also ends the person's CLI sessions, which is a surprise
+ * unless they asked for it.
+ *
  * `ThemeToggle` and `LanguageSwitcher` are rendered here, in the footer, for
  * the first time in the authenticated area — before this task, both were
  * only ever rendered by `SiteHeader` on the public pages, so a signed-in
@@ -80,7 +91,7 @@ interface AppSidebarProps {
  * @param props.currentTeamSlug - The resolved current team's slug, or undefined when there is none (e.g. a maintainer with no team yet, on `/new-team`).
  * @param props.isMaintainer - Whether to offer team creation.
  * @param props.memberships - The signed-in visitor's team memberships.
- * @param props.onSignOut - Called when the sign-out control is clicked.
+ * @param props.onSignOut - Called when the sign-out control is clicked, with whether "Sign out everywhere" was ticked.
  * @param props.signingOut - True while sign-out is in flight; disables the sign-out control.
  * @param props.theme - The current theme preference; passed straight through to the footer's `ThemeToggle`.
  * @returns The rendered sidebar.
@@ -94,6 +105,8 @@ export function AppSidebar({
 	theme,
 }: AppSidebarProps): React.JSX.Element {
 	const { t } = useTranslation();
+	const [everywhere, setEverywhere] = useState(false);
+	const everywhereId = useId();
 	const hasResolvedTeam = currentTeamSlug !== undefined && memberships.length > 0;
 	const currentRole = memberships.find((membership) => membership.slug === currentTeamSlug)?.role;
 	const canViewAuditLog = currentRole === 'admin' || currentRole === 'owner';
@@ -215,7 +228,32 @@ export function AppSidebar({
 							{t('teams.create')}
 						</Link>
 					) : null}
-					<Button disabled={signingOut} onClick={onSignOut} type="button" variant="outline">
+					<div className="p-1">
+						<Field orientation="horizontal">
+							{/* `id` is load-bearing: Base UI's `Checkbox` renders a hidden native
+							    input for form semantics, and that hidden input's `id` is how it
+							    finds `FieldLabel` below as its label and gives the visible checkbox
+							    an accessible name. Removing it breaks
+							    `getByRole('checkbox', { name: … })`, and the label stops toggling
+							    the box. */}
+							<Checkbox
+								checked={everywhere}
+								id={everywhereId}
+								onCheckedChange={(checked: boolean) => {
+									setEverywhere(checked);
+								}}
+							/>
+							<FieldLabel htmlFor={everywhereId}>{t('auth.signOutEverywhere')}</FieldLabel>
+						</Field>
+					</div>
+					<Button
+						disabled={signingOut}
+						onClick={() => {
+							onSignOut(everywhere);
+						}}
+						type="button"
+						variant="outline"
+					>
 						{t('auth.signOut')}
 					</Button>
 				</section>

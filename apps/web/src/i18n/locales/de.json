@@ -30,7 +30,19 @@
 		"emailLabel": "E-Mail-Adresse",
 		"sendLink": "Link zusenden",
 		"linkSent": "Falls es zu dieser Adresse ein Konto gibt, ist ein Link unterwegs.",
-		"signOut": "Abmelden"
+		"signOut": "Abmelden",
+		"signOutEverywhere": "Überall abmelden"
+	},
+	"oauthConsent": {
+		"title": "CLI-Zugriff erlauben",
+		"request": "{{client}} möchte in deinem Namen auf kurze-url zugreifen.",
+		"scope": "Sie kann dann alles, was du in der Web-App darfst, in allen deinen Teams.",
+		"warning": "Erlaube das nur, wenn du gerade selbst kurze-url login im Terminal ausgeführt hast.",
+		"signedInAs": "Angemeldet als {{email}}",
+		"allow": "Erlauben",
+		"deny": "Ablehnen",
+		"invalidTitle": "Diese Anfrage lässt sich nicht abschließen",
+		"invalidBody": "Der Link ist abgelaufen oder ungültig. Führe kurze-url login im Terminal erneut aus."
 	},
 	"nav": {
 		"label": "Bereiche",

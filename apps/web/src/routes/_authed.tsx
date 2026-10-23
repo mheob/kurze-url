@@ -55,12 +55,11 @@ export interface Me {
  * load, the exact "login that works and then silently stops" failure Tasks
  * 4 and 5 already hit (and fixed) for sign-in and sign-out.
  *
- * Logic lives inline in the `.handler()` closure — `signOut`'s shape in
- * `server/auth.ts`, not `sendMagicLinkFor`'s separately-exported-and-wrapped
- * one. That second shape exists only for logic that needs testing
- * independent of a request (`sendMagicLinkFor`'s enumeration-timing
- * guarantee); nothing here does — the only thing this task's brief asks to
- * be unit-tested is the pure `requireTeamId` below. Extracting this body
+ * Logic lives inline in the `.handler()` closure, not in a separately-exported-and-wrapped
+ * helper like `sendMagicLinkFor` and `signOutFor` in `server/auth.ts`. That second shape exists
+ * only for logic that needs testing independent of a request (`sendMagicLinkFor`'s
+ * enumeration-timing guarantee, `signOutFor`'s scope); nothing here does — the only thing this
+ * task's brief asks to be unit-tested is the pure `requireTeamId` below. Extracting this body
  * into a named helper would need `createServerOnlyFn` to keep the client
  * bundle buildable (see `sendMagicLinkFor`'s docstring for why); left inline,
  * it doesn't.
@@ -146,7 +145,10 @@ function AuthedLayout(): React.JSX.Element {
 	const [signOutFailed, setSignOutFailed] = useState(false);
 
 	const signOutMutation = useMutation({
-		mutationFn: async () => signOut(),
+		// `everywhere` is what the sidebar's "Sign out everywhere" box held when the button was
+		// pressed. Unticked is `local`: ends this browser's session and leaves the CLI's alone.
+		mutationFn: async (everywhere: boolean) =>
+			signOut({ data: { scope: everywhere ? 'global' : 'local' } }),
 		onError: (error: unknown) => {
 			// Already signed out from the API's point of view — same "nothing
 			// left to undo" reasoning as any other `unauthenticated` classification
@@ -169,8 +171,8 @@ function AuthedLayout(): React.JSX.Element {
 			currentTeamSlug={teamSlug ?? me.memberships[0]?.slug}
 			isMaintainer={me.is_maintainer}
 			memberships={me.memberships}
-			onSignOut={() => {
-				signOutMutation.mutate();
+			onSignOut={(everywhere) => {
+				signOutMutation.mutate(everywhere);
 			}}
 			signingOut={signOutMutation.isPending}
 			theme={theme}
