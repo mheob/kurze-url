@@ -39,6 +39,14 @@ const service = "kurze-url"
 // "run login"; every other failure is something broken.
 var ErrNotFound = errors.New("no stored credentials")
 
+// ErrKeychainUnavailable is wrapped into the error Delete returns when the
+// keychain failed with anything but "not found": it could not be reached, is
+// locked, or refused for some other reason. A token may be sitting in it
+// (see Delete), so the caller must not report a clean logout, but it can tell
+// that case from a failure of its own: `logout` words it as a warning, so a
+// headless machine whose keychain has never worked still ends cleanly.
+var ErrKeychainUnavailable = errors.New("the keychain could not be used")
+
 // errNoEnvironment is what every operation returns for an empty environment
 // name. It is a mistake in the caller, not a missing login, so it must never
 // be ErrNotFound: that would send a person to `login`, which would fail the
@@ -62,7 +70,9 @@ type Tokens struct {
 }
 
 // Store keeps one environment's tokens. Load returns ErrNotFound when there
-// are none, and Delete is not an error when there is nothing to delete.
+// are none, and Delete is not an error when there is nothing to delete. A
+// Chain's Delete does report a keychain it could not use, as an error that
+// matches ErrKeychainUnavailable, even when it removed everything else.
 type Store interface {
 	Load() (Tokens, error)
 	Save(Tokens) error
@@ -110,25 +120,49 @@ func New(envName, dir string) *Chain {
 	return &Chain{envName: envName, dir: dir}
 }
 
-// Load returns the stored tokens. The keychain is asked first; when it has no
-// entry, is unavailable, or holds something that is not a token document,
-// the file is read instead, and a missing file is ErrNotFound.
+// Load returns the stored tokens. The keychain is asked first and the file is
+// read as well. When the keychain has no entry, is unavailable, or holds
+// something that is not a token document, the file's tokens are returned, and
+// a missing file is ErrNotFound. A damaged file is an error only when the
+// keychain has nothing usable either: it must not break a login the keychain
+// holds.
 //
-// A keychain failure is deliberately not reported. A machine whose keychain
-// is down is the machine the file exists for, and a login that fell back to
-// the file keeps working after the keychain returns, until the next Save
-// moves it there. The cost is that a keychain which is merely locked reads as
-// "not logged in".
+// When both stores hold tokens, the one that expires later wins, and the
+// keychain on a tie. Both exist after this sequence, with no outside edit: a
+// login stores its tokens in the keychain; the keychain becomes unusable (a
+// locked macOS keychain over SSH, no Secret Service in a headless session) and
+// Load reports "not logged in"; the next login falls back to the file. When
+// the keychain recovers, its old entry must not shadow the newer login in the
+// file, and a later login or rotation always expires later. Load changes
+// nothing: the older copy stays until a keychain Save overwrites it and
+// removes the file, or Delete reports the keychain.
+//
+// A keychain failure is deliberately not reported. A machine whose keychain is
+// down is the machine the file exists for, and a login that fell back to the
+// file keeps working after the keychain returns, until the next Save moves it
+// there. The cost is that a keychain which is merely locked reads as "not
+// logged in".
 func (c *Chain) Load() (Tokens, error) {
 	if err := c.check(); err != nil {
 		return Tokens{}, err
 	}
+	var fromKeychain Tokens
+	haveKeychain := false
 	if raw, err := keyring.Get(service, c.envName); err == nil {
 		if tokens, derr := decode([]byte(raw)); derr == nil {
-			return tokens, nil
+			fromKeychain, haveKeychain = tokens, true
 		}
 	}
-	return readFile(c.FilePath())
+	fromFile, ferr := readFile(c.FilePath())
+
+	switch {
+	case haveKeychain && ferr == nil && fromFile.ExpiresAt.After(fromKeychain.ExpiresAt):
+		return fromFile, nil
+	case haveKeychain:
+		return fromKeychain, nil
+	default:
+		return fromFile, ferr
+	}
 }
 
 // Save stores the tokens in the keychain, and in the file only when the
@@ -151,7 +185,7 @@ func (c *Chain) Save(tokens Tokens) error {
 	kerr := keyring.Set(service, c.envName, string(data))
 	if kerr == nil {
 		c.fellBack.Store(false)
-		if _, err := removeFile(c.FilePath()); err != nil {
+		if err := removeFile(c.FilePath()); err != nil {
 			return fmt.Errorf("remove the stale credentials file: %w", err)
 		}
 		return nil
@@ -168,34 +202,27 @@ func (c *Chain) Save(tokens Tokens) error {
 // attempted, so a failing keychain cannot stop the file from going, and
 // nothing being there is not an error.
 //
-// A keychain failure other than "not found" is returned, with one exception:
-// when a fallback file existed and was removed by this very call. Save writes
-// the file only when the keychain refused the tokens, so the tokens lived in
-// the file and a keychain that cannot be reached held none. That is every
-// logout on a headless machine, and reporting a failure there would be wrong
-// every time. Without such a file nothing shows the keychain empty, and a
-// locked one may still hold a token, so the failure is returned: a logout must
-// not report success while a token survives it. Failures are joined when both
-// stores fail.
+// A keychain failure other than "not found" is always returned, wrapped so
+// errors.Is(err, ErrKeychainUnavailable) holds, and joined with the file's
+// error when both fail. Finding and removing a fallback file does not excuse
+// it, because the file does not prove the keychain is empty: a login stores
+// its tokens in the keychain; the keychain becomes unusable (a locked macOS
+// keychain over SSH, no Secret Service in a headless session); the next login
+// falls back to the file; and the old entry is still in the keychain. A
+// logout that removed the file and answered "done" would leave that token
+// behind. The caller words the error: `logout` prints it as a warning, so a
+// machine whose keychain never worked ends cleanly, while a token that may
+// survive is never hidden.
 func (c *Chain) Delete() error {
 	if err := c.check(); err != nil {
 		return err
 	}
-	kerr := keyring.Delete(service, c.envName)
-	if errors.Is(kerr, keyring.ErrNotFound) {
-		kerr = nil
-	}
-	removed, ferr := removeFile(c.FilePath())
-	if removed {
-		kerr = nil
-	}
-
 	var errs []error
-	if kerr != nil {
-		errs = append(errs, fmt.Errorf("delete from the keychain: %w", kerr))
+	if err := keyring.Delete(service, c.envName); err != nil && !errors.Is(err, keyring.ErrNotFound) {
+		errs = append(errs, fmt.Errorf("%w: delete from the keychain: %w", ErrKeychainUnavailable, err))
 	}
-	if ferr != nil {
-		errs = append(errs, fmt.Errorf("delete the credentials file: %w", ferr))
+	if err := removeFile(c.FilePath()); err != nil {
+		errs = append(errs, fmt.Errorf("delete the credentials file: %w", err))
 	}
 	return errors.Join(errs...)
 }

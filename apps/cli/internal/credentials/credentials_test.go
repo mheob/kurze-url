@@ -1,7 +1,10 @@
 package credentials_test
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -67,6 +70,16 @@ func requireSameTokens(t *testing.T, want, got credentials.Tokens) {
 	require.Equal(t, want.AccessToken, got.AccessToken)
 	require.Equal(t, want.RefreshToken, got.RefreshToken)
 	require.True(t, want.ExpiresAt.Equal(got.ExpiresAt), "expires_at: want %s, got %s", want.ExpiresAt, got.ExpiresAt)
+}
+
+// keychainHolds puts tokens into the (working) keychain the way a Save does,
+// without going through the Chain, so a test can set up a store the Chain's
+// own rules would never have produced.
+func keychainHolds(t *testing.T, env string, tokens credentials.Tokens) {
+	t.Helper()
+	data, err := json.Marshal(tokens)
+	require.NoError(t, err)
+	require.NoError(t, keyring.Set(keychainService, env, string(data)))
 }
 
 // directoryEntries lists the names inside dir, failing the test when it
@@ -182,6 +195,52 @@ func TestLoadSkipsAnUnreadableKeychainEntry(t *testing.T) {
 	requireSameTokens(t, sampleTokens(), got)
 }
 
+// TestLoadWithBothStoresTakesTheLaterExpiry is the other half of the story
+// above Delete: once the keychain recovers, its old entry must not shadow the
+// newer login the file holds. A later login or rotation always expires later.
+func TestLoadWithBothStoresTakesTheLaterExpiry(t *testing.T) {
+	older := credentials.Tokens{AccessToken: "access-old", RefreshToken: "refresh-old", ExpiresAt: sampleTokens().ExpiresAt}
+	newer := credentials.Tokens{AccessToken: "access-new", RefreshToken: "refresh-new", ExpiresAt: sampleTokens().ExpiresAt.Add(time.Hour)}
+	tiedKeychain := credentials.Tokens{AccessToken: "access-k", RefreshToken: "refresh-keychain", ExpiresAt: older.ExpiresAt}
+	tiedFile := credentials.Tokens{AccessToken: "access-f", RefreshToken: "refresh-file", ExpiresAt: older.ExpiresAt}
+
+	for _, tc := range []struct {
+		name           string
+		keychain, file credentials.Tokens
+		want           credentials.Tokens
+	}{
+		{"keychain is later", newer, older, newer},
+		{"file is later", older, newer, newer},
+		{"a tie goes to the keychain", tiedKeychain, tiedFile, tiedKeychain},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			brokenKeychain(t)
+			dir := t.TempDir()
+			require.NoError(t, credentials.New("a", dir).Save(tc.file))
+			workingKeychain(t)
+			keychainHolds(t, "a", tc.keychain)
+
+			got, err := credentials.New("a", dir).Load()
+
+			require.NoError(t, err)
+			requireSameTokens(t, tc.want, got)
+		})
+	}
+}
+
+func TestLoadPrefersTheKeychainOverADamagedFile(t *testing.T) {
+	// A file nobody asked for must not break a login the keychain holds.
+	workingKeychain(t)
+	dir := t.TempDir()
+	keychainHolds(t, "a", sampleTokens())
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "credentials-a.json"), []byte("not json"), 0o600))
+
+	got, err := credentials.New("a", dir).Load()
+
+	require.NoError(t, err)
+	requireSameTokens(t, sampleTokens(), got)
+}
+
 func TestLoadWithACorruptFileIsAnErrorThatLeaksNothing(t *testing.T) {
 	workingKeychain(t)
 	dir := t.TempDir()
@@ -221,33 +280,50 @@ func TestDeleteWithNothingStoredIsNotAnError(t *testing.T) {
 	require.NoError(t, credentials.New("a", t.TempDir()).Delete())
 }
 
-func TestDeleteWithAFallbackFileIgnoresAnUnreachableKeychain(t *testing.T) {
-	// The tokens lived in the file, because that is where a Save goes when
-	// the keychain is down, so a keychain that cannot even be reached held
-	// none. On a headless machine this is every logout, and reporting a
-	// failure there would be wrong every time.
+// The next three tests share one story, and it is why Delete never hides a
+// keychain failure just because it also found a file. A login that worked
+// leaves its entry in the keychain; the keychain then becomes unusable (a
+// locked macOS keychain over SSH, no Secret Service in a headless session);
+// Load says "not logged in"; the person logs in again and the Save falls back
+// to the file. Now the file and the old entry both exist, and a logout that
+// removes the file and answers "done" leaves a token behind.
+
+func TestDeleteWithAFallbackFileRemovesItAndReportsAnUnreachableKeychain(t *testing.T) {
 	brokenKeychain(t)
 	dir := t.TempDir()
 	store := credentials.New("a", dir)
 	require.NoError(t, store.Save(sampleTokens()))
 
-	require.NoError(t, store.Delete())
+	err := store.Delete()
 
-	require.Empty(t, directoryEntries(t, dir))
-	_, err := store.Load()
-	require.ErrorIs(t, err, credentials.ErrNotFound)
+	require.ErrorIs(t, err, credentials.ErrKeychainUnavailable)
+	require.ErrorIs(t, err, errKeychainDown, "the keychain's own error stays reachable")
+	require.Empty(t, directoryEntries(t, dir), "the file goes whatever the keychain does")
 }
 
 func TestDeleteWithoutAFallbackFileReportsAnUnreachableKeychain(t *testing.T) {
-	// Nothing proves the keychain holds no token: it may only be locked. A
-	// logout that then answered success would let a token survive it.
 	brokenKeychain(t)
 	dir := t.TempDir()
 
 	err := credentials.New("a", dir).Delete()
 
+	require.ErrorIs(t, err, credentials.ErrKeychainUnavailable)
 	require.ErrorIs(t, err, errKeychainDown)
 	require.Empty(t, directoryEntries(t, dir))
+}
+
+func TestDeleteReportsBothFailuresWhenBothStoresFail(t *testing.T) {
+	brokenKeychain(t)
+	dir := t.TempDir()
+	// A directory with something in it cannot be removed like a file.
+	blocker := filepath.Join(dir, "credentials-a.json")
+	require.NoError(t, os.Mkdir(blocker, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(blocker, "child"), []byte("x"), 0o600))
+
+	err := credentials.New("a", dir).Delete()
+
+	require.ErrorIs(t, err, credentials.ErrKeychainUnavailable)
+	require.ErrorContains(t, err, "credentials file", "the file's failure is reported as well")
 }
 
 func TestEnvironmentsDoNotShareTokens(t *testing.T) {
@@ -291,6 +367,67 @@ func TestKeychainSaveRemovesAStaleFile(t *testing.T) {
 	requireSameTokens(t, rotated, got)
 }
 
+// TestSaveReplacesAnExistingFileAtomically is what pins the temporary file and
+// the rename. A write into the existing file would fail on a read-only one,
+// keep a loose mode on another, and truncate the document a concurrent reader
+// has open; none of those can happen when the file is replaced as a whole.
+func TestSaveReplacesAnExistingFileAtomically(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no file modes and cannot rename over a file that is open")
+	}
+	const previous = `{"access_token":"access-old","refresh_token":"refresh-old","expires_at":"2026-01-01T00:00:00Z"}`
+	for _, mode := range []os.FileMode{0o400, 0o644} {
+		t.Run(fmt.Sprintf("existing file %#o", mode), func(t *testing.T) {
+			brokenKeychain(t)
+			dir := t.TempDir()
+			path := filepath.Join(dir, "credentials-a.json")
+			require.NoError(t, os.WriteFile(path, []byte(previous), mode))
+			require.NoError(t, os.Chmod(path, mode)) // the umask must not alter the setup
+			reader, err := os.Open(path)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = reader.Close() })
+
+			require.NoError(t, credentials.New("a", dir).Save(sampleTokens()))
+
+			got, err := credentials.New("a", dir).Load()
+			require.NoError(t, err)
+			requireSameTokens(t, sampleTokens(), got)
+			info, err := os.Stat(path)
+			require.NoError(t, err)
+			require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+			// A reader that opened the file before the Save still sees the old
+			// document, whole: the Save built a new file and swapped it in.
+			content, err := io.ReadAll(reader)
+			require.NoError(t, err)
+			require.Equal(t, previous, string(content))
+			require.Equal(t, []string{"credentials-a.json"}, directoryEntries(t, dir))
+		})
+	}
+}
+
+// TestSaveReportsAStaleFileItCannotRemove pins the one place a successful
+// keychain write still ends in an error: a leftover file that stays behind
+// would keep a secret on disk without anyone knowing.
+func TestSaveReportsAStaleFileItCannotRemove(t *testing.T) {
+	workingKeychain(t)
+	dir := t.TempDir()
+	// A directory with something in it cannot be removed like a file.
+	blocker := filepath.Join(dir, "credentials-a.json")
+	require.NoError(t, os.Mkdir(blocker, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(blocker, "child"), []byte("x"), 0o600))
+	store := credentials.New("a", dir)
+
+	err := store.Save(sampleTokens())
+
+	require.Error(t, err)
+	require.False(t, store.FellBack())
+	raw, kerr := keyring.Get(keychainService, "a")
+	require.NoError(t, kerr, "the keychain already holds the new tokens")
+	var stored credentials.Tokens
+	require.NoError(t, json.Unmarshal([]byte(raw), &stored))
+	requireSameTokens(t, sampleTokens(), stored)
+}
+
 func TestFailedFileWriteLeavesNoTemporaryFile(t *testing.T) {
 	brokenKeychain(t)
 	dir := t.TempDir()
@@ -310,12 +447,14 @@ func TestFailedFileWriteLeavesNoTemporaryFile(t *testing.T) {
 	require.Equal(t, []string{"credentials-a.json"}, directoryEntries(t, dir))
 }
 
-// TestConcurrentFileSavesNeverLeaveAHalfWrittenFile covers the reason for the
-// temporary file and the rename: two saves racing each other, as two commands
-// refreshing in parallel would, must leave one complete document and nothing
-// else behind. The keychain stays broken because go-keyring's mock is not
-// itself safe for concurrent use.
-func TestConcurrentFileSavesNeverLeaveAHalfWrittenFile(t *testing.T) {
+// TestConcurrentFileSavesLeaveOneFileAndNoTemporaryFile runs saves against
+// each other, as two commands refreshing in parallel would. It checks that
+// none fails and that nothing but the one file is left. It cannot detect a
+// torn write: every save writes the same document, and the final state is
+// complete however the writes interleaved. Atomicity is pinned by
+// TestSaveReplacesAnExistingFileAtomically. The keychain stays broken because
+// go-keyring's mock is not itself safe for concurrent use.
+func TestConcurrentFileSavesLeaveOneFileAndNoTemporaryFile(t *testing.T) {
 	brokenKeychain(t)
 	dir := t.TempDir()
 	store := credentials.New("a", dir)
