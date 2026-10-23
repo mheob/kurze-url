@@ -38,9 +38,20 @@ type ConsentDecision =
 	| { readonly kind: 'redirect'; readonly url: string }
 	| { readonly kind: 'unauthenticated' };
 
-/** The input of `decideConsentFor` and of the `decideConsent` server function. */
+/** What a caller of the `decideConsent` server function may send: the two actions and an id. */
 interface ConsentDecisionInput {
 	readonly action: 'approve' | 'deny';
+	readonly authorizationId: string;
+}
+
+/**
+ * What `decideConsentFor` is given once the validator has run: strings, because that is all a
+ * request can be known to carry. `ConsentDecisionInput` narrows what callers may send; this is
+ * deliberately wider, so the check that refuses anything else lives in one place that can be
+ * tested with the values a crafted request would hold.
+ */
+interface ConsentDecisionRequest {
+	readonly action: string;
 	readonly authorizationId: string;
 }
 
@@ -54,6 +65,53 @@ const UNAUTHENTICATED = { kind: 'unauthenticated' } as const;
  * the call correct if it ever ran in one.
  */
 const RETURN_REDIRECT_URL = { skipBrowserRedirect: true } as const;
+
+/**
+ * @param value - Anything a response or a request may hold.
+ * @returns True for a string with at least one character.
+ */
+function isNonEmptyString(value: unknown): value is string {
+	return typeof value === 'string' && value !== '';
+}
+
+/**
+ * Whether an id may be given to the SDK at all. The id comes from a URL the visitor can edit, and
+ * the SDK puts it into a request path with the visitor's access token attached. `encodeURIComponent`
+ * keeps `../../user` one segment, but it leaves the dot segments `.` and `..` alone, which a URL
+ * parser resolves instead of sending, and it throws on a lone surrogate, which would be a 500 where
+ * a refusal belongs.
+ *
+ * @param id - The authorization id as the request carried it.
+ * @returns True when `encodeURIComponent(id)` is safe to send as one path segment.
+ */
+function isUsableId(id: string): boolean {
+	return id !== '' && id !== '.' && id !== '..' && !/\p{Surrogate}/u.test(id);
+}
+
+/**
+ * Reads one field of a request's data without trusting its shape. The validators below are typed
+ * with the caller's own input type, but what arrives is whatever the request carried: no `data` at
+ * all, a number, an object. Each of those becomes an empty string, which `isUsableId` refuses.
+ *
+ * @param data - The validator's input, untrusted.
+ * @param key - The field to read.
+ * @returns The field when it is a string, otherwise an empty string.
+ */
+function readString(data: unknown, key: string): string {
+	if (typeof data !== 'object' || data === null) return '';
+	const value: unknown = Reflect.get(data, key);
+	return typeof value === 'string' ? value : '';
+}
+
+/**
+ * @param url - What the response holds as `redirect_url`.
+ * @returns A redirect to it, or `invalid` when there is none: Supabase answers an id it cannot place
+ *   with something that is neither the details nor a redirect, and the page must never be told to
+ *   follow `undefined`.
+ */
+function redirectTo(url: unknown): ConsentDecision {
+	return isNonEmptyString(url) ? { kind: 'redirect', url } : INVALID;
+}
 
 /**
  * `getUser` rather than `getSession`: it asks Supabase whether the session is still good, where
@@ -86,15 +144,14 @@ async function signedInClient(
 function consentStateOf(result: AuthOAuthAuthorizationDetailsResponse): ConsentState {
 	if (result.error !== null) return INVALID;
 	const { data } = result;
-	if ('authorization_id' in data) {
-		return {
-			authorizationId: data.authorization_id,
-			clientName: data.client.name,
-			email: data.user.email,
-			kind: 'consent',
-		};
-	}
-	return { kind: 'redirect', url: data.redirect_url };
+	if (!('authorization_id' in data)) return redirectTo(data.redirect_url);
+	if (!isNonEmptyString(data.authorization_id)) return INVALID;
+	return {
+		authorizationId: data.authorization_id,
+		clientName: data.client.name,
+		email: data.user.email,
+		kind: 'consent',
+	};
 }
 
 /**
@@ -103,7 +160,7 @@ function consentStateOf(result: AuthOAuthAuthorizationDetailsResponse): ConsentS
  *   when Supabase refused, which for a decision means the authorization is gone or already used.
  */
 function decisionOf(result: AuthOAuthConsentResponse): ConsentDecision {
-	return result.error === null ? { kind: 'redirect', url: result.data.redirect_url } : INVALID;
+	return result.error === null ? redirectTo(result.data.redirect_url) : INVALID;
 }
 
 /**
@@ -111,12 +168,15 @@ function decisionOf(result: AuthOAuthConsentResponse): ConsentDecision {
  * itself calls `getRequest()`, which throws "No Start context found" under Vitest, so the testable
  * half takes the request and the `Headers` as parameters.
  *
- * An empty id is answered before Supabase is constructed: it is the "no `authorization_id` in the
- * URL" case, and there is nothing to ask. `flushSessionCookies` sits in `finally`, not after the
- * work, because a refresh `getUser` wrote has already used up the old refresh token: if the call
- * after it throws and the cookies are dropped, the browser keeps a token Supabase has seen used,
- * which it treats as reuse once its grace period ends. The exception itself is not caught. It is a
- * real failure and may reach Sentry.
+ * An id that is empty (the "no `authorization_id` in the URL" case) or that `isUsableId` refuses is
+ * answered before Supabase is constructed, as `invalid`: there is nothing to ask. The id the SDK is
+ * given is encoded, so it stays one path segment.
+ *
+ * `flushSessionCookies` sits in `finally`, not after the work, because a refresh `getUser` wrote
+ * has already used up the old refresh token: if the call after it throws and the cookies are
+ * dropped, the browser keeps a token Supabase has seen used, which it treats as reuse once its
+ * grace period ends. The exception itself is not caught. It is a real failure and may reach
+ * Sentry.
  *
  * Wrapped in `createServerOnlyFn` for the same import-protection reason as `sendMagicLinkFor`.
  */
@@ -126,11 +186,13 @@ const loadConsentFor = createServerOnlyFn(
 		headers: Readonly<Headers>,
 		authorizationId: string,
 	): Promise<ConsentState> => {
-		if (authorizationId === '') return INVALID;
+		if (!isUsableId(authorizationId)) return INVALID;
 		try {
 			const supabase = await signedInClient(request, headers);
 			if (supabase === undefined) return UNAUTHENTICATED;
-			return consentStateOf(await supabase.auth.oauth.getAuthorizationDetails(authorizationId));
+			return consentStateOf(
+				await supabase.auth.oauth.getAuthorizationDetails(encodeURIComponent(authorizationId)),
+			);
 		} finally {
 			flushSessionCookies(headers);
 		}
@@ -142,24 +204,27 @@ const loadConsentFor = createServerOnlyFn(
  * longer than the session lasts, and an `unauthenticated` answer is what sends the person back to
  * `/login` with the same `next` instead of showing a failure after they pressed Allow.
  *
- * Only the exact string `approve` approves. Anything else denies, so a request that does not match
- * the types can never grant access by accident. Flushing and exceptions are as in `loadConsentFor`.
+ * Only the exact strings `approve` and `deny` are actions. Anything else is `invalid` and decides
+ * nothing: a deny is as irreversible as an approval (the CLI is told `access_denied` and the
+ * authorization is spent), so a request that does not match the types must not be read as either.
+ * Ids, flushing and exceptions are as in `loadConsentFor`.
  */
 const decideConsentFor = createServerOnlyFn(
 	async (
 		request: Request,
 		headers: Readonly<Headers>,
-		{ action, authorizationId }: Readonly<ConsentDecisionInput>,
+		{ action, authorizationId }: Readonly<ConsentDecisionRequest>,
 	): Promise<ConsentDecision> => {
-		if (authorizationId === '') return INVALID;
+		if (!isUsableId(authorizationId) || (action !== 'approve' && action !== 'deny')) return INVALID;
+		const id = encodeURIComponent(authorizationId);
 		try {
 			const supabase = await signedInClient(request, headers);
 			if (supabase === undefined) return UNAUTHENTICATED;
 			const { oauth } = supabase.auth;
 			return decisionOf(
 				await (action === 'approve'
-					? oauth.approveAuthorization(authorizationId, RETURN_REDIRECT_URL)
-					: oauth.denyAuthorization(authorizationId, RETURN_REDIRECT_URL)),
+					? oauth.approveAuthorization(id, RETURN_REDIRECT_URL)
+					: oauth.denyAuthorization(id, RETURN_REDIRECT_URL)),
 			);
 		} finally {
 			flushSessionCookies(headers);
@@ -168,21 +233,61 @@ const decideConsentFor = createServerOnlyFn(
 );
 
 /**
+ * The validator of `loadConsent`. Exported for its test only: the server function wrapping it
+ * cannot be called under Vitest.
+ *
+ * @param data - The request's data, untrusted whatever its declared type.
+ * @returns The authorization id when it is a string, otherwise an empty string, which
+ *   `loadConsentFor` answers as `invalid` without calling Supabase.
+ */
+function readAuthorizationId(data: unknown): string {
+	return readString(data, 'authorizationId');
+}
+
+/**
+ * The validator of `decideConsent`. It settles the shape (two strings) and leaves their meaning to
+ * `decideConsentFor`, so an unknown action travels on as it was sent and is refused there. Exported
+ * for its test only.
+ *
+ * @param data - The request's data, untrusted whatever its declared type.
+ * @returns The action and the authorization id, each an empty string where the request had no string.
+ */
+function readDecision(data: unknown): ConsentDecisionRequest {
+	return { action: readString(data, 'action'), authorizationId: readAuthorizationId(data) };
+}
+
+/**
  * `getRequest()` and a fresh `Headers` inline, not inside `loadConsentFor`, as in `signOut`.
  * `GET`: loading the consent state changes nothing, so a reload or a back button is harmless.
+ *
+ * The validator is typed with the caller's input but reads it as `unknown` (`readAuthorizationId`),
+ * because nothing else checks what a request actually carried.
  */
 const loadConsent = createServerFn({ method: 'GET' })
-	.validator((data: { readonly authorizationId: string }) => data)
+	.validator((data: { readonly authorizationId: string }) => ({
+		authorizationId: readAuthorizationId(data),
+	}))
 	.handler(async ({ data }: { readonly data: { readonly authorizationId: string } }) =>
 		loadConsentFor(getRequest(), new Headers(), data.authorizationId),
 	);
 
-/** `POST`: this one grants or refuses access to the person's account, so it is never a link. */
+/**
+ * `POST`: this one grants or refuses access to the person's account, so it is never a link. The
+ * validator reads its input as `unknown` (`readDecision`) like `loadConsent`'s, and
+ * `decideConsentFor` refuses an action that is not exactly `approve` or `deny`.
+ */
 const decideConsent = createServerFn({ method: 'POST' })
-	.validator((data: ConsentDecisionInput) => data)
-	.handler(async ({ data }: { readonly data: ConsentDecisionInput }) =>
+	.validator((data: ConsentDecisionInput) => readDecision(data))
+	.handler(async ({ data }: { readonly data: ConsentDecisionRequest }) =>
 		decideConsentFor(getRequest(), new Headers(), data),
 	);
 
-export { decideConsent, decideConsentFor, loadConsent, loadConsentFor };
+export {
+	decideConsent,
+	decideConsentFor,
+	loadConsent,
+	loadConsentFor,
+	readAuthorizationId,
+	readDecision,
+};
 export type { ConsentDecision, ConsentState };

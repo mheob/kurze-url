@@ -58,11 +58,12 @@ vi.mock('@tanstack/react-start/server', () => ({
 	appendResponseHeader: mocks.appendResponseHeader,
 }));
 
-/* oxlint-disable-next-line node/no-top-level-await -- this file is a Vitest test entry, never
- * `require(esm)`'d by anything; the dynamic import has to run after the `vi.mock` calls above
- * register their replacements, which a module-scope `await import` is what expresses.
- */
-const { decideConsentFor, loadConsentFor } = await import('./oauth-consent');
+const { decideConsentFor, loadConsentFor, readAuthorizationId, readDecision } =
+	/* oxlint-disable-next-line node/no-top-level-await -- this file is a Vitest test entry, never
+	 * `require(esm)`'d by anything; the dynamic import has to run after the `vi.mock` calls above
+	 * register their replacements, which a module-scope `await import` is what expresses.
+	 */
+	await import('./oauth-consent');
 
 const AUTHORIZATION_ID = 'auth-123';
 const REDIRECT_URL = 'http://127.0.0.1:53682/callback?code=abc&state=xyz';
@@ -94,6 +95,24 @@ const SIGNED_IN = { data: { user: { id: 'user-1' } } } as const;
 const SIGNED_OUT = { data: { user: null } } as const;
 
 const OPTIONS = { skipBrowserRedirect: true } as const;
+
+/**
+ * Ids that no request can legitimately carry. The two dot segments would be resolved by the URL
+ * parser rather than sent as a name, and a lone surrogate is what makes `encodeURIComponent` throw,
+ * which would be a 500 where a refusal belongs.
+ */
+const UNUSABLE_IDS = [
+	['a dot segment', '.'],
+	['a parent dot segment', '..'],
+	['a lone surrogate', 'abc\uD800'],
+] as const;
+
+/**
+ * `'../../user'` is what the SDK, which puts the id into the URL path as it is, would resolve to
+ * `/auth/v1/user` and send the person's access token to. Encoded, it is one path segment.
+ */
+const TRAVERSAL_ID = '../../user';
+const TRAVERSAL_ID_ENCODED = '..%2F..%2Fuser';
 
 /**
  * What `@supabase/ssr` does whenever `getUser` refreshes a session: a cookie lands in the `Headers`
@@ -219,6 +238,46 @@ describe('loadConsentFor', () => {
 			SESSION_COOKIE,
 		]);
 	});
+
+	it.each(UNUSABLE_IDS)(
+		'answers invalid for %s as the authorization id, without any Supabase call',
+		async (_name, authorizationId) => {
+			await expect(loadConsentFor(request, new Headers(), authorizationId)).resolves.toStrictEqual({
+				kind: 'invalid',
+			});
+
+			expect(mocks.createSupabase).not.toHaveBeenCalled();
+		},
+	);
+
+	/**
+	 * The id comes from a URL the visitor can edit, and the SDK interpolates it into a request path
+	 * with the visitor's access token attached.
+	 */
+	it('hands the SDK the authorization id encoded, so it cannot climb out of its path', async () => {
+		mocks.getAuthorizationDetails.mockResolvedValue(SERVER_REFUSAL);
+
+		await loadConsentFor(request, new Headers(), TRAVERSAL_ID);
+
+		expect(mocks.getAuthorizationDetails).toHaveBeenCalledExactlyOnceWith(TRAVERSAL_ID_ENCODED);
+	});
+
+	/**
+	 * What `/auth/v1/user` answers to the traversal above: neither the details nor a redirect. It
+	 * must not become a `redirect` to `undefined`, which the page would hand to
+	 * `window.location.assign`.
+	 */
+	it.each([
+		['neither authorization_id nor redirect_url', { email: 'someone@example.test', id: 'user-1' }],
+		['an empty redirect_url', { redirect_url: '' }],
+		['an empty authorization_id', { ...DETAILS.data, authorization_id: '' }],
+	] as const)('answers invalid when the details carry %s', async (_name, data) => {
+		mocks.getAuthorizationDetails.mockResolvedValue({ data, error: null });
+
+		await expect(loadConsentFor(request, new Headers(), AUTHORIZATION_ID)).resolves.toStrictEqual({
+			kind: 'invalid',
+		});
+	});
 });
 
 describe('decideConsentFor', () => {
@@ -334,5 +393,121 @@ describe('decideConsentFor', () => {
 		expect(mocks.appendResponseHeader).toHaveBeenCalledExactlyOnceWith('set-cookie', [
 			SESSION_COOKIE,
 		]);
+	});
+
+	/**
+	 * Denying is irreversible too (the CLI gets `access_denied` and the authorization is spent), so
+	 * an action that is neither of the two is refused instead of being read as one of them.
+	 */
+	it.each(['', 'grant', 'APPROVE', 'approve '])(
+		'answers invalid for the action %j, and decides nothing',
+		async (action) => {
+			await expect(
+				decideConsentFor(request, new Headers(), { action, authorizationId: AUTHORIZATION_ID }),
+			).resolves.toStrictEqual({ kind: 'invalid' });
+
+			expect(mocks.createSupabase).not.toHaveBeenCalled();
+			expect(mocks.approveAuthorization).not.toHaveBeenCalled();
+			expect(mocks.denyAuthorization).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each(UNUSABLE_IDS)(
+		'answers invalid for %s as the authorization id, without any Supabase call',
+		async (_name, authorizationId) => {
+			await expect(
+				decideConsentFor(request, new Headers(), { action: 'approve', authorizationId }),
+			).resolves.toStrictEqual({ kind: 'invalid' });
+
+			expect(mocks.createSupabase).not.toHaveBeenCalled();
+		},
+	);
+
+	it('hands the SDK the authorization id encoded when approving', async () => {
+		mocks.approveAuthorization.mockResolvedValue(SERVER_REFUSAL);
+
+		await decideConsentFor(request, new Headers(), {
+			action: 'approve',
+			authorizationId: TRAVERSAL_ID,
+		});
+
+		expect(mocks.approveAuthorization).toHaveBeenCalledExactlyOnceWith(
+			TRAVERSAL_ID_ENCODED,
+			OPTIONS,
+		);
+	});
+
+	it('hands the SDK the authorization id encoded when denying', async () => {
+		mocks.denyAuthorization.mockResolvedValue(SERVER_REFUSAL);
+
+		await decideConsentFor(request, new Headers(), {
+			action: 'deny',
+			authorizationId: TRAVERSAL_ID,
+		});
+
+		expect(mocks.denyAuthorization).toHaveBeenCalledExactlyOnceWith(TRAVERSAL_ID_ENCODED, OPTIONS);
+	});
+
+	it.each([
+		['no redirect_url', {}],
+		['an empty redirect_url', { redirect_url: '' }],
+	] as const)('answers invalid when the decision comes back with %s', async (_name, data) => {
+		mocks.approveAuthorization.mockResolvedValue({ data, error: null });
+
+		await expect(
+			decideConsentFor(request, new Headers(), {
+				action: 'approve',
+				authorizationId: AUTHORIZATION_ID,
+			}),
+		).resolves.toStrictEqual({ kind: 'invalid' });
+	});
+});
+
+/**
+ * The server functions' validators. TanStack Start hands them whatever the request carried, typed
+ * as the caller's own type, so each of them reads its input as `unknown` and settles on strings:
+ * the `...For` functions then decide whether those strings mean anything.
+ */
+describe('readAuthorizationId', () => {
+	it('reads the authorization id of well-formed input', () => {
+		expect(readAuthorizationId({ authorizationId: AUTHORIZATION_ID })).toBe(AUTHORIZATION_ID);
+	});
+
+	it.each([
+		['no input', undefined],
+		['null', null],
+		['a string', AUTHORIZATION_ID],
+		['an object without the field', {}],
+		['a number', { authorizationId: 42 }],
+		['an object', { authorizationId: { toString: () => AUTHORIZATION_ID } }],
+		['null in the field', { authorizationId: null }],
+	] as const)('settles on an empty string for %s', (_name, input) => {
+		expect(readAuthorizationId(input)).toBe('');
+	});
+});
+
+describe('readDecision', () => {
+	it('reads the action and the authorization id of well-formed input', () => {
+		expect(readDecision({ action: 'deny', authorizationId: AUTHORIZATION_ID })).toStrictEqual({
+			action: 'deny',
+			authorizationId: AUTHORIZATION_ID,
+		});
+	});
+
+	it('leaves an unknown action for decideConsentFor to refuse', () => {
+		expect(readDecision({ action: 'grant', authorizationId: AUTHORIZATION_ID })).toStrictEqual({
+			action: 'grant',
+			authorizationId: AUTHORIZATION_ID,
+		});
+	});
+
+	it.each([
+		['no input', undefined],
+		['null', null],
+		['a string', 'approve'],
+		['an empty object', {}],
+		['a number for each field', { action: 1, authorizationId: 2 }],
+	] as const)('settles on empty strings for %s', (_name, input) => {
+		expect(readDecision(input)).toStrictEqual({ action: '', authorizationId: '' });
 	});
 });
