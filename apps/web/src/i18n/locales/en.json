@@ -32,6 +32,17 @@
 		"linkSent": "If that address has an account, a link is on its way.",
 		"signOut": "Sign out"
 	},
+	"oauthConsent": {
+		"title": "Allow CLI access",
+		"request": "{{client}} wants to access kurze-url on your behalf.",
+		"scope": "It can then do everything you can do in the web app, in every team you belong to.",
+		"warning": "Only allow this if you just ran kurze-url login in your terminal yourself.",
+		"signedInAs": "Signed in as {{email}}",
+		"allow": "Allow",
+		"deny": "Deny",
+		"invalidTitle": "This request can't be completed",
+		"invalidBody": "The link has expired or is not valid. Run kurze-url login in your terminal again."
+	},
 	"nav": {
 		"label": "Sections",
 		"links": "Links",
