@@ -30,6 +30,11 @@
 			"matchPackageNames": ["nitro"],
 			"dependencyDashboardApproval": true,
 			"groupName": null
+		},
+		{
+			"description": "Vercel offers Node.js 24.x and 22.x only (checked 2026-10-23), so the Node this repository tests and types against stays on 24: .node-version, which CI and local version managers read, and @types/node, whose catalog entry an override in pnpm-workspace.yaml forces onto every copy in the tree. Without this cap Renovate proposes 26 for both once Node 26 becomes LTS, and merging that would test against a Node that production does not run. Raise it together with the Vercel projects' Node.js setting once Vercel lists 26.x.",
+			"matchPackageNames": ["node", "@types/node"],
+			"allowedVersions": "<25"
 		}
 	]
 }
