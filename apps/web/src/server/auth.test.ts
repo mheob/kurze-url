@@ -16,13 +16,18 @@ interface FakeSupabaseClient {
 			readonly email: string;
 			readonly options: { readonly shouldCreateUser: boolean; readonly emailRedirectTo: string };
 		}) => Promise<{ error: { message: string } | null }>;
+		signOut: (options: { readonly scope: 'global' | 'local' }) => Promise<{ error: null }>;
 	};
 }
+
+/** What the fake `signOut` writes into the `Headers` it was built with: the session cookie, cleared. */
+const CLEARED_SESSION_COOKIE = 'sb-session=; Max-Age=0; Path=/';
 
 const mocks = vi.hoisted(() => ({
 	// Only the flush test below inspects what this was given.
 	appendResponseHeader: vi.fn(),
 	signInWithOtp: vi.fn<FakeSupabaseClient['auth']['signInWithOtp']>(),
+	signOut: vi.fn<FakeSupabaseClient['auth']['signOut']>(),
 }));
 
 vi.mock('./supabase', () => ({
@@ -37,7 +42,17 @@ vi.mock('./supabase', () => ({
 	 */
 	createSupabase: (_request: Request, headers: Readonly<Headers>): FakeSupabaseClient => {
 		headers.append('set-cookie', 'sb-pkce-code-verifier=abc; Path=/; HttpOnly');
-		return { auth: { signInWithOtp: mocks.signInWithOtp } };
+		return {
+			auth: {
+				signInWithOtp: mocks.signInWithOtp,
+				// Like the real client, the sign-out clears the session cookies through the cookie
+				// adapter, which lands them in the `Headers` this was built with.
+				signOut: async (options) => {
+					headers.append('set-cookie', CLEARED_SESSION_COOKIE);
+					return mocks.signOut(options);
+				},
+			},
+		};
 	},
 }));
 
@@ -49,7 +64,8 @@ vi.mock('@tanstack/react-start/server', () => ({
  * `require(esm)`'d by anything; the dynamic import has to run after the `vi.mock` calls above
  * register their replacements, which a module-scope `await import` is what expresses.
  */
-const { ENUMERATION_TIMING_FLOOR_MS, sendMagicLinkFor } = await import('./auth');
+const auth = await import('./auth');
+const { ENUMERATION_TIMING_FLOOR_MS, readSignOutScope, sendMagicLinkFor, signOutFor } = auth;
 
 describe('sendMagicLinkFor', () => {
 	// Call history has to start empty in every test: the mocked `createSupabase` writes the same
@@ -227,5 +243,94 @@ describe('sendMagicLinkFor', () => {
 		expect(mocks.appendResponseHeader).toHaveBeenCalledExactlyOnceWith('set-cookie', [
 			'sb-pkce-code-verifier=abc; Path=/; HttpOnly',
 		]);
+	});
+});
+
+/**
+ * Signs out through `signOutFor` the way the server function does: a request, a fresh
+ * `Headers`, and the scope the validator settled on.
+ *
+ * @param scope - The scope to sign out with.
+ * @returns What `signOutFor` returns.
+ */
+async function signOutWith(scope: 'global' | 'local'): Promise<void> {
+	await signOutFor(new Request('https://app.test'), new Headers(), scope);
+}
+
+describe('signOutFor', () => {
+	// The mocked `createSupabase` writes the same cookies on every call, so call history has to
+	// start empty in every test, as in the suite above.
+	beforeEach(() => {
+		mocks.appendResponseHeader.mockClear();
+		mocks.signOut.mockReset();
+		mocks.signOut.mockResolvedValue({ error: null });
+	});
+
+	/**
+	 * A browser sign-out with `local` leaves a CLI session alive and one with `global` ends it too
+	 * (measured 2026-10-23, `docs/superpowers/specs/2026-10-23-cli-design.md`, "Verified"), so the
+	 * scope the page asked for is the one that must reach Supabase, not the SDK's own default.
+	 */
+	it('signs out this session only when asked for local', async () => {
+		await signOutWith('local');
+
+		expect(mocks.signOut).toHaveBeenCalledExactlyOnceWith({ scope: 'local' });
+	});
+
+	it('signs out every session when asked for global', async () => {
+		await signOutWith('global');
+
+		expect(mocks.signOut).toHaveBeenCalledExactlyOnceWith({ scope: 'global' });
+	});
+
+	/**
+	 * The cleared session cookies land in the local `Headers`, and only `flushSessionCookies`
+	 * carries them onto the real response. Without it the handler runs, the client sees a 200, and
+	 * the browser keeps sending a session cookie that is still good: a sign-out that signs nobody
+	 * out.
+	 */
+	it('flushes the cleared session cookies onto the real response', async () => {
+		await signOutWith('local');
+
+		expect(mocks.appendResponseHeader).toHaveBeenCalledExactlyOnceWith('set-cookie', [
+			'sb-pkce-code-verifier=abc; Path=/; HttpOnly',
+			CLEARED_SESSION_COOKIE,
+		]);
+	});
+});
+
+describe('readSignOutScope', () => {
+	it.each([
+		['no data at all', undefined],
+		['null', null],
+		['data without a scope', {}],
+		['a scope of undefined', { scope: undefined }],
+	])('defaults to local for %s', (_name: string, data: unknown) => {
+		expect(readSignOutScope(data)).toStrictEqual({ scope: 'local' });
+	});
+
+	it('keeps a scope of local', () => {
+		expect(readSignOutScope({ scope: 'local' })).toStrictEqual({ scope: 'local' });
+	});
+
+	it('keeps a scope of global', () => {
+		expect(readSignOutScope({ scope: 'global' })).toStrictEqual({ scope: 'global' });
+	});
+
+	/**
+	 * `global` is the one scope that ends sessions the person did not sign out of here, so it is
+	 * only ever the exact string. Supabase has a third scope, `others`, which would end every
+	 * session but this one; a crafted request must not reach it, and a mistyped one must not reach
+	 * `global` by accident.
+	 */
+	it.each([
+		['the third Supabase scope', 'others'],
+		['a different case', 'GLOBAL'],
+		['a padded value', ' global'],
+		['a number', 1],
+		['a boolean', true],
+		['an object', { scope: 'global' }],
+	])('treats %s as local', (_name: string, scope: unknown) => {
+		expect(readSignOutScope({ scope })).toStrictEqual({ scope: 'local' });
 	});
 });

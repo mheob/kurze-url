@@ -30,7 +30,8 @@
 		"emailLabel": "E-Mail-Adresse",
 		"sendLink": "Link zusenden",
 		"linkSent": "Falls es zu dieser Adresse ein Konto gibt, ist ein Link unterwegs.",
-		"signOut": "Abmelden"
+		"signOut": "Abmelden",
+		"signOutEverywhere": "Überall abmelden"
 	},
 	"oauthConsent": {
 		"title": "CLI-Zugriff erlauben",

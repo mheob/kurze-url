@@ -130,6 +130,56 @@ async function sendMagicLinkForImpl(
 }
 
 /**
+ * Which of a person's sessions a sign-out ends. `local` ends the one this browser holds and
+ * leaves the rest alone, a CLI session included; `global` ends every session the person has. Both
+ * were measured against the real server on 2026-10-23 (`docs/superpowers/specs/2026-10-23-cli-design.md`,
+ * "Verified"). Supabase has a third scope, `others`, which this app never offers.
+ */
+type SignOutScope = 'global' | 'local';
+
+/**
+ * What the sidebar sends. The scope is optional so that a caller who says nothing gets the narrower
+ * of the two, not the SDK's own default (`global`).
+ */
+interface SignOutInput {
+	readonly scope?: SignOutScope;
+}
+
+/** What `signOutFor` is given once the validator has settled the scope. */
+interface SignOutRequest {
+	readonly scope: SignOutScope;
+}
+
+/**
+ * Signs the visitor out with the scope the page asked for, and carries the cleared session cookies
+ * onto the real response.
+ *
+ * `scope` is always passed, never left to the SDK: `signOut()` with no options is `global`, and
+ * that default is what ended a person's CLI session every time they signed out of the web app.
+ *
+ * `flushSessionCookies` is not optional. Supabase's `signOut` asks the cookie adapter to *clear*
+ * the session cookies, which is a `setAll` call like any other: written into the local `headers`,
+ * and lost unless flushed. Without it the handler would run, the client would see a 200, and the
+ * browser would keep sending the same still-valid session cookie on its next request: a sign-out
+ * that silently does not sign anyone out.
+ *
+ * @param request - The incoming request, read for its session cookies.
+ * @param headers - The `Headers` the cleared cookies are written into; flushed before this returns.
+ * @param scope - `local` to end only this browser's session, `global` to end all of them.
+ * @returns Nothing; the work is the revocation and the flushed cookies.
+ */
+async function signOutForImpl(
+	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `Request` nests a mutable `Headers` through its own `.headers` getter, which `Readonly<>`, being shallow, does not reach; not a type this file can edit.
+	request: Request,
+	headers: Readonly<Headers>,
+	scope: SignOutScope,
+): Promise<void> {
+	const supabase = createSupabase(request, headers);
+	await supabase.auth.signOut({ scope });
+	flushSessionCookies(headers);
+}
+
+/**
  * Extracted from the server function so it can be tested without a request:
  * the enumeration guarantee is the interesting behaviour, and it should not
  * need a framework harness to assert.
@@ -146,10 +196,11 @@ async function sendMagicLinkForImpl(
  * error — verified by building both ways. The failure is specific to this
  * shape (a plain, separately-exported helper referenced *by name* from a
  * `createServerFn().handler()` in another file, done deliberately so the
- * enumeration guarantee is testable without a request) — `signOut`'s and
- * `/auth/callback`'s own `flushSessionCookies` calls, written inline inside
- * their `.handler()` closures rather than delegated to a named helper, do
- * not trip it. `createServerOnlyFn` is TanStack Start's own documented
+ * enumeration guarantee is testable without a request) — `fetchMe`'s own
+ * `flushSessionCookies` call (`routes/_authed.tsx`), written inline inside
+ * its `.handler()` closure rather than delegated to a named helper, does
+ * not trip it. `signOutFor` below has this function's shape and is wrapped
+ * the same way. `createServerOnlyFn` is TanStack Start's own documented
  * answer to exactly this case (its compiler recognises the call and elides
  * it from the client bundle instead of leaving the reachable import for
  * Rolldown to trip over) — it is also the fix suggested by the import-
@@ -171,20 +222,49 @@ export const sendMagicLink = createServerFn({ method: 'POST' })
 	);
 
 /**
+ * The validator of `signOut`. Exported for its test only: the server function wrapping it cannot be
+ * called under Vitest.
+ *
+ * Reads its input as `unknown`, because nothing else checks what a request actually carried, and
+ * `global` is only ever the exact string `global`. It is the one scope that ends sessions the
+ * person did not sign out of here, so a missing, mistyped or crafted value (`others`, `GLOBAL`, a
+ * number) settles on the narrower `local` rather than on something that reaches further, and
+ * nothing throws: a validator that throws on a crafted request would put that request in Sentry.
+ *
+ * @param data - The request's data, untrusted whatever its declared type.
+ * @returns `{ scope: 'global' }` when the request asked for exactly that, otherwise `{ scope: 'local' }`.
+ */
+export function readSignOutScope(data: unknown): SignOutRequest {
+	const scope: unknown =
+		typeof data === 'object' && data !== null ? Reflect.get(data, 'scope') : undefined;
+	return { scope: scope === 'global' ? 'global' : 'local' };
+}
+
+/**
+ * Extracted from the server function so the scope it hands Supabase, and the cookie flush that
+ * makes the sign-out reach the browser, can be tested without a request.
+ *
+ * Wrapped in `createServerOnlyFn` for the reason `sendMagicLinkFor`'s docstring gives, because it
+ * has the same shape: a named helper that reaches `flushSessionCookies` and is referenced from a
+ * `createServerFn().handler()`. Under Vitest it is the identity function.
+ */
+export const signOutFor = createServerOnlyFn(signOutForImpl);
+
+/**
  * `getRequest()` (not a `request` field on the handler's context — same
  * correction as `sendMagicLink` above) reads the incoming request from the
- * server's per-request AsyncLocalStorage.
+ * server's per-request AsyncLocalStorage, and the `Headers` are made here,
+ * inline, for the reason `signOutFor` gives: it flushes them.
  *
- * Supabase's `signOut` asks the cookie adapter to *clear* the session
- * cookies, which is a `setAll` call like any other — written into the local
- * `headers` here, and lost unless flushed. Without `flushSessionCookies`,
- * this handler would run, the client would see a 200, and the browser would
- * keep sending the same still-valid session cookie on its next request: a
- * sign-out that silently does not sign anyone out.
+ * Sign-out is local unless the caller says `global` (the sidebar's "Sign out
+ * everywhere" box), because a global sign-out also ends the person's CLI
+ * sessions, which a plain sign-out of the web app must not do. The validator
+ * is typed with the caller's input but reads it as `unknown`
+ * (`readSignOutScope`), and accepts no data at all, so `signOut()` is a local
+ * sign-out too.
  */
-export const signOut = createServerFn({ method: 'POST' }).handler(async () => {
-	const headers = new Headers();
-	const supabase = createSupabase(getRequest(), headers);
-	await supabase.auth.signOut();
-	flushSessionCookies(headers);
-});
+export const signOut = createServerFn({ method: 'POST' })
+	.validator((data: SignOutInput | undefined) => readSignOutScope(data))
+	.handler(async ({ data }: { readonly data: SignOutRequest }) =>
+		signOutFor(getRequest(), new Headers(), data.scope),
+	);

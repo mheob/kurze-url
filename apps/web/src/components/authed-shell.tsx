@@ -15,7 +15,8 @@ interface AuthedShellProps {
 	// no way back to `/new-team` from inside the app.
 	readonly isMaintainer: boolean;
 	readonly memberships: readonly Membership[];
-	readonly onSignOut: () => void;
+	// `true` when the person ticked "Sign out everywhere"; see `AppSidebar`.
+	readonly onSignOut: (everywhere: boolean) => void;
 	readonly signingOut: boolean;
 	// `AppSidebar`'s footer needs this for its `ThemeToggle`; see that
 	// component's own docstring for why it arrives as a prop rather than a
@@ -44,7 +45,7 @@ interface AuthedShellProps {
  * @param props.currentTeamSlug - The resolved current team's slug, or undefined when there is none (e.g. a maintainer with no team yet, on `/new-team`).
  * @param props.isMaintainer - Whether to offer team creation.
  * @param props.memberships - The signed-in visitor's team memberships.
- * @param props.onSignOut - Called when the sign-out control is clicked.
+ * @param props.onSignOut - Called when the sign-out control is clicked, with whether "Sign out everywhere" was ticked.
  * @param props.signingOut - True while sign-out is in flight; disables the sign-out control.
  * @param props.theme - The current theme preference; passed straight through to `AppSidebar`.
  * @returns The rendered authenticated shell.

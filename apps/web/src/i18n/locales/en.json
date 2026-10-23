@@ -30,7 +30,8 @@
 		"emailLabel": "Email address",
 		"sendLink": "Send me a link",
 		"linkSent": "If that address has an account, a link is on its way.",
-		"signOut": "Sign out"
+		"signOut": "Sign out",
+		"signOutEverywhere": "Sign out everywhere"
 	},
 	"oauthConsent": {
 		"title": "Allow CLI access",

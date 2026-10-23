@@ -5,7 +5,8 @@ import {
 	createRouter,
 	RouterProvider,
 } from '@tanstack/react-router';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { I18nextProvider } from 'react-i18next';
 import { describe, expect, it, vi } from 'vite-plus/test';
 
@@ -32,7 +33,7 @@ function renderSidebar(props: {
 	readonly currentTeamSlug?: string;
 	readonly isMaintainer?: boolean;
 	readonly memberships?: readonly Membership[];
-	readonly onSignOut?: () => void;
+	readonly onSignOut?: (everywhere: boolean) => void;
 	readonly signingOut?: boolean;
 	readonly theme?: 'dark' | 'light';
 }): ReturnType<typeof render> {
@@ -40,7 +41,7 @@ function renderSidebar(props: {
 		currentTeamSlug = 'verein-a',
 		isMaintainer = false,
 		memberships: membershipsProp = memberships,
-		onSignOut = vi.fn<() => void>(),
+		onSignOut = vi.fn<(everywhere: boolean) => void>(),
 		signingOut = false,
 		theme = 'light',
 	} = props;
@@ -216,5 +217,59 @@ describe('the members entry', () => {
 
 		await expect(screen.findByRole('link', { name: 'People' })).resolves.toBeInTheDocument();
 		expect(screen.queryByRole('link', { name: 'History' })).not.toBeInTheDocument();
+	});
+});
+
+describe('the sign-out controls', () => {
+	const EVERYWHERE = { name: 'Sign out everywhere' };
+
+	// A checkbox that started checked would turn every plain sign-out into one that also ends the
+	// person's CLI sessions, which is the surprise this control exists to remove.
+	it('offers "Sign out everywhere", unchecked to begin with', async () => {
+		renderSidebar({});
+
+		await expect(screen.findByRole('checkbox', EVERYWHERE)).resolves.not.toBeChecked();
+	});
+
+	it('checks the box when its label is clicked', async () => {
+		renderSidebar({});
+		await screen.findByRole('checkbox', EVERYWHERE);
+
+		await userEvent.click(screen.getByText('Sign out everywhere'));
+
+		expect(screen.getByRole('checkbox', EVERYWHERE)).toBeChecked();
+	});
+
+	it('toggles the box with Space, and back again', async () => {
+		renderSidebar({});
+		const checkbox = await screen.findByRole('checkbox', EVERYWHERE);
+		act(() => {
+			checkbox.focus();
+		});
+
+		await userEvent.keyboard(' ');
+		expect(checkbox).toBeChecked();
+
+		await userEvent.keyboard(' ');
+		expect(checkbox).not.toBeChecked();
+	});
+
+	it('signs out this session only while the box is unchecked', async () => {
+		const onSignOut = vi.fn<(everywhere: boolean) => void>();
+		renderSidebar({ onSignOut });
+
+		await userEvent.click(await screen.findByRole('button', { name: 'Sign out' }));
+
+		expect(onSignOut).toHaveBeenCalledExactlyOnceWith(false);
+	});
+
+	it('signs out everywhere once the box is checked', async () => {
+		const onSignOut = vi.fn<(everywhere: boolean) => void>();
+		renderSidebar({ onSignOut });
+
+		await userEvent.click(await screen.findByRole('checkbox', EVERYWHERE));
+		await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+
+		expect(onSignOut).toHaveBeenCalledExactlyOnceWith(true);
 	});
 });

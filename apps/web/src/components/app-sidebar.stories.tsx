@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/tanstack-react';
+import { expect, userEvent, within } from 'storybook/test';
 
 import { AppSidebar } from './app-sidebar';
 import { SidebarProvider } from './ui/sidebar';
@@ -40,4 +41,18 @@ export const Default: StoryObj<typeof meta> = {
 export const Dark: StoryObj<typeof meta> = {
 	args: { ...Default.args, theme: 'dark' },
 	globals: { theme: 'dark' },
+};
+
+// "Sign out everywhere" is the sidebar's own state, so no args can reach the ticked box: a `play`
+// function that clicks it is what lets the a11y addon audit the box in its checked state too, not
+// only the unchecked default above. The assertion also pins that the click lands on the box and
+// toggles it, which is what the label's `htmlFor` wiring is for.
+export const SignOutEverywhere: StoryObj<typeof meta> = {
+	args: Default.args,
+	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Storybook's own `play` function context type; not this codebase's to mark readonly.
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await userEvent.click(canvas.getByRole('checkbox', { name: 'Sign out everywhere' }));
+		await expect(canvas.getByRole('checkbox', { name: 'Sign out everywhere' })).toBeChecked();
+	},
 };
