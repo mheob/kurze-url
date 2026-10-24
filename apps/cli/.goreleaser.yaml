@@ -1,0 +1,149 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+
+# Builds the CLI for every platform it ships on and publishes it as a GitHub
+# Release. It runs from apps/cli, which is its own Go module outside the pnpm
+# workspace: .github/workflows/release-cli.yml on a `v*` tag, and the release
+# dry run in ci-cli.yml in snapshot mode on every CLI change.
+version: 2
+
+project_name: kurze-url
+
+# Which tag a build belongs to. When a release candidate and its final release
+# sit on one commit, `git tag --points-at` lists them with the candidate
+# first, because git sorts v0.1.0-rc.1 after v0.1.0 by default and goreleaser
+# takes the first line. With "-" as the suffix git sorts any tag carrying a
+# pre-release suffix before the bare version, so the final release wins.
+# release-cli.yml also names the tag outright, which is what actually decides
+# the CI build; this keeps a local `goreleaser release` in agreement with it.
+git:
+  prerelease_suffix: "-"
+
+builds:
+  - id: kurze-url
+    main: ./cmd/kurze-url
+    binary: kurze-url
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    # The names are the variables cmd/kurze-url/main.go declares. Set here
+    # rather than left to goreleaser's defaults, which stamp the full commit
+    # hash and the build time: `kurze-url version` prints the short commit,
+    # and the commit date, unlike the build time, does not change from one
+    # build of a commit to the next.
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .ShortCommit }}
+      - -X main.date={{ .CommitDate }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+# The archive names carry no version, on purpose. install.sh and install.ps1
+# download https://github.com/mheob/kurze-url/releases/latest/download/<name>,
+# a URL that resolves only for a name that is the same in every release. The
+# release dry run in ci-cli.yml asserts the exact set, so renaming one here
+# fails a pull request instead of the next install.
+archives:
+  - id: kurze-url
+    ids:
+      - kurze-url
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: "kurze-url_{{ .Os }}_{{ .Arch }}"
+    # Each entry's owner, group, mode and modification time are written out
+    # instead of read from the file on disk. Left alone, a tar entry carries
+    # the account that ran the build (`ab staff` on a laptop, `runner` in CI)
+    # and the checkout's clock, so archives of one commit would differ by who
+    # built them and when. The zip format has no owner or group, so for
+    # windows only the mode and the time apply.
+    builds_info:
+      owner: root
+      group: root
+      mode: 0755
+      mtime: "{{ .CommitDate }}"
+    files:
+      # The repository's own licence, not a copy beside the CLI. strip_parent
+      # puts it at the archive's top level, next to the binary, instead of
+      # under ../../.
+      - src: ../../LICENSE
+        strip_parent: true
+        info:
+          owner: root
+          group: root
+          mode: 0644
+          mtime: "{{ .CommitDate }}"
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot"
+
+# This repository is a monorepo whose history is mostly API and web commits,
+# and only the `(cli)`-scoped ones describe the binary.
+changelog:
+  sort: asc
+  filters:
+    include:
+      - '^\w+\(cli\)!?:'
+
+release:
+  # A tag with a pre-release suffix (v0.1.0-rc.1) becomes a GitHub
+  # pre-release, which GitHub's "latest" never points at, so the install
+  # scripts keep installing the last final version while a candidate is
+  # being checked.
+  prerelease: auto
+  name_template: "kurze-url {{ .Version }}"
+  # The install scripts take the repository's latest release, which is never a
+  # pre-release. On a candidate the plain one-liners would therefore find no
+  # release at all (before the first final release) or install the previous
+  # final one, so a candidate's footer hands the scripts its own tag.
+  footer: |
+    ## Install
+
+    {{- if .Prerelease }}
+
+    This is a release candidate, so the install scripts skip it unless they
+    are given its tag.
+
+    macOS and Linux:
+
+    ```sh
+    curl -fsSL https://raw.githubusercontent.com/mheob/kurze-url/main/apps/cli/install.sh | KURZE_URL_VERSION={{ .Tag }} sh
+    ```
+
+    Windows (PowerShell):
+
+    ```powershell
+    $env:KURZE_URL_VERSION = '{{ .Tag }}'; irm https://raw.githubusercontent.com/mheob/kurze-url/main/apps/cli/install.ps1 | iex
+    ```
+    {{- else }}
+
+    macOS and Linux:
+
+    ```sh
+    curl -fsSL https://raw.githubusercontent.com/mheob/kurze-url/main/apps/cli/install.sh | sh
+    ```
+
+    Windows (PowerShell):
+
+    ```powershell
+    irm https://raw.githubusercontent.com/mheob/kurze-url/main/apps/cli/install.ps1 | iex
+    ```
+    {{- end }}
+
+    Or download the archive for your system below and check it against
+    `checksums.txt`. The [Command-line tool](https://github.com/mheob/kurze-url#command-line-tool)
+    section of the README has the details.

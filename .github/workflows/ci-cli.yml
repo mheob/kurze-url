@@ -10,7 +10,10 @@ name: CI — CLI
 # detection is written by hand rather than inferred from the lockfile. It also
 # watches apps/api/openapi.json: the CLI's API client is written by hand
 # against that spec and checked against it by a contract test, so a change to
-# the API's surface has to run the CLI's suite even when no CLI file moved.
+# the API's surface has to run the CLI's suite even when no CLI file moved. It
+# watches release-cli.yml too: that workflow only ever runs on a tag, so a pull
+# request that edits it would otherwise start none of these jobs, and the
+# release dry run is the nearest check that what it publishes from still builds.
 #
 # Every job name carries "(cli)" so none of them collides with the check names
 # ci-api.yml reports ("vet & lint", "go test"), which are required on main.
@@ -52,7 +55,7 @@ jobs:
           fi
 
           if git diff --name-only "$BASE_SHA" HEAD \
-            | grep -qE '^(apps/cli/|apps/api/openapi\.json$|\.github/workflows/ci-cli\.yml$)'; then
+            | grep -qE '^(apps/cli/|apps/api/openapi\.json$|\.github/workflows/ci-cli\.yml$|\.github/workflows/release-cli\.yml$)'; then
             echo "cli=true" >> "$GITHUB_OUTPUT"
           else
             echo "cli=false" >> "$GITHUB_OUTPUT"
@@ -155,3 +158,262 @@ jobs:
       # credentials over TLS, so a standard-library fix is a reason to rebuild.
       - name: govulncheck
         run: go tool govulncheck ./...
+
+  # The release itself runs once, on a tag, where a mistake costs a tag and a
+  # half-published release. This job runs the same goreleaser configuration in
+  # snapshot mode on every CLI change instead: it builds all six binaries,
+  # archives them and writes the checksums, but publishes nothing.
+  #
+  # The assertion at the end is the contract with the install scripts. Both
+  # derive an asset's name from the platform (kurze-url_<os>_<arch>) and
+  # download it from releases/latest/download, which only resolves a name that
+  # carries no version. A config edit that renamed an archive would build
+  # cleanly and then leave every `curl | sh` with a 404.
+  release-dry-run:
+    name: release dry run (cli)
+    needs: changes
+    if: needs.changes.outputs.cli == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/cli
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # goreleaser reads the tags and the history to version the build and
+          # to write the changelog, which a shallow clone would cut short.
+          fetch-depth: 0
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: apps/cli/go.mod
+          cache-dependency-path: apps/cli/go.sum
+
+      # The version is pinned the same way release-cli.yml pins it, so the dry
+      # run and the release cannot disagree about what goreleaser accepts.
+      - name: goreleaser check
+        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+        with:
+          version: v2.19.0
+          workdir: apps/cli
+          args: check
+
+      - name: goreleaser snapshot
+        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+        with:
+          version: v2.19.0
+          workdir: apps/cli
+          args: release --snapshot --clean
+
+      # dist/ also holds goreleaser's own bookkeeping (artifacts.json,
+      # config.yaml, metadata.json) and one directory per build, which are
+      # not assets. Everything else must be exactly the names below, so an
+      # archive that is missing, renamed or added fails here.
+      - name: assert the snapshot's file set
+        run: |
+          expected=$(printf '%s\n' \
+            checksums.txt \
+            kurze-url_darwin_amd64.tar.gz \
+            kurze-url_darwin_arm64.tar.gz \
+            kurze-url_linux_amd64.tar.gz \
+            kurze-url_linux_arm64.tar.gz \
+            kurze-url_windows_amd64.zip \
+            kurze-url_windows_arm64.zip | LC_ALL=C sort)
+
+          actual=$(find dist -maxdepth 1 -type f \
+            ! -name artifacts.json ! -name config.yaml ! -name metadata.json \
+            | sed 's|^dist/||' | LC_ALL=C sort)
+
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::dist/ does not hold exactly the six archives and checksums.txt"
+            echo "--- expected"
+            echo "$expected"
+            echo "--- found"
+            echo "$actual"
+            exit 1
+          fi
+
+          echo "dist/ holds exactly:"
+          echo "$actual"
+
+      # The assertion above checks the names goreleaser writes; this one
+      # checks that install.sh asks for those very names. It installs the
+      # snapshot the way a user's `curl | sh` would, with a file:// URL
+      # standing in for releases/latest/download, so a platform mapping or an
+      # archive name that drifted from the config fails here instead of as a
+      # 404 on the first real install. Only stdout is captured: the script
+      # puts everything but the binary's own `version` line on stderr, and
+      # the PATH hint it ends with would otherwise be the last line.
+      - name: install the snapshot with install.sh
+        run: |
+          output=$(KURZE_URL_DOWNLOAD_URL="file://$PWD/dist" KURZE_URL_INSTALL_DIR="$RUNNER_TEMP/bin" sh install.sh)
+          echo "$output"
+
+          last=$(printf '%s\n' "$output" | tail -n 1)
+          case $last in
+            "kurze-url "*-snapshot*) ;;
+            *)
+              echo "::error::the installed binary's last line of output is not a snapshot version line: $last"
+              exit 1
+              ;;
+          esac
+
+      # The Windows job below installs these very archives with install.ps1,
+      # so what it proves is that the names and checksums goreleaser wrote are
+      # the ones the script asks for, and not just that a fixture of its own
+      # installs. Only the Windows archives travel, because that job runs on
+      # windows-latest and cannot run the others. The two paths share
+      # apps/cli/dist as their common ancestor, so the artifact holds the
+      # files at its top level, and a missing one fails here rather than as a
+      # 404 in the next job.
+      - name: upload the Windows snapshot
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cli-windows-snapshot
+          path: |
+            apps/cli/dist/kurze-url_windows_*.zip
+            apps/cli/dist/checksums.txt
+          if-no-files-found: error
+          retention-days: 1
+
+  # install.sh is what `curl | sh` runs on a stranger's machine, so it gets
+  # its own tests on each operating system it supports: the Linux runner's
+  # dash and the macOS runner's sh differ in exactly the places a portable
+  # script slips (tar, sha256sum against shasum, mktemp, find). The tests need
+  # no network: they install from a fake release in a file:// directory.
+  #
+  # These are two jobs and not a matrix, on purpose. A matrix job skipped by
+  # the `if:` below reports one check under its unexpanded name
+  # (`install script (cli, ${{ matrix.os }})`), which no required status
+  # check can name, so it could never be required. Two plain jobs report
+  # under their real names whether they ran or were skipped. The Windows job
+  # that tests install.ps1 follows the same naming: `install script (cli,
+  # windows)`. shellcheck runs on Linux only, where the runner image carries
+  # it.
+  install-script-linux:
+    name: install script (cli, linux)
+    needs: changes
+    if: needs.changes.outputs.cli == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/cli
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: shellcheck
+        run: shellcheck install.sh scripts/install_test.sh
+
+      - name: install script tests
+        run: sh scripts/install_test.sh
+
+  install-script-macos:
+    name: install script (cli, macos)
+    needs: changes
+    if: needs.changes.outputs.cli == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/cli
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: install script tests
+        run: sh scripts/install_test.sh
+
+  # install.ps1 is what `irm | iex` runs on a stranger's machine, under
+  # Windows PowerShell 5.1 (the default on Windows 10 and 11) or PowerShell 7,
+  # and its tests have to run under both, because the two differ in exactly
+  # the places an installer touches: the web cmdlets, TLS defaults,
+  # Expand-Archive, how a file is read. A plain job and not a matrix for the
+  # reason given above the Linux one, and named like its siblings. It needs
+  # release-dry-run because the last step installs the snapshot's own Windows
+  # archive, which that job hands over as an artifact.
+  #
+  # PSScriptAnalyzer ships with the windows-latest image, which is why
+  # nothing is installed here: a module fetched from the gallery at test time
+  # would be an unpinned dependency of every pull request. It runs first, so a
+  # style finding is reported before the slower install tests start.
+  install-script-windows:
+    name: install script (cli, windows)
+    needs: [changes, release-dry-run]
+    if: needs.changes.outputs.cli == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/cli
+        shell: powershell
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The tests build their fixture binary with go build.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: apps/cli/go.mod
+          cache-dependency-path: apps/cli/go.sum
+
+      # Every finding fails the job, whatever its severity. A suppression
+      # belongs in the script, next to a justification, as install.ps1's
+      # Write-Host one is.
+      - name: PSScriptAnalyzer
+        run: |
+          $findings = @(foreach ($file in 'install.ps1', 'scripts/install_test.ps1') {
+            Invoke-ScriptAnalyzer -Path $file
+          })
+          if ($findings.Count -gt 0) {
+            $findings | Format-List RuleName, Severity, ScriptName, Line, Message
+            throw "PSScriptAnalyzer reported $($findings.Count) findings"
+          }
+          Write-Output 'PSScriptAnalyzer found nothing.'
+
+      - name: install script tests (Windows PowerShell 5.1)
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install_test.ps1
+
+      - name: install script tests (PowerShell 7)
+        run: pwsh -NoProfile -File scripts/install_test.ps1
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: cli-windows-snapshot
+          path: ${{ runner.temp }}/snapshot
+
+      # The script as a person runs it, `irm | iex`, with a file:/// URL
+      # standing in for releases/latest/download. The function writes only
+      # the binary's own `version` line to the pipeline, so that is what
+      # $output holds; the script's messages went to the console. Then what
+      # the script promises about the Path is checked: the install directory
+      # is in the user's Path for every new terminal, and this session finds
+      # kurze-url by name, which only the session's own Path can make true.
+      - name: install the snapshot with install.ps1
+        run: |
+          $snapshot = Join-Path -Path $env:RUNNER_TEMP -ChildPath 'snapshot'
+          $installDir = Join-Path -Path $env:RUNNER_TEMP -ChildPath 'bin'
+          $env:KURZE_URL_DOWNLOAD_URL = [Uri]::new($snapshot, [UriKind]::Absolute).AbsoluteUri
+          $env:KURZE_URL_INSTALL_DIR = $installDir
+
+          $output = @(Get-Content -Raw -LiteralPath install.ps1 | Invoke-Expression)
+          Write-Output $output
+
+          $last = $output[$output.Count - 1]
+          if ($last -notlike 'kurze-url *-snapshot*') {
+            throw "the installed binary's last line of output is not a snapshot version line: $last"
+          }
+
+          $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+          $entries = @($userPath -split ';' | ForEach-Object { $_.Trim().TrimEnd('\') })
+          if ($entries -notcontains $installDir.TrimEnd('\')) {
+            throw "the user Path does not hold $installDir"
+          }
+
+          $found = (Get-Command kurze-url -ErrorAction Stop).Source
+          if ($found -ne (Join-Path -Path $installDir -ChildPath 'kurze-url.exe')) {
+            throw "kurze-url resolves to $found, not into $installDir"
+          }
+          $byName = (& kurze-url version)
+          if ($byName -ne $last) {
+            throw "kurze-url version prints '$byName' by name, not '$last'"
+          }

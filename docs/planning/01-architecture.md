@@ -16,7 +16,7 @@ Components:
 
 - **API/backend**: Go, API-first design. Handles link CRUD, redirects, analytics ingestion, auth.
 - **Frontend**: TanStack Start (React), consumes the API.
-- **CLI**: Go, thin client over the same API (`short link create`, `short link list`, `short link stats`, `short qr`).
+- **CLI**: Go, thin client over the same API. The binary is `kurze-url`, with `link create`, `link list`, `link stats` and `link qr`, plus `login`, `logout`, `whoami`, `team list` and `config`.
 - **Database**: Supabase (Postgres), managed/SaaS, not self-hosted.
 - **Cache**: Redis (Upstash), managed/SaaS, in MVP scope, fronting the redirect path.
 - **Compute/hosting**: **Vercel, decided 2026-09-01.** Built directly against Vercel's native APIs (Go serverless functions), no Docker, no portability abstraction. Cloudflare was considered and dropped (see `02-external-services-and-hosting.md` for rationale).
@@ -85,6 +85,14 @@ Practical implication: the modern, low-effort path is Authorization Code + PKCE 
 Caveat: this pattern needs a browser available on the same machine as the CLI. If a fully headless flow (e.g. pasting a code shown in the terminal into a browser on a _different_ device) is ever required, that's the classic Device Authorization Grant use case, which Supabase doesn't support — would need a custom-built device-code flow on top of the Go backend (a well-trodden pattern, but real extra work, not just configuration).
 
 **Decided 2026-09-01**: build CLI auth as Authorization Code + PKCE via Supabase's OAuth 2.1 Server with a loopback redirect, as the primary and only method for v1. A plain API key is kept as a documented fallback design, but only gets built if/when a real CI or headless use case shows up — not built speculatively now.
+
+**Implemented 2026-10-23/24** (`docs/superpowers/specs/2026-10-23-cli-design.md`), as decided above:
+
+- **Consent page.** Supabase's OAuth server sends the browser to a consent page that the app has to host, so the web app serves `/oauth/consent`, where the person allows or denies the CLI.
+- **Fixed loopback ports.** Supabase matches a redirect URI exactly, port included (measured 2026-10-23), and refuses `localhost`, so the CLI's listener binds the first free one of three registered ports, 53682 to 53684 on `127.0.0.1`, instead of an ephemeral one.
+- **Token storage.** Tokens live in the system keychain, or in a `0600` file where there is none, and never in the config file.
+- **`logout`** ends only the CLI's own session (`scope=local`).
+- **Web sign-out** is local by default as well, so signing out of the browser no longer ends the CLI's session. A "Sign out everywhere" option sends `scope=global`, which ends every session, the CLI's included.
 
 ## Open questions
 

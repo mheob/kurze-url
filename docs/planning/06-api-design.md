@@ -144,7 +144,7 @@ Every team response body — `POST`, `GET`, and `PATCH /v1/teams/{team_id}` alik
 
 - `GET /v1/teams/{team_id}/audit-log` — paginated; filter by `entity_type`, `action`, `actor_user_id`, `from`/`to`.
 
-**CLI note**: every CLI command (`short link create`, `short link list`, `short link stats`, `short qr`) maps directly onto one of the endpoints above — no CLI-specific endpoints exist or are needed, confirming the "CLI is a thin client over the same API" principle from `01-architecture.md` holds with zero exceptions.
+**CLI note**: every CLI command (`kurze-url link create|list|stats|qr`) maps directly onto one of the endpoints above. `team list`, and the lookups that turn a team slug, a folder name, a domain hostname or a link slug into an id, read `GET /v1/me` and the list endpoints. So no CLI-specific endpoints exist or are needed, confirming the "CLI is a thin client over the same API" principle from `01-architecture.md` holds with zero exceptions.
 
 ## Not yet decided / to revisit
 

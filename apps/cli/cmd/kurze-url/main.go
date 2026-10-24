@@ -9,8 +9,9 @@ import (
 )
 
 // Stamped at release time through linker flags (-X main.version=...). The
-// names are the ones goreleaser's default ldflags set, so the release
-// configuration needs no override; a plain build keeps these placeholders.
+// release configuration, apps/cli/.goreleaser.yaml, sets them explicitly with
+// the short commit and the commit date rather than goreleaser's defaults, the
+// full hash and the build time; a plain build keeps these placeholders.
 var version, commit, date = "dev", "none", "unknown"
 
 func main() {
