@@ -24,7 +24,7 @@ A multi-tenant URL shortener for German non-profit associations ("Vereine"), run
 curl -fsSL https://raw.githubusercontent.com/mheob/kurze-url/main/apps/cli/install.sh | sh
 ```
 
-The script downloads the latest release's archive for your machine and its `checksums.txt`, checks the archive against it, and refuses to install on a mismatch. It puts `kurze-url` in `~/.local/bin`. When that directory is not on your `PATH` it prints the line to add, for `~/.zshrc`, `~/.bashrc` or `~/.profile` depending on your `$SHELL`. Bash on macOS reads `~/.bash_profile` for login shells instead, and fish users run `fish_add_path ~/.local/bin`. It does not run in Git Bash or Cygwin; it says so and points to the PowerShell installer below.
+The script downloads the latest release's archive for your machine and its `checksums.txt`, checks the archive against it, and refuses to install on a mismatch. It puts `kurze-url` in `~/.local/bin`. When that directory is not on your `PATH` it prints the line to add, for `~/.zshrc`, `~/.bashrc` or `~/.profile` depending on your `$SHELL`. Bash on macOS reads `~/.bash_profile` for login shells instead, and fish users run `fish_add_path ~/.local/bin`. It does not run in Git Bash or Cygwin; it says so and points to the PowerShell installer below. It ends by naming `kurze-url completion install`, which turns on tab completion (see below), and changes no shell file itself.
 
 Two environment variables change where it installs and what. They go on the `sh` side of the pipe, where the script reads them:
 
@@ -43,7 +43,7 @@ curl -fsSL https://raw.githubusercontent.com/mheob/kurze-url/main/apps/cli/insta
   irm https://raw.githubusercontent.com/mheob/kurze-url/main/apps/cli/install.ps1 | iex
   ```
 
-  It does the same as `install.sh` with the Windows archive, `kurze-url_windows_<arch>.zip`: it checks the checksum before it unpacks anything, and installs `kurze-url.exe` into `%LOCALAPPDATA%\Programs\kurze-url`, or into `$env:KURZE_URL_INSTALL_DIR`. It then **adds that directory to your user `Path`**, for every new terminal and for the one you ran it in. Set `$env:KURZE_URL_NO_MODIFY_PATH = '1'` first to leave your `Path` alone; the script then reminds you to add the directory yourself. `$env:KURZE_URL_VERSION = 'v0.1.0'` picks a release the same way as above.
+  It does the same as `install.sh` with the Windows archive, `kurze-url_windows_<arch>.zip`: it checks the checksum before it unpacks anything, and installs `kurze-url.exe` into `%LOCALAPPDATA%\Programs\kurze-url`, or into `$env:KURZE_URL_INSTALL_DIR`. It then **adds that directory to your user `Path`**, for every new terminal and for the one you ran it in. Set `$env:KURZE_URL_NO_MODIFY_PATH = '1'` first to leave your `Path` alone; the script then reminds you to add the directory yourself. `$env:KURZE_URL_VERSION = 'v0.1.0'` picks a release the same way as above. It ends with the same hint about tab completion and does not touch your PowerShell profile.
 
 - **By hand:** download `kurze-url_windows_<arch>.zip` (`amd64` or `arm64`) and `checksums.txt` from the [releases page](https://github.com/mheob/kurze-url/releases), compare the archive's SHA-256 with the line in `checksums.txt`, and put `kurze-url.exe` in a directory that is on your `Path`.
 
@@ -77,6 +77,28 @@ kurze-url link qr sommerfest
 - `logout` ends only the CLI's own session. Signing out of the web app leaves the CLI signed in, unless you tick "Sign out everywhere" there. That ends the CLI's session within an hour, once the access token it holds runs out.
 
 `kurze-url --help` and `kurze-url <command> --help` list every option. They are in English; everything a command prints is translated.
+
+### Tab completion
+
+Tab completes commands, flags and fixed values such as `--format`, in zsh, bash, fish and PowerShell. One command turns it on:
+
+```sh
+kurze-url completion install
+kurze-url completion uninstall
+```
+
+`install` sets up the shell `$SHELL` names, and PowerShell on Windows. Another shell is an argument, `kurze-url completion install fish`. It shows the file and asks first (`[Y/n]`, `[J/n]` in German). `--yes` skips the question, and where there is no terminal to ask on, `--yes` is required. It puts a marked block at the end of `~/.zshrc` (or `$ZDOTDIR/.zshrc`) or `~/.bashrc`, writes a file of its own for fish, `~/.config/fish/completions/kurze-url.fish`, and adds nothing twice. The block runs `kurze-url completion <shell>` whenever a shell starts, so an update of the CLI brings its completions along and needs no second install. Open a new shell afterwards. Bash also needs the `bash-completion` package. `uninstall` asks the same way and takes exactly that block out again, or deletes fish's file, leaving every other line as it was.
+
+For PowerShell, `install` writes the block into the profile of every edition it finds on your `PATH` (`pwsh`, and on Windows `powershell`). A profile that is saved as UTF-16 or is signed is refused, by `uninstall` too, because adding or removing a line would break it; change that file yourself with the line below.
+
+If you keep your shell configuration by hand, add one line instead. `install` finds a `kurze-url completion` line of yours, says that completion is already set up and leaves it alone, and so does `uninstall`.
+
+- zsh, in `~/.zshrc` after `compinit`: `source <(kurze-url completion zsh)`
+- bash, in `~/.bashrc`: `eval "$(kurze-url completion bash)"`
+- fish, in `~/.config/fish/completions/kurze-url.fish`: `kurze-url completion fish | source`
+- PowerShell, in `$PROFILE`: `kurze-url completion powershell | Out-String | Invoke-Expression`
+
+Teams, folders, domains and link slugs come from your account, so completing them needs a `login`. Signed out or offline, Tab offers nothing for them, without an error, and it gives up after two seconds.
 
 ### Config
 

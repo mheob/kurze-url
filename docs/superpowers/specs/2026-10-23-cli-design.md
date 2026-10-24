@@ -219,6 +219,8 @@ kurze-url config set KEY VALUE [--team SLUG]
 kurze-url config unset KEY [--team SLUG]
 kurze-url version
 kurze-url completion bash|zsh|fish|powershell
+kurze-url completion install [shell] [--yes]
+kurze-url completion uninstall [shell] [--yes]
 ```
 
 **Streams and exit codes:**
@@ -405,6 +407,7 @@ teams:
 - **Manual, once per release candidate:**
   - a real `login` against production, `link create`, `stats`, `list` and `qr`;
   - `logout`, then a command that must ask for login again;
+  - tab completion, in zsh, bash, fish and PowerShell: `completion install`, open a new shell, check that `kurze-url <Tab>`, `kurze-url link qr <Tab>` and a folder with a space in its name complete, then `completion uninstall`;
   - on macOS, Linux (keychain and file fallback) and Windows.
 
 ## Suggested sequence
