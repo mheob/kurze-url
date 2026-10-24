@@ -31,9 +31,12 @@
 # installed binary prints. The zip entries carry mode 0755 so that such a
 # binary is still executable after Expand-Archive.
 #
-# The case that changes the real user Path runs only when CI is "true", and
-# puts the old value back afterwards. Everything else leaves the machine alone:
-# KURZE_URL_NO_MODIFY_PATH=1 is set unless the case is about the Path.
+# The cases that make the installer write the real user Path run only when CI
+# is "true". On Windows the whole run is wrapped in a save and restore of that
+# registry value, raw and with its type, so a bug in the installer cannot
+# rewrite a developer's Path for good, and every such case restores it again
+# itself. Everything else leaves the machine alone: KURZE_URL_NO_MODIFY_PATH=1
+# is set unless the case is about the Path.
 #
 # This file is plain ASCII on purpose. Windows PowerShell 5.1 reads a file
 # without a byte order mark in the system's ANSI code page, so a German
@@ -253,7 +256,7 @@ function Get-PathCount {
     $count
 }
 
-function Build-Binary {
+function Get-FixtureBinary {
     <#
     .SYNOPSIS
     Builds the fixture kurze-url.exe for a version, once, and returns its path.
@@ -324,14 +327,14 @@ function Add-Checksum {
     [IO.File]::AppendAllText((Join-Path -Path $Dir -ChildPath 'checksums.txt'), "$hash  $Name`n")
 }
 
-function Build-Release {
+function Publish-Release {
     <#
     .SYNOPSIS
     Packs a fake release into a directory: one zip per architecture, and checksums.txt.
     #>
     param([string]$Dir, [string]$Version, [string[]]$Arch = @('amd64', 'arm64'))
     $null = New-Item -ItemType Directory -Force -Path $Dir
-    $binary = Build-Binary -Version $Version
+    $binary = Get-FixtureBinary -Version $Version
     foreach ($a in $Arch) {
         $name = "kurze-url_windows_$a.zip"
         Publish-Zip -Path (Join-Path -Path $Dir -ChildPath $name) -Entry @{ 'kurze-url.exe' = $binary; 'LICENSE' = $licenseFile }
@@ -366,16 +369,18 @@ function Get-WebShim {
     .SYNOPSIS
     Returns code for a child that puts a function in front of Invoke-WebRequest.
     .DESCRIPTION
-    A function shadows the cmdlet. Without a FinalUri the shim records its
+    A function shadows the cmdlet. Without a ServeDir the shim records its
     arguments and throws, so no request ever leaves. With one it copies the
     file the URL names out of ServeDir and answers like the cmdlet does with
-    -PassThru, saying the request ended up at FinalUri; Shape picks which
-    spelling of that answer, Windows PowerShell's (ResponseUri on an
-    HttpWebResponse) or PowerShell 7's (RequestMessage.RequestUri on an
-    HttpResponseMessage).
+    -PassThru. Shape picks the answer: "windows" says the request ended up at
+    FinalUri the way Windows PowerShell does (ResponseUri on an
+    HttpWebResponse), "core" the way PowerShell 7 does
+    (RequestMessage.RequestUri on an HttpResponseMessage), "none" is a
+    response whose BaseResponse has no address in it, and "bare" one without
+    a BaseResponse at all.
     #>
     param([string]$Record, [string]$ServeDir = '', [string]$FinalUri = '', [string]$Shape = 'windows')
-    if ($FinalUri -eq '') {
+    if ($ServeDir -eq '') {
         return @"
 function Invoke-WebRequest {
     param(`$Uri)
@@ -387,8 +392,14 @@ function Invoke-WebRequest {
     if ($Shape -eq 'windows') {
         $answer = "[pscustomobject]@{ BaseResponse = [pscustomobject]@{ ResponseUri = [Uri]$(ConvertTo-Literal -Text $FinalUri) } }"
     }
-    else {
+    elseif ($Shape -eq 'core') {
         $answer = "[pscustomobject]@{ BaseResponse = [pscustomobject]@{ RequestMessage = [pscustomobject]@{ RequestUri = [Uri]$(ConvertTo-Literal -Text $FinalUri) } } }"
+    }
+    elseif ($Shape -eq 'none') {
+        $answer = "[pscustomobject]@{ BaseResponse = [pscustomobject]@{ StatusText = 'no address in here' } }"
+    }
+    else {
+        $answer = "[pscustomobject]@{ StatusText = 'no BaseResponse either' }"
     }
     @"
 function Invoke-WebRequest {
@@ -508,19 +519,126 @@ catch {
     Invoke-Child -Source $source
 }
 
+function Get-UserPathState {
+    <#
+    .SYNOPSIS
+    Reads the user Path from the registry raw, with its type; nothing off Windows.
+    .DESCRIPTION
+    Raw means unexpanded: [Environment]::GetEnvironmentVariable would expand
+    the %VARIABLES% in it, and writing that back would freeze them.
+    #>
+    if (-not $onWindows) {
+        return $null
+    }
+    $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment')
+    try {
+        if ($key.GetValueNames() -contains 'Path') {
+            [pscustomobject]@{
+                Exists = $true
+                Raw    = [string]$key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+                Kind   = $key.GetValueKind('Path').ToString()
+            }
+        }
+        else {
+            [pscustomobject]@{ Exists = $false; Raw = ''; Kind = '' }
+        }
+    }
+    finally {
+        $key.Dispose()
+    }
+}
+
+function Restore-UserPathState {
+    <#
+    .SYNOPSIS
+    Writes a state read by Get-UserPathState back, value and type, or deletes the value.
+    #>
+    param($State)
+    if ($null -eq $State) {
+        return
+    }
+    $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
+    try {
+        if ($State.Exists) {
+            $key.SetValue('Path', $State.Raw, [Microsoft.Win32.RegistryValueKind]$State.Kind)
+        }
+        else {
+            $key.DeleteValue('Path', $false)
+        }
+    }
+    finally {
+        $key.Dispose()
+    }
+}
+
 function Use-SavedUserPath {
     <#
     .SYNOPSIS
-    Runs a script block and then puts the user Path back as it was.
+    Runs a script block and then puts the user Path back as it was, raw and with its type.
     #>
     param([scriptblock]$Body)
-    $saved = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $saved = Get-UserPathState
     try {
         $null = & $Body
     }
     finally {
-        [Environment]::SetEnvironmentVariable('Path', $saved, 'User')
+        Restore-UserPathState -State $saved
     }
+}
+
+function Get-InstallerFunction {
+    <#
+    .SYNOPSIS
+    Returns the text of a function of install.ps1, nested ones included.
+    #>
+    param([string]$Name)
+    $tokens = $null
+    $errors = $null
+    $ast = [Management.Automation.Language.Parser]::ParseFile($installPs1, [ref]$tokens, [ref]$errors)
+    $function = $ast.Find({ param($node) ($node -is [Management.Automation.Language.FunctionDefinitionAst]) -and ($node.Name -ceq $Name) }, $true)
+    Assert-That -Condition ($null -ne $function) -Message "install.ps1 has no $Name function"
+    $function.Extent.Text
+}
+
+function Get-FakeEnvironmentKey {
+    <#
+    .SYNOPSIS
+    Returns a stand-in for the registry key HKCU\Environment that holds only a Path value.
+    .DESCRIPTION
+    Kind is the value's type, or empty for a key without a Path value. Every
+    write is recorded in Writes as name, value and type, and changes what the
+    key holds from then on, as a real one would. GetValue expands an
+    expandable value unless it is passed DoNotExpandEnvironmentNames.
+    #>
+    param([string]$Raw, [string]$Kind)
+    $key = [pscustomobject]@{ Raw = $Raw; Kind = $Kind; Writes = (New-Object Collections.ArrayList) }
+    # Like the real key: an expandable value comes back with its %VARIABLES%
+    # expanded unless the caller asks for them not to be.
+    $key | Add-Member -MemberType ScriptMethod -Name GetValue -Value {
+        param($name, $default, $options)
+        if ($this.Kind -eq '') {
+            return $default
+        }
+        if ($this.Kind -eq 'ExpandString' -and $options -ne [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames) {
+            return [Environment]::ExpandEnvironmentVariables($this.Raw)
+        }
+        $this.Raw
+    }
+    $key | Add-Member -MemberType ScriptMethod -Name GetValueNames -Value {
+        if ($this.Kind -ne '') { 'Path' }
+    }
+    $key | Add-Member -MemberType ScriptMethod -Name GetValueKind -Value {
+        param($name)
+        [Microsoft.Win32.RegistryValueKind]$this.Kind
+    }
+    $key | Add-Member -MemberType ScriptMethod -Name SetValue -Value {
+        param($name, $value, $kind)
+        $null = $this.Writes.Add(@($name, $value, $kind.ToString()))
+        $this.Raw = $value
+        $this.Kind = $kind.ToString()
+    }
+    $key | Add-Member -MemberType ScriptMethod -Name Dispose -Value { }
+    $key
 }
 
 function Invoke-Case {
@@ -556,6 +674,10 @@ function Invoke-Case {
 
 # --- the fixtures ----------------------------------------------------------
 
+# On Windows, the user Path as it is now, raw and with its type, to put back
+# when the run ends however it ends.
+$userPathAtStart = Get-UserPathState
+
 try {
     $script:binaries = @{}
     $licenseFile = Join-Path -Path $work -ChildPath 'LICENSE'
@@ -564,10 +686,10 @@ try {
     # The release most cases install from. A case that needs a damaged one
     # copies it first.
     $release = Join-Path -Path $work -ChildPath 'release'
-    Build-Release -Dir $release -Version '9.9.9'
+    Publish-Release -Dir $release -Version '9.9.9'
     $releaseUrl = ConvertTo-FileUrl -Path $release
     $releaseNext = Join-Path -Path $work -ChildPath 'release-next'
-    Build-Release -Dir $releaseNext -Version '9.9.10'
+    Publish-Release -Dir $releaseNext -Version '9.9.10'
     $releaseNextUrl = ConvertTo-FileUrl -Path $releaseNext
 
     # --- the cases ---------------------------------------------------------
@@ -711,7 +833,7 @@ try {
             if (Test-Path -LiteralPath $rel) {
                 Remove-Item -LiteralPath $rel -Recurse -Force
             }
-            Build-Release -Dir $rel -Version '9.9.9' -Arch @($c.Want)
+            Publish-Release -Dir $rel -Version '9.9.9' -Arch @($c.Want)
             if (Test-Path -LiteralPath $bin) {
                 Remove-Item -LiteralPath $bin -Recurse -Force
             }
@@ -823,7 +945,7 @@ function Move-Item {
 
     Invoke-Case 'adds_the_dir_to_the_user_path_once' {
         if (-not $onWindows) {
-            Skip-Case -Reason 'the user Path is a Windows setting, and .NET keeps none elsewhere'
+            Skip-Case -Reason 'the user Path is a Windows registry value'
             return
         }
         if ($env:CI -ne 'true') {
@@ -831,19 +953,104 @@ function Move-Item {
             return
         }
         Use-SavedUserPath {
+            # The person's own Path, plus an entry that names a variable, in an
+            # expandable string like the one every account starts with. The
+            # installer must add its directory without expanding the entry or
+            # changing the value's type.
+            $start = Get-UserPathState
+            $sentinel = '%USERPROFILE%\kurze-url-sentinel'
+            $seed = $sentinel
+            if ($start.Exists -and $start.Raw) {
+                $seed = $start.Raw.TrimEnd(';') + ';' + $sentinel
+            }
+            Restore-UserPathState -State ([pscustomobject]@{ Exists = $true; Raw = $seed; Kind = 'ExpandString' })
+
             $first = Invoke-Installer -Environment @{ KURZE_URL_NO_MODIFY_PATH = $null }
             Assert-Success -Result $first
             Assert-Output -Result $first -Text 'Added'
-            $once = [Environment]::GetEnvironmentVariable('Path', 'User')
-            Assert-That -Condition ((Get-PathCount -PathValue $once -Directory $bin) -eq 1) -Message "the user Path holds the directory $(Get-PathCount -PathValue $once -Directory $bin) times after one install"
             # The same directory, spelled with another case and a trailing
             # backslash, is the same directory.
             $second = Invoke-Installer -Environment @{ KURZE_URL_NO_MODIFY_PATH = $null; KURZE_URL_INSTALL_DIR = ($bin.ToUpperInvariant() + '\') }
             Assert-Success -Result $second
             Assert-NoOutput -Result $second -Text 'Added'
-            $twice = [Environment]::GetEnvironmentVariable('Path', 'User')
-            Assert-That -Condition ((Get-PathCount -PathValue $twice -Directory $bin) -eq 1) -Message "the user Path holds the directory $(Get-PathCount -PathValue $twice -Directory $bin) times after two installs"
-            Assert-That -Condition ($twice -ceq $once) -Message 'the second install changed the user Path'
+
+            $after = Get-UserPathState
+            Assert-That -Condition $after.Exists -Message 'the user Path value is gone'
+            Assert-That -Condition ($after.Kind -ceq 'ExpandString') -Message "the user Path value is a $($after.Kind) now, not an ExpandString"
+            Assert-That -Condition $after.Raw.Contains($sentinel) -Message "the unexpanded entry is gone: $($after.Raw)"
+            Assert-That -Condition ($after.Raw -ceq ($seed + ';' + $bin)) -Message "the user Path is '$($after.Raw)', wanted the seed and one entry: '$seed;$bin'"
+            Assert-That -Condition ((Get-PathCount -PathValue $after.Raw -Directory $bin) -eq 1) -Message "the user Path holds the directory $(Get-PathCount -PathValue $after.Raw -Directory $bin) times after two installs"
+        }
+    }
+
+    Invoke-Case 'edits_the_user_path_without_freezing_it' {
+        # The same logic against a stand-in for the registry key, so that it
+        # runs everywhere and not only where there is a registry. The
+        # installer's own Add-UserPathEntry and Test-PathEntry are taken out of
+        # install.ps1; the key and the broadcast are the two things they reach
+        # out to, and each is a function of its own for exactly this.
+        foreach ($name in 'Test-PathEntry', 'Add-UserPathEntry') {
+            . ([scriptblock]::Create((Get-InstallerFunction -Name $name)))
+        }
+        function Open-EnvironmentKey { $script:fakeKey }
+        function Send-SettingChange { $script:broadcasts++ }
+
+        $savedSentinel = $env:KURZE_SENTINEL
+        try {
+            $env:KURZE_SENTINEL = '/some/where'
+
+            # A value of the expandable type, with an entry that names a
+            # variable and a trailing semicolon: the entries stay as they are,
+            # the type stays, the directory comes after the last one, and a
+            # second run finds it, however it is spelled.
+            $script:fakeKey = Get-FakeEnvironmentKey -Raw '%KURZE_SENTINEL%\bin;C:\other;' -Kind 'ExpandString'
+            $script:broadcasts = 0
+            $added = Add-UserPathEntry -Directory $bin
+            Assert-That -Condition ($added -eq $true) -Message 'the first run did not add the directory'
+            Assert-That -Condition ($script:fakeKey.Writes.Count -eq 1) -Message "the first run wrote $($script:fakeKey.Writes.Count) times"
+            $write = $script:fakeKey.Writes[0]
+            Assert-That -Condition ($write[0] -ceq 'Path') -Message "it wrote the value '$($write[0])'"
+            Assert-That -Condition ($write[1] -ceq ('%KURZE_SENTINEL%\bin;C:\other;' + $bin)) -Message "it wrote '$($write[1])'"
+            Assert-That -Condition ($write[2] -ceq 'ExpandString') -Message "it wrote a $($write[2]), not an ExpandString"
+            Assert-That -Condition ($script:broadcasts -eq 1) -Message 'the change was not broadcast'
+            $added = Add-UserPathEntry -Directory ($bin.ToUpperInvariant() + '\')
+            Assert-That -Condition ($added -eq $false) -Message 'the second run added the directory again'
+            Assert-That -Condition ($script:fakeKey.Writes.Count -eq 1) -Message 'the second run wrote'
+            Assert-That -Condition ($script:broadcasts -eq 1) -Message 'the second run broadcast'
+
+            # An entry that names a variable which is the directory is the
+            # directory.
+            $env:KURZE_SENTINEL = $bin
+            $script:fakeKey = Get-FakeEnvironmentKey -Raw 'C:\other;%KURZE_SENTINEL%' -Kind 'ExpandString'
+            $script:broadcasts = 0
+            $added = Add-UserPathEntry -Directory $bin
+            Assert-That -Condition ($added -eq $false) -Message 'an entry that expands to the directory was not recognised'
+            Assert-That -Condition (($script:fakeKey.Writes.Count -eq 0) -and ($script:broadcasts -eq 0)) -Message 'it wrote or broadcast for a directory that was there'
+
+            # A value of the plain type keeps its type.
+            $script:fakeKey = Get-FakeEnvironmentKey -Raw 'C:\plain' -Kind 'String'
+            $script:broadcasts = 0
+            $added = Add-UserPathEntry -Directory $bin
+            Assert-That -Condition ($added -eq $true) -Message 'the directory was not added to a String value'
+            Assert-That -Condition (($script:fakeKey.Writes[0][1] -ceq ('C:\plain;' + $bin)) -and ($script:fakeKey.Writes[0][2] -ceq 'String')) -Message "it wrote '$($script:fakeKey.Writes[0][1])' as a $($script:fakeKey.Writes[0][2])"
+
+            # No value yet: the directory alone, as the expandable type that
+            # Windows itself uses, and no leading semicolon. An empty value is
+            # the same.
+            $script:fakeKey = Get-FakeEnvironmentKey -Raw '' -Kind ''
+            $added = Add-UserPathEntry -Directory $bin
+            Assert-That -Condition (($added -eq $true) -and ($script:fakeKey.Writes[0][1] -ceq $bin) -and ($script:fakeKey.Writes[0][2] -ceq 'ExpandString')) -Message 'a missing value did not become the directory alone, as an ExpandString'
+            $script:fakeKey = Get-FakeEnvironmentKey -Raw ';' -Kind 'ExpandString'
+            $added = Add-UserPathEntry -Directory $bin
+            Assert-That -Condition (($added -eq $true) -and ($script:fakeKey.Writes[0][1] -ceq $bin)) -Message "an empty value became '$($script:fakeKey.Writes[0][1])'"
+        }
+        finally {
+            if ($null -eq $savedSentinel) {
+                Remove-Item -LiteralPath 'Env:\KURZE_SENTINEL' -ErrorAction SilentlyContinue
+            }
+            else {
+                $env:KURZE_SENTINEL = $savedSentinel
+            }
         }
     }
 
@@ -871,12 +1078,14 @@ function Move-Item {
     }
 
     Invoke-Case 'leaves_the_path_alone_when_asked' {
-        $userBefore = [Environment]::GetEnvironmentVariable('Path', 'User')
+        $userBefore = Get-UserPathState
         $other = 'C:\other'
         $r = Invoke-Installer -Environment @{ Path = $other } -After $reportSessionPath
         Assert-Success -Result $r
-        $userAfter = [Environment]::GetEnvironmentVariable('Path', 'User')
-        Assert-That -Condition ($userAfter -ceq $userBefore) -Message 'the user Path changed'
+        $userAfter = Get-UserPathState
+        if ($null -ne $userBefore) {
+            Assert-That -Condition (($userAfter.Exists -eq $userBefore.Exists) -and ($userAfter.Raw -ceq $userBefore.Raw) -and ($userAfter.Kind -ceq $userBefore.Kind)) -Message 'the user Path changed'
+        }
         Assert-That -Condition ((Get-SessionPath -Result $r) -ceq $other) -Message 'the session Path changed'
         Assert-Output -Result $r -Text 'KURZE_URL_NO_MODIFY_PATH'
         Assert-Output -Result $r -Text $bin
@@ -1019,6 +1228,19 @@ function Move-Item {
         }
     }
 
+    Invoke-Case 'refuses_a_response_that_does_not_say_where_it_ended_up' {
+        # A response with no address in it cannot be vouched for, so it is
+        # refused like one that ended on http, and nothing is installed.
+        foreach ($shape in 'none', 'bare') {
+            $record = Join-Path -Path $dir -ChildPath "requests-$shape.txt"
+            $shim = Get-WebShim -Record $record -ServeDir $release -Shape $shape
+            $r = Invoke-Installer -Environment @{ KURZE_URL_DOWNLOAD_URL = 'https://downloads.example.test/kurze-url' } -Before $shim
+            Assert-Failure -Result $r
+            Assert-Output -Result $r -Text 'Could not tell where the download from https://downloads.example.test/kurze-url/'
+            Assert-Entry -Path $bin -Expected @()
+        }
+    }
+
     Invoke-Case 'reads_where_a_real_response_ended_up' {
         # The cases above stand in for Invoke-WebRequest, so none of them
         # shows that the real cmdlet's answer has the shape the installer
@@ -1029,14 +1251,9 @@ function Move-Item {
         # be refused, and the refusal must name the URL the redirect ended
         # on and not the one that was asked for: if the answer's final
         # address were read wrongly there would be no refusal at all.
-        $tokens = $null
-        $errors = $null
-        $ast = [Management.Automation.Language.Parser]::ParseFile($installPs1, [ref]$tokens, [ref]$errors)
         $definitions = New-Object Collections.Generic.List[string]
         foreach ($name in 'Get-Message', 'Save-Download') {
-            $function = $ast.Find({ param($node) ($node -is [Management.Automation.Language.FunctionDefinitionAst]) -and ($node.Name -ceq $name) }, $true)
-            Assert-That -Condition ($null -ne $function) -Message "install.ps1 has no $name function"
-            $definitions.Add($function.Extent.Text)
+            $definitions.Add((Get-InstallerFunction -Name $name))
         }
         $saved = Join-Path -Path $dir -ChildPath 'saved.bin'
         $code = @'
@@ -1220,6 +1437,7 @@ Write-Output "tried `$(`$lines.Count - 1) prefixes"
     }
 }
 finally {
+    Restore-UserPathState -State $userPathAtStart
     Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
 }
 

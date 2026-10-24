@@ -97,6 +97,7 @@ function Install-KurzeUrl {
             no_localappdata   = 'LOCALAPPDATA is not set. Set KURZE_URL_INSTALL_DIR to the directory to install into.'
             no_tmp            = 'Could not create a temporary directory.'
             url_not_https     = 'Refusing {0}: only https URLs are accepted, and file URLs in KURZE_URL_DOWNLOAD_URL.'
+            final_url_unknown = 'Could not tell where the download from {0} ended up, so it was refused. Nothing was installed.'
             downloading       = 'Downloading {0} ...'
             download_failed   = 'Download failed: {0} ({1})'
             no_checksum       = 'checksums.txt has no entry for {0}. Nothing was installed.'
@@ -116,6 +117,7 @@ function Install-KurzeUrl {
             no_localappdata   = 'LOCALAPPDATA ist nicht gesetzt. Setze KURZE_URL_INSTALL_DIR auf das Verzeichnis, in das installiert werden soll.'
             no_tmp            = 'Es konnte kein tempor\u00e4res Verzeichnis angelegt werden.'
             url_not_https     = '{0} wird abgelehnt: Es werden nur https-URLs akzeptiert, und file-URLs in KURZE_URL_DOWNLOAD_URL.'
+            final_url_unknown = 'Es lie\u00df sich nicht feststellen, auf welcher Adresse der Download von {0} endete, deshalb wurde er abgelehnt. Es wurde nichts installiert.'
             downloading       = 'Lade {0} herunter ...'
             download_failed   = 'Download fehlgeschlagen: {0} ({1})'
             no_checksum       = 'In checksums.txt gibt es keinen Eintrag f\u00fcr {0}. Es wurde nichts installiert.'
@@ -151,7 +153,10 @@ function Install-KurzeUrl {
 
     # Test-PathEntry PATHVALUE DIRECTORY tells whether a semicolon-separated
     # Path has an entry that is DIRECTORY, ignoring case and a trailing
-    # backslash. It is how this script avoids adding its directory twice.
+    # backslash. Each entry is compared with its %VARIABLES% expanded, because
+    # the user's Path is stored unexpanded and an entry such as
+    # %LOCALAPPDATA%\Programs\kurze-url is that directory too. It is how this
+    # script avoids adding its directory twice.
     function Test-PathEntry {
         param([string]$PathValue, [string]$Directory)
 
@@ -160,11 +165,88 @@ function Install-KurzeUrl {
         }
         $wanted = $Directory.TrimEnd('\')
         foreach ($entry in $PathValue.Split(';')) {
-            if ($entry.Trim().TrimEnd('\') -eq $wanted) {
+            $expanded = [Environment]::ExpandEnvironmentVariables($entry.Trim())
+            if ($expanded.TrimEnd('\') -eq $wanted) {
                 return $true
             }
         }
         return $false
+    }
+
+    # Open-EnvironmentKey returns the user's environment in the registry,
+    # HKEY_CURRENT_USER\Environment, opened for writing. It is a function of its
+    # own so that the test of Add-UserPathEntry can hand that one a stand-in
+    # for the key.
+    function Open-EnvironmentKey {
+        $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
+        if ($null -eq $key) {
+            throw 'the registry key HKEY_CURRENT_USER\Environment cannot be opened'
+        }
+        $key
+    }
+
+    # Send-SettingChange tells the other programs on this desktop that the
+    # environment changed, the way setx and the System Properties dialog do, so
+    # that Explorer, and every terminal opened from it afterwards, reads the
+    # new Path and not the one it started with. A program that does not answer
+    # is given five seconds. A broadcast that fails is not an error: the Path
+    # is written either way, and the next sign-in would pick it up.
+    function Send-SettingChange {
+        try {
+            if (-not ('KurzeUrlInstaller.NativeMethods' -as [type])) {
+                Add-Type -Namespace KurzeUrlInstaller -Name NativeMethods -MemberDefinition @'
+[DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint msg, UIntPtr wParam, string lParam, uint flags, uint timeout, out UIntPtr result);
+'@
+            }
+            $result = [UIntPtr]::Zero
+            # HWND_BROADCAST, WM_SETTINGCHANGE with "Environment", SMTO_ABORTIFHUNG.
+            $null = [KurzeUrlInstaller.NativeMethods]::SendMessageTimeout([IntPtr]0xffff, 0x1A, [UIntPtr]::Zero, 'Environment', 2, 5000, [ref]$result)
+        }
+        catch {
+            $null = $_
+        }
+    }
+
+    # Add-UserPathEntry DIRECTORY puts DIRECTORY at the end of the user's Path,
+    # unless an entry of it already is that directory, and says which. The user's
+    # Path is a registry value that is usually an expandable string, and its
+    # entries may name variables, such as
+    # %USERPROFILE%\AppData\Local\Microsoft\WindowsApps on every account and
+    # %JAVA_HOME%\bin on many a developer's. [Environment]::GetEnvironmentVariable
+    # would hand that back expanded and SetEnvironmentVariable would store the
+    # result as plain text, which freezes every such entry for good. So this
+    # reads the value raw, keeps its type, and writes back exactly what it read
+    # with one entry added after the last: every other entry stays as it was.
+    function Add-UserPathEntry {
+        param([string]$Directory)
+
+        $key = Open-EnvironmentKey
+        try {
+            $raw = [string]$key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+            if (Test-PathEntry -PathValue $raw -Directory $Directory) {
+                return $false
+            }
+            if ($key.GetValueNames() -contains 'Path') {
+                $kind = $key.GetValueKind('Path')
+            }
+            else {
+                $kind = [Microsoft.Win32.RegistryValueKind]::ExpandString
+            }
+            $head = $raw.TrimEnd(';')
+            if ($head) {
+                $value = $head + ';' + $Directory
+            }
+            else {
+                $value = $Directory
+            }
+            $key.SetValue('Path', $value, $kind)
+        }
+        finally {
+            $key.Dispose()
+        }
+        Send-SettingChange
+        return $true
     }
 
     # Save-Download URL PATH fetches one file. A file:// URL is copied, because
@@ -174,8 +256,9 @@ function Install-KurzeUrl {
     # and a redirect may name an http URL. Everything that came from there is
     # refused. PowerShell 7's cmdlet blocks a redirect from https to http
     # unless asked not to; Windows PowerShell 5.1's makes no such promise, so
-    # this checks where the response ended up in both. It runs after the
-    # download, which is early enough: nothing has been read or used yet.
+    # this checks where the response ended up in both, and refuses when it
+    # cannot tell. It runs after the download, which is early enough: nothing
+    # has been read or used yet.
     function Save-Download {
         param([string]$Url, [string]$Path)
 
@@ -208,7 +291,13 @@ function Install-KurzeUrl {
                 $final = $inner.RequestMessage.RequestUri
             }
         }
-        if ($null -ne $final -and $final.Scheme -ne 'https') {
+        # A response that does not say where it ended up cannot be vouched
+        # for, so it is refused like one that ended on http.
+        if ($null -eq $final) {
+            Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+            throw (Get-Message 'final_url_unknown' $Url)
+        }
+        if ($final.Scheme -ne 'https') {
             Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
             throw (Get-Message 'url_not_https' $final.ToString())
         }
@@ -383,31 +472,25 @@ function Install-KurzeUrl {
         Remove-Item -LiteralPath $old -Force -ErrorAction SilentlyContinue
 
         # The user's Path is where a new terminal looks, and $env:Path is
-        # where this one does. .NET hands back the user's value with its
-        # %VARIABLES% already expanded and stores what it is given as plain
-        # text, so a reference in there is written back as the path it
-        # stood for.
+        # where this one does. The user's Path lives in the registry, which
+        # only Windows has, and is changed by Add-UserPathEntry, which adds
+        # this directory and touches nothing else in it.
         if ($env:KURZE_URL_NO_MODIFY_PATH -eq '1') {
             if (-not (Test-PathEntry -PathValue $env:Path -Directory $dir)) {
                 Write-Host (Get-Message 'path_hint' $dir)
             }
         }
         else {
-            $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-            if (-not (Test-PathEntry -PathValue $userPath -Directory $dir)) {
-                if ($userPath) {
-                    $newPath = $userPath.TrimEnd(';') + ';' + $dir
-                }
-                else {
-                    $newPath = $dir
-                }
+            if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
                 try {
-                    [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
+                    $added = Add-UserPathEntry -Directory $dir
                 }
                 catch {
                     throw (Get-Message 'path_failed' $dir, $_.Exception.Message)
                 }
-                Write-Host (Get-Message 'path_added' $dir)
+                if ($added) {
+                    Write-Host (Get-Message 'path_added' $dir)
+                }
             }
             if (-not (Test-PathEntry -PathValue $env:Path -Directory $dir)) {
                 if ($env:Path) {
