@@ -20,7 +20,7 @@ import { signOut } from '../server/auth';
 import {
 	authedApiClient,
 	flushSessionCookies,
-	isUnauthenticatedError,
+	nullWithoutSession,
 	requireSession,
 } from '../server/session';
 
@@ -65,25 +65,31 @@ export interface Me {
  * bundle whoever imports it (see `sendMagicLinkFor`'s docstring); inside the handler, which the
  * client build does not ship, the body already does.
  *
+ * "No session" is answered with `null`, never thrown: a thrown error reaches the browser with only
+ * its message (see `nullWithoutSession`), so `beforeLoad` below and `routes/index.tsx` could not
+ * tell it apart from any other failure on a client-side navigation.
+ *
  * `memberships` is normalized from the generated client's
  * `Array<TeamMembership> | null` (Huma serialises a nil Go slice as JSON
  * `null`) to a plain array: `requireTeamId` below and every later
  * consumer of `Me` are written against `Membership[]`, so the `?? []`
  * happens once, here, instead of once per call site.
  */
-export const fetchMe = createServerFn({ method: 'GET' }).handler(async (): Promise<Me> => {
-	const headers = new Headers();
-	const { accessToken } = await requireSession(getRequest(), headers);
-	flushSessionCookies(headers);
+export const fetchMe = createServerFn({ method: 'GET' }).handler(async (): Promise<Me | null> =>
+	nullWithoutSession(async () => {
+		const headers = new Headers();
+		const { accessToken } = await requireSession(getRequest(), headers);
+		flushSessionCookies(headers);
 
-	const { data } = await getMe({ client: authedApiClient(accessToken), throwOnError: true });
-	return {
-		email: data.email,
-		is_maintainer: data.is_maintainer,
-		memberships: data.memberships ?? [],
-		user_id: data.user_id,
-	};
-});
+		const { data } = await getMe({ client: authedApiClient(accessToken), throwOnError: true });
+		return {
+			email: data.email,
+			is_maintainer: data.is_maintainer,
+			memberships: data.memberships ?? [],
+			user_id: data.user_id,
+		};
+	}),
+);
 
 /**
  * 404, never 403: `internal/authz` in the Go API already answers a non-member
@@ -110,16 +116,21 @@ export function requireTeamId(memberships: readonly Membership[], teamSlug: stri
 	return membership.team_id;
 }
 
+/**
+ * The context every route below `_authed` receives, or a redirect to `/login` when there is no
+ * session. Split out of `beforeLoad` so the redirect can be tested without a server function.
+ *
+ * @param me - The caller as `fetchMe` answered: `null` when there is no session.
+ * @returns The route context carrying the signed-in caller.
+ */
+export function requireMe(me: Me | null): { me: Me } {
+	// oxlint-disable-next-line typescript/only-throw-error -- TanStack Router signals navigation by throwing; `redirect()` is its control flow, not an Error.
+	if (me === null) throw redirect({ to: '/login' });
+	return { me };
+}
+
 export const Route = createFileRoute('/_authed')({
-	beforeLoad: async () => {
-		try {
-			return { me: await fetchMe() };
-		} catch (error) {
-			// oxlint-disable-next-line typescript/only-throw-error -- TanStack Router signals navigation by throwing; `redirect()` is its control flow, not an Error.
-			if (isUnauthenticatedError(error)) throw redirect({ to: '/login' });
-			throw error;
-		}
-	},
+	beforeLoad: async () => requireMe(await fetchMe()),
 	component: AuthedLayout,
 });
 

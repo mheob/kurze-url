@@ -1,7 +1,7 @@
-import { isNotFound } from '@tanstack/react-router';
+import { isNotFound, isRedirect } from '@tanstack/react-router';
 import { describe, expect, it } from 'vite-plus/test';
 
-import { requireTeamId } from './_authed';
+import { type Me, requireMe, requireTeamId } from './_authed';
 
 const memberships = [{ name: 'Verein A', role: 'owner', slug: 'verein-a', team_id: 'a' }];
 
@@ -47,5 +47,25 @@ describe(requireTeamId, () => {
 				}),
 			),
 		).toBe(true);
+	});
+});
+
+describe(requireMe, () => {
+	const me: Me = { email: 'a@example.test', is_maintainer: false, memberships, user_id: 'u1' };
+
+	it('hands the signed-in caller to the routes below', () => {
+		expect(requireMe(me)).toStrictEqual({ me });
+	});
+
+	/**
+	 * `fetchMe` answers `null` when there is no session, on the server, so a session that ended
+	 * between two client-side navigations still redirects instead of rendering the error page.
+	 */
+	it('redirects to /login when there is no session', () => {
+		const error = thrown(() => {
+			requireMe(null);
+		});
+		expect(isRedirect(error)).toBe(true);
+		expect(error).toHaveProperty('options.to', '/login');
 	});
 });

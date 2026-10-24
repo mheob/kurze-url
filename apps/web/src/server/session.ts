@@ -76,34 +76,36 @@ export async function requireSession(
 }
 
 /**
- * Not a plain `error instanceof UnauthenticatedError`, deliberately: that
- * check is only reliable for the very first render of a route whose
- * `beforeLoad`/`loader` runs on the server, where a server function's handler
- * runs in-process and the real class instance comes straight back. Every
- * later client-side navigation runs that same code in the browser, where the
- * server function becomes a genuine HTTP round trip. A thrown error crossing
- * that boundary is serialised with `seroval`
- * (`@tanstack/start-server-core`'s `server-functions-handler.js` calls
- * `toCrossJSONAsync` on it) and reconstructed with `fromCrossJSON` on the
- * other side. seroval only special-cases the built-in `Error` subclasses
- * (`TypeError`, `RangeError`, …its own `ERROR_CONSTRUCTOR` table) — an
- * application-defined one like `UnauthenticatedError` comes back as a plain
- * `Error` with `.name` restored as an own property, not as an instance of the
- * original class. Confirmed by reading the installed `seroval@1.6.4`'s
- * `deserializeError`/`getInitialErrorOptions`.
+ * Turns "no session" into `null` before the answer leaves the server.
  *
- * Exported from here, rather than kept private to one route file, because
- * both `routes/_authed.tsx` (redirect to `/login`) and `routes/index.tsx`
- * (treat "no session" as the ordinary signed-out case) need the identical
- * check against the identical cross-boundary shape. `UnauthenticatedError.name`
- * (the class's own name, not a string literal) is used so a rename of the
- * class can't quietly desync this check from it.
+ * A server function's thrown error does not survive the trip to the browser
+ * with its identity. On every client-side navigation the server function is a
+ * real HTTP round trip, and TanStack serialises a thrown error with its
+ * `ShallowErrorPlugin` (`@tanstack/router-core`'s
+ * `ssr/serializer/ShallowErrorPlugin.js`), which keeps the message and nothing
+ * else: an `UnauthenticatedError` arrives as `new Error('no session')`, its
+ * name and class gone. Measured on 2026-10-24 with the installed
+ * `router-core@1.171.38` and `seroval@1.6.12`: through the router's default
+ * plugins the name comes back as `Error`; through seroval alone it would have
+ * survived. A check by class or by name in a route's `beforeLoad` or `loader`
+ * therefore only ever worked on the first, server-rendered pass, and signing
+ * out of the web app, which navigates to `/` client-side, rendered the error
+ * page.
  *
- * @param error - The thrown value to test, possibly reconstructed across a server/client boundary.
- * @returns True if `error` is (or, after reconstruction, looks like) an `UnauthenticatedError`.
+ * So the question is answered here, inside the server function's handler,
+ * where `instanceof` is still reliable, and only a value crosses the
+ * boundary. Every other failure is rethrown unchanged.
+ *
+ * @param read - The read that may find no session, e.g. one that calls `requireSession`.
+ * @returns What `read` returned, or `null` when it threw `UnauthenticatedError`.
  */
-export function isUnauthenticatedError(error: unknown): boolean {
-	return error instanceof Error && error.name === UnauthenticatedError.name;
+export async function nullWithoutSession<T>(read: () => Promise<T>): Promise<T | null> {
+	try {
+		return await read();
+	} catch (error) {
+		if (error instanceof UnauthenticatedError) return null;
+		throw error;
+	}
 }
 
 /**
@@ -206,11 +208,14 @@ export function authedApiClient(accessToken: string): ReturnType<typeof getApiCl
  * own `Headers`, so duplicates were sent; the browser's end state was the same.)
  *
  * Wrapped in `createServerOnlyFn`, the same fix `sendMagicLinkFor` already
- * needed in `server/auth.ts`, for a related but distinct reason: this
- * module's `isUnauthenticatedError` above is referenced directly from
- * `routes/_authed.tsx`'s `beforeLoad` and `routes/index.tsx`'s loader —
- * code that runs on the client too, unlike a `createServerFn().handler()`
- * body, so it is never stripped from the client bundle. That live,
+ * needed in `server/auth.ts`, for a related but distinct reason: when this
+ * was written, this module's `isUnauthenticatedError` (replaced on 2026-10-24
+ * by `nullWithoutSession`, which only server-function handlers call) was
+ * referenced directly from `routes/_authed.tsx`'s `beforeLoad` and
+ * `routes/index.tsx`'s loader — code that runs on the client too, unlike a
+ * `createServerFn().handler()` body, so it is never stripped from the client
+ * bundle. The wrapper stays so that the next such import cannot break the
+ * build the same way. That live,
  * client-reachable reference to this module is what makes Rolldown resolve
  * this whole file for the client build, including this function's own
  * top-level `appendResponseHeader` and `setResponseHeader` import — even
