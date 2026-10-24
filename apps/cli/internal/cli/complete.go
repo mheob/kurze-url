@@ -163,7 +163,7 @@ func candidate(value, description string) (cobra.Completion, bool) {
 		return "", false
 	}
 	if description == "" {
-		return cobra.Completion(value), true
+		return value, true
 	}
 	return cobra.CompletionWithDesc(value, output.Clean(description)), true
 }
