@@ -53,7 +53,13 @@ curl -fsSL https://raw.githubusercontent.com/mheob/kurze-url/main/apps/cli/insta
 
 `kurze-url version` shows what you have, for example `kurze-url 0.1.0 (d764e8a, 2026-10-24T06:49:29Z)`.
 
+To **update**, run the same one-liner again. It replaces the binary, also while `kurze-url` is running, and leaves your config and your sign-in alone.
+
+To **uninstall**, run `kurze-url logout` first if you want the sign-in gone from the keychain, then delete the binary: `~/.local/bin/kurze-url`, or the file in your `KURZE_URL_INSTALL_DIR`. On Windows, delete the directory the script created, `%LOCALAPPDATA%\Programs\kurze-url` unless you chose another, and remove the `Path` entry it added. For that, open Settings, search for "Edit environment variables for your account", select `Path` under "User variables", choose Edit and delete the entry for that directory. The config file (see below) stays until you delete it too.
+
 ### First steps
+
+The instance is invitation-only, so an account has to be invited to a team before `login` can work. An address nobody invited gets no sign-in mail, although the web app's sign-in form reports that one was sent.
 
 ```sh
 kurze-url login
@@ -115,8 +121,8 @@ The keys are `language`, `team`, `folder` and `domain` (the last two per team, w
 
 A release is a tag, and the tag is the maintainer's decision: nothing in this repository creates one. `.github/workflows/release-cli.yml` builds the tag with goreleaser and publishes six archives and `checksums.txt` to a GitHub Release. Their names carry no version (`kurze-url_<os>_<arch>.tar.gz`, `.zip` for Windows) because both install scripts download from `releases/latest/download`.
 
-1. Tag a commit on `main` as `vX.Y.Z-rc.N`, for example `v0.1.0-rc.1`, and push the tag. It becomes a GitHub pre-release, which "latest" skips, so both install scripts keep installing the last final version while you check this one. Install the candidate with `KURZE_URL_VERSION=v0.1.0-rc.1`.
-2. Run the manual checklist from [the CLI spec](docs/superpowers/specs/2026-10-23-cli-design.md) ("Testing") against the pre-release on macOS, Linux and Windows.
+1. Tag a commit on `main` as `vX.Y.Z-rc.N`, for example `v0.1.0-rc.1`, and push the tag. It becomes a GitHub pre-release, which "latest" skips. That means the plain one-liners install only a final release: while you check a candidate they keep installing the last final version, and before the first final release they have nothing to install yet and fail to download. A candidate is installed by giving the script its tag, `curl -fsSL https://raw.githubusercontent.com/mheob/kurze-url/main/apps/cli/install.sh | KURZE_URL_VERSION=v0.1.0-rc.1 sh` on macOS and Linux, and `$env:KURZE_URL_VERSION = 'v0.1.0-rc.1'; irm https://raw.githubusercontent.com/mheob/kurze-url/main/apps/cli/install.ps1 | iex` on Windows. The release notes of a candidate show those two lines in place of the plain ones.
+2. Run the manual checklist from [the CLI spec](docs/superpowers/specs/2026-10-23-cli-design.md) ("Testing") against the pre-release on macOS, Linux and Windows. Add two checks to it that the spec's list lacks: sign out of the web app with "Sign out everywhere" unticked, and the CLI must still work; sign out again with it ticked, and the next CLI command must ask for `login` again.
 3. Tag the commit you checked as `vX.Y.Z` and push it. That is the release: it builds the final version, and "latest" moves to it.
 
 A tag whose commit is not on `main` is refused. The release notes list only commits scoped `(cli)`.
