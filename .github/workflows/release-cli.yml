@@ -1,0 +1,76 @@
+name: Release — CLI
+
+# Publishes the CLI as a GitHub Release when a `v*` tag is pushed. Tagging is
+# the maintainer's call, and nothing in this repository creates a tag. A tag
+# with a pre-release suffix (`v0.1.0-rc.1`) becomes a GitHub pre-release, which
+# GitHub's "latest" never points at, so the install scripts keep installing the
+# last final version while a candidate is checked on real machines. The final
+# tag (`v0.1.0`) is the release itself.
+#
+# The release is built from apps/cli/.goreleaser.yaml, which the release dry
+# run in ci-cli.yml builds in snapshot mode on every CLI change, so a tag meets
+# a configuration that has already built cleanly.
+#
+# GitHub's "latest" release is repository-wide, and both install scripts
+# download from releases/latest/download, so the CLI has to stay the only
+# thing released in this repository.
+on:
+  push:
+    tags: ["v*"]
+
+# A second tag pushed while a release is still publishing waits instead of
+# cancelling it: a half-uploaded release is worse than a slow one.
+concurrency:
+  group: release-cli-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: release (cli)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Only this job may write, and only to the repository's contents: that is
+    # what creating a release and uploading its assets takes.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # goreleaser reads the tags to find the previous release and the
+          # history between the two to write the changelog.
+          fetch-depth: 0
+
+      # Anyone with push access can push a tag from any branch. A release
+      # built from a commit that never reached main would ship code nobody
+      # reviewed, and the pull request that carried it could still be open.
+      - name: refuse a tag that is not on main
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$GITHUB_REF_NAME points at $GITHUB_SHA, which is not on main. Merge the commit first, then tag the merge."
+            exit 1
+          fi
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: apps/cli/go.mod
+          cache-dependency-path: apps/cli/go.sum
+
+      # ci-cli.yml already ran the suite, with -race, on the pull request that
+      # merged this commit. It runs again here because a published release
+      # cannot be taken back: a failing test costs a minute, a bad binary
+      # costs a version number.
+      - name: go test
+        working-directory: apps/cli
+        run: go test ./...
+
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+        with:
+          version: v2.19.0
+          args: release --clean
+          workdir: apps/cli
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
