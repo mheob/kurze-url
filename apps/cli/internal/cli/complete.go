@@ -8,6 +8,9 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/mheob/kurze-url/apps/cli/internal/apiclient"
+	"github.com/mheob/kurze-url/apps/cli/internal/output"
 )
 
 // completionTimeout is the one deadline a Tab press gets, for building the
@@ -136,5 +139,181 @@ func completeWith(
 		case <-ctx.Done():
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
+	}
+}
+
+// candidate builds one completion out of text the service sent, or reports
+// false for a value that cannot be offered.
+//
+// A team's name, a folder's name and a link's destination are written by other
+// people, and a candidate ends up in the shell's menu and so on the terminal,
+// where an escape sequence would be obeyed (output.Clean says which). The
+// protocol is also made of lines and tabs: cobra keeps the first line of a
+// candidate, so a name with a newline would be offered cut short, and a tab in
+// a value would start a description of somebody else's choosing. The
+// description is cleaned like any other text the CLI shows. A value is not
+// cleaned but dropped when it has a control character in it: the cleaned copy
+// would name a team or folder that does not exist, and typing it would fail
+// where offering nothing would not.
+//
+// An empty description is no description, so a shell does not draw a bare
+// separator.
+func candidate(value, description string) (cobra.Completion, bool) {
+	if value == "" || output.Clean(value) != value {
+		return "", false
+	}
+	if description == "" {
+		return cobra.Completion(value), true
+	}
+	return cobra.CompletionWithDesc(value, output.Clean(description)), true
+}
+
+// completionTeam is the team a dynamic completion looks values up in: the
+// --team already on the command line, else, when useDefault, the default team
+// from the config. That is resolveTeam's rule, minus the failures: where
+// resolveTeam words a refusal, this says "no team" and the completion offers
+// nothing.
+//
+// The slug is folded and matched against the person's memberships, so a team
+// they are not in gives false, with one request for the memberships and none
+// for the team's own values. Offering nothing for it is deliberate: the API
+// would refuse the request, and there is no other team's data to fall back on.
+// With no team at all it gives false without asking anything.
+//
+// useDefault is false for `config set folder` and `config set domain`: the
+// command itself refuses those keys without --team and has no default-team
+// fallback, so a Tab that listed the default team's values would suggest a
+// command that then fails.
+func completionTeam(ctx context.Context, a *App, cmd *cobra.Command, useDefault bool) (apiclient.Membership, bool) {
+	// A command without the flag reads as "not given".
+	typed, _ := cmd.Flags().GetString("team")
+	if typed == "" && useDefault {
+		typed = a.configuredTeam()
+	}
+	if typed == "" {
+		return apiclient.Membership{}, false
+	}
+	me, err := a.me(ctx)
+	if err != nil {
+		return apiclient.Membership{}, false
+	}
+	return membershipOf(me, strings.ToLower(typed))
+}
+
+// completeTeams completes a team: the slugs of the person's memberships, each
+// with the team's name beside it. It needs no team of its own, only a session.
+func completeTeams(d *Deps) cobra.CompletionFunc {
+	return completeWith(d, func(ctx context.Context, a *App, _ *cobra.Command, _ []string, typed string) ([]cobra.Completion, error) {
+		me, err := a.me(ctx)
+		if err != nil {
+			return nil, err
+		}
+		var teams []cobra.Completion
+		for _, m := range me.Memberships {
+			if c, ok := candidate(m.Slug, m.Name); ok {
+				teams = append(teams, c)
+			}
+		}
+		return withPrefix(teams, typed), nil
+	})
+}
+
+// completeFolders completes a folder: the names of the folders of
+// completionTeam's team, as the one word each is, spaces and all.
+func completeFolders(d *Deps, useDefault bool) cobra.CompletionFunc {
+	return completeWith(d, func(ctx context.Context, a *App, cmd *cobra.Command, _ []string, typed string) ([]cobra.Completion, error) {
+		team, ok := completionTeam(ctx, a, cmd, useDefault)
+		if !ok {
+			return nil, nil
+		}
+		folders, err := a.API.Folders(ctx, team.TeamID)
+		if err != nil {
+			return nil, err
+		}
+		var names []cobra.Completion
+		for _, f := range folders {
+			if c, ok := candidate(f.Name, ""); ok {
+				names = append(names, c)
+			}
+		}
+		return withPrefix(names, typed), nil
+	})
+}
+
+// completeDomains completes a domain: the hostnames of completionTeam's team
+// that have been verified, then the instance's shared host.
+//
+// Only a verified domain may carry a link, and `link create` refuses any other
+// by name (resolveDomain), so offering one would suggest a command that then
+// fails. The shared host is not one of the team's domains and the team never
+// lists it, but it is the one `--domain` always accepts, so it comes last.
+func completeDomains(d *Deps, useDefault bool) cobra.CompletionFunc {
+	return completeWith(d, func(ctx context.Context, a *App, cmd *cobra.Command, _ []string, typed string) ([]cobra.Completion, error) {
+		team, ok := completionTeam(ctx, a, cmd, useDefault)
+		if !ok {
+			return nil, nil
+		}
+		domains, err := a.API.Domains(ctx, team.TeamID)
+		if err != nil {
+			return nil, err
+		}
+		var hosts []cobra.Completion
+		for _, domain := range domains {
+			if domain.VerificationStatus != verifiedStatus {
+				continue
+			}
+			if c, ok := candidate(domain.Hostname, ""); ok {
+				hosts = append(hosts, c)
+			}
+		}
+		if c, ok := candidate(a.Env.SharedHost, ""); ok {
+			hosts = append(hosts, c)
+		}
+		return withPrefix(hosts, typed), nil
+	})
+}
+
+// completeLinkSlugs completes the one link a command takes: the slugs of the
+// default team's (or --team's) links that start with what has been typed, each
+// with its destination beside it.
+//
+// The API's q is a substring match over slug and destination, so it is sent
+// the typed text to narrow the page, and the answer is filtered again for
+// slugs that begin with it. One page of the API's maximum is enough for a
+// completion; a team with more links than that gets the slugs of the page and
+// types the rest. The same slug on two domains is offered once, because which
+// of them is meant is for --domain to say.
+//
+// A word holding a "/" or a ":" is a short URL being typed. Short URLs are not
+// completed, and neither the team nor the API is asked about one. A word after
+// the first has no slug to offer, as the command takes one link.
+func completeLinkSlugs(d *Deps) cobra.CompletionFunc {
+	slugs := completeWith(d, func(ctx context.Context, a *App, cmd *cobra.Command, _ []string, typed string) ([]cobra.Completion, error) {
+		team, ok := completionTeam(ctx, a, cmd, true)
+		if !ok {
+			return nil, nil
+		}
+		page, err := a.API.ListLinks(ctx, team.TeamID, apiclient.ListLinksQuery{Q: typed, PerPage: maxListLimit})
+		if err != nil {
+			return nil, err
+		}
+		seen := map[string]bool{}
+		var links []cobra.Completion
+		for _, l := range page.Items {
+			if seen[l.Slug] {
+				continue
+			}
+			if c, ok := candidate(l.Slug, l.DestinationURL); ok {
+				seen[l.Slug] = true
+				links = append(links, c)
+			}
+		}
+		return withPrefix(links, typed), nil
+	})
+	return func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+		if len(args) > 0 || strings.ContainsAny(toComplete, "/:") {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		return slugs(cmd, args, toComplete)
 	}
 }

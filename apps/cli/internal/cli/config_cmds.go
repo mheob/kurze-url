@@ -80,27 +80,45 @@ func completeConfigKey(_ *cobra.Command, args []string, toComplete string) ([]co
 }
 
 // completeConfigSet offers the key for `config set`'s first word and, for the
-// second, the values the chosen key accepts when they are a closed set: the
-// two languages and the two image formats, which are the values the config
-// package's own rules allow.
+// second, the values the chosen key accepts.
 //
-// A size and a colour are free text, and so offer nothing; the same is true
-// for team, folder and domain until they are completed from the service. A key
-// the file does not know has no values either, and past the value there is
-// nothing to offer, for the reason completeConfigKey gives.
-func completeConfigSet(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
-	if len(args) != 1 {
-		return completeConfigKey(cmd, args, toComplete)
-	}
+// Language and the image format are closed sets, answered from the binary with
+// no request. They are lists of this package, apart from the rules in the
+// config package that judge what is typed, and nothing in the types ties the
+// two together: TestFixedValuesAreAcceptedByTheirValidation does, by checking
+// that every value offered here passes the config package's own validation.
+//
+// Team, folder and domain come from the service. A team needs only a session.
+// A folder or a domain belongs to one team, and `config set` refuses both
+// without --team and has no default-team fallback, so they are offered only
+// for the team on the line (completionTeam says why).
+//
+// A size and a colour are free text, and so offer nothing. A key the file does
+// not know has no values either, and past the value there is nothing to offer,
+// for the reason completeConfigKey gives.
+func completeConfigSet(d *Deps) cobra.CompletionFunc {
+	teams := completeTeams(d)
+	folders := completeFolders(d, false)
+	domains := completeDomains(d, false)
+	return func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+		if len(args) != 1 {
+			return completeConfigKey(cmd, args, toComplete)
+		}
 
-	var values []cobra.Completion
-	switch config.Key(args[0]) {
-	case config.Language:
-		values = []cobra.Completion{string(i18n.EN), string(i18n.DE)}
-	case config.QRFormat:
-		values = []cobra.Completion{qrSVG, qrPNG}
+		switch config.Key(args[0]) {
+		case config.Language:
+			return withPrefix([]cobra.Completion{string(i18n.EN), string(i18n.DE)}, toComplete), cobra.ShellCompDirectiveNoFileComp
+		case config.QRFormat:
+			return withPrefix([]cobra.Completion{qrSVG, qrPNG}, toComplete), cobra.ShellCompDirectiveNoFileComp
+		case config.Team:
+			return teams(cmd, args, toComplete)
+		case config.Folder:
+			return folders(cmd, args, toComplete)
+		case config.Domain:
+			return domains(cmd, args, toComplete)
+		}
+		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	return withPrefix(values, toComplete), cobra.ShellCompDirectiveNoFileComp
 }
 
 // newConfigGetCmd shows one setting, or all of them with where each comes from.
@@ -134,6 +152,7 @@ func newConfigGetCmd(d *Deps) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&team, "team", "", "look up the settings of this team (default: your default team)")
+	registerFlagCompletion(cmd, "team", completeTeams(d))
 	return cmd
 }
 
@@ -146,7 +165,7 @@ func newConfigSetCmd(d *Deps) *cobra.Command {
 		Long: "Writes the setting to the top of the config file, or to one team's section with --team.\n" +
 			"The team is not checked against your memberships, because those change.\n\n" + keyHelp(),
 		Args:              usageArgs(cobra.ExactArgs(2)),
-		ValidArgsFunction: completeConfigSet,
+		ValidArgsFunction: completeConfigSet(d),
 		RunE: func(_ *cobra.Command, args []string) error {
 			key, err := parseKey(args[0])
 			if err != nil {
@@ -160,6 +179,7 @@ func newConfigSetCmd(d *Deps) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&team, "team", "", "write to this team's section instead of the global settings")
+	registerFlagCompletion(cmd, "team", completeTeams(d))
 	return cmd
 }
 
@@ -186,6 +206,7 @@ func newConfigUnsetCmd(d *Deps) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&team, "team", "", "remove from this team's section instead of the global settings")
+	registerFlagCompletion(cmd, "team", completeTeams(d))
 	return cmd
 }
 
