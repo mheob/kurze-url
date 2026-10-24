@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
 
-import { UnauthenticatedError } from '../server/session';
 import type { Me } from './_authed';
 
 /**
@@ -10,7 +9,7 @@ import type { Me } from './_authed';
  * `vi.hoisted` is what makes that not an accident of hoisting order.
  */
 const mocks = vi.hoisted(() => ({
-	fetchMe: vi.fn<() => Promise<Me>>(),
+	fetchMe: vi.fn<() => Promise<Me | null>>(),
 }));
 
 vi.mock('./_authed', () => ({ fetchMe: mocks.fetchMe }));
@@ -25,13 +24,11 @@ const memberships = [
 
 describe('fetchCurrentUser', () => {
 	/**
-	 * The property the task calls out explicitly: `/` is public, so a
-	 * signed-out visitor — `fetchMe` throwing `UnauthenticatedError` — must
-	 * resolve to `undefined`, an ordinary value, never propagate as a
-	 * rejected loader.
+	 * `/` is public, so a signed-out visitor — `fetchMe` answering `null` — must resolve to
+	 * `undefined`, an ordinary value, never propagate as a rejected loader. Signing out lands here.
 	 */
 	it('treats "no session" as the ordinary signed-out case', async () => {
-		mocks.fetchMe.mockRejectedValueOnce(new UnauthenticatedError());
+		mocks.fetchMe.mockResolvedValueOnce(null);
 		await expect(fetchCurrentUser()).resolves.toBeUndefined();
 	});
 

@@ -9,7 +9,6 @@ import { buttonVariants } from '../components/ui/button';
 import { resolveCurrentTeam } from '../lib/current-team';
 import { usePreferences } from '../lib/use-preferences';
 import { fetchHealth } from '../server/health';
-import { isUnauthenticatedError } from '../server/session';
 import { fetchMe, type Me, type Membership } from './_authed';
 
 /**
@@ -45,28 +44,17 @@ const getCurrentTeamSlug = createServerFn({ method: 'GET' })
 	.handler(({ data: memberships }) => resolveCurrentTeam(getRequestHeader('cookie'), memberships));
 
 /**
- * `/` is public, so "no session" is the ordinary case here, not a failure —
- * unlike `_authed.tsx`'s `beforeLoad`, which treats the same
- * `UnauthenticatedError` as a reason to redirect to `/login`. `fetchMe`
- * (defined in `_authed.tsx`, reused rather than duplicated: it is already
- * the one place that reads a session, normalises `memberships`, and — via
- * `requireSession` — flushes the refreshed session cookie onto the real
- * response) throws that error when there is none; `isUnauthenticatedError`
- * is what tells that apart from every other failure, and survives the same
- * cross-boundary reconstruction on a client-side navigation that its
- * docstring in `server/session.ts` explains. Anything else — an actual
- * failure reading `/v1/me` — is rethrown rather than swallowed: this route
- * only has an opinion about the signed-out case.
+ * `/` is public, so "no session" is the ordinary case here, not a failure — `fetchMe` (defined in
+ * `_authed.tsx`, reused rather than duplicated: it is the one place that reads a session,
+ * normalises `memberships` and flushes the refreshed session cookie) answers it with `null`,
+ * decided on the server (see `nullWithoutSession` in `server/session.ts` for why a thrown error
+ * could not carry that to the browser). Signing out of the web app lands here. Any other failure
+ * reading `/v1/me` still rejects: this route only has an opinion about the signed-out case.
  *
  * @returns The signed-in caller, or `undefined` if there is no session.
  */
 export async function fetchCurrentUser(): Promise<Me | undefined> {
-	try {
-		return await fetchMe();
-	} catch (error) {
-		if (isUnauthenticatedError(error)) return undefined;
-		throw error;
-	}
+	return (await fetchMe()) ?? undefined;
 }
 
 // oxlint's typescript(consistent-type-definitions) is error-level (see the

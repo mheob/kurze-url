@@ -39,13 +39,13 @@ interface LinksDataSource {
  * `errorComponent`, which rendered `errors.unauthenticated` as dead-end
  * inline text on a page the visitor can no longer use. `_authed.tsx`'s
  * `beforeLoad` already redirects to `/login` for the *no session at all*
- * case (`isUnauthenticatedError`, checked one layer up); this loader's own
+ * case (`fetchMe` answering `null`, checked one layer up); this loader's own
  * gap was the narrower window where that check passed but the session dies
  * — or the API rejects the token for some other reason — by the time this
  * route's own fetch runs. That surfaces as the API answering the actual
  * `listLinks` call with a 401, which `classifyApiError` (not
- * `isUnauthenticatedError`, which only matches the *no session at all*
- * shape `requireSession` throws) turns into `{ kind: 'unauthenticated' }`.
+ * `nullWithoutSession`, which only matches the *no session at all* shape
+ * `requireSession` throws) turns into `{ kind: 'unauthenticated' }`.
  *
  * Every other error kind is rethrown unchanged, so it still reaches
  * `errorComponent` and fails loudly — an empty list is indistinguishable

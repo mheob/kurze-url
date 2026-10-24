@@ -4,6 +4,7 @@ import {
 	UnauthenticatedError,
 	flushSessionCookies,
 	getAccessToken,
+	nullWithoutSession,
 	requireSession,
 } from './session';
 
@@ -249,5 +250,39 @@ describe(flushSessionCookies, () => {
 
 		expect(mocks.appendResponseHeader).not.toHaveBeenCalled();
 		expect(mocks.setResponseHeader).not.toHaveBeenCalled();
+	});
+});
+
+describe(nullWithoutSession, () => {
+	it('returns what the read returns while there is a session', async () => {
+		await expect(
+			nullWithoutSession(vi.fn<() => Promise<string>>().mockResolvedValue('me')),
+		).resolves.toBe('me');
+	});
+
+	it('turns "no session" into null on the server, where the class is still known', async () => {
+		const noSession = new UnauthenticatedError();
+		await expect(
+			nullWithoutSession(vi.fn<() => Promise<string>>().mockRejectedValue(noSession)),
+		).resolves.toBeNull();
+	});
+
+	it('rethrows every other failure', async () => {
+		const boom = new Error('boom');
+		await expect(
+			nullWithoutSession(vi.fn<() => Promise<string>>().mockRejectedValue(boom)),
+		).rejects.toBe(boom);
+	});
+
+	/**
+	 * What the browser is left holding after the server-function transport: TanStack's
+	 * `ShallowErrorPlugin` sends only the message, so the name is gone. A check by name would miss
+	 * it, which is why the decision is made before the error ever leaves the server.
+	 */
+	it('does not match an error that only shares the message', async () => {
+		const lookalike = new Error('no session');
+		await expect(
+			nullWithoutSession(vi.fn<() => Promise<string>>().mockRejectedValue(lookalike)),
+		).rejects.toBe(lookalike);
 	});
 });
