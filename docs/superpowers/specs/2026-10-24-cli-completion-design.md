@@ -67,6 +67,8 @@ These would make it a failure even if it technically worked:
 
 **Descriptions:** Cobra's `value\tdescription` form. zsh, fish and PowerShell show the description, bash shows only values.
 
+**Values that are not offered:** a value holding a control character, or a `$`, a backtick or a backslash. A control character would reach the terminal or break the protocol's lines and tabs. The other three are shell syntax: of several candidates, Cobra's bash script inserts the part they share unescaped, so a folder name anybody in the team chose, such as `x$(cmd)a` beside `x$(cmd)b`, would land on the command line as a command substitution (decided 2026-10-24, after the final review). A description may hold them, because it is shown and never inserted.
+
 ## How completion behaves when it cannot answer
 
 The rule behind every case below: completion is silent, fast and never interactive.
@@ -89,14 +91,14 @@ Two new subcommands under Cobra's existing `completion` group. The four script s
 
 | Shell | Where | What |
 | --- | --- | --- |
-| zsh | `${ZDOTDIR:-$HOME}/.zshrc` | a marked block at the end that sources `kurze-url completion zsh` at shell start. It runs `autoload -Uz compinit && compinit` first when `compdef` is not defined yet, because a `.zshrc` without `compinit` would otherwise get a block that does nothing (my call). A missing `kurze-url` on `PATH` prints nothing |
+| zsh | `${ZDOTDIR:-$HOME}/.zshrc` | a marked block at the end that sources `kurze-url completion zsh` at shell start. It runs `autoload -Uz compinit && compinit -i` first when `compdef` is not defined yet, because a `.zshrc` without `compinit` would otherwise get a block that does nothing (my call), and sources the script only when `compdef` exists then. `-i` and the second check were decided on 2026-10-24, after the final review reproduced the question a bare `compinit` asks at every shell start ("insecure directories … [y/n]") when an `fpath` directory is group- or world-writable, as a Homebrew shared between accounts leaves one; without a terminal it aborts, and the script then printed `command not found: compdef`. A missing `kurze-url` on `PATH` prints nothing |
 | bash | `~/.bashrc` | a marked block at the end that sources `kurze-url completion bash`, guarded the same way |
 | fish | `${XDG_CONFIG_HOME:-~/.config}/fish/completions/kurze-url.fish` | a file of its own, carrying the marker, that runs `kurze-url completion fish \| source` |
-| PowerShell | the current user's profile, as PowerShell itself reports it | a marked block at the end that runs `kurze-url completion powershell \| Out-String \| Invoke-Expression` |
+| PowerShell | the current user's all-hosts profile (`$PROFILE.CurrentUserAllHosts`), as PowerShell itself reports it. All hosts and not the current one (decided 2026-10-24, after the final review): VS Code's PowerShell terminal and the ISE load profiles of their own, and every host loads this one | a marked block at the end that runs `kurze-url completion powershell \| Out-String \| Invoke-Expression` |
 
 The block is generated at shell start, never pasted in as a snapshot. A CLI update then brings its own completions along, with no second install.
 
-The PowerShell profile path must come from PowerShell, not be assembled in Go. `Documents` is often redirected (OneDrive), and Windows PowerShell 5.1 and PowerShell 7 keep separate profiles. `install` cannot tell which edition the person uses, so `powershell` means every edition found on `PATH` (`pwsh`, and on Windows `powershell`). It asks each one for `$PROFILE` and writes the block into each profile, with one question that lists all the files (my call). A `$SHELL` ending in `pwsh` on macOS or Linux counts as `powershell`. On Windows, when the effective execution policy is `Restricted` or `AllSigned`, a profile is never loaded, so `install` says so after writing. It does not change the policy. Asking PowerShell means starting a process, so `Deps` gains a way to run one, and tests fake it.
+The PowerShell profile path must come from PowerShell, not be assembled in Go. `Documents` is often redirected (OneDrive), and Windows PowerShell 5.1 and PowerShell 7 keep separate profiles. `install` cannot tell which edition the person uses, so `powershell` means every edition found on `PATH` (`pwsh`, and on Windows `powershell`). It asks each one for `$PROFILE.CurrentUserAllHosts` and writes the block into each profile, with one question that lists all the files (my call). A `$SHELL` ending in `pwsh` on macOS or Linux counts as `powershell`. On Windows, when the effective execution policy is `Restricted` or `AllSigned`, a profile is never loaded, so `install` says so after writing. It does not change the policy. Asking PowerShell means starting a process, so `Deps` gains a way to run one, and tests fake it. A PowerShell that fails is named, with the first line of what it wrote to stderr as the reason.
 
 **The marker** is a comment line naming the tool, for example `# kurze-url completion (added by kurze-url completion install)`, followed by the block. It is how a second `install` recognises an existing block, and how `uninstall` finds what to remove.
 
@@ -109,9 +111,9 @@ The PowerShell profile path must come from PowerShell, not be assembled in Go. `
 3. Without a terminal on stdin and without `--yes`, it refuses and names `--yes`, because nobody can answer.
 4. When the block is already there, it says so, asks nothing and exits 0.
 
-**After writing**, it names the file and says that a new shell (or `source <file>`) turns completion on. For bash it also says that bash's completion needs the `bash-completion` package. This repeats Cobra's own note.
+**After writing**, it names the file and says that a new shell (or `source '<file>'`) turns completion on. For bash it also says that bash's completion needs the `bash-completion` package. This repeats Cobra's own note. On macOS it adds, for bash, that Terminal and iTerm open login shells, which read `~/.bash_profile`, so that file has to source `~/.bashrc` for the block to load (decided 2026-10-24, after the final review).
 
-**`uninstall`** asks the same way, removes exactly the marked block, or the fish file when it carries the marker, and leaves every other byte of the file alone. When there is nothing to remove, it says so and exits 0.
+**`uninstall`** asks the same way, removes exactly the marked block, or the fish file when it carries the marker, and leaves every other byte of the file alone. When there is nothing to remove, it says so, names the files it checked and how to name another shell, and exits 0, because the shell came from `$SHELL` and the person may have installed for another one.
 
 **Writing safely:** the file is rewritten through a temporary file in the same directory and an atomic rename, keeping its permissions. A file that does not exist yet is created (for zsh, bash, PowerShell, and the fish completions directory).
 

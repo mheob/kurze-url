@@ -407,7 +407,7 @@ teams:
 - **Manual, once per release candidate:**
   - a real `login` against production, `link create`, `stats`, `list` and `qr`;
   - `logout`, then a command that must ask for login again;
-  - tab completion, in zsh, bash, fish and PowerShell: `completion install`, open a new shell, check that `kurze-url <Tab>`, `kurze-url link qr <Tab>` and a folder with a space in its name complete, then `completion uninstall`;
+  - tab completion, in zsh, bash, fish and PowerShell: `completion install`, open a new shell, check that `kurze-url <Tab>`, `kurze-url link qr <Tab>` and a folder with a space in its name complete, then `completion uninstall`. In zsh, also make a directory on `fpath` group-writable (`chmod g+w`) and check that a new shell starts without compinit's "insecure directories" question. Whether a slug or folder typed with a capital still matches depends on the shell: the CLI folds case, but by default Cobra's bash script and zsh filter its answer case-sensitively again (a zsh `matcher-list` can change that), so a miss there is not a failure;
   - on macOS, Linux (keychain and file fallback) and Windows.
 
 ## Suggested sequence
