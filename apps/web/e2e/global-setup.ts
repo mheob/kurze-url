@@ -5,7 +5,8 @@ import { request } from '@playwright/test';
  * an API.
  *
  * `apps/api` and `apps/web` are two Vercel projects deploying from one repo,
- * and the API's `ignoreCommand` can skip its build. When it does, Vercel keeps
+ * and an API build can be skipped (it had an `ignoreCommand` until
+ * 2026-10-24) or cancelled. When it is, Vercel keeps
  * serving the branch alias — with a "Deployment was cancelled" page, at
  * **HTTP 200**. Nothing about that looks like an outage: `withRelatedProject`
  * hands the web preview that alias, `getMe` parses the HTML as JSON, the
@@ -15,7 +16,8 @@ import { request } from '@playwright/test';
  *
  * That happened on 2026-09-06: a commit touching only `CLAUDE.md` matched
  * nothing in the API's pathspec, so the API build was skipped while the web
- * build was not.
+ * build was not. It happened again on 2026-10-24 with a change confined to
+ * `apps/cli`, which is why the API no longer skips any build.
  *
  * A positive match on 'ok', not a search for the failure values: an unknown
  * state has to fail closed. If the footer stops rendering the attribute

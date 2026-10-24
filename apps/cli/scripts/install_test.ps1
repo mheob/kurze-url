@@ -506,6 +506,11 @@ function Invoke-Installer {
 try { [Console]::OutputEncoding = [Text.UTF8Encoding]::new(`$false) } catch { `$null = `$_ }
 $($setup -join "`n")
 Set-Location -LiteralPath $(ConvertTo-Literal -Text $script:dir)
+# Load the modules before a case's shims are defined. In Windows PowerShell
+# 5.1 Get-FileHash is a function exported by Microsoft.PowerShell.Utility,
+# and that module loads on first use, here at the latest when Invoke-Expression
+# runs, so importing it after a shim replaced the shim with the real function.
+Import-Module Microsoft.PowerShell.Management, Microsoft.PowerShell.Utility
 $Before
 try {
 $Code
