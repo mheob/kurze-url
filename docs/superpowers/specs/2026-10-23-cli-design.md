@@ -365,7 +365,7 @@ teams:
 
 ## Part 4 — CI and release
 
-- **`.github/workflows/ci-cli.yml`**, triggered by `apps/cli/**`, `apps/api/openapi.json` (so the contract test sees the API drift) and the workflow itself:
+- **`.github/workflows/ci-cli.yml`** runs on every pull request and every push to `main`, and its change detection watches `apps/cli/`, `apps/api/openapi.json` (so the contract test sees the API drift) and both CLI workflows:
   - `go vet`, `gofmt`, `golangci-lint`, `go test ./...`, `go mod tidy -diff` and govulncheck;
   - the same change detection as `ci-api.yml`, so the jobs report as skipped on unrelated pull requests.
   - Its job names become required checks in the `main` ruleset, a maintainer step.
@@ -379,7 +379,12 @@ teams:
   - downloads the latest release's archive and `checksums.txt`, and verifies the checksum;
   - installs to `~/.local/bin`, or `$KURZE_URL_INSTALL_DIR`;
   - refuses to continue on a checksum mismatch.
-  - On Windows the README points to the release page.
+- **`apps/cli/install.ps1`** for Windows, fetched from `main` the same way (decided by the maintainer on 2026-10-24):
+  - run as `irm https://raw.githubusercontent.com/mheob/kurze-url/main/apps/cli/install.ps1 | iex`;
+  - the same checksum rule as `install.sh`: it verifies the archive against `checksums.txt` and refuses to continue on a mismatch;
+  - installs to `%LOCALAPPDATA%\Programs\kurze-url`, or `$KURZE_URL_INSTALL_DIR`;
+  - adds that directory to the user `Path` automatically, for new terminals and for the current session, unless `KURZE_URL_NO_MODIFY_PATH=1`, because Windows users rarely edit `Path` by hand;
+  - the release page stays in the README as the manual alternative.
 - **Vercel:** nothing changes. The API's ignore command already excludes `apps/cli`, and the web project does not see it.
 
 ## Testing

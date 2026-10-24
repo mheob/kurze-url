@@ -12,6 +12,115 @@ A multi-tenant URL shortener for German non-profit associations ("Vereine"), run
 - Teams with roles, invitations, and an audit log
 - English and German user interface
 
+## Command-line tool
+
+`kurze-url` creates short links, lists them and shows their numbers from the terminal. It is a thin client over the same HTTP API as the web app, so it acts with your own rights in your own teams, and it speaks English or German by your system locale.
+
+### Install
+
+**macOS and Linux** (amd64 and arm64):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/mheob/kurze-url/main/apps/cli/install.sh | sh
+```
+
+The script downloads the latest release's archive for your machine and its `checksums.txt`, checks the archive against it, and refuses to install on a mismatch. It puts `kurze-url` in `~/.local/bin`. When that directory is not on your `PATH` it prints the line to add, for `~/.zshrc`, `~/.bashrc` or `~/.profile` depending on your `$SHELL`. Bash on macOS reads `~/.bash_profile` for login shells instead, and fish users run `fish_add_path ~/.local/bin`. It does not run in Git Bash or Cygwin; it says so and points to the PowerShell installer below.
+
+Two environment variables change where it installs and what. They go on the `sh` side of the pipe, where the script reads them:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/mheob/kurze-url/main/apps/cli/install.sh | KURZE_URL_INSTALL_DIR="$HOME/bin" KURZE_URL_VERSION=v0.1.0 sh
+```
+
+- `KURZE_URL_INSTALL_DIR`: the directory for the binary (default `~/.local/bin`).
+- `KURZE_URL_VERSION`: a release tag such as `v0.1.0` (default: the latest release).
+
+**Windows** (amd64 and arm64), two ways to choose from:
+
+- **PowerShell:** run this in Windows PowerShell 5.1 or PowerShell 7.
+
+  ```powershell
+  irm https://raw.githubusercontent.com/mheob/kurze-url/main/apps/cli/install.ps1 | iex
+  ```
+
+  It does the same as `install.sh` with the Windows archive, `kurze-url_windows_<arch>.zip`: it checks the checksum before it unpacks anything, and installs `kurze-url.exe` into `%LOCALAPPDATA%\Programs\kurze-url`, or into `$env:KURZE_URL_INSTALL_DIR`. It then **adds that directory to your user `Path`**, for every new terminal and for the one you ran it in. Set `$env:KURZE_URL_NO_MODIFY_PATH = '1'` first to leave your `Path` alone; the script then reminds you to add the directory yourself. `$env:KURZE_URL_VERSION = 'v0.1.0'` picks a release the same way as above.
+
+- **By hand:** download `kurze-url_windows_<arch>.zip` (`amd64` or `arm64`) and `checksums.txt` from the [releases page](https://github.com/mheob/kurze-url/releases), compare the archive's SHA-256 with the line in `checksums.txt`, and put `kurze-url.exe` in a directory that is on your `Path`.
+
+**Downloading the archive yourself on macOS** (`kurze-url_darwin_<arch>.tar.gz` from the releases page) works too, but a browser marks what it downloads as quarantined, and the binary, which is not notarised, needs the mark removed before it runs: `xattr -d com.apple.quarantine kurze-url`. The install script avoids this, because `curl` does not set the mark.
+
+`go install` is not offered. The CLI is a nested Go module, so `go install` would need `apps/cli/vX.Y.Z` tags of its own, and a binary built without the release's linker flags prints `dev` as its version.
+
+`kurze-url version` shows what you have, for example `kurze-url 0.1.0 (d764e8a, 2026-10-24T06:49:29Z)`.
+
+### First steps
+
+```sh
+kurze-url login
+kurze-url link create https://example.org/sommerfest --slug sommerfest
+kurze-url link list
+kurze-url link stats sommerfest
+kurze-url link qr sommerfest
+```
+
+- `login` opens your browser on the web app's consent page and waits for the answer on `127.0.0.1`, on the first free port of 53682 to 53684. It prints the address when it cannot open a browser. With several teams, on a terminal, it asks which one is your default.
+- `link create` prints the short URL and nothing else, so `| pbcopy` works. `--slug`, `--folder`, `--domain` and `--team` are optional.
+- `link list` shows your team's newest links (20, or `--limit` up to 100).
+- `link stats` shows clicks and unique visitors for the last 7 and 30 days, first the human ones and then everything including bots. Visitors are counted per day and added up, so someone who comes back on three days counts three times.
+- `link qr` writes `<slug>.svg` (or `.png` with `--format png`) to the current directory. The code holds the short URL, never the destination.
+- `logout` ends only the CLI's own session. Signing out of the web app leaves the CLI signed in, unless you tick "Sign out everywhere" there.
+
+`kurze-url --help` and `kurze-url <command> --help` list every option. They are in English; everything a command prints is translated.
+
+### Config
+
+Settings live in a YAML file in your user config directory, which is where Go's `os.UserConfigDir()` points:
+
+| System  | File                                                  |
+| ------- | ----------------------------------------------------- |
+| macOS   | `~/Library/Application Support/kurze-url/config.yaml` |
+| Linux   | `~/.config/kurze-url/config.yaml`                     |
+| Windows | `%AppData%\kurze-url\config.yaml`                     |
+
+`KURZE_URL_CONFIG` names another file. Defaults can be global or belong to one team, and a flag beats the team's value, which beats the global one:
+
+```yaml
+language: de
+team: sv-gruenwald
+
+qr:
+  format: png
+  size: 1024
+
+teams:
+  sv-gruenwald:
+    folder: newsletter
+    domain: links.sv-gruenwald.de
+    qr:
+      fg: '1a3a6e'
+      bg: 'ffffff'
+```
+
+Change it by hand or with `kurze-url config set`, which keeps your comments and the order of the file:
+
+```sh
+kurze-url config set language de
+kurze-url config set folder newsletter --team sv-gruenwald
+kurze-url config get
+```
+
+The keys are `language`, `team`, `folder` and `domain` (the last two per team, with `--team`), and `qr.format`, `qr.size`, `qr.fg` and `qr.bg`. Your sign-in is not in this file: it lives in the system keychain, or in a file only you can read where there is no keychain.
+
+### Releasing (maintainers)
+
+A release is a tag, and the tag is the maintainer's decision: nothing in this repository creates one. `.github/workflows/release-cli.yml` builds the tag with goreleaser and publishes six archives and `checksums.txt` to a GitHub Release. Their names carry no version (`kurze-url_<os>_<arch>.tar.gz`, `.zip` for Windows) because both install scripts download from `releases/latest/download`.
+
+1. Tag a commit on `main` as `vX.Y.Z-rc.N`, for example `v0.1.0-rc.1`, and push the tag. It becomes a GitHub pre-release, which "latest" skips, so both install scripts keep installing the last final version while you check this one. Install the candidate with `KURZE_URL_VERSION=v0.1.0-rc.1`.
+2. Run the manual checklist from [the CLI spec](docs/superpowers/specs/2026-10-23-cli-design.md) ("Testing") against the pre-release on macOS, Linux and Windows.
+3. Tag the commit you checked as `vX.Y.Z` and push it. That is the release: it builds the final version, and "latest" moves to it.
+
+A tag whose commit is not on `main` is refused. The release notes list only commits scoped `(cli)`.
+
 ## Planned stack
 
 | Layer    | Choice                                    |
