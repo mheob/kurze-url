@@ -1,10 +1,13 @@
 package cli
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"time"
 
@@ -32,9 +35,14 @@ const credentialsDirName = "kurze-url"
 // client both use it as handed over.
 const httpTimeout = 30 * time.Second
 
+// commandTimeout bounds a program RunCommand starts. The one it starts is
+// PowerShell, asked for its profile, which takes a second or two on a cold
+// Windows machine and should never take ten.
+const commandTimeout = 10 * time.Second
+
 // Deps is everything a command reaches outside the process through: its
-// streams, the environment, the clock, the terminal, the browser, HTTP and
-// the credential store.
+// streams, the environment, the clock, the terminal, the browser, HTTP, the
+// credential store, the home directory and other programs.
 //
 // Commands never read os.Stdout, os.Getenv or a package-level client
 // directly, so a test hands them buffers, a fake server and an in-memory
@@ -90,12 +98,26 @@ type Deps struct {
 	// the App, refreshing the token and every request together. A test that
 	// needs it to pass shortens it.
 	CompletionTimeout time.Duration
+
+	// GOOS is the operating system the binary runs on (runtime.GOOS).
+	// `completion install` reads it to choose PowerShell on Windows.
+	GOOS string
+	// HomeDir is the person's home directory (os.UserHomeDir), where the
+	// shell configuration files live. A test hands out a directory of its
+	// own, so no command reaches the real ones.
+	HomeDir func() (string, error)
+	// LookPath finds a program on the PATH (exec.LookPath), and RunCommand
+	// starts one and returns what it printed to stdout, giving up after
+	// commandTimeout. `completion install` asks PowerShell for its profile
+	// through them, and a test fakes both, so none is ever started.
+	LookPath   func(string) (string, error)
+	RunCommand func(ctx context.Context, name string, args ...string) ([]byte, error)
 }
 
 // Default returns the production wiring: the process's own streams,
 // environment, clock and terminal, a real browser opener, the keychain-backed
-// credential store, a client with a 30 second timeout and a two second budget
-// for tab completion.
+// credential store, a client with a 30 second timeout, a two second budget
+// for tab completion, and the real home directory and PATH.
 func Default(b BuildInfo) *Deps {
 	return &Deps{
 		Stdout: os.Stdout,
@@ -123,7 +145,21 @@ func Default(b BuildInfo) *Deps {
 		},
 
 		CompletionTimeout: completionTimeout,
+
+		GOOS:       runtime.GOOS,
+		HomeDir:    os.UserHomeDir,
+		LookPath:   exec.LookPath,
+		RunCommand: runCommand,
 	}
+}
+
+// runCommand starts a program and returns its standard output, within
+// commandTimeout. Its standard error is not shown: what a failing program
+// says there travels in the *exec.ExitError.
+func runCommand(ctx context.Context, name string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, commandTimeout)
+	defer cancel()
+	return exec.CommandContext(ctx, name, args...).Output()
 }
 
 // credentialsDir is the user's config directory plus "kurze-url", or "" when

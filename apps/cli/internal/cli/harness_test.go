@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -109,10 +111,22 @@ type harness struct {
 
 	// opened is every URL the fake browser was asked to open.
 	opened []string
+
+	// home is what HomeDir answers: a temporary directory of the test's own,
+	// so a command never reaches the real shell configuration files.
+	home string
+
+	// programs are the programs the fake LookPath finds, and outputs is what
+	// the fake RunCommand prints for each, by name. ran records every
+	// RunCommand call, the program's name first. Nothing is ever started.
+	programs map[string]bool
+	outputs  map[string]string
+	ran      [][]string
 }
 
 // newHarness builds a harness whose commands are signed out, with no config
-// file, in English, on a terminal that is neither stdin nor stdout.
+// file, in English, on a terminal that is neither stdin nor stdout, on Linux
+// with an empty home directory and no program on the PATH.
 func newHarness(t *testing.T) *harness {
 	t.Helper()
 	h := &harness{
@@ -121,6 +135,9 @@ func newHarness(t *testing.T) *harness {
 		stderr:    &bytes.Buffer{},
 		store:     credentials.NewMemory(),
 		termWidth: 80,
+		home:      t.TempDir(),
+		programs:  map[string]bool{},
+		outputs:   map[string]string{},
 	}
 	h.api = newFakeAPI(t)
 	h.auth = newStubAuth(t)
@@ -163,8 +180,33 @@ func newHarness(t *testing.T) *harness {
 			h.storeEnvName, h.storeDir = envName, dir
 			return h.store
 		},
+		GOOS:       "linux",
+		HomeDir:    func() (string, error) { return h.home, nil },
+		LookPath:   h.lookPath,
+		RunCommand: h.runCommand,
 	}
 	return h
+}
+
+// lookPath is the fake PATH: it finds the programs in h.programs and nothing
+// else, failing the way exec.LookPath does.
+func (h *harness) lookPath(name string) (string, error) {
+	if h.programs[name] {
+		return filepath.Join(h.home, "bin", name), nil
+	}
+	return "", &exec.Error{Name: name, Err: exec.ErrNotFound}
+}
+
+// runCommand is the fake process starter. It records the call and answers
+// with the output the test programmed for the program, or fails for one the
+// test did not program.
+func (h *harness) runCommand(_ context.Context, name string, args ...string) ([]byte, error) {
+	h.ran = append(h.ran, append([]string{name}, args...))
+	out, ok := h.outputs[name]
+	if !ok {
+		return nil, fmt.Errorf("the test programmed no output for %s", name)
+	}
+	return []byte(out), nil
 }
 
 // run executes the real command tree and returns the exit code.
