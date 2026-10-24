@@ -31,7 +31,8 @@
 		"sendLink": "Send me a link",
 		"linkSent": "If that address has an account, a link is on its way.",
 		"signOut": "Sign out",
-		"signOutEverywhere": "Sign out everywhere"
+		"signOutEverywhere": "Sign out everywhere",
+		"signOutEverywhereHint": "Also signs out other browsers and the CLI, within an hour."
 	},
 	"oauthConsent": {
 		"title": "Allow CLI access",

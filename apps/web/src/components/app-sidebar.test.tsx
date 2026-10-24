@@ -231,6 +231,20 @@ describe('the sign-out controls', () => {
 		await expect(screen.findByRole('checkbox', EVERYWHERE)).resolves.not.toBeChecked();
 	});
 
+	// The other sessions end only once their access token runs out: the API checks a token's
+	// signature and expiry and never asks Supabase whether its session still exists. So the box
+	// says "within an hour" instead of promising an immediate sign-out.
+	it('says that the other sessions end within an hour', async () => {
+		renderSidebar({});
+
+		await expect(
+			screen.findByRole('checkbox', {
+				...EVERYWHERE,
+				description: 'Also signs out other browsers and the CLI, within an hour.',
+			}),
+		).resolves.toBeInTheDocument();
+	});
+
 	it('checks the box when its label is clicked', async () => {
 		renderSidebar({});
 		await screen.findByRole('checkbox', EVERYWHERE);

@@ -74,7 +74,7 @@ kurze-url link qr sommerfest
 - `link list` shows your team's newest links (20, or `--limit` up to 100).
 - `link stats` shows clicks and unique visitors for the last 7 and 30 days, first the human ones and then everything including bots. Visitors are counted per day and added up, so someone who comes back on three days counts three times.
 - `link qr` writes `<slug>.svg` (or `.png` with `--format png`) to the current directory. The code holds the short URL, never the destination.
-- `logout` ends only the CLI's own session. Signing out of the web app leaves the CLI signed in, unless you tick "Sign out everywhere" there.
+- `logout` ends only the CLI's own session. Signing out of the web app leaves the CLI signed in, unless you tick "Sign out everywhere" there. That ends the CLI's session within an hour, once the access token it holds runs out.
 
 `kurze-url --help` and `kurze-url <command> --help` list every option. They are in English; everything a command prints is translated.
 
@@ -122,7 +122,7 @@ The keys are `language`, `team`, `folder` and `domain` (the last two per team, w
 A release is a tag, and the tag is the maintainer's decision: nothing in this repository creates one. `.github/workflows/release-cli.yml` builds the tag with goreleaser and publishes six archives and `checksums.txt` to a GitHub Release. Their names carry no version (`kurze-url_<os>_<arch>.tar.gz`, `.zip` for Windows) because both install scripts download from `releases/latest/download`.
 
 1. Tag a commit on `main` as `vX.Y.Z-rc.N`, for example `v0.1.0-rc.1`, and push the tag. It becomes a GitHub pre-release, which "latest" skips. That means the plain one-liners install only a final release: while you check a candidate they keep installing the last final version, and before the first final release they have nothing to install yet and fail to download. A candidate is installed by giving the script its tag, `curl -fsSL https://raw.githubusercontent.com/mheob/kurze-url/main/apps/cli/install.sh | KURZE_URL_VERSION=v0.1.0-rc.1 sh` on macOS and Linux, and `$env:KURZE_URL_VERSION = 'v0.1.0-rc.1'; irm https://raw.githubusercontent.com/mheob/kurze-url/main/apps/cli/install.ps1 | iex` on Windows. The release notes of a candidate show those two lines in place of the plain ones.
-2. Run the manual checklist from [the CLI spec](docs/superpowers/specs/2026-10-23-cli-design.md) ("Testing") against the pre-release on macOS, Linux and Windows. Add two checks to it that the spec's list lacks: sign out of the web app with "Sign out everywhere" unticked, and the CLI must still work; sign out again with it ticked, and the next CLI command must ask for `login` again.
+2. Run the manual checklist from [the CLI spec](docs/superpowers/specs/2026-10-23-cli-design.md) ("Testing") against the pre-release on macOS, Linux and Windows. Add two checks to it that the spec's list lacks: sign out of the web app with "Sign out everywhere" unticked, and the CLI must still work; sign out again with it ticked, and once the CLI's access token has run out, at most an hour later, the next CLI command must ask for `login` again.
 3. Tag the commit you checked as `vX.Y.Z` and push it. That is the release: it builds the final version, and "latest" moves to it.
 
 A tag whose commit is not on `main` is refused. The release notes list only commits scoped `(cli)`.
