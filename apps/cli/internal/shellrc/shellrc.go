@@ -74,8 +74,21 @@ func Command(s Shell) string {
 	switch s {
 	case Zsh:
 		// A .zshrc without compinit would get a block that does nothing:
-		// the script calls compdef, which does not exist yet.
-		return `if command -v kurze-url >/dev/null 2>&1; then (( $+functions[compdef] )) || { autoload -Uz compinit && compinit; }; source <(kurze-url completion zsh); fi`
+		// the script calls compdef, which does not exist yet. So compinit
+		// runs here when compdef is missing, and only then, because a
+		// .zshrc that already ran it would pay for a second run at every
+		// start.
+		//
+		// It runs with -i. Without it, compinit asks "zsh compinit:
+		// insecure directories … [y/n]" at every shell start when a
+		// directory on the fpath is group- or world-writable, which a
+		// Homebrew shared between accounts leaves behind, and without a
+		// terminal to ask on it aborts. -i skips those directories without
+		// asking. The second check is for a compinit that failed all the
+		// same: the script would otherwise print "command not found:
+		// compdef" at every start, and without compdef it has nothing to
+		// do.
+		return `if command -v kurze-url >/dev/null 2>&1; then (( $+functions[compdef] )) || { autoload -Uz compinit && compinit -i; }; (( $+functions[compdef] )) && source <(kurze-url completion zsh); fi`
 	case Bash:
 		// eval, not source <(…): bash 3.2, which macOS still ships, reads
 		// nothing from a process substitution given to source and says so

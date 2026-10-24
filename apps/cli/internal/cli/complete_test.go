@@ -254,9 +254,11 @@ func TestCompleteWithABrokenConfigOffersNothing(t *testing.T) {
 func TestCompleteWithAnswersEmptyWhenTheDeadlinePasses(t *testing.T) {
 	h := newHarness(t)
 	h.deps.CompletionTimeout = 50 * time.Millisecond
+	started := make(chan struct{})
 	release := make(chan struct{})
 	t.Cleanup(func() { close(release) })
 	fn := completeWith(h.deps, func(context.Context, *App, *cobra.Command, []string, string) ([]cobra.Completion, error) {
+		close(started)
 		<-release // ignores its context, like a locked keychain
 		return []cobra.Completion{"too-late"}, nil
 	})
@@ -267,6 +269,16 @@ func TestCompleteWithAnswersEmptyWhenTheDeadlinePasses(t *testing.T) {
 	require.Nil(t, values)
 	require.Equal(t, cobra.ShellCompDirectiveNoFileComp, directive)
 	require.Less(t, time.Since(start), 5*time.Second, "completion waited for work that ignores its deadline")
+	// An App that cannot be built gives the same empty answer at once, and
+	// the test would then pass without a deadline in it. The list function
+	// running proves the App was built and the wait was the deadline's. It
+	// may start after the answer under -race on a busy machine, which is
+	// why this waits for it instead of asking whether it has started.
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the list function never ran, so it was not the deadline that ended the wait")
+	}
 }
 
 func TestCompleteWithGivesTheListFunctionTheDeadline(t *testing.T) {
@@ -778,4 +790,41 @@ func TestCandidatesCarryNoControlCharacters(t *testing.T) {
 
 	slugs, _ := h.complete("link", "qr", "somm")
 	require.Equal(t, []string{"sommerfest\thttps://example.org/" + strings.TrimSpace(hostileCleaned)}, slugs)
+}
+
+// A value lands on the command line, which bash reads as code, and of several
+// candidates cobra's bash script inserts the part they share without escaping
+// it. Two folders anybody in the team can create would otherwise put a live
+// command substitution on the person's line, so a value holding "$", a
+// backtick or a backslash is not offered.
+func TestCandidatesCarryNoShellSyntax(t *testing.T) {
+	h := linkHarness(t, "team: sv-gruenwald\n", teamGruenwald)
+	h.serveFolders(teamGruenwald,
+		apiclient.Folder{ID: "f1", Name: "x$(touch pwned)a"},
+		apiclient.Folder{ID: "f2", Name: "x$(touch pwned)b"},
+		apiclient.Folder{ID: "f3", Name: "`id`"},
+		apiclient.Folder{ID: "f4", Name: `back\slash`},
+		folderPresse,
+	)
+	h.serveLinks(teamGruenwald, listedLink("sommerfest", "https://example.org/$(id)", "active"))
+
+	folders, _ := h.complete("link", "list", "--folder", "")
+	require.Equal(t, []string{"Presse"}, folders)
+
+	// A description is shown beside the value and never inserted, so it may
+	// hold them.
+	slugs, _ := h.complete("link", "qr", "somm")
+	require.Equal(t, []string{"sommerfest\thttps://example.org/$(id)"}, slugs)
+}
+
+func TestCandidateDropsEachShellSyntaxCharacter(t *testing.T) {
+	for _, value := range []string{"a$b", "a`b", `a\b`} {
+		_, ok := candidate(value, "")
+		require.False(t, ok, "%q was offered", value)
+	}
+
+	// A space is no reason to drop a value: folder names have them.
+	got, ok := candidate("Sommerfest 2026", "")
+	require.True(t, ok)
+	require.Equal(t, "Sommerfest 2026", got)
 }

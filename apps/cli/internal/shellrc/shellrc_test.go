@@ -26,7 +26,7 @@ func TestCommandIsTheLineTheDesignSpecifies(t *testing.T) {
 	// These are literals on purpose: the line is what runs in every new shell
 	// of the person's, so a change to it has to be a change to this table.
 	want := map[Shell]string{
-		Zsh:        `if command -v kurze-url >/dev/null 2>&1; then (( $+functions[compdef] )) || { autoload -Uz compinit && compinit; }; source <(kurze-url completion zsh); fi`,
+		Zsh:        `if command -v kurze-url >/dev/null 2>&1; then (( $+functions[compdef] )) || { autoload -Uz compinit && compinit -i; }; (( $+functions[compdef] )) && source <(kurze-url completion zsh); fi`,
 		Bash:       `if command -v kurze-url >/dev/null 2>&1; then eval "$(kurze-url completion bash)"; fi`,
 		Fish:       `command -q kurze-url; and kurze-url completion fish | source`,
 		PowerShell: `if (Get-Command kurze-url -ErrorAction SilentlyContinue) { kurze-url completion powershell | Out-String | Invoke-Expression }`,

@@ -25,13 +25,19 @@ import (
 // PowerShell 7's own name.
 var shellNames = []string{"zsh", "bash", "fish", "powershell"}
 
-// rcFileMode is the mode of a shell configuration file install creates,
-// before the umask takes its share. An existing file keeps its own.
+// rcFileMode is the mode of a shell configuration file install creates.
+// shellrc.WriteFile sets it exactly, whatever the umask says, and an existing
+// file keeps its own.
 const rcFileMode os.FileMode = 0o644
 
 // psProfileQuery is what install asks each PowerShell: the profile it loads
-// for this user in this host, and the execution policy that decides whether
+// for this user in every host, and the execution policy that decides whether
 // it loads it at all. One process answers both, one per line.
+//
+// The all-hosts profile and not $PROFILE itself, which is the current host's:
+// VS Code's PowerShell terminal and the ISE are hosts of their own, each with
+// a profile of its own, and the console's would leave completion off in them.
+// Every host loads the all-hosts profile as well as its own.
 //
 // It first switches the console's output to UTF-8, because Windows
 // PowerShell otherwise writes in the system's legacy code page, and a profile
@@ -40,7 +46,7 @@ const rcFileMode os.FileMode = 0o644
 // [Text.Encoding]::UTF8 carries one, which Windows PowerShell can write ahead
 // of redirected output, and a path that starts with one is refused.
 const psProfileQuery = "[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); " +
-	"$PROFILE.CurrentUserCurrentHost; Get-ExecutionPolicy"
+	"$PROFILE.CurrentUserAllHosts; Get-ExecutionPolicy"
 
 // newCompletionInstallCmd writes the completion block into the person's
 // shell configuration, after asking them.
@@ -51,8 +57,9 @@ func newCompletionInstallCmd(d *Deps) *cobra.Command {
 		Short: "Turn on tab completion in your shell's configuration",
 		Long: "Adds two lines to your shell's configuration that load kurze-url's tab completion\n" +
 			"whenever a shell starts: to ~/.zshrc (or $ZDOTDIR/.zshrc), to ~/.bashrc, to\n" +
-			"fish's completions directory as a file of its own, or to every PowerShell profile.\n" +
-			"The completion is generated at shell start, so an update of the CLI brings its own.\n\n" +
+			"fish's completions directory as a file of its own, or to the profile every host of\n" +
+			"each PowerShell on the PATH loads. The completion is generated at shell start, so\n" +
+			"an update of the CLI brings its own.\n\n" +
 			"The shell is the argument, else the one $SHELL names, and PowerShell on Windows.\n" +
 			"It asks before changing anything; --yes skips the question, and without a terminal\n" +
 			"to ask on it is required. Running it twice adds nothing twice, and a setup made by\n" +
@@ -291,6 +298,17 @@ func (a *App) nextSteps(shell shellrc.Shell, written []completionTarget) {
 		// Cobra's bash script needs bash-completion, which macOS and some
 		// minimal Linux images do not have. Cobra's own help says the same.
 		a.notice(a.Cat.T("completion.bashPackage"))
+		// Terminal and iTerm start a login shell for every window, and a
+		// login bash reads ~/.bash_profile and never ~/.bashrc unless the
+		// former sources the latter, which nothing on a Mac sets up.
+		// Whether it already does cannot be told reliably from here, as it
+		// may go through ~/.profile or a file of the person's own, so this
+		// is said and not checked.
+		if a.d.GOOS == "darwin" {
+			for _, t := range written {
+				a.notice(a.Cat.T("completion.bashProfile", i18n.Args{"file": t.path}))
+			}
+		}
 	}
 	// These two policies keep PowerShell from loading an unsigned profile,
 	// so the block is there and does nothing. The policy is the person's,
@@ -317,7 +335,13 @@ func (a *App) uninstallCompletion(cmd *cobra.Command, args []string, yes bool) e
 
 	plan := a.planUninstall(targets, false)
 	if len(plan.marked) == 0 && len(plan.refused) == 0 {
-		a.notice(a.Cat.T("completion.nothingToRemove"))
+		// The shell came from $SHELL unless it was named, and a person who
+		// installed for another one finds nothing here: the files say where
+		// it looked, and the command how to look elsewhere.
+		a.notice(a.Cat.T("completion.nothingToRemove", i18n.Args{
+			"files":   joinPaths(pathsOf(targets)),
+			"command": cmd.CommandPath(),
+		}))
 		return nil
 	}
 	if err := a.refuseProfiles(plan.refused, len(plan.marked) == 0); err != nil {

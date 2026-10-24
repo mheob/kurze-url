@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -9,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/mheob/kurze-url/apps/cli/internal/auth"
@@ -154,12 +157,35 @@ func Default(b BuildInfo) *Deps {
 }
 
 // runCommand starts a program and returns its standard output, within
-// commandTimeout. Its standard error is not shown: what a failing program
-// says there travels in the *exec.ExitError.
+// commandTimeout. Its standard error is not passed through to the person's
+// terminal: a program that fails has the first line of it added to the
+// error (withStderr).
 func runCommand(ctx context.Context, name string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, commandTimeout)
 	defer cancel()
-	return exec.CommandContext(ctx, name, args...).Output()
+	out, err := exec.CommandContext(ctx, name, args...).Output()
+	return out, withStderr(err)
+}
+
+// withStderr adds to the error of a program that exited with a failure the
+// first line it wrote to its standard error that is not blank. An
+// *exec.ExitError alone says "exit status 1", which tells the person nothing
+// about why PowerShell would not answer, and PowerShell's first line is the
+// reason; what it writes after that is where in our own command the error
+// happened. The text is the program's and not the CLI's, so it is cleaned
+// like any other (output.Clean). Any other error, nil included, comes back as
+// it was.
+func withStderr(err error) error {
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		return err
+	}
+	for line := range strings.Lines(string(exitErr.Stderr)) {
+		if line = strings.TrimSpace(line); line != "" {
+			return fmt.Errorf("%w: %s", err, output.Clean(line))
+		}
+	}
+	return err
 }
 
 // credentialsDir is the user's config directory plus "kurze-url", or "" when

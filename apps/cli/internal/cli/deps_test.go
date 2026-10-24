@@ -1,7 +1,11 @@
 package cli
 
 import (
+	"context"
 	"errors"
+	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -79,4 +83,67 @@ func TestCredentialsDirIsEmptyWithoutAUserConfigDirectory(t *testing.T) {
 	got := credentialsDir(func() (string, error) { return "", errNoHome })
 
 	require.Empty(t, got)
+}
+
+// TestRunCommandHelperProcess is the program the runCommand tests start: this
+// test binary run again, the way os/exec's own tests do it, so no PowerShell
+// is needed to see how a failing one is reported. Run on its own it does
+// nothing.
+func TestRunCommandHelperProcess(*testing.T) {
+	switch os.Getenv("KURZE_URL_TEST_COMMAND") {
+	case "fail":
+		// As Windows PowerShell writes it: CRLF, a blank line first, the
+		// reason, then where it happened. The colour codes are what a
+		// PowerShell 7 that thinks it writes to a terminal adds.
+		_, _ = fmt.Fprint(os.Stderr, "\r\n  \r\n"+
+			"Get-ExecutionPolicy: \x1b[31mthe policy could not be read\x1b[0m\r\n"+
+			"At line:1 char:62\r\n")
+		os.Exit(1)
+	case "fail-silently":
+		os.Exit(1)
+	case "answer":
+		fmt.Print("/home/ada/.config/powershell/profile.ps1\nUnrestricted\n")
+		os.Exit(0)
+	}
+}
+
+// runHelper runs TestRunCommandHelperProcess through runCommand, in mode.
+func runHelper(t *testing.T, mode string) ([]byte, error) {
+	t.Helper()
+	t.Setenv("KURZE_URL_TEST_COMMAND", mode)
+	return runCommand(context.Background(), os.Args[0], "-test.run=^TestRunCommandHelperProcess$")
+}
+
+// "exit status 1" says nothing about why PowerShell would not answer; its
+// first line on stderr does.
+func TestRunCommandAddsTheFirstLineOfStderrToAFailure(t *testing.T) {
+	_, err := runHelper(t, "fail")
+
+	var exitErr *exec.ExitError
+	require.ErrorAs(t, err, &exitErr, "the exit status stays reachable")
+	require.Equal(t,
+		exitErr.Error()+": Get-ExecutionPolicy:  [31mthe policy could not be read [0m",
+		err.Error(),
+		"the first line that is not blank, trimmed and cleaned")
+}
+
+func TestRunCommandWithoutStderrKeepsTheExitStatus(t *testing.T) {
+	_, err := runHelper(t, "fail-silently")
+
+	var exitErr *exec.ExitError
+	require.ErrorAs(t, err, &exitErr)
+	require.Equal(t, exitErr.Error(), err.Error())
+}
+
+func TestRunCommandReturnsWhatTheProgramPrinted(t *testing.T) {
+	out, err := runHelper(t, "answer")
+
+	require.NoError(t, err)
+	require.Equal(t, "/home/ada/.config/powershell/profile.ps1\nUnrestricted\n", string(out))
+}
+
+func TestRunCommandReportsAProgramThatIsNotThere(t *testing.T) {
+	_, err := runCommand(context.Background(), "kurze-url-no-such-program")
+
+	require.ErrorIs(t, err, exec.ErrNotFound)
 }

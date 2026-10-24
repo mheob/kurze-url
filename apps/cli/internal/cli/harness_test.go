@@ -117,10 +117,12 @@ type harness struct {
 	home string
 
 	// programs are the programs the fake LookPath finds, and outputs is what
-	// the fake RunCommand prints for each, by name. ran records every
+	// the fake RunCommand prints for each, by name, unless failures holds an
+	// error for it, which it then returns instead. ran records every
 	// RunCommand call, the program's name first. Nothing is ever started.
 	programs map[string]bool
 	outputs  map[string]string
+	failures map[string]error
 	ran      [][]string
 }
 
@@ -138,6 +140,7 @@ func newHarness(t *testing.T) *harness {
 		home:      t.TempDir(),
 		programs:  map[string]bool{},
 		outputs:   map[string]string{},
+		failures:  map[string]error{},
 	}
 	h.api = newFakeAPI(t)
 	h.auth = newStubAuth(t)
@@ -198,10 +201,13 @@ func (h *harness) lookPath(name string) (string, error) {
 }
 
 // runCommand is the fake process starter. It records the call and answers
-// with the output the test programmed for the program, or fails for one the
-// test did not program.
+// with the failure or the output the test programmed for the program, or
+// fails for one the test did not program.
 func (h *harness) runCommand(_ context.Context, name string, args ...string) ([]byte, error) {
 	h.ran = append(h.ran, append([]string{name}, args...))
+	if err, ok := h.failures[name]; ok {
+		return nil, err
+	}
 	out, ok := h.outputs[name]
 	if !ok {
 		return nil, fmt.Errorf("the test programmed no output for %s", name)

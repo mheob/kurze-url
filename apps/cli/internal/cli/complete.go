@@ -142,6 +142,12 @@ func completeWith(
 	}
 }
 
+// shellSyntax are the characters bash still reads as code in a word that is
+// unquoted or in double quotes: "$" opens an expansion or a command
+// substitution, a backtick the older form of one, and a backslash escapes
+// the character after it.
+const shellSyntax = "$`\\"
+
 // candidate builds one completion out of text the service sent, or reports
 // false for a value that cannot be offered.
 //
@@ -156,10 +162,18 @@ func completeWith(
 // would name a team or folder that does not exist, and typing it would fail
 // where offering nothing would not.
 //
+// A value is dropped for a "$", a backtick or a backslash too (shellSyntax),
+// because a value lands on the command line, which a shell reads as code.
+// Cobra's bash script escapes a candidate only when it is the only one left;
+// of several, bash inserts the part they share as it is. A folder named
+// `x$(cmd)a` next to one named `x$(cmd)b`, created by anybody in the team,
+// would put a live command substitution on the person's line, and the Enter
+// that follows runs it.
+//
 // An empty description is no description, so a shell does not draw a bare
 // separator.
 func candidate(value, description string) (cobra.Completion, bool) {
-	if value == "" || output.Clean(value) != value {
+	if value == "" || output.Clean(value) != value || strings.ContainsAny(value, shellSyntax) {
 		return "", false
 	}
 	if description == "" {

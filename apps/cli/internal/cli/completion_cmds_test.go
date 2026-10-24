@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,11 +16,11 @@ import (
 )
 
 // psCommand is what install asks each PowerShell, word for word: UTF-8 output
-// without a byte-order mark, then the profile on the first line of the answer
-// and the execution policy on the second.
+// without a byte-order mark, then the all-hosts profile on the first line of
+// the answer and the execution policy on the second.
 var psCommand = []string{
 	"-NoProfile", "-NonInteractive", "-Command",
-	"[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); $PROFILE.CurrentUserCurrentHost; Get-ExecutionPolicy",
+	"[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); $PROFILE.CurrentUserAllHosts; Get-ExecutionPolicy",
 }
 
 // shellHarness is a harness whose $SHELL is shell.
@@ -84,7 +85,7 @@ func TestInstallAsksAndWritesTheZshBlock(t *testing.T) {
 	require.Equal(t,
 		"Add tab completion for zsh to "+zshrc+"? [Y/n] "+
 			"Added tab completion to "+zshrc+".\n"+
-			"Open a new shell, or run `source "+zshrc+"`, to use it.\n",
+			"Open a new shell, or run `source '"+zshrc+"'`, to use it.\n",
 		h.stderr.String())
 	require.Empty(t, h.stdout.String())
 }
@@ -288,10 +289,44 @@ func TestInstallBashMentionsThePackage(t *testing.T) {
 	require.Equal(t, shellrc.Block(shellrc.Bash), got)
 	require.Equal(t,
 		"Added tab completion to "+bashrc+".\n"+
-			"Open a new shell, or run `source "+bashrc+"`, to use it.\n"+
+			"Open a new shell, or run `source '"+bashrc+"'`, to use it.\n"+
 			"Completion in bash also needs the bash-completion package. "+
 			"If it is not installed yet, install it with your system's package manager.\n",
 		h.stderr.String())
+}
+
+// Terminal and iTerm open login shells, and a login bash reads
+// ~/.bash_profile, not ~/.bashrc. On a Mac the block would otherwise sit in a
+// file nothing reads, so install says so, and only there.
+func TestInstallBashOnMacOSPointsAtBashProfile(t *testing.T) {
+	h := shellHarness(t, "/bin/bash")
+	h.deps.GOOS = "darwin"
+	bashrc := h.homeFile(".bashrc")
+
+	code := h.run("completion", "install", "--yes")
+
+	require.Equal(t, 0, code, h.stderr.String())
+	require.True(t, strings.HasSuffix(h.stderr.String(),
+		"install it with your system's package manager.\n"+
+			"On macOS, Terminal and iTerm open login shells, which read ~/.bash_profile and not "+bashrc+". "+
+			"If your ~/.bash_profile does not load "+bashrc+" yet, add `source '"+bashrc+"'` to it, "+
+			"or the block is never read.\n"),
+		h.stderr.String())
+	_, ok := fileContent(t, h.homeFile(".bash_profile"))
+	require.False(t, ok, "install wrote ~/.bash_profile, which it only names")
+
+	// zsh on a Mac is no login bash.
+	h = shellHarness(t, "/bin/zsh")
+	h.deps.GOOS = "darwin"
+	require.Equal(t, 0, h.run("completion", "install", "--yes"), h.stderr.String())
+	require.NotContains(t, h.stderr.String(), "bash_profile")
+
+	// A bash already set up gets nothing written, and so no step to take.
+	h = shellHarness(t, "/bin/bash")
+	h.deps.GOOS = "darwin"
+	putFile(t, h.homeFile(".bashrc"), shellrc.OwnFile(shellrc.Bash))
+	require.Equal(t, 0, h.run("completion", "install", "--yes"), h.stderr.String())
+	require.NotContains(t, h.stderr.String(), "bash_profile")
 }
 
 func TestInstallPowerShellWritesEveryProfile(t *testing.T) {
@@ -332,7 +367,7 @@ func TestInstallPowerShellWritesEveryProfile(t *testing.T) {
 // Outside Windows there is only PowerShell 7, and $SHELL names it pwsh.
 func TestInstallPowerShellOutsideWindowsAsksOnlyPwsh(t *testing.T) {
 	h := shellHarness(t, "/usr/local/bin/pwsh")
-	profile := filepath.Join(t.TempDir(), "Microsoft.PowerShell_profile.ps1")
+	profile := filepath.Join(t.TempDir(), "profile.ps1")
 	h.programs["pwsh"], h.programs["powershell"] = true, true
 	h.outputs["pwsh"] = profile + "\nUnrestricted\n"
 
@@ -372,6 +407,38 @@ func TestInstallStopsWhenAPowerShellCannotBeAsked(t *testing.T) {
 	require.Contains(t, h.stderr.String(), "kurze-url: Could not ask powershell where its profile is: ")
 	_, ok := fileContent(t, a)
 	require.False(t, ok, "a profile was written although the other could not be found")
+}
+
+// A PowerShell that fails is named, with the reason it gave on its stderr,
+// which runCommand adds to the error, and nothing is written, for the edition
+// that did answer either.
+func TestCompletionNamesThePowerShellThatFailed(t *testing.T) {
+	for _, sub := range []string{"install", "uninstall"} {
+		t.Run(sub, func(t *testing.T) {
+			h := newHarness(t)
+			h.deps.GOOS = "windows"
+			dir := t.TempDir()
+			a := filepath.Join(dir, "a.ps1")
+			if sub == "uninstall" {
+				putFile(t, a, shellrc.OwnFile(shellrc.PowerShell))
+			}
+			before, _ := fileContent(t, a)
+			h.programs["pwsh"], h.programs["powershell"] = true, true
+			h.outputs["pwsh"] = a + "\nRemoteSigned\n"
+			h.failures["powershell"] = errors.New("exit status 1: Get-ExecutionPolicy : Access is denied")
+
+			code := h.run("completion", sub, "--yes")
+
+			require.Equal(t, 1, code)
+			require.Equal(t,
+				"kurze-url: Could not ask powershell where its profile is: "+
+					"exit status 1: Get-ExecutionPolicy : Access is denied\n",
+				h.stderr.String())
+			after, _ := fileContent(t, a)
+			require.Equal(t, before, after, "the profile that did answer was changed")
+			requireEmptyDir(t, h.home)
+		})
+	}
 }
 
 func TestInstallUnknownShell(t *testing.T) {
@@ -740,6 +807,35 @@ func TestUninstallRestoresTheFile(t *testing.T) {
 	require.Equal(t, "Removed tab completion from "+zshrc+".\n", h.stderr.String())
 }
 
+// Review Focus 3: install run twice and uninstall run once leave no block and
+// nothing else changed, here on a file whose last line has no newline, which
+// is the one the block has to end before it starts.
+func TestInstallTwiceThenUninstallOnceRestoresTheFile(t *testing.T) {
+	for _, shell := range []string{"zsh", "bash", "powershell"} {
+		t.Run(shell, func(t *testing.T) {
+			h := shellHarness(t, "/bin/"+shell)
+			file := h.homeFile("." + shell + "rc")
+			if shell == "powershell" {
+				file = filepath.Join(t.TempDir(), "profile.ps1")
+				h.programs["pwsh"] = true
+				h.outputs["pwsh"] = file + "\nRemoteSigned\n"
+			}
+			const original = "export A=1"
+			putFile(t, file, original)
+
+			require.Equal(t, 0, h.run("completion", "install", shell, "--yes"), h.stderr.String())
+			require.Equal(t, 0, h.run("completion", "install", shell, "--yes"), h.stderr.String())
+			got, _ := fileContent(t, file)
+			require.Equal(t, 1, strings.Count(got, shellrc.Marker), "the second install added a block")
+
+			require.Equal(t, 0, h.run("completion", "uninstall", shell, "--yes"), h.stderr.String())
+
+			got, _ = fileContent(t, file)
+			require.Equal(t, original, got)
+		})
+	}
+}
+
 func TestUninstallAsksFirst(t *testing.T) {
 	h := shellHarness(t, "/bin/zsh")
 	zshrc := h.homeFile(".zshrc")
@@ -793,7 +889,8 @@ func TestUninstallFishDeletesItsFile(t *testing.T) {
 	require.Equal(t,
 		fishFile+" sets up tab completion for kurze-url without the marker `completion install` adds, "+
 			"so it was left as it is. Remove that setup by hand if you no longer want it.\n"+
-			"There is no tab completion set up by `completion install` to remove.\n",
+			"There is no tab completion set up by `completion install` in "+fishFile+" to remove. "+
+			"For another shell, run `kurze-url completion uninstall SHELL`.\n",
 		h.stderr.String())
 }
 
@@ -806,7 +903,12 @@ func TestUninstallWithNothingToRemove(t *testing.T) {
 	code := h.run("completion", "uninstall")
 
 	require.Equal(t, 0, code, h.stderr.String())
-	require.Equal(t, "There is no tab completion set up by `completion install` to remove.\n", h.stderr.String())
+	// It names where it looked, because $SHELL chose the file and the
+	// person may have installed for another shell.
+	require.Equal(t,
+		"There is no tab completion set up by `completion install` in "+zshrc+" to remove. "+
+			"For another shell, run `kurze-url completion uninstall SHELL`.\n",
+		h.stderr.String())
 	got, _ := fileContent(t, zshrc)
 	require.Equal(t, "export A=1\n", got)
 
@@ -814,6 +916,27 @@ func TestUninstallWithNothingToRemove(t *testing.T) {
 	h = shellHarness(t, "/bin/zsh")
 	require.Equal(t, 0, h.run("completion", "uninstall", "--yes"))
 	requireEmptyDir(t, h.home)
+}
+
+// Every profile it asked about is named, in both languages.
+func TestUninstallWithNothingToRemoveNamesEveryProfile(t *testing.T) {
+	h := newHarness(t)
+	h.env["LANG"] = "de_DE.UTF-8"
+	h.deps.GOOS = "windows"
+	dir := t.TempDir()
+	a, b := filepath.Join(dir, "a.ps1"), filepath.Join(dir, "b.ps1")
+	h.programs["pwsh"], h.programs["powershell"] = true, true
+	h.outputs["pwsh"] = a + "\nRemoteSigned\n"
+	h.outputs["powershell"] = b + "\nRemoteSigned\n"
+
+	code := h.run("completion", "uninstall", "--yes")
+
+	require.Equal(t, 0, code, h.stderr.String())
+	require.Equal(t,
+		"In "+a+", "+b+" gibt es keine von `completion install` eingerichtete Tab-Vervollständigung, "+
+			"die sich entfernen ließe. Für eine andere Shell führe `kurze-url completion uninstall SHELL` aus.\n",
+		h.stderr.String())
+	requireEmptyDir(t, dir)
 }
 
 // ---- the shell argument ----
