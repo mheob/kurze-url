@@ -10,7 +10,7 @@ import { TeamSwitcher } from './team-switcher';
 import { ThemeToggle } from './theme-toggle';
 import { Button, buttonVariants } from './ui/button';
 import { Checkbox } from './ui/checkbox';
-import { Field, FieldLabel } from './ui/field';
+import { Field, FieldContent, FieldDescription, FieldLabel } from './ui/field';
 import {
 	Sidebar,
 	SidebarContent,
@@ -29,7 +29,7 @@ interface AppSidebarProps {
 	readonly isMaintainer: boolean;
 	readonly memberships: readonly Membership[];
 	// `true` when the person ticked "Sign out everywhere": the caller ends every session they
-	// have, not only this browser's.
+	// have, not only this browser's. The others end once their access token runs out, within an hour.
 	readonly onSignOut: (everywhere: boolean) => void;
 	readonly signingOut: boolean;
 	// `ThemeToggle`'s footer control needs this; `AuthedShell` sources it from
@@ -107,6 +107,7 @@ export function AppSidebar({
 	const { t } = useTranslation();
 	const [everywhere, setEverywhere] = useState(false);
 	const everywhereId = useId();
+	const everywhereHintId = useId();
 	const hasResolvedTeam = currentTeamSlug !== undefined && memberships.length > 0;
 	const currentRole = memberships.find((membership) => membership.slug === currentTeamSlug)?.role;
 	const canViewAuditLog = currentRole === 'admin' || currentRole === 'owner';
@@ -237,13 +238,22 @@ export function AppSidebar({
 							    `getByRole('checkbox', { name: … })`, and the label stops toggling
 							    the box. */}
 							<Checkbox
+								aria-describedby={everywhereHintId}
 								checked={everywhere}
 								id={everywhereId}
 								onCheckedChange={(checked: boolean) => {
 									setEverywhere(checked);
 								}}
 							/>
-							<FieldLabel htmlFor={everywhereId}>{t('auth.signOutEverywhere')}</FieldLabel>
+							{/* The other sessions end only once their access token runs out: the API checks a
+							    token's signature and expiry and never asks Supabase whether its session
+							    still exists, so the hint says "within an hour" rather than "now". */}
+							<FieldContent>
+								<FieldLabel htmlFor={everywhereId}>{t('auth.signOutEverywhere')}</FieldLabel>
+								<FieldDescription id={everywhereHintId}>
+									{t('auth.signOutEverywhereHint')}
+								</FieldDescription>
+							</FieldContent>
 						</Field>
 					</div>
 					<Button

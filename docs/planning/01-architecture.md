@@ -92,7 +92,7 @@ Caveat: this pattern needs a browser available on the same machine as the CLI. I
 - **Fixed loopback ports.** Supabase matches a redirect URI exactly, port included (measured 2026-10-23), and refuses `localhost`, so the CLI's listener binds the first free one of three registered ports, 53682 to 53684 on `127.0.0.1`, instead of an ephemeral one.
 - **Token storage.** Tokens live in the system keychain, or in a `0600` file where there is none, and never in the config file.
 - **`logout`** ends only the CLI's own session (`scope=local`).
-- **Web sign-out** is local by default as well, so signing out of the browser no longer ends the CLI's session. A "Sign out everywhere" option sends `scope=global`, which ends every session, the CLI's included.
+- **Web sign-out** is local by default as well, so signing out of the browser no longer ends the CLI's session. A "Sign out everywhere" option sends `scope=global`, which ends every session, the CLI's included. Every other session ends once the access token it holds runs out, within an hour, because the API verifies tokens locally and never asks Supabase whether a session still exists (found 2026-10-24).
 
 ## Open questions
 

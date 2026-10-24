@@ -119,7 +119,7 @@ Write each result into this spec's "Verified" section before Part 2 starts.
 | Second authorize after a consent was given | Lands on `/oauth/consent` again. `getAuthorizationDetails` returns only `redirect_url`, with no `authorization_id` | The consent page tells the two apart by the missing `authorization_id`, and redirects at once (Part 2) |
 | CLI `POST /auth/v1/logout?scope=local` with its access token | The CLI's refresh then fails with **400**, and the browser's session still refreshes with **200** | **`logout`** uses exactly this call. No separate revocation endpoint is needed |
 | A browser signs out with `scope=local` | The CLI's session still refreshes with **200** | The web's local-by-default sign-out leaves the CLI alone, as Part 2 intends |
-| A browser signs out with `scope=global` | The CLI's refresh fails with **400** | "Sign out everywhere" does include the CLI. The checkbox text is accurate |
+| A browser signs out with `scope=global` | The CLI's refresh fails with **400** | "Sign out everywhere" does include the CLI. It takes effect at the CLI's next refresh, not at once: the access token the CLI holds stays valid until it expires, because the API never asks Supabase about the session. The maintainer met that delay on 2026-10-24, and the checkbox now says "within an hour" |
 | Grant revoked (`DELETE /auth/v1/user/oauth/grants?client_id=…`) | The CLI's refresh fails with **400** | Revoking the grant ends the CLI's access too. A "revoke CLI access" control in the web app is possible later, and not in v1 |
 | Token sizes | access 952 bytes, refresh 12 bytes, both with the expiry as JSON 1026 bytes, against the 2560-byte Windows limit | **Keychain:** it holds the access token, the refresh token and the expiry in one entry |
 

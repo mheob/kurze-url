@@ -31,7 +31,8 @@
 		"sendLink": "Link zusenden",
 		"linkSent": "Falls es zu dieser Adresse ein Konto gibt, ist ein Link unterwegs.",
 		"signOut": "Abmelden",
-		"signOutEverywhere": "Überall abmelden"
+		"signOutEverywhere": "Überall abmelden",
+		"signOutEverywhereHint": "Meldet auch andere Browser und die CLI ab, spätestens nach einer Stunde."
 	},
 	"oauthConsent": {
 		"title": "CLI-Zugriff erlauben",

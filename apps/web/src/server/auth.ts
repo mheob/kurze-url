@@ -131,7 +131,8 @@ async function sendMagicLinkForImpl(
 
 /**
  * Which of a person's sessions a sign-out ends. `local` ends the one this browser holds and
- * leaves the rest alone, a CLI session included; `global` ends every session the person has. Both
+ * leaves the rest alone, a CLI session included; `global` ends every session the person has, each
+ * once the access token it holds runs out, because the API never asks Supabase about a session. Both
  * were measured against the real server on 2026-10-23 (`docs/superpowers/specs/2026-10-23-cli-design.md`,
  * "Verified"). Supabase has a third scope, `others`, which this app never offers.
  */
