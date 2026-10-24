@@ -1,0 +1,157 @@
+name: CI — CLI
+
+# Deliberately NOT filtered with `on.paths`. A workflow that does not trigger
+# produces no check run at all, so a required status check would wait forever
+# on a PR that happens to touch nothing here. Instead this always runs and the
+# expensive jobs skip themselves: a job skipped by `if:` still reports, and
+# GitHub counts a skipped job as satisfying a required check.
+#
+# apps/cli is Go, so it sits outside the pnpm workspace graph and its change
+# detection is written by hand rather than inferred from the lockfile. It also
+# watches apps/api/openapi.json: the CLI's API client is written by hand
+# against that spec and checked against it by a contract test, so a change to
+# the API's surface has to run the CLI's suite even when no CLI file moved.
+#
+# Every job name carries "(cli)" so none of them collides with the check names
+# ci-api.yml reports ("vet & lint", "go test"), which are required on main.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-cli-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: detect changes (cli)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      cli: ${{ steps.filter.outputs.cli }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - id: filter
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          # Fail towards running the suite: if the base is unknown (first push
+          # to a branch, a force push, the all-zero sha), test rather than skip.
+          if [ -z "$BASE_SHA" ] \
+            || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ] \
+            || ! git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            echo "cli=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if git diff --name-only "$BASE_SHA" HEAD \
+            | grep -qE '^(apps/cli/|apps/api/openapi\.json$|\.github/workflows/ci-cli\.yml$)'; then
+            echo "cli=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "cli=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  static:
+    name: vet & lint (cli)
+    needs: changes
+    if: needs.changes.outputs.cli == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/cli
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: apps/cli/go.mod
+          cache-dependency-path: apps/cli/go.sum
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt'd:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.15.0
+          working-directory: apps/cli
+
+      # go.mod and go.sum are what the release build and every contributor's
+      # checkout resolve from, so a dependency change that forgot `go mod tidy`
+      # fails here instead of surprising the next person who runs it.
+      - name: go mod tidy
+        run: go mod tidy -diff
+
+      # The binary ships for Windows and macOS, but `go test` runs on Linux
+      # only, so code that is build-tagged for another platform (the Windows
+      # locale lookup, for one) would otherwise never even compile in CI.
+      - name: cross-build (windows/amd64)
+        run: GOOS=windows GOARCH=amd64 go build ./...
+
+      - name: cross-build (darwin/arm64)
+        run: GOOS=darwin GOARCH=arm64 go build ./...
+
+  test:
+    name: go test (cli)
+    needs: changes
+    if: needs.changes.outputs.cli == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/cli
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: apps/cli/go.mod
+          cache-dependency-path: apps/cli/go.sum
+
+      # No Supabase stack and no Redis here, unlike ci-api.yml: every test
+      # fakes its server with httptest and keeps its credentials in memory, so
+      # the suite needs neither a container nor a network. -race on the whole
+      # module because the login flow runs a listener beside the main
+      # goroutine, and a race there would corrupt a token silently.
+      - name: go test
+        run: go test -race -count=1 ./...
+
+  vuln:
+    name: govulncheck (cli)
+    needs: changes
+    if: needs.changes.outputs.cli == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/cli
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: apps/cli/go.mod
+          cache-dependency-path: apps/cli/go.sum
+
+      # govulncheck is a `tool` directive in go.mod, so its version is pinned
+      # with the rest of the module and nothing is installed here. It reports
+      # only vulnerabilities the code actually reaches, and this binary sends
+      # credentials over TLS, so a standard-library fix is a reason to rebuild.
+      - name: govulncheck
+        run: go tool govulncheck ./...

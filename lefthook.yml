@@ -102,6 +102,23 @@ pre-push:
           exit 1
         fi
 
+    # apps/cli is its own Go module, so its pair runs from its own root.
+    - name: go vet (cli)
+      glob: "apps/cli/**/*.go"
+      root: apps/cli/
+      run: go vet ./...
+
+    - name: gofmt (cli)
+      glob: "apps/cli/**/*.go"
+      root: apps/cli/
+      run: |
+        unformatted=$(gofmt -l .)
+        if [ -n "$unformatted" ]; then
+          echo "Not gofmt'd:"
+          echo "$unformatted"
+          exit 1
+        fi
+
     - name: format
       glob: "*.{ts,tsx,js,jsx,json,md,yml,yaml}"
       run: pnpm format:check

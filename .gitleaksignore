@@ -13,3 +13,16 @@
 # Supabase service-role key or an Upstash token.
 d85e6f8822ffa32271288eb35a14e69bc9671a04:apps/web/src/components/domain-list.stories.tsx:generic-api-key:18
 d85e6f8822ffa32271288eb35a14e69bc9671a04:apps/web/src/components/domain-list.stories.tsx:generic-api-key:102
+
+# The kurze-url CLI (apps/cli), three matches confirmed not to be credentials
+# on 2026-10-24. The first is Supabase's publishable key for the production
+# project, compiled into the CLI as its default (apps/cli/internal/environment):
+# Supabase designates the publishable key as safe to expose to clients, and it
+# carries no privilege beyond an anonymous caller's. The other two are
+# placeholder strings in tests that check no secret ever reaches an error
+# message. The lines themselves carry `gitleaks:allow`, which covers the squash
+# commit on main; these fingerprints cover the branch commits that added the
+# lines before that marker existed.
+1d0fc7525690f13da84afd00808e876632d92dde:apps/cli/internal/environment/environment.go:generic-api-key:39
+1d0fc7525690f13da84afd00808e876632d92dde:apps/cli/internal/environment/environment_test.go:generic-api-key:198
+481f4f841660afa524372cc142ecd09edab99290:apps/cli/internal/apiclient/client_test.go:generic-api-key:448
