@@ -74,3 +74,6 @@ jobs:
           workdir: apps/cli
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Build the tag that triggered the run: with v0.1.0-rc.1 and v0.1.0
+          # on one commit, goreleaser's own lookup would take the candidate.
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}

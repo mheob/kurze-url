@@ -8,6 +8,16 @@ version: 2
 
 project_name: kurze-url
 
+# Which tag a build belongs to. When a release candidate and its final release
+# sit on one commit, `git tag --points-at` lists them with the candidate
+# first, because git sorts v0.1.0-rc.1 after v0.1.0 by default and goreleaser
+# takes the first line. With "-" as the suffix git sorts any tag carrying a
+# pre-release suffix before the bare version, so the final release wins.
+# release-cli.yml also names the tag outright, which is what actually decides
+# the CI build; this keeps a local `goreleaser release` in agreement with it.
+git:
+  prerelease_suffix: "-"
+
 builds:
   - id: kurze-url
     main: ./cmd/kurze-url
@@ -19,7 +29,8 @@ builds:
     # The names are the variables cmd/kurze-url/main.go declares. Set here
     # rather than left to goreleaser's defaults, which stamp the full commit
     # hash and the build time: `kurze-url version` prints the short commit,
-    # and the commit date keeps two builds of one commit byte-identical.
+    # and the commit date, unlike the build time, does not change from one
+    # build of a commit to the next.
     ldflags:
       - -s -w
       - -X main.version={{ .Version }}
@@ -50,15 +61,27 @@ archives:
         formats:
           - zip
     name_template: "kurze-url_{{ .Os }}_{{ .Arch }}"
+    # Each entry's owner, group, mode and modification time are written out
+    # instead of read from the file on disk. Left alone, a tar entry carries
+    # the account that ran the build (`ab staff` on a laptop, `runner` in CI)
+    # and the checkout's clock, so archives of one commit would differ by who
+    # built them and when. The zip format has no owner or group, so for
+    # windows only the mode and the time apply.
+    builds_info:
+      owner: root
+      group: root
+      mode: 0755
+      mtime: "{{ .CommitDate }}"
     files:
       # The repository's own licence, not a copy beside the CLI. strip_parent
       # puts it at the archive's top level, next to the binary, instead of
-      # under ../../. Its modification time is pinned like the binary's
-      # (mod_timestamp above), or the archive would carry the checkout's
-      # time and no two builds of one commit would match.
+      # under ../../.
       - src: ../../LICENSE
         strip_parent: true
         info:
+          owner: root
+          group: root
+          mode: 0644
           mtime: "{{ .CommitDate }}"
 
 checksum:
