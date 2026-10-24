@@ -36,7 +36,7 @@ const (
 	// carries no privilege beyond what any anonymous caller has. It is not
 	// the service-role key, so compiling it into a public binary leaks
 	// nothing. A secret key must never be put here.
-	DefaultPublishableKey = "sb_publishable_7ISzw8Y0Ibg4DYw4BgFi5A_NWuq4GQn"
+	DefaultPublishableKey = "sb_publishable_7ISzw8Y0Ibg4DYw4BgFi5A_NWuq4GQn" // gitleaks:allow -- public by design, see the comment above
 
 	// DefaultClientID is the CLI's OAuth client at the production Supabase
 	// project. The client is public (no secret exists), and the ID appears

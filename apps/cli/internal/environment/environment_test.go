@@ -195,7 +195,7 @@ func TestFromEnvRejectsARelativeURL(t *testing.T) {
 func TestFromEnvErrorsNeverEchoASecret(t *testing.T) {
 	const (
 		bypass = "bypass-sentinel-8c1f"
-		key    = "key-sentinel-4d27"
+		key    = "key-sentinel-4d27" // gitleaks:allow -- a test sentinel, not a key
 		userin = "userinfo-sentinel-91ab"
 	)
 

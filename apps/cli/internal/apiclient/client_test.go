@@ -585,7 +585,7 @@ func TestNoErrorCarriesATokenOrTheBypassValue(t *testing.T) {
 			_, err := client.Me(t.Context())
 
 			require.Error(t, err)
-			for _, secret := range []string{accessToken, freshToken, "bypass-secret-5d1e"} {
+			for _, secret := range []string{accessToken, freshToken, "bypass-secret-5d1e"} { // gitleaks:allow -- test sentinels, not keys
 				require.NotContains(t, err.Error(), secret)
 			}
 		})
