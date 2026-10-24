@@ -259,6 +259,24 @@ jobs:
               ;;
           esac
 
+      # The Windows job below installs these very archives with install.ps1,
+      # so what it proves is that the names and checksums goreleaser wrote are
+      # the ones the script asks for, and not just that a fixture of its own
+      # installs. Only the Windows archives travel, because that job runs on
+      # windows-latest and cannot run the others. The two paths share
+      # apps/cli/dist as their common ancestor, so the artifact holds the
+      # files at its top level, and a missing one fails here rather than as a
+      # 404 in the next job.
+      - name: upload the Windows snapshot
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cli-windows-snapshot
+          path: |
+            apps/cli/dist/kurze-url_windows_*.zip
+            apps/cli/dist/checksums.txt
+          if-no-files-found: error
+          retention-days: 1
+
   # install.sh is what `curl | sh` runs on a stranger's machine, so it gets
   # its own tests on each operating system it supports: the Linux runner's
   # dash and the macOS runner's sh differ in exactly the places a portable
@@ -305,3 +323,97 @@ jobs:
 
       - name: install script tests
         run: sh scripts/install_test.sh
+
+  # install.ps1 is what `irm | iex` runs on a stranger's machine, under
+  # Windows PowerShell 5.1 (the default on Windows 10 and 11) or PowerShell 7,
+  # and its tests have to run under both, because the two differ in exactly
+  # the places an installer touches: the web cmdlets, TLS defaults,
+  # Expand-Archive, how a file is read. A plain job and not a matrix for the
+  # reason given above the Linux one, and named like its siblings. It needs
+  # release-dry-run because the last step installs the snapshot's own Windows
+  # archive, which that job hands over as an artifact.
+  #
+  # PSScriptAnalyzer ships with the windows-latest image, which is why
+  # nothing is installed here: a module fetched from the gallery at test time
+  # would be an unpinned dependency of every pull request. It runs first, so a
+  # style finding is reported before the slower install tests start.
+  install-script-windows:
+    name: install script (cli, windows)
+    needs: [changes, release-dry-run]
+    if: needs.changes.outputs.cli == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/cli
+        shell: powershell
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The tests build their fixture binary with go build.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: apps/cli/go.mod
+          cache-dependency-path: apps/cli/go.sum
+
+      # Every finding fails the job, whatever its severity. A suppression
+      # belongs in the script, next to a justification, as install.ps1's
+      # Write-Host one is.
+      - name: PSScriptAnalyzer
+        run: |
+          $findings = @(foreach ($file in 'install.ps1', 'scripts/install_test.ps1') {
+            Invoke-ScriptAnalyzer -Path $file
+          })
+          if ($findings.Count -gt 0) {
+            $findings | Format-List RuleName, Severity, ScriptName, Line, Message
+            throw "PSScriptAnalyzer reported $($findings.Count) findings"
+          }
+          Write-Output 'PSScriptAnalyzer found nothing.'
+
+      - name: install script tests (Windows PowerShell 5.1)
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install_test.ps1
+
+      - name: install script tests (PowerShell 7)
+        run: pwsh -NoProfile -File scripts/install_test.ps1
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: cli-windows-snapshot
+          path: ${{ runner.temp }}/snapshot
+
+      # The script as a person runs it, `irm | iex`, with a file:/// URL
+      # standing in for releases/latest/download. The function writes only
+      # the binary's own `version` line to the pipeline, so that is what
+      # $output holds; the script's messages went to the console. Then what
+      # the script promises about the Path is checked: the install directory
+      # is in the user's Path for every new terminal, and this session finds
+      # kurze-url by name, which only the session's own Path can make true.
+      - name: install the snapshot with install.ps1
+        run: |
+          $snapshot = Join-Path -Path $env:RUNNER_TEMP -ChildPath 'snapshot'
+          $installDir = Join-Path -Path $env:RUNNER_TEMP -ChildPath 'bin'
+          $env:KURZE_URL_DOWNLOAD_URL = [Uri]::new($snapshot, [UriKind]::Absolute).AbsoluteUri
+          $env:KURZE_URL_INSTALL_DIR = $installDir
+
+          $output = @(Get-Content -Raw -LiteralPath install.ps1 | Invoke-Expression)
+          Write-Output $output
+
+          $last = $output[$output.Count - 1]
+          if ($last -notlike 'kurze-url *-snapshot*') {
+            throw "the installed binary's last line of output is not a snapshot version line: $last"
+          }
+
+          $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+          $entries = @($userPath -split ';' | ForEach-Object { $_.Trim().TrimEnd('\') })
+          if ($entries -notcontains $installDir.TrimEnd('\')) {
+            throw "the user Path does not hold $installDir"
+          }
+
+          $found = (Get-Command kurze-url -ErrorAction Stop).Source
+          if ($found -ne (Join-Path -Path $installDir -ChildPath 'kurze-url.exe')) {
+            throw "kurze-url resolves to $found, not into $installDir"
+          }
+          $byName = (& kurze-url version)
+          if ($byName -ne $last) {
+            throw "kurze-url version prints '$byName' by name, not '$last'"
+          }
