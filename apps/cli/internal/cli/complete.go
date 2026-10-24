@@ -142,11 +142,18 @@ func completeWith(
 	}
 }
 
-// shellSyntax are the characters bash still reads as code in a word that is
-// unquoted or in double quotes: "$" opens an expansion or a command
-// substitution, a backtick the older form of one, and a backslash escapes
-// the character after it.
-const shellSyntax = "$`\\"
+// shellSyntax are the characters that make bash run or redirect something when
+// they stand in an unquoted word, which is where a candidate lands: "$" opens
+// an expansion or a command substitution ("$(" and the like), a backtick is the
+// older form of one, a backslash escapes the character after it, ";", "&" and
+// "|" end a command so that what follows runs as another, "<" and ">" redirect
+// (">" truncates the file it names), and "!" starts a history expansion.
+//
+// Parentheses, quotes and spaces are not in it. With none of the characters
+// above beside them they cannot start a command: a parenthesis is a syntax
+// error, a stray quote an unfinished line, a space the end of a word. And
+// "Sommerfest (2026)" is a name a Verein really uses.
+const shellSyntax = "$`\\;&|<>!"
 
 // candidate builds one completion out of text the service sent, or reports
 // false for a value that cannot be offered.
@@ -162,13 +169,18 @@ const shellSyntax = "$`\\"
 // would name a team or folder that does not exist, and typing it would fail
 // where offering nothing would not.
 //
-// A value is dropped for a "$", a backtick or a backslash too (shellSyntax),
-// because a value lands on the command line, which a shell reads as code.
-// Cobra's bash script escapes a candidate only when it is the only one left;
-// of several, bash inserts the part they share as it is. A folder named
-// `x$(cmd)a` next to one named `x$(cmd)b`, created by anybody in the team,
-// would put a live command substitution on the person's line, and the Enter
-// that follows runs it.
+// A value is dropped for any character of shellSyntax too, because a value
+// lands on the command line, which a shell reads as code. Cobra's bash script
+// escapes a candidate only when it is the only one left; of several, bash
+// inserts the part they share as it is. A folder named `x$(cmd)a` next to one
+// named `x$(cmd)b`, created by anybody in the team, would put a live command
+// substitution on the person's line, and `x;cmd;a` next to `x;cmd;b` would put
+// `x;cmd;` there, which the Enter that follows runs as a command of its own. A
+// "&" or "|" does the same, a "<" or ">" would redirect, and a "!" would
+// expand from the history.
+//
+// The price is that a folder named with one of those characters, "Kasse &
+// Beiträge", is not offered by Tab and has to be typed by hand.
 //
 // An empty description is no description, so a shell does not draw a bare
 // separator.

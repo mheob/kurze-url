@@ -794,9 +794,10 @@ func TestCandidatesCarryNoControlCharacters(t *testing.T) {
 
 // A value lands on the command line, which bash reads as code, and of several
 // candidates cobra's bash script inserts the part they share without escaping
-// it. Two folders anybody in the team can create would otherwise put a live
-// command substitution on the person's line, so a value holding "$", a
-// backtick or a backslash is not offered.
+// it. Two folders anybody in the team can create would otherwise put live
+// syntax on the person's line: a command substitution, a ";" that ends the
+// command so the rest runs on the next Enter, a redirection. So a value
+// holding any of shellSyntax is not offered.
 func TestCandidatesCarryNoShellSyntax(t *testing.T) {
 	h := linkHarness(t, "team: sv-gruenwald\n", teamGruenwald)
 	h.serveFolders(teamGruenwald,
@@ -804,9 +805,18 @@ func TestCandidatesCarryNoShellSyntax(t *testing.T) {
 		apiclient.Folder{ID: "f2", Name: "x$(touch pwned)b"},
 		apiclient.Folder{ID: "f3", Name: "`id`"},
 		apiclient.Folder{ID: "f4", Name: `back\slash`},
+		// The pair the re-review found: bash inserts "x;touch pwned;" and the
+		// next Enter runs it.
+		apiclient.Folder{ID: "f5", Name: "x;touch pwned;a"},
+		apiclient.Folder{ID: "f6", Name: "x;touch pwned;b"},
+		apiclient.Folder{ID: "f7", Name: "x&touch pwned&a"},
+		apiclient.Folder{ID: "f8", Name: "x|touch pwned|a"},
+		apiclient.Folder{ID: "f9", Name: "x>pwned"},
+		apiclient.Folder{ID: "f10", Name: "x<pwned"},
+		apiclient.Folder{ID: "f11", Name: "x!!"},
 		folderPresse,
 	)
-	h.serveLinks(teamGruenwald, listedLink("sommerfest", "https://example.org/$(id)", "active"))
+	h.serveLinks(teamGruenwald, listedLink("sommerfest", "https://example.org/$(id);&|<>!", "active"))
 
 	folders, _ := h.complete("link", "list", "--folder", "")
 	require.Equal(t, []string{"Presse"}, folders)
@@ -814,17 +824,33 @@ func TestCandidatesCarryNoShellSyntax(t *testing.T) {
 	// A description is shown beside the value and never inserted, so it may
 	// hold them.
 	slugs, _ := h.complete("link", "qr", "somm")
-	require.Equal(t, []string{"sommerfest\thttps://example.org/$(id)"}, slugs)
+	require.Equal(t, []string{"sommerfest\thttps://example.org/$(id);&|<>!"}, slugs)
 }
 
+// Every character of shellSyntax drops a value, and the set is pinned here
+// character by character so that removing one from the constant fails a test
+// that names it.
 func TestCandidateDropsEachShellSyntaxCharacter(t *testing.T) {
-	for _, value := range []string{"a$b", "a`b", `a\b`} {
-		_, ok := candidate(value, "")
-		require.False(t, ok, "%q was offered", value)
+	for _, char := range []string{"$", "`", `\`, ";", "&", "|", "<", ">", "!"} {
+		for _, value := range []string{"a" + char + "b", char + "a", "a" + char} {
+			_, ok := candidate(value, "")
+			require.False(t, ok, "%q was offered", value)
+		}
 	}
+}
 
-	// A space is no reason to drop a value: folder names have them.
-	got, ok := candidate("Sommerfest 2026", "")
-	require.True(t, ok)
-	require.Equal(t, "Sommerfest 2026", got)
+// Without a command separator, parentheses, quotes and spaces cannot run
+// anything, and a folder like "Sommerfest (2026)" is a name people really use.
+func TestCandidateOffersNamesWithoutCommandSyntax(t *testing.T) {
+	for _, value := range []string{
+		"Sommerfest 2026",
+		"Sommerfest (2026)",
+		"Kinder-Fest 2026",
+		"Vorstand's Ordner",
+		`Das "beste" Fest`,
+	} {
+		got, ok := candidate(value, "")
+		require.True(t, ok, "%q was dropped", value)
+		require.Equal(t, value, got)
+	}
 }
