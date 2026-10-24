@@ -122,22 +122,71 @@ func TestRemoveRecognisesTheBlockOfAnyShell(t *testing.T) {
 
 func TestRemoveEmptiesAnOwnFile(t *testing.T) {
 	// The marker is on the first line, with no newline in front of it.
-	got, ok := Remove([]byte(OwnFile(Fish)))
-	require.True(t, ok)
-	require.Empty(t, string(got))
+	for _, s := range everyShell {
+		got, ok := Remove([]byte(OwnFile(s)))
+		require.True(t, ok, string(s))
+		require.Empty(t, string(got), string(s))
+	}
 }
 
-func TestRemoveSurvivesAnEditedBlock(t *testing.T) {
+func TestRemoveKeepsTheLastLineSeparateFromWhatFollowsTheBlock(t *testing.T) {
+	// Block's leading newline is the terminator of a last line that had none.
+	// With text appended after the block, taking that newline back would
+	// glue the two lines together.
+	for _, s := range everyShell {
+		added := Add([]byte("export A=1"), s)
+		got, ok := Remove(append(added, "export B=2\n"...))
+		require.True(t, ok, string(s))
+		require.Equal(t, "export A=1\nexport B=2\n", string(got), string(s))
+	}
+}
+
+func TestRemoveTakesTheBlankLineWhenTextFollowsTheBlock(t *testing.T) {
+	// The original ended with a newline, so Block's leading one is the blank
+	// line it added: that goes, and the person's two lines stay as they were.
+	for _, s := range everyShell {
+		added := Add([]byte("export A=1\n"), s)
+		got, ok := Remove(append(added, "export B=2\n"...))
+		require.True(t, ok, string(s))
+		require.Equal(t, "export A=1\nexport B=2\n", string(got), string(s))
+	}
+}
+
+func TestRemoveKeepsALineAfterTheMarkerThatIsNotOurs(t *testing.T) {
+	// The command line was replaced by something of the person's own. Only
+	// the marker, which says the line was ours, goes.
 	edited := "a\n" + Marker + "\nsomething else\nb\n"
+	got, ok := Remove([]byte(edited))
+	require.True(t, ok)
+	require.Equal(t, "a\nsomething else\nb\n", string(got))
+}
+
+func TestRemoveTakesAnEditedCommandLine(t *testing.T) {
+	// Edited, but still a call of ours: it goes with its marker.
+	edited := "a\n" + Marker + "\nsource <(kurze-url completion zsh) # mine\nb\n"
 	got, ok := Remove([]byte(edited))
 	require.True(t, ok)
 	require.Equal(t, "a\nb\n", string(got))
 }
 
+func TestRemoveTakesAMarkerWhoseCommandLineIsGone(t *testing.T) {
+	got, ok := Remove([]byte("a\n" + Marker + "\n\nb\n"))
+	require.True(t, ok)
+	require.Equal(t, "a\n\nb\n", string(got))
+}
+
+func TestRemoveDoesNotTakeTheMarkerOfAnotherBlock(t *testing.T) {
+	// The next line holds the words the fallback looks for, but it is the
+	// head of a block of its own and not the command line of this one.
+	got, ok := Remove([]byte("a\n" + Marker + "\n" + Marker + "\nb\n"))
+	require.True(t, ok)
+	require.Equal(t, "a\n"+Marker+"\nb\n", string(got))
+}
+
 func TestRemoveSurvivesAnEditedBlockWithWindowsLineEndings(t *testing.T) {
 	// An editor on Windows rewrites the block's line endings, which defeats
 	// the exact match but not the fallback.
-	edited := "a\r\n" + Marker + "\r\nsomething else\r\nb\r\n"
+	edited := "a\r\n" + Marker + "\r\n" + Command(PowerShell) + "\r\nb\r\n"
 	got, ok := Remove([]byte(edited))
 	require.True(t, ok)
 	require.Equal(t, "a\r\nb\r\n", string(got))

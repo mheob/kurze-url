@@ -145,18 +145,29 @@ func Add(content []byte, s Shell) []byte {
 // leaving every other byte as it was. It never writes into content.
 //
 // The block it looks for is exactly what Block writes, for any of the four
-// shells, and the first such block goes. A block someone edited, a different
-// command line or line endings an editor rewrote, no longer matches, so the
-// fallback removes the marker's own line and the line after it. That keeps
-// uninstall working on a file the person has touched, at the price of
-// guessing: the fallback leaves behind the blank line Block put in front, and
-// when the person deleted the command line themselves it takes the next line
-// of theirs instead.
+// shells, and the first such block goes. Block's leading newline goes with it,
+// except where it is the terminator of the file's last line (the file had no
+// newline at its end) and something was appended after the block since:
+// taking it back would glue that line to the next, so it stays. At the end of
+// the file nothing follows, and the newline goes, which is what makes add
+// then remove byte-exact.
+//
+// A block someone edited, a different command line or line endings an editor
+// rewrote, no longer matches, so the fallback removes the marker's own line
+// and the line after it only when that line is still a call of ours, one that
+// holds "kurze-url completion". The marker says the line below it was written
+// by install, but a person may have replaced or deleted that line, and the
+// line that happens to follow is then theirs: uninstall touches nothing else,
+// so it stays. The fallback also leaves behind the blank line Block put in
+// front of the marker.
 //
 // It reports false only when the marker is absent, which is what Inspect
 // calls Absent or ByHand.
 func Remove(content []byte) ([]byte, bool) {
 	if start, end, ok := exactBlock(content); ok {
+		if start > 0 && content[start-1] != '\n' && end < len(content) {
+			start++
+		}
 		return splice(content, start, end), true
 	}
 
@@ -165,7 +176,13 @@ func Remove(content []byte) ([]byte, bool) {
 		return content, false
 	}
 	start := bytes.LastIndexByte(content[:marker], '\n') + 1
-	end := nextLine(content, nextLine(content, marker))
+	end := nextLine(content, marker)
+	// A marker with no line after it leaves next empty, and an empty line
+	// holds nothing of ours.
+	next := content[end:nextLine(content, end)]
+	if bytes.Contains(next, []byte(handWritten)) && !bytes.Contains(next, []byte(Marker)) {
+		end += len(next)
+	}
 	return splice(content, start, end), true
 }
 
