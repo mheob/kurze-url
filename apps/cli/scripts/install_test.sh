@@ -174,13 +174,15 @@ run_install() {
 }
 
 # make_curl_shim puts a curl first on PATH that appends its arguments, one per
-# line, to $dir/curl.args and then fails. It stands in for the network in the
-# cases that look at the URL the installer asks for, or that must never ask.
+# line, to $dir/curl.args, each call's whole command line to
+# $dir/curl.cmdline, and then fails. It stands in for the network in the cases
+# that look at what the installer asks for, or that must never ask.
 make_curl_shim() {
 	mkdir -p "$dir/shim"
 	cat >"$dir/shim/curl" <<EOF
 #!/bin/sh
 printf '%s\n' "\$@" >>'$dir/curl.args'
+printf '%s\n' "\$*" >>'$dir/curl.cmdline'
 exit 1
 EOF
 	chmod 755 "$dir/shim/curl"
@@ -475,6 +477,53 @@ is_755() {
 	run_install "$dl" "$to" KURZE_URL_VERSION=v0.1.0
 	expect_status 0
 	[ -x "$bin/kurze-url" ] || fail "nothing was installed from the download URL"
+	pass
+)
+
+(
+	begin refuses_a_download_url_that_is_not_https
+	make_curl_shim
+	# The checksum comes from the same place as the archive, so over plain
+	# http whoever can change one can change both. The refusal comes before
+	# any request: curl is never called.
+	for url in http://downloads.example.test/kurze-url ftp://downloads.example.test/kurze-url downloads.example.test/kurze-url; do
+		run_install "KURZE_URL_DOWNLOAD_URL=$url" "$to"
+		expect_status 1
+		stderr_has "$url"
+		stderr_has "only https URLs"
+		[ ! -e "$dir/curl.args" ] || fail "curl was called for $url"
+		nothing_installed
+	done
+	run_install KURZE_URL_DOWNLOAD_URL=http://downloads.example.test/kurze-url "$to" LANG=de_DE.UTF-8
+	expect_status 1
+	stderr_has "wird abgelehnt"
+	stderr_lacks "Refusing"
+	pass
+)
+
+(
+	begin accepts_an_https_download_url_in_any_case
+	make_curl_shim
+	# Only the scheme's spelling and a trailing slash differ from the plain
+	# case, so the shim must be asked for the URL they spell.
+	run_install KURZE_URL_DOWNLOAD_URL=HTTPS://downloads.example.test/kurze-url/ "$to"
+	expect_status 1
+	grep -qxF "HTTPS://downloads.example.test/kurze-url/$host_asset" "$dir/curl.args" ||
+		fail "curl was asked for: $(tr '\n' ' ' <"$dir/curl.args")"
+	pass
+)
+
+(
+	begin downloads_over_https_only_with_curl
+	make_curl_shim
+	# A redirect from https to http would hand the checksum, like the archive,
+	# to whoever sits on the path. curl follows redirects only when asked to
+	# stay on https, and file stays allowed for the tests' own directories.
+	run_install "$to"
+	expect_status 1
+	[ -f "$dir/curl.cmdline" ] || fail "curl was never called"
+	grep -qF -- "--proto =https,file " "$dir/curl.cmdline" || fail "curl was called as: $(tr '\n' '|' <"$dir/curl.cmdline")"
+	grep -qF -- "--proto-redir =https " "$dir/curl.cmdline" || fail "curl was called as: $(tr '\n' '|' <"$dir/curl.cmdline")"
 	pass
 )
 

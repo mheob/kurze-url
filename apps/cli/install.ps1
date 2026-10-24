@@ -110,7 +110,7 @@ function Install-KurzeUrl {
             installed           = 'Installed kurze-url to {0}'
             path_added          = 'Added {0} to your user Path. New terminals pick it up, and this one has it already.'
             path_hint           = '{0} is not in your Path, and KURZE_URL_NO_MODIFY_PATH asks this script to leave your Path alone. To run kurze-url from anywhere, add that directory to your user Path.'
-            path_failed         = 'Could not add {0} to your user Path: {1}'
+            path_failed         = 'Could not add {0} to your user Path: {1}\nkurze-url.exe is installed there all the same. To skip this step, run this script again with KURZE_URL_NO_MODIFY_PATH=1, or add that directory to your user Path yourself.'
             run_failed          = 'The installed {0} does not run on this machine.'
         }
         $de = @{
@@ -131,7 +131,7 @@ function Install-KurzeUrl {
             installed           = 'kurze-url wurde installiert nach {0}'
             path_added          = '{0} wurde zu deinem Benutzer-Path hinzugef\u00fcgt. Neue Terminals \u00fcbernehmen das, und dieses hat es schon.'
             path_hint           = '{0} ist nicht in deinem Path, und KURZE_URL_NO_MODIFY_PATH weist dieses Skript an, deinen Path nicht zu \u00e4ndern. Damit du kurze-url \u00fcberall aufrufen kannst, f\u00fcge dieses Verzeichnis zu deinem Benutzer-Path hinzu.'
-            path_failed         = '{0} konnte nicht zu deinem Benutzer-Path hinzugef\u00fcgt werden: {1}'
+            path_failed         = '{0} konnte nicht zu deinem Benutzer-Path hinzugef\u00fcgt werden: {1}\nkurze-url.exe ist trotzdem installiert. Um diesen Schritt zu \u00fcberspringen, f\u00fchre dieses Skript erneut mit KURZE_URL_NO_MODIFY_PATH=1 aus, oder f\u00fcge dieses Verzeichnis selbst zu deinem Benutzer-Path hinzu.'
             run_failed          = 'Das installierte {0} l\u00e4sst sich auf diesem Rechner nicht ausf\u00fchren.'
         }
 
@@ -336,12 +336,34 @@ public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint msg, UIntPtr wP
         }
     }
 
+    # Get-SecurityProtocolUpdate CURRENT takes the value of
+    # [Net.ServicePointManager]::SecurityProtocol as a number and returns the
+    # value to set instead, or nothing when it should stay as it is. The
+    # numbers are the SecurityProtocolType flags, because TLS 1.2 (3072) is
+    # not a name every .NET Framework a Windows PowerShell 5.1 runs on knows.
+    # A list that lacks TLS 1.2 gets it added to whatever else the machine has
+    # configured, and is never replaced. 0 is SystemDefault, which lets the
+    # operating system choose and so already covers TLS 1.2: OR-ing 3072 into
+    # it would narrow the person's whole PowerShell session to TLS 1.2 only,
+    # which is the opposite of what this is for.
+    function Get-SecurityProtocolUpdate {
+        param([int]$Current)
+
+        $tls12 = 3072
+        if ($Current -eq 0 -or ($Current -band $tls12) -ne 0) {
+            return $null
+        }
+        $Current -bor $tls12
+    }
+
     # Windows PowerShell 5.1 can be configured to offer only TLS 1.0 and 1.1,
-    # which GitHub refuses, and older systems are. Add TLS 1.2 to what it
-    # offers; never replace the list, which would drop whatever else the
-    # machine has configured.
+    # which GitHub refuses, and older systems are. PowerShell 7 offers what
+    # the platform does.
     if ($PSVersionTable.PSVersion.Major -lt 6) {
-        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+        $protocol = Get-SecurityProtocolUpdate -Current ([int][Net.ServicePointManager]::SecurityProtocol)
+        if ($null -ne $protocol) {
+            [Net.ServicePointManager]::SecurityProtocol = $protocol
+        }
     }
 
     $repoUrl = 'https://github.com/mheob/kurze-url'
@@ -503,6 +525,9 @@ public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint msg, UIntPtr wP
             throw (Get-Message 'install_failed' $dir, $reason)
         }
         Remove-Item -LiteralPath $old -Force -ErrorAction SilentlyContinue
+        # Said before the Path step, so that a Path step that fails does not
+        # hide that the binary is in place: path_failed says it as well.
+        Write-Host (Get-Message 'installed' $target)
 
         # The user's Path is where a new terminal looks, and $env:Path is
         # where this one does. The user's Path lives in the registry, which
@@ -535,7 +560,6 @@ public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint msg, UIntPtr wP
             }
         }
 
-        Write-Host (Get-Message 'installed' $target)
         try {
             $versionLine = & $target version
         }

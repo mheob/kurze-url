@@ -106,8 +106,30 @@ release:
   # being checked.
   prerelease: auto
   name_template: "kurze-url {{ .Version }}"
+  # The install scripts take the repository's latest release, which is never a
+  # pre-release. On a candidate the plain one-liners would therefore find no
+  # release at all (before the first final release) or install the previous
+  # final one, so a candidate's footer hands the scripts its own tag.
   footer: |
     ## Install
+
+    {{- if .Prerelease }}
+
+    This is a release candidate, so the install scripts skip it unless they
+    are given its tag.
+
+    macOS and Linux:
+
+    ```sh
+    curl -fsSL https://raw.githubusercontent.com/mheob/kurze-url/main/apps/cli/install.sh | KURZE_URL_VERSION={{ .Tag }} sh
+    ```
+
+    Windows (PowerShell):
+
+    ```powershell
+    $env:KURZE_URL_VERSION = '{{ .Tag }}'; irm https://raw.githubusercontent.com/mheob/kurze-url/main/apps/cli/install.ps1 | iex
+    ```
+    {{- else }}
 
     macOS and Linux:
 
@@ -120,6 +142,7 @@ release:
     ```powershell
     irm https://raw.githubusercontent.com/mheob/kurze-url/main/apps/cli/install.ps1 | iex
     ```
+    {{- end }}
 
     Or download the archive for your system below and check it against
     `checksums.txt`. The [Command-line tool](https://github.com/mheob/kurze-url#command-line-tool)

@@ -13,7 +13,9 @@
 #   KURZE_URL_VERSION       a release tag such as v0.1.0 (default: the latest)
 #   KURZE_URL_DOWNLOAD_URL  the base URL that holds the archive and
 #                           checksums.txt, which wins over KURZE_URL_VERSION.
-#                           For mirrors, and for scripts/install_test.sh.
+#                           An https URL, or a file:// URL for a local
+#                           directory. For mirrors, and for
+#                           scripts/install_test.sh.
 #
 # Exits 0 on success and 1 on any failure. Every message goes to stderr, in
 # English or in German by the CLI's own rule (the first of LC_ALL, LC_MESSAGES
@@ -59,6 +61,8 @@ Oder lade das Archiv von $2 herunter."
 	de:no_home) text="HOME ist nicht gesetzt. Setze KURZE_URL_INSTALL_DIR auf das Verzeichnis, in das installiert werden soll." ;;
 	en:no_tmp) text="Could not create a temporary directory." ;;
 	de:no_tmp) text="Es konnte kein temporäres Verzeichnis angelegt werden." ;;
+	en:url_not_https) text="Refusing $2: only https URLs are accepted, and file URLs in KURZE_URL_DOWNLOAD_URL." ;;
+	de:url_not_https) text="$2 wird abgelehnt: Es werden nur https-URLs akzeptiert, und file-URLs in KURZE_URL_DOWNLOAD_URL." ;;
 	en:downloading) text="Downloading $2 ..." ;;
 	de:downloading) text="Lade $2 herunter ..." ;;
 	en:download_failed) text="Download failed: $2" ;;
@@ -101,10 +105,21 @@ cleanup() {
 	fi
 }
 
-# fetch URL DEST downloads one file with the tool main found.
+# fetch URL DEST downloads one file with the tool main found. main has
+# refused any URL that does not start on https (or file), and curl is told to
+# follow a redirect only to https as well: GitHub sends a release download to
+# another host, and an http redirect would hand the archive and its checksum
+# to whoever sits on the path. install.ps1 checks where its download ended up
+# for the same reason.
+#
+# The wget fallback has no such protection. GNU wget's --https-only governs
+# recursive retrieval alone, and a plain fetch that begins on https still
+# follows a redirect to http (tried against wget 1.25); BusyBox's wget does not
+# know the option and exits with an error. So a machine with wget and no curl
+# is protected only against a start URL that is not https.
 fetch() {
 	if [ "$fetcher" = curl ]; then
-		curl -fsSL -o "$2" "$1"
+		curl -fsSL --proto '=https,file' --proto-redir '=https' -o "$2" "$1"
 	else
 		wget -qO "$2" "$1"
 	fi
@@ -191,6 +206,13 @@ main() {
 	else
 		base=$repo_url/releases/latest/download
 	fi
+	# The checksum comes from the same place as the archive, so over plain
+	# http whoever can change one can change both. Only https is accepted,
+	# and file for a directory on this machine.
+	case $base in
+	[Hh][Tt][Tt][Pp][Ss]://* | [Ff][Ii][Ll][Ee]://*) ;;
+	*) die url_not_https "$base" ;;
+	esac
 	asset=kurze-url_${os}_${arch}.tar.gz
 
 	tmp=

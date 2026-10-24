@@ -18,8 +18,10 @@ on:
   push:
     tags: ["v*"]
 
-# A second tag pushed while a release is still publishing waits instead of
-# cancelling it: a half-uploaded release is worse than a slow one.
+# The group is one per ref, so two different tags (a candidate and the final
+# release, say) publish side by side. Only a second push of the same tag, which
+# takes deleting and recreating it, waits for the run before it, and it waits
+# instead of cancelling it: a half-uploaded release is worse than a slow one.
 concurrency:
   group: release-cli-${{ github.ref }}
   cancel-in-progress: false

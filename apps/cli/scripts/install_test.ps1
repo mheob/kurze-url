@@ -1230,6 +1230,42 @@ function Move-Item {
         Assert-NoOutput -Result $r -Text 'KURZE_URL_NO_MODIFY_PATH'
     }
 
+    Invoke-Case 'says_the_binary_is_in_place_when_the_path_cannot_be_written' {
+        # A registry that cannot be opened, or a policy that refuses the write,
+        # fails the Path step after the binary is in place. The person has to
+        # be told that, and told how to go on without the Path step. The
+        # registry exists only on Windows, so this runs a copy of install.ps1
+        # in which the platform check passes everywhere and the key cannot be
+        # opened; the real registry is never reached, so it also runs on a
+        # developer's Windows machine without touching the Path. The
+        # replacements are checked, so a change to those two lines fails here
+        # loudly instead of making the case a different one.
+        $text = [IO.File]::ReadAllText($installPs1)
+        $platform = '[Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT'
+        $openKey = '$key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey(''Environment'', [bool]$Writable)'
+        Assert-That -Condition ($text.Contains($platform) -and $text.Contains($openKey)) -Message 'install.ps1 no longer has the two lines this case replaces; update the case'
+        $variant = Join-Path -Path $dir -ChildPath 'install-without-registry.ps1'
+        [IO.File]::WriteAllText($variant, $text.Replace($platform, '$true').Replace($openKey, '$key = $null'))
+
+        $exe = Join-Path -Path $bin -ChildPath 'kurze-url.exe'
+        $r = Invoke-Installer -InstallScript $variant -Environment @{ KURZE_URL_NO_MODIFY_PATH = $null }
+        Assert-Failure -Result $r
+        Assert-Output -Result $r -Text 'Could not add'
+        Assert-Output -Result $r -Text 'KURZE_URL_NO_MODIFY_PATH=1'
+        Assert-Output -Result $r -Text $bin
+        # The binary is where the message says it is, and it runs.
+        Assert-Output -Result $r -Text "Installed kurze-url to $exe"
+        Assert-Entry -Path $bin -Expected 'kurze-url.exe'
+        $ran = & $exe version
+        Assert-That -Condition ($ran -ceq $fakeVersionLine) -Message 'the binary in place does not run'
+
+        $r = Invoke-Installer -InstallScript $variant -Environment @{ KURZE_URL_NO_MODIFY_PATH = $null; LC_ALL = 'de' }
+        Assert-Failure -Result $r
+        Assert-Output -Result $r -Text 'KURZE_URL_NO_MODIFY_PATH=1'
+        Assert-Output -Result $r -Text 'trotzdem installiert'
+        Assert-Output -Result $r -Text "kurze-url wurde installiert nach $exe"
+    }
+
     Invoke-Case 'speaks_german_with_a_german_locale' {
         $rel = Copy-Release -Name 'release'
         Edit-ZipHeader -Path (Join-Path -Path $rel -ChildPath $asset)
@@ -1457,6 +1493,62 @@ finally {
             Assert-That -Condition ($refused.Count -eq 1) -Message "the download of /$path was not refused: $(Format-Output -Result $r)"
             Assert-That -Condition ($refused[0] -match 'Refusing http://127\.0\.0\.1:\d+/final: only https') -Message "the refusal does not name where the response ended up: $($refused[0])"
             Assert-That -Condition (@(Get-Line -Text $r.Stdout | Where-Object { $_ -ceq "LEFT ${path}: False" }).Count -eq 1) -Message "the refused download of /$path was left on disk: $(Format-Output -Result $r)"
+        }
+    }
+
+    Invoke-Case 'adds_tls12_without_narrowing_the_session' {
+        # Windows PowerShell 5.1 offers whatever ServicePointManager says. A
+        # list that lacks TLS 1.2 gets it added, and nothing else changes. The
+        # value 0, SystemDefault, lets the operating system choose and already
+        # covers TLS 1.2, so it stays: OR-ing TLS 1.2 into it would turn it
+        # into "TLS 1.2 only" for the rest of the person's session. The
+        # numbers are the SecurityProtocolType flags: Ssl3 48, Tls 192,
+        # Tls11 768, Tls12 3072, Tls13 12288.
+        . ([scriptblock]::Create((Get-InstallerFunction -Name 'Get-SecurityProtocolUpdate')))
+        $cases = @(
+            @{ Current = 0; Want = $null; Label = 'SystemDefault' }
+            @{ Current = 192; Want = 3264; Label = 'Tls' }
+            @{ Current = 768; Want = 3840; Label = 'Tls11' }
+            @{ Current = 48 + 192; Want = 48 + 192 + 3072; Label = 'Ssl3 and Tls' }
+            @{ Current = 768 + 12288; Want = 768 + 3072 + 12288; Label = 'Tls11 and Tls13' }
+            @{ Current = 3072; Want = $null; Label = 'Tls12' }
+            @{ Current = 192 + 3072; Want = $null; Label = 'Tls and Tls12' }
+            @{ Current = 3072 + 12288; Want = $null; Label = 'Tls12 and Tls13' }
+        )
+        foreach ($c in $cases) {
+            $got = Get-SecurityProtocolUpdate -Current $c.Current
+            if ($null -eq $c.Want) {
+                Assert-That -Condition ($null -eq $got) -Message "$($c.Label) was changed to $got, wanted it left alone"
+            }
+            else {
+                Assert-That -Condition (($null -ne $got) -and ($got -eq $c.Want)) -Message "$($c.Label) became '$got', wanted $($c.Want)"
+            }
+        }
+    }
+
+    Invoke-Case 'leaves_the_session_tls_alone_unless_it_lacks_tls12' {
+        # The same through the installer, in the shell it is written for:
+        # PowerShell 7 does not touch the setting at all.
+        if ($PSVersionTable.PSVersion.Major -ge 6) {
+            Skip-Case -Reason 'only Windows PowerShell 5.1 sets the security protocol'
+            return
+        }
+        $report = 'Write-Output (''SECURITY_PROTOCOL='' + [int][Net.ServicePointManager]::SecurityProtocol)'
+        $starts = @(
+            @{ Start = 192; Want = 3264 }
+            @{ Start = 768; Want = 3840 }
+            @{ Start = 3072; Want = 3072 }
+        )
+        # SystemDefault exists from .NET Framework 4.7 on.
+        if ([Enum]::GetNames([Net.SecurityProtocolType]) -contains 'SystemDefault') {
+            $starts += @{ Start = 0; Want = 0 }
+        }
+        foreach ($s in $starts) {
+            $r = Invoke-Installer -Before "[Net.ServicePointManager]::SecurityProtocol = $($s.Start)" -After $report
+            Assert-Success -Result $r
+            $line = @(Get-Line -Text $r.Stdout | Where-Object { $_.StartsWith('SECURITY_PROTOCOL=') })
+            Assert-That -Condition ($line.Count -eq 1) -Message ('no SECURITY_PROTOCOL line: ' + (Format-Output -Result $r))
+            Assert-That -Condition ($line[0] -ceq "SECURITY_PROTOCOL=$($s.Want)") -Message "a session that started on $($s.Start) ended on '$($line[0])', wanted $($s.Want)"
         }
     }
 
