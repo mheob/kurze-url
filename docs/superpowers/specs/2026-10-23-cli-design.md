@@ -102,7 +102,7 @@ Write each result into this spec's "Verified" section before Part 2 starts.
 
 **How it was measured:** `pnpm probe:oauth` (`scripts/oauth-server-probe.ts`) ran against the local stack, Supabase CLI with GoTrue's OAuth 2.1 server switched on in `supabase/config.toml`, on 2026-10-23. The RFC 8414 discovery path's 404 comes from a `curl` during that change. Re-run the probe after a Supabase upgrade: the server is still in beta.
 
-**Scope:** these are the local stack's answers. Production and Preview run the same server behind Supabase's hosted gateway, and their token lifetime and reuse interval are dashboard settings. The release checklist (see "Testing") repeats `login`, `logout` and a command against Production.
+**Scope:** these are the local stack's answers. Production and Preview run the same server behind Supabase's hosted gateway, and their token lifetime and reuse interval are dashboard settings. The release checklist (see "Testing") repeats `login`, `logout` and a command against Production. On 2026-10-24 the maintainer confirmed both browser sign-out rows there: `scope=local` left the CLI signed in, and after `scope=global` the CLI asked for `login` once its access token had run out.
 
 | Finding | Measured | What it decides |
 | --- | --- | --- |
