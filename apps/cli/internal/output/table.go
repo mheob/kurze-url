@@ -39,28 +39,35 @@ func Truncate(s string, limit int) string {
 	return string(runes[:limit-1]) + ellipsis
 }
 
-// clean makes a cell safe for a line-oriented format: every control
-// character, tabs and newlines included, becomes a space.
+// Clean makes a piece of text safe to print: every control character, tabs
+// and newlines included, becomes a space.
 //
-// A cell holds text a team's admin wrote (a team name, a folder) or the API
-// returned (a destination). An embedded newline would turn one row into two
-// and an embedded tab would add a column, so a script splitting the output
-// would misread it; an embedded ESC would let that text drive the person's
-// terminal. None of these has a place in a table cell.
-func clean(cell string) string {
+// Text a team's admin wrote (a team name, a folder) or the API returned (a
+// destination, a short URL, an error's detail) is not the CLI's own. An
+// embedded ESC or BEL would let that text drive the person's terminal: an OSC
+// 52 sequence writes to the clipboard without showing anything. An embedded
+// newline would turn one table row into two and an embedded tab would add a
+// column, so a script splitting the output would misread it. None of these has
+// a place in a name, so Table and TSV clean every cell, and a command cleans
+// what it puts into a sentence or a plain line itself, because only the
+// command knows which of its values came from outside.
+//
+// Only the characters Unicode classes as control are replaced, which covers
+// the C0 and C1 ranges and DEL. Text with none comes back unchanged.
+func Clean(text string) string {
 	return strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) {
 			return ' '
 		}
 		return r
-	}, cell)
+	}, text)
 }
 
 // cleanRow cleans every cell of a row.
 func cleanRow(row []string) []string {
 	out := make([]string, len(row))
 	for i, cell := range row {
-		out[i] = clean(cell)
+		out[i] = Clean(cell)
 	}
 	return out
 }

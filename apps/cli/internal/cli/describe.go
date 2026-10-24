@@ -13,6 +13,7 @@ import (
 	"github.com/mheob/kurze-url/apps/cli/internal/config"
 	"github.com/mheob/kurze-url/apps/cli/internal/environment"
 	"github.com/mheob/kurze-url/apps/cli/internal/i18n"
+	"github.com/mheob/kurze-url/apps/cli/internal/output"
 )
 
 // describe words an error for the person, in the catalog's language. It is
@@ -83,16 +84,19 @@ func describeProblem(p *apiclient.ProblemError, c *i18n.Catalog) string {
 			return c.T("errors.invalidDestination")
 		}
 	}
-	// Any other answer: what the API says, in the words it chose.
+	// Any other answer: what the API says, in the words it chose. Those words
+	// are the server's text, and a detail can repeat what a team's admin typed,
+	// so they are cleaned before they reach the terminal (output.Clean says
+	// why).
 	switch {
 	case p.Detail != "":
-		return p.Detail
+		return output.Clean(p.Detail)
 	case p.Title != "":
-		return p.Title
+		return output.Clean(p.Title)
 	case http.StatusText(p.Status) != "":
 		return http.StatusText(p.Status)
 	}
-	return p.Error()
+	return output.Clean(p.Error())
 }
 
 // describeConfig words a config refusal. The location comes first, the way a

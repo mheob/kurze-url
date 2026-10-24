@@ -177,10 +177,13 @@ func TestResolveTeam(t *testing.T) {
 			config: "team: old-team\n",
 			err:    "You are not a member of the team “old-team”.",
 		},
+		// Team slugs are lower-case by rule, so a flag typed in capitals can
+		// only mean the team that exists.
+		{name: "a flag is matched ignoring case", flag: "TC-Muster", want: "tc-muster"},
 		{
-			name: "a slug is matched exactly",
-			flag: "TC-MUSTER",
-			err:  "“TC-MUSTER”",
+			name: "a flag that is not a membership is named as it was typed",
+			flag: "Other-Team",
+			err:  "You are not a member of the team “Other-Team”.",
 		},
 	}
 	for _, tt := range tests {

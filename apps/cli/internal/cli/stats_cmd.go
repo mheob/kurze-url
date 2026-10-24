@@ -12,6 +12,7 @@ import (
 
 	"github.com/mheob/kurze-url/apps/cli/internal/apiclient"
 	"github.com/mheob/kurze-url/apps/cli/internal/i18n"
+	"github.com/mheob/kurze-url/apps/cli/internal/output"
 )
 
 const (
@@ -89,7 +90,9 @@ func (a *App) linkStats(ctx context.Context, arg string, o statsOptions) error {
 	if !stats.AnalyticsEnabled {
 		return a.result(a.Cat.T("stats.disabled"))
 	}
-	return a.result(renderStats(a.Cat, link.ShortURL, lastDays(stats.Series, statsRecentDays), stats.Totals))
+	// The short URL is the server's text, cleaned for the terminal
+	// (output.Clean says why).
+	return a.result(renderStats(a.Cat, output.Clean(link.ShortURL), lastDays(stats.Series, statsRecentDays), stats.Totals))
 }
 
 // lastDays adds up the newest n days of a series.

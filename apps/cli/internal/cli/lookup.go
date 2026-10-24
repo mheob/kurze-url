@@ -10,6 +10,7 @@ import (
 
 	"github.com/mheob/kurze-url/apps/cli/internal/apiclient"
 	"github.com/mheob/kurze-url/apps/cli/internal/i18n"
+	"github.com/mheob/kurze-url/apps/cli/internal/output"
 )
 
 // reference is what a person typed to name one link, taken apart.
@@ -188,9 +189,11 @@ func (a *App) findLink(ctx context.Context, arg, domainFlag, teamFlag string) (a
 		return found[0], owner, err
 	}
 
+	// Each candidate is cleaned before the lines are joined, because the
+	// newline between them is meant and a control character inside one is not.
 	candidates := make([]string, 0, len(found))
 	for _, l := range found {
-		candidates = append(candidates, l.ShortURL)
+		candidates = append(candidates, output.Clean(l.ShortURL))
 	}
 	return apiclient.Link{}, apiclient.Membership{}, errors.New(a.Cat.T("link.ambiguous", i18n.Args{
 		"slug":       ref.slug,

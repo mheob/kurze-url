@@ -15,6 +15,7 @@ import (
 	"github.com/mheob/kurze-url/apps/cli/internal/config"
 	"github.com/mheob/kurze-url/apps/cli/internal/credentials"
 	"github.com/mheob/kurze-url/apps/cli/internal/i18n"
+	"github.com/mheob/kurze-url/apps/cli/internal/output"
 )
 
 // maxTeamAttempts is how often login asks for a default team before it gives
@@ -110,11 +111,15 @@ func (a *App) login(ctx context.Context) error {
 		return err
 	}
 
+	// The email is the server's text and goes to the terminal, so it is
+	// cleaned (output.Clean says why). The team is a slug the server sent too,
+	// or one the person's own config named and the server confirmed.
+	email := output.Clean(me.Email)
 	if team == "" {
-		a.notice(a.Cat.T("login.doneNoTeam", i18n.Args{"email": me.Email}))
+		a.notice(a.Cat.T("login.doneNoTeam", i18n.Args{"email": email}))
 		return nil
 	}
-	a.notice(a.Cat.T("login.done", i18n.Args{"email": me.Email, "team": team}))
+	a.notice(a.Cat.T("login.done", i18n.Args{"email": email, "team": output.Clean(team)}))
 	return nil
 }
 
@@ -177,6 +182,10 @@ func (a *App) settleDefaultTeam(me apiclient.Me) (string, error) {
 //
 // The end of the input is not asked again. A closed stdin never answers, and
 // looping on it would print the prompt three times for nothing.
+//
+// A team's name is its admin's text and is listed here as it came, so it is
+// cleaned before it is printed (output.Clean says why). The slug that is
+// returned is not: it is what gets stored.
 func (a *App) askTeam(teams []apiclient.Membership) string {
 	in := bufio.NewReader(a.d.Stdin)
 	last := strconv.Itoa(len(teams))
@@ -185,8 +194,8 @@ func (a *App) askTeam(teams []apiclient.Membership) string {
 	for i, team := range teams {
 		a.notice("  " + a.Cat.T("login.teamOption", i18n.Args{
 			"number": strconv.Itoa(i + 1),
-			"slug":   team.Slug,
-			"name":   team.Name,
+			"slug":   output.Clean(team.Slug),
+			"name":   output.Clean(team.Name),
 		}))
 	}
 
@@ -221,31 +230,30 @@ func (a *App) askTeam(teams []apiclient.Membership) string {
 // be reached, or that refuses, must not leave a credential on this machine
 // that the person asked to be rid of, so the failure is a warning and the
 // deletion happens anyway.
+//
+// The warning about that failure is printed after the deletion, because it
+// says the login "was deleted anyway", and a deletion that then fails would
+// make it false. When it fails, the warning keeps to what is true: the server
+// still has the session.
 func (a *App) logout(ctx context.Context) error {
 	if _, err := a.Store.Load(); errors.Is(err, credentials.ErrNotFound) {
-		a.notice(a.Cat.T("logout.notSignedIn"))
-		return nil
+		return a.logoutWithoutLogin()
 	}
 
-	token, err := a.Session.AccessToken(ctx)
-	switch {
-	case err == nil:
-		err = auth.Logout(ctx, a.d.HTTPClient, a.Env.SupabaseURL, a.Env.PublishableKey, token)
-		if err != nil {
-			a.warnRemoteFailed(err)
+	remoteErr := a.endSession(ctx)
+	deleteErr := a.Store.Delete()
+
+	if remoteErr != nil {
+		reason := i18n.Args{"reason": describe(remoteErr, a.Cat)}
+		if deleteErr == nil {
+			a.notice(a.Cat.T("logout.remoteFailed", reason))
+		} else {
+			a.notice(a.Cat.T("logout.remoteFailedKept", reason))
 		}
-	case errors.Is(err, auth.ErrLoginRequired):
-		// The server no longer knows this session, so there is nothing at
-		// its end to revoke, and that is not a failure to report.
-	default:
-		// No usable token and no word from the server on why, so the
-		// revocation did not happen.
-		a.warnRemoteFailed(err)
 	}
-
-	if err := a.Store.Delete(); err != nil {
-		if !onlyKeychainUnavailable(err) {
-			return fmt.Errorf("delete the stored login: %w", err)
+	if deleteErr != nil {
+		if !onlyKeychainUnavailable(deleteErr) {
+			return a.deleteFailed(deleteErr)
 		}
 		a.notice(a.Cat.T("logout.keychainUnavailable"))
 	}
@@ -253,9 +261,44 @@ func (a *App) logout(ctx context.Context) error {
 	return nil
 }
 
-// warnRemoteFailed says that the session could not be ended at the server.
-func (a *App) warnRemoteFailed(err error) {
-	a.notice(a.Cat.T("logout.remoteFailed", i18n.Args{"reason": describe(err, a.Cat)}))
+// logoutWithoutLogin is logout when the store holds no login. That is not the
+// same as "not signed in": Load cannot tell an empty store from a keychain it
+// failed to ask (a locked macOS keychain over SSH), and a refresh token may
+// still be there. So the store is told to delete, and "You are not signed in"
+// is said only when that worked and found nothing wrong.
+func (a *App) logoutWithoutLogin() error {
+	err := a.Store.Delete()
+	switch {
+	case err == nil:
+		a.notice(a.Cat.T("logout.notSignedIn"))
+	case onlyKeychainUnavailable(err):
+		a.notice(a.Cat.T("logout.keychainUnavailable"))
+	default:
+		return a.deleteFailed(err)
+	}
+	return nil
+}
+
+// deleteFailed is the failure for tokens that could not be deleted and may
+// still be on disk. It is worded in the catalog, with the cause as the store
+// reported it after it: the person needs the path and the reason to fix it.
+func (a *App) deleteFailed(err error) error {
+	return errors.New(a.Cat.T("logout.deleteFailed", i18n.Args{"reason": describe(err, a.Cat)}))
+}
+
+// endSession ends the session at the server and returns why it could not. A
+// login the server no longer knows is not a failure to report: there is
+// nothing at its end to revoke. Any other trouble, getting a usable token
+// included, means the revocation did not happen.
+func (a *App) endSession(ctx context.Context) error {
+	token, err := a.Session.AccessToken(ctx)
+	switch {
+	case err == nil:
+		return auth.Logout(ctx, a.d.HTTPClient, a.Env.SupabaseURL, a.Env.PublishableKey, token)
+	case errors.Is(err, auth.ErrLoginRequired):
+		return nil
+	}
+	return err
 }
 
 // onlyKeychainUnavailable reports whether every failure in err is the
@@ -298,7 +341,9 @@ func (a *App) whoami(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := a.result(me.Email); err != nil {
+	// The email is the server's text, cleaned for the terminal like every
+	// name in this package (output.Clean says why).
+	if err := a.result(output.Clean(me.Email)); err != nil {
 		return err
 	}
 

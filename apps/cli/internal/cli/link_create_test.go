@@ -375,6 +375,19 @@ func TestCreateHonoursTeamFlag(t *testing.T) {
 	require.Empty(t, h.creations(teamGruenwald))
 }
 
+// A slug is lower-case by rule, so --team SV-Gruenwald is the team
+// sv-gruenwald and not a stranger.
+func TestCreateReadsTheTeamFlagIgnoringCase(t *testing.T) {
+	h := linkHarness(t, "team: tc-muster\n", teamGruenwald, teamMuster)
+	h.serveCreate(teamGruenwald)
+
+	code := h.run("link", "create", testDestination, "--team", "SV-Gruenwald")
+
+	require.Equal(t, 0, code, h.stderr.String())
+	require.Len(t, h.creations(teamGruenwald), 1)
+	require.Empty(t, h.creations(teamMuster))
+}
+
 // The folder and the domain are looked up in the team the link goes to, not
 // in the default team.
 func TestCreateLooksFoldersUpInTheChosenTeam(t *testing.T) {

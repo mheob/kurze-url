@@ -92,27 +92,31 @@ func find(t *testing.T, h *harness, arg, domain, team string) (apiclient.Link, a
 	return newTestApp(t, h).findLink(context.Background(), arg, domain, team)
 }
 
+// requireQueriedBySlug checks that every link search the harness saw asked for
+// the lower-cased slug, whatever was typed.
+func requireQueriedBySlug(t *testing.T, h *harness) {
+	t.Helper()
+	for _, team := range []apiclient.Membership{teamGruenwald, teamMuster} {
+		for _, c := range h.api.callsTo(http.MethodGet, teamPath(team, "links")) {
+			require.Equal(t, "sommerfest", c.Query.Get("q"))
+		}
+	}
+}
+
 // Review Focus 4: one link, many spellings. The slug is stored lower-case on
 // the shared host, and every way of typing it must find that link.
-func TestFindLinkSpellings(t *testing.T) {
+//
+// A bare slug names no host, so it runs against a team whose only link is on
+// the shared host: with a second domain it would be ambiguous, which has its
+// own test.
+func TestFindLinkBareSlugSpellings(t *testing.T) {
 	for _, arg := range []string{
 		"sommerfest",
 		"SommerFest",
 		" sommerfest ",
-		"GO.KURZE-URL.APP/sommerfest",
-		"go.kurze-url.app/SOMMERFEST",
-		"https://go.kurze-url.app/sommerfest",
-		"https://go.kurze-url.app/sommerfest/",
-		"https://go.kurze-url.app/sommerfest?qr=1",
-		"https://go.kurze-url.app/sommerfest/?qr=1#top",
-		"http://go.kurze-url.app/sommerfest",
-		"HTTPS://Go.Kurze-URL.app/SommerFest",
-		"https://go.kurze-url.app:443/sommerfest",
 	} {
 		t.Run(arg, func(t *testing.T) {
 			h := linkHarness(t, "team: sv-gruenwald\n", teamGruenwald)
-			// Only the shared-host link exists, so the bare spellings are not
-			// ambiguous. The ambiguous case has its own test.
 			h.serveLinkSearch(teamGruenwald, lookupShared)
 
 			link, owner, err := find(t, h, arg, "", "")
@@ -120,10 +124,40 @@ func TestFindLinkSpellings(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, lookupShared.ID, link.ID)
 			require.Equal(t, teamGruenwald, owner)
-			// The query is the lower-cased slug, whatever was typed.
-			for _, c := range h.api.callsTo(http.MethodGet, teamPath(teamGruenwald, "links")) {
-				require.Equal(t, "sommerfest", c.Query.Get("q"))
-			}
+			requireQueriedBySlug(t, h)
+		})
+	}
+}
+
+// A short URL names its host, so it runs against the team with the same slug
+// on two domains: here the host is the only thing that picks the link, and a
+// lookup that dropped it would be ambiguous instead of finding one. Each
+// spelling must also pick the right one of the two, so the custom domain's
+// link is found by its own URL and never by the shared host's.
+func TestFindLinkShortURLSpellings(t *testing.T) {
+	tests := map[string]apiclient.Link{
+		"GO.KURZE-URL.APP/sommerfest":                   lookupShared,
+		"go.kurze-url.app/SOMMERFEST":                   lookupShared,
+		"https://go.kurze-url.app/sommerfest":           lookupShared,
+		"https://go.kurze-url.app/sommerfest/":          lookupShared,
+		"https://go.kurze-url.app/sommerfest?qr=1":      lookupShared,
+		"https://go.kurze-url.app/sommerfest/?qr=1#top": lookupShared,
+		"http://go.kurze-url.app/sommerfest":            lookupShared,
+		"HTTPS://Go.Kurze-URL.app/SommerFest":           lookupShared,
+		"https://go.kurze-url.app:443/sommerfest":       lookupShared,
+		"links.sv-gruenwald.de/sommerfest":              lookupCustom,
+		"https://LINKS.sv-gruenwald.de/SommerFest/":     lookupCustom,
+	}
+	for arg, want := range tests {
+		t.Run(arg, func(t *testing.T) {
+			h := lookupHarness(t, "team: sv-gruenwald\n")
+
+			link, owner, err := find(t, h, arg, "", "")
+
+			require.NoError(t, err)
+			require.Equal(t, want.ID, link.ID)
+			require.Equal(t, teamGruenwald, owner)
+			requireQueriedBySlug(t, h)
 		})
 	}
 }

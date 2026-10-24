@@ -185,6 +185,27 @@ func TestTableReplacesControlCharacters(t *testing.T) {
 	require.NotContains(t, got, "\t")
 }
 
+// Clean is what commands put around a server's text before it goes into a
+// sentence, so it is judged on its own as well as through Table.
+func TestCleanReplacesEveryControlCharacterWithASpace(t *testing.T) {
+	// The OSC 52 clipboard write a probe used: ESC ] 52 ; c ; <base64> BEL.
+	require.Equal(t, "evil ]52;c;SGVsbG8= ", Clean("evil\x1b]52;c;SGVsbG8=\x07"))
+	// C0 (tab, newline, carriage return), DEL and the C1 range, where 0x9d is
+	// the eight-bit form of the OSC introducer.
+	require.Equal(t, "a b c d e f", Clean("a\tb\nc\rd\x7fe\u009df"))
+}
+
+func TestCleanLeavesOrdinaryTextAlone(t *testing.T) {
+	for _, text := range []string{
+		"",
+		"https://go.kurze-url.app/sommerfest",
+		"SV Grünwald · Vorstand “Jugend”",
+		"日本語 ñ ✓",
+	} {
+		require.Equal(t, text, Clean(text))
+	}
+}
+
 func TestTSVHasNoHeader(t *testing.T) {
 	var buf bytes.Buffer
 

@@ -315,8 +315,8 @@ func (f *File) encode() ([]byte, error) {
 }
 
 // commentsOnly renders a document that has no entries left: its head and foot
-// comments, or nothing at all. Comments that belonged to an entry that was
-// removed went with it.
+// comments, or nothing at all. Unset hands the comments of the last entry it
+// removes to the document, so what the person wrote around it is here too.
 func commentsOnly(doc *yaml.Node) []byte {
 	var parts []string
 	for _, c := range []string{doc.HeadComment, doc.FootComment} {

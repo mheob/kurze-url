@@ -198,7 +198,7 @@ func (a *App) linkCreate(ctx context.Context, destination string, o createOption
 	if err != nil {
 		return a.describeCreateFailure(err)
 	}
-	return a.result(link.ShortURL)
+	return a.result(output.Clean(link.ShortURL))
 }
 
 // describeCreateFailure words the one answer that only this command knows the

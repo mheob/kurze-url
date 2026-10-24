@@ -112,6 +112,10 @@ func (f *File) Set(k Key, team, value string) error {
 // error, so `config unset` can be run twice; a caller that wants to tell the
 // person asks Get first.
 //
+// Comments are the person's and survive the removal, as they do `config
+// set`: see removeEntry for where they go. A key's own line comment is the
+// exception, because it says something about that line and goes with it.
+//
 // Nothing reaches the disk until Save.
 func (f *File) Unset(k Key, team string) error {
 	if err := f.checkScope(k, team); err != nil {
@@ -119,32 +123,103 @@ func (f *File) Unset(k Key, team string) error {
 	}
 	segs, _ := segments(k, team)
 
-	// chain[i] is the mapping that holds segs[i].
+	// chain[i] is the mapping that holds segs[i], and heirs[i] is who inherits
+	// the comments of its last entry: the document for the top mapping, and for
+	// a section the key that names it, which is removed next when the section
+	// is empty and passes them on again.
 	chain := []*yaml.Node{f.root()}
+	heirs := []*yaml.Node{f.doc}
 	for _, seg := range segs[:len(segs)-1] {
-		next := mapValue(chain[len(chain)-1], seg)
-		if next == nil || next.Kind != yaml.MappingNode {
+		parent := chain[len(chain)-1]
+		at := entryIndex(parent, seg)
+		if at < 0 || parent.Content[at+1].Kind != yaml.MappingNode {
 			return nil
 		}
-		chain = append(chain, next)
+		heirs = append(heirs, parent.Content[at])
+		chain = append(chain, parent.Content[at+1])
 	}
 
 	for i := len(segs) - 1; i >= 0; i-- {
-		if !removeEntry(chain[i], segs[i]) || len(chain[i].Content) > 0 {
+		if !removeEntry(chain[i], heirs[i], segs[i]) || len(chain[i].Content) > 0 {
 			return nil
 		}
 	}
 	return nil
 }
 
-// removeEntry deletes the entry called name from mapping m, comments and all,
-// and reports whether there was one.
-func removeEntry(m *yaml.Node, name string) bool {
+// entryIndex returns where the key called name is in mapping m's Content, the
+// value being the next element, or -1 when there is none.
+func entryIndex(m *yaml.Node, name string) int {
 	for i := 0; i+1 < len(m.Content); i += 2 {
 		if k := m.Content[i]; k.Kind == yaml.ScalarNode && k.Value == name {
-			m.Content = slices.Delete(m.Content, i, i+2)
-			return true
+			return i
 		}
 	}
-	return false
+	return -1
+}
+
+// removeEntry deletes the entry called name from mapping m and reports
+// whether there was one.
+//
+// A comment above an entry, or in the foot after it, is a note the person
+// wrote, and it need not be about that entry: the first key of a file carries
+// the file's header, the last one the closing note. Deleting it with the entry
+// is what made `config unset` take both away. The YAML library hangs both on
+// the entry's key, so they are moved before the entry goes:
+//
+//   - the head comment to the next entry's key, which is what it now sits
+//     above, or with no next entry to the foot of the one before;
+//   - the foot comment to the foot of the entry before, or with none before to
+//     the head of the next entry.
+//
+// When m has no other entry, heir takes them: the head after its own head
+// comment and the foot before its own foot comment, which is the order they
+// had in the file. For the top mapping heir is the document, whose comments
+// are what a file of nothing else is written from; for a section it is the
+// key that names the section, which Unset removes next because the section is
+// empty, and which passes them on in the same way.
+func removeEntry(m, heir *yaml.Node, name string) bool {
+	at := entryIndex(m, name)
+	if at < 0 {
+		return false
+	}
+	gone := m.Content[at]
+	head, foot := gone.HeadComment, gone.FootComment
+
+	var prev, next *yaml.Node
+	if at >= 2 {
+		prev = m.Content[at-2]
+	}
+	if at+2 < len(m.Content) {
+		next = m.Content[at+2]
+	}
+
+	switch {
+	case prev == nil && next == nil:
+		heir.HeadComment = joinComments(heir.HeadComment, head)
+		heir.FootComment = joinComments(foot, heir.FootComment)
+	case prev == nil:
+		next.HeadComment = joinComments(head, foot, next.HeadComment)
+	case next == nil:
+		prev.FootComment = joinComments(prev.FootComment, head, foot)
+	default:
+		next.HeadComment = joinComments(head, next.HeadComment)
+		prev.FootComment = joinComments(prev.FootComment, foot)
+	}
+
+	m.Content = slices.Delete(m.Content, at, at+2)
+	return true
+}
+
+// joinComments puts comment blocks one under the other, leaving out the empty
+// ones. A block that ends in a newline, which is how the YAML library says a
+// blank line followed it, keeps that blank line before the next block.
+func joinComments(blocks ...string) string {
+	var kept []string
+	for _, b := range blocks {
+		if b != "" {
+			kept = append(kept, b)
+		}
+	}
+	return strings.Join(kept, "\n")
 }

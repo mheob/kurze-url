@@ -633,6 +633,130 @@ func TestUnsetKeepsTheDocumentsOwnComments(t *testing.T) {
 	require.Equal(t, "# my defaults\n", saveAndRead(t, f, path))
 }
 
+// unsetAndRead loads content, removes one key and returns what Save writes.
+func unsetAndRead(t *testing.T, content string, k config.Key, team string) string {
+	t.Helper()
+	path := writeConfig(t, content)
+	f, err := config.Load(path)
+	require.NoError(t, err)
+	require.NoError(t, f.Unset(k, team))
+	return saveAndRead(t, f, path)
+}
+
+// A comment is the person's note about the file, and the setting it happens
+// to sit beside is not what it is about: a header above the first key is the
+// file's header. Removing the key moves the comment on instead of deleting it.
+func TestUnsetKeepsTheHeaderCommentOfTheRemovedKey(t *testing.T) {
+	require.Equal(t, "# My kurze-url settings\nteam: sv-gruenwald\n",
+		unsetAndRead(t, "# My kurze-url settings\nlanguage: de\nteam: sv-gruenwald\n", config.Language, ""))
+}
+
+func TestUnsetKeepsTheNoteAfterTheLastKey(t *testing.T) {
+	require.Equal(t, "language: de\n# notes at the end\n",
+		unsetAndRead(t, "language: de\nteam: sv-gruenwald\n# notes at the end\n", config.Team, ""))
+}
+
+// A line comment is about its own line, so it goes with the key.
+func TestUnsetTakesTheLineCommentWithItsKey(t *testing.T) {
+	require.Equal(t, "team: sv-gruenwald\n",
+		unsetAndRead(t, "language: de # the language\nteam: sv-gruenwald\n", config.Language, ""))
+}
+
+func TestUnsetMovesTheCommentAboveAMiddleKeyToTheNextKey(t *testing.T) {
+	require.Equal(t, "language: de\n# about the team\nqr:\n  size: 512\n",
+		unsetAndRead(t, "language: de\n# about the team\nteam: sv-gruenwald\nqr:\n  size: 512\n", config.Team, ""))
+}
+
+// With nothing after it the comment has no next key to head, so it stays
+// where it was: after the key before.
+func TestUnsetKeepsTheCommentAboveTheLastKey(t *testing.T) {
+	require.Equal(t, "language: de\n# about the team\n",
+		unsetAndRead(t, "language: de\n# about the team\nteam: sv-gruenwald\n", config.Team, ""))
+}
+
+// With no other key left the document itself holds the comments, which is
+// what a file of nothing but comments already is.
+func TestUnsetOfTheOnlyKeyKeepsItsComments(t *testing.T) {
+	require.Equal(t, "# header\n",
+		unsetAndRead(t, "# header\nlanguage: de\n", config.Language, ""))
+	require.Equal(t, "# notes at the end\n",
+		unsetAndRead(t, "language: de\n# notes at the end\n", config.Language, ""))
+	require.Equal(t, "# header\n\n# notes at the end\n",
+		unsetAndRead(t, "# header\nlanguage: de\n# notes at the end\n", config.Language, ""))
+}
+
+// A header kept this way must still head the file when a key is set again.
+func TestAKeptCommentStillHeadsTheFileAfterTheNextSet(t *testing.T) {
+	path := writeConfig(t, "# My kurze-url settings\nlanguage: de\n")
+	f, err := config.Load(path)
+	require.NoError(t, err)
+
+	require.NoError(t, f.Unset(config.Language, ""))
+	require.NoError(t, f.Set(config.Team, "", "sv-gruenwald"))
+
+	require.Equal(t, "# My kurze-url settings\n\nteam: sv-gruenwald\n", saveAndRead(t, f, path))
+}
+
+// Removing the last setting of a section removes the section as well, and the
+// comments on the section's key and on the setting go on with the rest.
+func TestUnsetKeepsTheCommentsOfASectionItEmptied(t *testing.T) {
+	tests := []struct {
+		name, in string
+		key      config.Key
+		team     string
+		want     string
+	}{
+		{
+			name: "the comment above the section",
+			in:   "language: de\n# the QR defaults\nqr:\n  size: 512\nteam: sv-gruenwald\n",
+			key:  config.QRSize,
+			want: "language: de\n# the QR defaults\nteam: sv-gruenwald\n",
+		},
+		{
+			name: "the comment above the setting",
+			in:   "language: de\nqr:\n  # the size\n  size: 512\nteam: sv-gruenwald\n",
+			key:  config.QRSize,
+			want: "language: de\n# the size\nteam: sv-gruenwald\n",
+		},
+		{
+			name: "the comment above a team's section",
+			in: "team: sv-gruenwald\nteams:\n  # the club\n  sv-gruenwald:\n    folder: newsletter\n" +
+				"  tc-muster:\n    folder: plakate\n",
+			key:  config.Folder,
+			team: "sv-gruenwald",
+			want: "team: sv-gruenwald\nteams:\n  # the club\n  tc-muster:\n    folder: plakate\n",
+		},
+		{
+			name: "the comment above teams, which had a key before it",
+			in:   "language: de\n# per-team settings\nteams:\n  sv-gruenwald:\n    folder: newsletter\n",
+			key:  config.Folder,
+			team: "sv-gruenwald",
+			want: "language: de\n# per-team settings\n",
+		},
+		{
+			name: "every comment down to the only key",
+			in:   "# per-team settings\nteams:\n  # the club\n  sv-gruenwald:\n    folder: newsletter\n",
+			key:  config.Folder,
+			team: "sv-gruenwald",
+			want: "# per-team settings\n# the club\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, unsetAndRead(t, tt.in, tt.key, tt.team))
+		})
+	}
+}
+
+// A section that stays keeps the comment of the setting that went, on the
+// setting after it, or on the one before when it was the last.
+func TestUnsetKeepsTheCommentsInsideASectionThatStays(t *testing.T) {
+	require.Equal(t, "qr:\n  # about the size\n  format: png\n",
+		unsetAndRead(t, "qr:\n  # about the size\n  size: 512\n  format: png\n", config.QRSize, ""))
+	require.Equal(t, "qr:\n  format: png\n  # about the size\nteam: sv-gruenwald\n",
+		unsetAndRead(t, "qr:\n  format: png\n  # about the size\n  size: 512\nteam: sv-gruenwald\n", config.QRSize, ""))
+}
+
 func TestACommentOnlyFileSurvivesAnEdit(t *testing.T) {
 	path := writeConfig(t, "# nothing here yet\n")
 	f, err := config.Load(path)

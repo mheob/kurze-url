@@ -31,11 +31,11 @@ const (
 
 	// DefaultPublishableKey is the production project's publishable key, sent
 	// as the apikey header on every Supabase auth call. It is public by
-	// design: the web app ships the very same key to every browser, and it
-	// only identifies the project to Supabase's gateway, with no privilege
-	// beyond what any anonymous caller has. It is not the service-role key,
-	// so compiling it into a public binary leaks nothing. A secret key must
-	// never be put here.
+	// design: Supabase designates the publishable key as safe to expose to
+	// clients, because it only identifies the project to the gateway and
+	// carries no privilege beyond what any anonymous caller has. It is not
+	// the service-role key, so compiling it into a public binary leaks
+	// nothing. A secret key must never be put here.
 	DefaultPublishableKey = "sb_publishable_7ISzw8Y0Ibg4DYw4BgFi5A_NWuq4GQn"
 
 	// DefaultClientID is the CLI's OAuth client at the production Supabase

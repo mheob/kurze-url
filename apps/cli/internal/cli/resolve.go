@@ -7,6 +7,7 @@ import (
 
 	"github.com/mheob/kurze-url/apps/cli/internal/apiclient"
 	"github.com/mheob/kurze-url/apps/cli/internal/i18n"
+	"github.com/mheob/kurze-url/apps/cli/internal/output"
 )
 
 // verifiedStatus is the verification_status of a domain whose owner has
@@ -24,6 +25,9 @@ const verifiedStatus = "verified"
 // folder that every later link then lands in.
 //
 // An empty name means "no folder" and costs no request.
+//
+// The folder names in the refusal are a team admin's text, so they are
+// cleaned before they reach the terminal (output.Clean says why).
 func (a *App) resolveFolder(ctx context.Context, team apiclient.Membership, name string) (string, error) {
 	if name == "" {
 		return "", nil
@@ -40,7 +44,7 @@ func (a *App) resolveFolder(ctx context.Context, team apiclient.Membership, name
 
 	names := make([]string, 0, len(folders))
 	for _, f := range folders {
-		names = append(names, f.Name)
+		names = append(names, output.Clean(f.Name))
 	}
 	// A sentence that ends "Available folders: ." reads as a defect, and a
 	// team that has no folder yet is the likeliest person to hit this.
@@ -50,7 +54,7 @@ func (a *App) resolveFolder(ctx context.Context, team apiclient.Membership, name
 	}
 	return "", errors.New(a.Cat.T("link.folderUnknown", i18n.Args{
 		"name":      name,
-		"team":      team.Slug,
+		"team":      output.Clean(team.Slug),
 		"available": available,
 	}))
 }
@@ -90,7 +94,7 @@ func (a *App) resolveDomain(ctx context.Context, team apiclient.Membership, host
 		known = true
 	}
 
-	args := i18n.Args{"host": host, "team": team.Slug, "shared": a.Env.SharedHost}
+	args := i18n.Args{"host": host, "team": output.Clean(team.Slug), "shared": a.Env.SharedHost}
 	if known {
 		return "", errors.New(a.Cat.T("link.domainNotVerified", args))
 	}

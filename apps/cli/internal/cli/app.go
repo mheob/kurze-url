@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 
 	"github.com/mheob/kurze-url/apps/cli/internal/apiclient"
@@ -191,8 +192,8 @@ func (a *App) me(ctx context.Context) (apiclient.Me, error) {
 	return me, nil
 }
 
-// membershipOf finds the membership for a team slug. The match is exact,
-// because slugs are lower-case by rule and the config stores them that way.
+// membershipOf finds the membership for a team slug. The match is exact:
+// slugs are lower-case by rule, and the caller folds what a person typed.
 func membershipOf(me apiclient.Me, slug string) (apiclient.Membership, bool) {
 	for _, m := range me.Memberships {
 		if m.Slug == slug {
@@ -211,17 +212,24 @@ func (a *App) configuredTeam() string {
 // resolveTeam turns what the person named into the membership the API
 // addresses: the --team flag when given, else the config's default team.
 //
+// The slug is matched ignoring case. Team slugs are lower-case by rule, so a
+// team typed as SV-Gruenwald can only mean sv-gruenwald, and refusing it as
+// "not a member" would send the person looking for a membership problem that
+// is not there. The config's slug is folded the same way, although a config
+// that loaded holds a lower-case one already. A refusal names the team as it
+// was typed.
+//
 // It fails with a message in the person's language when there is neither,
 // without a request, or when the team is not one of their memberships. The
 // frontend does the same slug-to-ID resolution out of GET /v1/me, for the
 // same reason: it costs no extra request and keeps a second resolution path
 // out of every tenancy-critical call.
 func (a *App) resolveTeam(ctx context.Context, flag string) (apiclient.Membership, error) {
-	slug := flag
-	if slug == "" {
-		slug = a.configuredTeam()
+	typed := flag
+	if typed == "" {
+		typed = a.configuredTeam()
 	}
-	if slug == "" {
+	if typed == "" {
 		return apiclient.Membership{}, errors.New(a.Cat.T("team.noneGiven"))
 	}
 
@@ -229,9 +237,9 @@ func (a *App) resolveTeam(ctx context.Context, flag string) (apiclient.Membershi
 	if err != nil {
 		return apiclient.Membership{}, err
 	}
-	team, ok := membershipOf(me, slug)
+	team, ok := membershipOf(me, strings.ToLower(typed))
 	if !ok {
-		return apiclient.Membership{}, errors.New(a.Cat.T("team.notMember", i18n.Args{"slug": slug}))
+		return apiclient.Membership{}, errors.New(a.Cat.T("team.notMember", i18n.Args{"slug": typed}))
 	}
 	return team, nil
 }

@@ -315,22 +315,49 @@ func TestLogoutWarnsWhenTheServerCannotBeReached(t *testing.T) {
 	require.Contains(t, h.stderr.String(), "Could not end the session at the server (Could not reach ")
 }
 
-// deleteResult is a Store that deletes for real and then reports err, as a
-// Chain does when the keychain refuses.
-type deleteResult struct {
-	credentials.Store
-	err error
+// deleteWatch records how a command used the store's Delete.
+type deleteWatch struct {
+	// calls is how often Delete ran.
+	calls int
+	// stderrAtDelete is what the command had printed when Delete ran, which
+	// shows whether it spoke of a deletion before it had happened.
+	stderrAtDelete string
 }
 
-func (s deleteResult) Delete() error {
+// watchedStore is a Store that deletes for real and then reports err, as a
+// Chain does when the keychain refuses, and notes the call in watch.
+type watchedStore struct {
+	credentials.Store
+	err   error
+	watch *deleteWatch
+	h     *harness
+}
+
+func (s watchedStore) Delete() error {
+	s.watch.calls++
+	s.watch.stderrAtDelete = s.h.stderr.String()
 	_ = s.Store.Delete()
 	return s.err
 }
 
-func (h *harness) failDeleteWith(err error) {
+// watchDelete makes the command's store report err from Delete and returns
+// what it saw of the call. A nil err is a Delete that worked.
+func (h *harness) watchDelete(err error) *deleteWatch {
+	watch := &deleteWatch{}
 	h.deps.NewStore = func(string, string) credentials.Store {
-		return deleteResult{Store: h.store, err: err}
+		return watchedStore{Store: h.store, err: err, watch: watch, h: h}
 	}
+	return watch
+}
+
+func (h *harness) failDeleteWith(err error) {
+	h.watchDelete(err)
+}
+
+// keychainOnly is what Chain.Delete reports when the keychain was the only
+// thing that failed.
+func keychainOnly() error {
+	return errors.Join(fmt.Errorf("%w: delete from the keychain: %w", credentials.ErrKeychainUnavailable, errors.New("locked")))
 }
 
 func TestLogoutWarnsWhenTheKeychainIsUnavailable(t *testing.T) {
@@ -369,6 +396,110 @@ func TestLogoutFailsOnAnyOtherDeleteError(t *testing.T) {
 
 	require.Equal(t, 1, code)
 	require.Contains(t, h.stderr.String(), "disk on fire")
+}
+
+// Load reads a keychain it cannot open as "nothing stored" (a locked macOS
+// keychain over SSH), so a refresh token can still be on the machine when it
+// says so. Logout asks the store to delete either way.
+func TestLogoutWhenNotSignedInStillAsksTheStoreToDelete(t *testing.T) {
+	h := newHarness(t)
+	watch := h.watchDelete(nil)
+
+	code := h.run("logout")
+
+	require.Equal(t, 0, code, h.stderr.String())
+	require.Equal(t, 1, watch.calls)
+	require.Equal(t, "You are not signed in.\n", h.stderr.String())
+}
+
+func TestLogoutWithNoLoginFoundWarnsWhenTheKeychainIsUnavailable(t *testing.T) {
+	h := newHarness(t)
+	watch := h.watchDelete(keychainOnly())
+
+	code := h.run("logout")
+
+	require.Equal(t, 0, code, h.stderr.String())
+	require.Equal(t, 1, watch.calls)
+	require.Equal(t, "The system keychain could not be reached, so a login stored there may still exist.\n",
+		h.stderr.String())
+	require.NotContains(t, h.stderr.String(), "not signed in", "nothing says there is no login")
+	require.Empty(t, h.auth.callsTo(stubLogoutPath), "there is no session to end")
+}
+
+func TestLogoutWithNoLoginFoundFailsWhenTheDeleteDoes(t *testing.T) {
+	h := newHarness(t)
+	h.watchDelete(errors.New("delete the credentials file: permission denied"))
+
+	code := h.run("logout")
+
+	require.Equal(t, 1, code, "a token that is still on disk is a failure, whatever Load said")
+	require.Contains(t, h.stderr.String(), "so it may still be there")
+	require.Contains(t, h.stderr.String(), "permission denied")
+	require.NotContains(t, h.stderr.String(), "not signed in")
+}
+
+// The warning says the stored login "was deleted anyway", so it may only be
+// printed once Delete has returned success.
+func TestLogoutSaysDeletedAnywayOnlyAfterTheDelete(t *testing.T) {
+	h := newHarness(t)
+	h.signIn()
+	h.auth.failLogout(http.StatusInternalServerError)
+	watch := h.watchDelete(nil)
+
+	code := h.run("logout")
+
+	require.Equal(t, 0, code, h.stderr.String())
+	require.Equal(t, 1, watch.calls)
+	require.Empty(t, watch.stderrAtDelete, "nothing was said before the login was gone")
+	require.Contains(t, h.stderr.String(), "was deleted anyway")
+	require.Contains(t, h.stderr.String(), "Signed out of the CLI.")
+}
+
+func TestLogoutDoesNotSayDeletedAnywayWhenTheDeleteFailed(t *testing.T) {
+	t.Run("the keychain alone", func(t *testing.T) {
+		h := newHarness(t)
+		h.signIn()
+		h.auth.failLogout(http.StatusInternalServerError)
+		h.watchDelete(keychainOnly())
+
+		code := h.run("logout")
+
+		require.Equal(t, 0, code, h.stderr.String())
+		require.NotContains(t, h.stderr.String(), "deleted anyway")
+		// Both facts reach the person: the server still has the session, and
+		// the keychain may still have the login.
+		require.Contains(t, h.stderr.String(), "Could not end the session at the server")
+		require.Contains(t, h.stderr.String(), "The system keychain could not be reached")
+	})
+
+	t.Run("a token left on disk", func(t *testing.T) {
+		h := newHarness(t)
+		h.signIn()
+		h.auth.failLogout(http.StatusInternalServerError)
+		h.watchDelete(errors.New("delete the credentials file: permission denied"))
+
+		code := h.run("logout")
+
+		require.Equal(t, 1, code)
+		require.NotContains(t, h.stderr.String(), "deleted anyway")
+		require.NotContains(t, h.stderr.String(), "Signed out of the CLI.")
+		require.Contains(t, h.stderr.String(), "Could not end the session at the server")
+		require.Contains(t, h.stderr.String(), "so it may still be there")
+		require.Contains(t, h.stderr.String(), "permission denied")
+	})
+}
+
+func TestLogoutWordsAFailedDeleteInGerman(t *testing.T) {
+	h := newHarness(t)
+	h.signIn()
+	h.writeConfig("language: de\n")
+	h.watchDelete(errors.New("delete the credentials file: permission denied"))
+
+	code := h.run("logout")
+
+	require.Equal(t, 1, code)
+	require.Contains(t, h.stderr.String(), "konnte nicht gelöscht werden")
+	require.Contains(t, h.stderr.String(), "permission denied")
 }
 
 func TestLogoutRefusesAnArgument(t *testing.T) {
