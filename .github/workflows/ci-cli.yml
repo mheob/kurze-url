@@ -260,21 +260,25 @@ jobs:
           esac
 
   # install.sh is what `curl | sh` runs on a stranger's machine, so it gets
-  # its own tests on both operating systems it supports: the Linux runner's
+  # its own tests on each operating system it supports: the Linux runner's
   # dash and the macOS runner's sh differ in exactly the places a portable
   # script slips (tar, sha256sum against shasum, mktemp, find). The tests need
   # no network: they install from a fake release in a file:// directory.
-  # shellcheck runs on Linux only, where the runner image carries it.
-  install-script:
-    name: install script (cli, ${{ matrix.os }})
+  #
+  # These are two jobs and not a matrix, on purpose. A matrix job skipped by
+  # the `if:` below reports one check under its unexpanded name
+  # (`install script (cli, ${{ matrix.os }})`), which no required status
+  # check can name, so it could never be required. Two plain jobs report
+  # under their real names whether they ran or were skipped. The Windows job
+  # that tests install.ps1 follows the same naming: `install script (cli,
+  # windows)`. shellcheck runs on Linux only, where the runner image carries
+  # it.
+  install-script-linux:
+    name: install script (cli, linux)
     needs: changes
     if: needs.changes.outputs.cli == 'true'
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
     defaults:
       run:
         working-directory: apps/cli
@@ -282,8 +286,22 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: shellcheck
-        if: runner.os == 'Linux'
         run: shellcheck install.sh scripts/install_test.sh
+
+      - name: install script tests
+        run: sh scripts/install_test.sh
+
+  install-script-macos:
+    name: install script (cli, macos)
+    needs: changes
+    if: needs.changes.outputs.cli == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/cli
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: install script tests
         run: sh scripts/install_test.sh
