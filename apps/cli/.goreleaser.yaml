@@ -110,13 +110,14 @@ release:
   # pre-release. On a candidate the plain one-liners would therefore find no
   # release at all (before the first final release) or install the previous
   # final one, so a candidate's footer hands the scripts its own tag.
+  # GitHub renders every newline in a release body as a line break, so each
+  # paragraph below stays on one line, however long.
   footer: |
     ## Install
 
     {{- if .Prerelease }}
 
-    This is a release candidate, so the install scripts skip it unless they
-    are given its tag.
+    This is a release candidate, so the install scripts skip it unless they are given its tag.
 
     macOS and Linux:
 
@@ -144,6 +145,4 @@ release:
     ```
     {{- end }}
 
-    Or download the archive for your system below and check it against
-    `checksums.txt`. The [Command-line tool](https://github.com/mheob/kurze-url#command-line-tool)
-    section of the README has the details.
+    Or download the archive for your system below and check it against `checksums.txt`. The [Command-line tool](https://github.com/mheob/kurze-url#command-line-tool) section of the README has the details.
