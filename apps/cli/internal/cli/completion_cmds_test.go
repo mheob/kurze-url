@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf16"
 
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
@@ -13,9 +14,13 @@ import (
 	"github.com/mheob/kurze-url/apps/cli/internal/shellrc"
 )
 
-// psCommand is what install asks each PowerShell, word for word: the profile
-// on the first line of the answer and the execution policy on the second.
-var psCommand = []string{"-NoProfile", "-NonInteractive", "-Command", "$PROFILE.CurrentUserCurrentHost; Get-ExecutionPolicy"}
+// psCommand is what install asks each PowerShell, word for word: UTF-8 output
+// without a byte-order mark, then the profile on the first line of the answer
+// and the execution policy on the second.
+var psCommand = []string{
+	"-NoProfile", "-NonInteractive", "-Command",
+	"[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); $PROFILE.CurrentUserCurrentHost; Get-ExecutionPolicy",
+}
 
 // shellHarness is a harness whose $SHELL is shell.
 func shellHarness(t *testing.T, shell string) *harness {
@@ -467,6 +472,255 @@ func TestInstallWriteFailureNamesTheFile(t *testing.T) {
 	require.True(t, strings.HasPrefix(h.stderr.String(), "kurze-url: Could not write "+zshrc+": "), h.stderr.String())
 	got, _ := fileContent(t, zshrc)
 	require.Equal(t, "export A=1\n", got)
+}
+
+// ---- while the question waits ----
+
+// editingStdin is a person who, while the question waits, changes the file in
+// another window (or a dotfile sync does) and then answers.
+type editingStdin struct {
+	edit   func()
+	answer *strings.Reader
+	edited bool
+}
+
+func (r *editingStdin) Read(p []byte) (int, error) {
+	if !r.edited {
+		r.edited = true
+		r.edit()
+	}
+	return r.answer.Read(p)
+}
+
+// answerAfter puts a person on stdin's terminal who runs edit and then types
+// text.
+func (h *harness) answerAfter(edit func(), text string) {
+	h.stdinTTY = true
+	h.deps.Stdin = &editingStdin{edit: edit, answer: strings.NewReader(text)}
+}
+
+// appendTo adds text at the end of a file, as an editor would.
+func appendTo(t *testing.T, path, text string) {
+	t.Helper()
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	require.NoError(t, err)
+	_, err = f.WriteString(text)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+}
+
+func TestInstallKeepsAnEditMadeWhileItAsked(t *testing.T) {
+	h := shellHarness(t, "/bin/zsh")
+	zshrc := h.homeFile(".zshrc")
+	putFile(t, zshrc, "export A=1\n")
+	h.answerAfter(func() { appendTo(t, zshrc, "export B=2\n") }, "y\n")
+
+	code := h.run("completion", "install")
+
+	require.Equal(t, 0, code, h.stderr.String())
+	got, _ := fileContent(t, zshrc)
+	require.Equal(t, "export A=1\nexport B=2\n"+shellrc.Block(shellrc.Zsh), got)
+}
+
+// What the file holds after the answer decides, and is what is reported.
+func TestInstallActsOnWhatTheFileHoldsAfterTheAnswer(t *testing.T) {
+	const handMade = "source <(kurze-url completion zsh)\n"
+	cases := []struct {
+		name, added, want, message string
+	}{
+		{
+			name:    "set up by hand meanwhile",
+			added:   handMade,
+			want:    "export A=1\n" + handMade,
+			message: " already sets up tab completion for kurze-url, so it was left as it is.\n",
+		},
+		{
+			name:    "installed meanwhile",
+			added:   shellrc.Marker + "\n" + shellrc.Command(shellrc.Zsh) + "\n",
+			want:    "export A=1\n" + shellrc.Marker + "\n" + shellrc.Command(shellrc.Zsh) + "\n",
+			message: ".\n",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := shellHarness(t, "/bin/zsh")
+			zshrc := h.homeFile(".zshrc")
+			putFile(t, zshrc, "export A=1\n")
+			h.answerAfter(func() { appendTo(t, zshrc, tc.added) }, "y\n")
+
+			code := h.run("completion", "install")
+
+			require.Equal(t, 0, code, h.stderr.String())
+			got, _ := fileContent(t, zshrc)
+			require.Equal(t, tc.want, got)
+			require.True(t, strings.HasSuffix(h.stderr.String(), zshrc+tc.message), h.stderr.String())
+			require.NotContains(t, h.stderr.String(), "Added tab completion")
+		})
+	}
+}
+
+func TestUninstallKeepsAnEditMadeWhileItAsked(t *testing.T) {
+	h := shellHarness(t, "/bin/zsh")
+	zshrc := h.homeFile(".zshrc")
+	putFile(t, zshrc, "export A=1\n")
+	require.Equal(t, 0, h.run("completion", "install", "--yes"), h.stderr.String())
+	h.answerAfter(func() { appendTo(t, zshrc, "export C=3\n") }, "\n")
+
+	code := h.run("completion", "uninstall")
+
+	require.Equal(t, 0, code, h.stderr.String())
+	got, _ := fileContent(t, zshrc)
+	require.Equal(t, "export A=1\nexport C=3\n", got)
+}
+
+func TestUninstallWhenTheBlockWentWhileItAsked(t *testing.T) {
+	h := shellHarness(t, "/bin/zsh")
+	zshrc := h.homeFile(".zshrc")
+	putFile(t, zshrc, "export A=1\n")
+	require.Equal(t, 0, h.run("completion", "install", "--yes"), h.stderr.String())
+	h.stderr.Reset()
+	h.answerAfter(func() { putFile(t, zshrc, "export A=1\nexport D=4\n") }, "\n")
+
+	code := h.run("completion", "uninstall")
+
+	require.Equal(t, 0, code, h.stderr.String())
+	got, _ := fileContent(t, zshrc)
+	require.Equal(t, "export A=1\nexport D=4\n", got)
+	require.True(t, strings.HasSuffix(h.stderr.String(),
+		zshrc+" no longer holds the tab completion, so there was nothing to remove from it.\n"),
+		h.stderr.String())
+}
+
+// ---- PowerShell profiles a change would damage ----
+
+// utf16LE is text as Windows PowerShell 5.1's Out-File and old Notepad save
+// it: UTF-16, little-endian, with its byte-order mark.
+func utf16LE(text string) string {
+	out := []byte{0xFF, 0xFE}
+	for _, u := range utf16.Encode([]rune(text)) {
+		out = append(out, byte(u), byte(u>>8))
+	}
+	return string(out)
+}
+
+// utf16BE is the same, big-endian.
+func utf16BE(text string) string {
+	out := []byte{0xFE, 0xFF}
+	for _, u := range utf16.Encode([]rune(text)) {
+		out = append(out, byte(u>>8), byte(u))
+	}
+	return string(out)
+}
+
+// signedProfile is a profile as Set-AuthenticodeSignature leaves it.
+const signedProfile = "Set-Alias ll Get-ChildItem\r\n\r\n" +
+	"# SIG # Begin signature block\r\n# MIIFuQYJKoZIhvcNAQcCoIIFqjCCBaYCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB\r\n" +
+	"# SIG # End signature block\r\n"
+
+// unsafeProfiles are the three kinds of profile install must not change.
+var unsafeProfiles = []struct{ name, content string }{
+	{"UTF-16 little-endian", utf16LE("Set-Alias ll Get-ChildItem\r\n")},
+	{"UTF-16 big-endian", utf16BE("Set-Alias ll Get-ChildItem\r\n")},
+	// UTF-16 without its byte-order mark shows as NUL bytes.
+	{"NUL bytes", "S\x00e\x00t\x00-\x00A\x00l\x00i\x00a\x00s\x00"},
+	{"signed", signedProfile},
+}
+
+// pwshHarness is a harness on Linux whose one PowerShell reports profile.
+func pwshHarness(t *testing.T, profile string) *harness {
+	t.Helper()
+	h := shellHarness(t, "/usr/bin/pwsh")
+	h.programs["pwsh"] = true
+	h.outputs["pwsh"] = profile + "\nRemoteSigned\n"
+	return h
+}
+
+func TestInstallRefusesAProfileAChangeWouldDamage(t *testing.T) {
+	for _, tc := range unsafeProfiles {
+		t.Run(tc.name, func(t *testing.T) {
+			profile := filepath.Join(t.TempDir(), "profile.ps1")
+			putFile(t, profile, tc.content)
+			h := pwshHarness(t, profile)
+			h.answer("y\n")
+
+			code := h.run("completion", "install")
+
+			// It was the only profile, so completion is on nowhere: exit 1.
+			require.Equal(t, 1, code)
+			got, _ := fileContent(t, profile)
+			require.Equal(t, tc.content, got)
+			require.Equal(t,
+				"kurze-url: "+profile+" is saved as UTF-16 or signed, and changing it from here "+
+					"would corrupt it or break its signature, so it was left as it is.\n",
+				h.stderr.String())
+		})
+	}
+}
+
+// One profile refused does not stop the other edition's.
+func TestInstallWritesTheOtherProfileWhenOneIsRefused(t *testing.T) {
+	h := newHarness(t)
+	h.deps.GOOS = "windows"
+	dir := t.TempDir()
+	a, b := filepath.Join(dir, "a.ps1"), filepath.Join(dir, "b.ps1")
+	putFile(t, b, signedProfile)
+	h.programs["pwsh"], h.programs["powershell"] = true, true
+	h.outputs["pwsh"] = a + "\nRemoteSigned\n"
+	h.outputs["powershell"] = b + "\nAllSigned\n"
+	h.answer("\n")
+
+	code := h.run("completion", "install")
+
+	require.Equal(t, 0, code, h.stderr.String())
+	got, _ := fileContent(t, a)
+	require.Equal(t, shellrc.Block(shellrc.PowerShell), got)
+	got, _ = fileContent(t, b)
+	require.Equal(t, signedProfile, got)
+	require.True(t, strings.HasPrefix(h.stderr.String(),
+		b+" is saved as UTF-16 or signed, and changing it from here would corrupt it or break its signature, "+
+			"so it was left as it is.\n"+
+			"Add tab completion for powershell to "+a+"? [Y/n] "),
+		h.stderr.String())
+}
+
+// Taking the block out of a signed profile breaks its signature as surely as
+// putting it in.
+func TestUninstallLeavesASignedProfileAlone(t *testing.T) {
+	profile := filepath.Join(t.TempDir(), "profile.ps1")
+	content := shellrc.OwnFile(shellrc.PowerShell) + signedProfile
+	putFile(t, profile, content)
+	h := pwshHarness(t, profile)
+
+	code := h.run("completion", "uninstall", "--yes")
+
+	require.Equal(t, 1, code)
+	got, _ := fileContent(t, profile)
+	require.Equal(t, content, got)
+	require.Contains(t, h.stderr.String(), "kurze-url: "+profile+" is saved as UTF-16 or signed")
+}
+
+// The path is opened as PowerShell wrote it, so anything that is not a clean
+// UTF-8 path is refused before a file is touched.
+func TestInstallRefusesAProfilePathThatIsNotClean(t *testing.T) {
+	dir := t.TempDir()
+	cases := []struct{ name, path, shown string }{
+		// A legacy code page's ü (0xFC) is not UTF-8.
+		{"not UTF-8", filepath.Join(dir, "J\xfcrgen.ps1"), `\xfc`},
+		{"byte-order mark", "\uFEFF" + filepath.Join(dir, "a.ps1"), `\ufeff`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := pwshHarness(t, tc.path)
+
+			code := h.run("completion", "install", "--yes")
+
+			require.Equal(t, 1, code)
+			require.True(t, strings.HasPrefix(h.stderr.String(),
+				"kurze-url: Could not ask pwsh where its profile is: "), h.stderr.String())
+			require.Contains(t, h.stderr.String(), tc.shown)
+			requireEmptyDir(t, dir)
+		})
+	}
 }
 
 // ---- uninstall ----

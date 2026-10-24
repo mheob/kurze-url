@@ -1,5 +1,6 @@
 {
 	"completion.alreadyInstalled": "Die Tab-Vervollständigung ist in {files} schon eingerichtet.",
+	"completion.alreadyRemoved": "{file} enthält die Tab-Vervollständigung nicht mehr, deshalb gab es dort nichts zu entfernen.",
 	"completion.bashPackage": "In bash braucht die Vervollständigung außerdem das Paket bash-completion. Falls es noch nicht installiert ist, installiere es mit der Paketverwaltung deines Systems.",
 	"completion.byHand": "{file} richtet die Tab-Vervollständigung für kurze-url schon ein und bleibt deshalb unverändert.",
 	"completion.byHandLeft": "{file} richtet die Tab-Vervollständigung für kurze-url ohne die Markierung ein, die `completion install` setzt, und bleibt deshalb unverändert. Entferne diese Einrichtung von Hand, wenn du sie nicht mehr möchtest.",
@@ -14,6 +15,7 @@
 	"completion.nothingToRemove": "Es gibt keine von `completion install` eingerichtete Tab-Vervollständigung, die sich entfernen ließe.",
 	"completion.policyBlocks": "Die Ausführungsrichtlinie von PowerShell ist {policy} und verhindert, dass {file} geladen wird. Die Vervollständigung bleibt aus, bis die Richtlinie das Profil zulässt. Die Richtlinie wurde nicht geändert.",
 	"completion.profileFailed": "{program} ließ sich nicht nach seinem Profil fragen: {reason}",
+	"completion.profileUnsafe": "{file} ist als UTF-16 gespeichert oder signiert. Eine Änderung von hier aus würde die Datei beschädigen oder ihre Signatur ungültig machen, deshalb bleibt sie unverändert.",
 	"completion.readFailed": "{file} konnte nicht gelesen werden: {reason}",
 	"completion.reloadNewShell": "Öffne eine neue Shell, um sie zu nutzen.",
 	"completion.reloadProfile": "Öffne ein neues PowerShell-Fenster oder führe `. '{file}'` aus, um sie zu nutzen.",

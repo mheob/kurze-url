@@ -2,13 +2,16 @@ package cli
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 
@@ -29,7 +32,15 @@ const rcFileMode os.FileMode = 0o644
 // psProfileQuery is what install asks each PowerShell: the profile it loads
 // for this user in this host, and the execution policy that decides whether
 // it loads it at all. One process answers both, one per line.
-const psProfileQuery = "$PROFILE.CurrentUserCurrentHost; Get-ExecutionPolicy"
+//
+// It first switches the console's output to UTF-8, because Windows
+// PowerShell otherwise writes in the system's legacy code page, and a profile
+// under a user name with an umlaut would arrive as bytes that name another
+// file. The encoder is the one without a byte-order mark: the shorter
+// [Text.Encoding]::UTF8 carries one, which Windows PowerShell can write ahead
+// of redirected output, and a path that starts with one is refused.
+const psProfileQuery = "[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); " +
+	"$PROFILE.CurrentUserCurrentHost; Get-ExecutionPolicy"
 
 // newCompletionInstallCmd writes the completion block into the person's
 // shell configuration, after asking them.
@@ -106,14 +117,36 @@ type completionTarget struct {
 	// own says the whole file is ours, which is fish's completions file:
 	// install writes all of it and uninstall deletes it.
 	own bool
-	// policy is the execution policy PowerShell reported with a profile, and
-	// "" for every other file.
-	policy string
+	// profile says the file is a PowerShell profile, which may be saved as
+	// UTF-16 or signed, and policy is the execution policy PowerShell
+	// reported with it.
+	profile bool
+	policy  string
 
 	// content is what the file holds, empty when it does not exist.
 	content []byte
 	// state is what the file holds of a completion setup.
 	state shellrc.State
+	// unsafe says a change from here would damage the file (see
+	// unsafeProfile).
+	unsafe bool
+}
+
+// signatureBlock opens the signature PowerShell appends to a signed script.
+const signatureBlock = "# SIG # Begin signature block"
+
+// unsafeProfile reports whether changing a PowerShell profile from here would
+// damage it. A profile Windows PowerShell or Notepad saved as UTF-16 starts
+// with its byte-order mark, or holds NUL bytes when it has none, and the
+// block's UTF-8 bytes in it would be garbage that PowerShell refuses to run.
+// A signed profile is checked against its signature, so any change, even one
+// that only adds a line, invalidates it and the profile stops loading under
+// AllSigned.
+func unsafeProfile(content []byte) bool {
+	return bytes.HasPrefix(content, []byte{0xFF, 0xFE}) ||
+		bytes.HasPrefix(content, []byte{0xFE, 0xFF}) ||
+		bytes.IndexByte(content, 0) >= 0 ||
+		bytes.Contains(content, []byte(signatureBlock))
 }
 
 // installCompletion is `completion install`: it finds the files, says what is
@@ -121,45 +154,48 @@ type completionTarget struct {
 //
 // Nothing is written before the question is answered, and only the files
 // whose setup is missing are asked about or touched: a file that already has
-// the block is reported and left, so a second install adds nothing, and a
-// file somebody set up by hand is reported and left, because adding ours
-// would load completion twice.
+// the block is reported and left, so a second install adds nothing, a file
+// somebody set up by hand is reported and left, because adding ours would
+// load completion twice, and a profile a change would damage is refused.
+//
+// The question can wait for as long as the person takes, and it names the
+// files, which invites them to look, or a dotfile sync may change one in the
+// meantime. So after the yes, every file it named is read again and planned
+// again from what is on disk now: an edit made meanwhile is kept, and a file
+// that has changed state is reported as it is now and left. A file the
+// question did not name is never written, whatever happened to it.
 func (a *App) installCompletion(cmd *cobra.Command, args []string, yes bool) error {
 	shell, targets, err := a.completionTargets(cmd, args)
 	if err != nil {
 		return err
 	}
 
-	var pending []completionTarget
-	var done []string
-	for _, t := range targets {
-		switch t.state {
-		case shellrc.Installed:
-			done = append(done, t.path)
-		case shellrc.ByHand:
-			a.notice(a.Cat.T("completion.byHand", i18n.Args{"file": t.path}))
-		default:
-			pending = append(pending, t)
-		}
+	plan := a.planInstall(targets)
+	if err := a.refuseProfiles(plan.refused, len(plan.pending) == 0 && !plan.settled); err != nil {
+		return err
 	}
-	if len(done) > 0 {
-		a.notice(a.Cat.T("completion.alreadyInstalled", i18n.Args{"files": joinPaths(done)}))
-	}
-	if len(pending) == 0 {
+	if len(plan.pending) == 0 {
 		return nil
 	}
 
 	ok, err := a.confirm(yes, a.Cat.T("completion.confirmInstall", i18n.Args{
 		"shell": string(shell),
-		"files": joinPaths(pathsOf(pending)),
+		"files": joinPaths(pathsOf(plan.pending)),
 	}))
 	if err != nil || !ok {
 		return err
 	}
 
+	fresh, err := a.reread(plan.pending)
+	if err != nil {
+		return err
+	}
+	again := a.planInstall(fresh)
+
 	// A failure stops at the file it happened on. The files before it are
 	// written and reported, so the person knows which ones have the block.
-	for _, t := range pending {
+	var written []completionTarget
+	for _, t := range again.pending {
 		var data []byte
 		if t.own {
 			data = []byte(shellrc.OwnFile(shell))
@@ -170,14 +206,72 @@ func (a *App) installCompletion(cmd *cobra.Command, args []string, yes bool) err
 			return a.fileFailure(t.path, err, false)
 		}
 		a.notice(a.Cat.T("completion.installed", i18n.Args{"file": t.path}))
+		written = append(written, t)
 	}
-	a.nextSteps(shell, pending)
+	a.nextSteps(shell, written)
+	return a.refuseProfiles(again.refused, len(written) == 0 && !plan.settled && !again.settled)
+}
+
+// installPlan is what install makes of the files' content.
+type installPlan struct {
+	// pending are the files to write the block into.
+	pending []completionTarget
+	// refused are the profiles a change would damage.
+	refused []string
+	// settled says some file already turns completion on, through our
+	// block or a setup made by hand.
+	settled bool
+}
+
+// planInstall sorts the targets by what they hold and reports the files that
+// are left as they are: the ones that have the block and the ones set up by
+// hand. A file that has a setup is judged by it before its encoding, because
+// it is left alone either way.
+func (a *App) planInstall(targets []completionTarget) installPlan {
+	var plan installPlan
+	var done []string
+	for _, t := range targets {
+		switch {
+		case t.state == shellrc.Installed:
+			done = append(done, t.path)
+		case t.state == shellrc.ByHand:
+			a.notice(a.Cat.T("completion.byHand", i18n.Args{"file": t.path}))
+			plan.settled = true
+		case t.unsafe:
+			plan.refused = append(plan.refused, t.path)
+		default:
+			plan.pending = append(plan.pending, t)
+		}
+	}
+	if len(done) > 0 {
+		a.notice(a.Cat.T("completion.alreadyInstalled", i18n.Args{"files": joinPaths(done)}))
+		plan.settled = true
+	}
+	return plan
+}
+
+// refuseProfiles reports the profiles left alone because a change would
+// damage them. When fatal, they were all there was to do and completion is
+// not on anywhere, so the last refusal is the command's failure and the run
+// exits 1: a script that ran it must not read success, and the person has to
+// do something about the file before completion can work.
+func (a *App) refuseProfiles(paths []string, fatal bool) error {
+	for i, path := range paths {
+		text := a.Cat.T("completion.profileUnsafe", i18n.Args{"file": path})
+		if fatal && i == len(paths)-1 {
+			return errors.New(text)
+		}
+		a.notice(text)
+	}
 	return nil
 }
 
 // nextSteps says how to turn on what install has just written, which a shell
-// that is already running has not read.
+// that is already running has not read. Nothing written needs no step.
 func (a *App) nextSteps(shell shellrc.Shell, written []completionTarget) {
+	if len(written) == 0 {
+		return
+	}
 	switch shell {
 	case shellrc.Zsh, shellrc.Bash:
 		for _, t := range written {
@@ -210,35 +304,40 @@ func (a *App) nextSteps(shell shellrc.Shell, written []completionTarget) {
 
 // uninstallCompletion is `completion uninstall`: it removes exactly the block
 // install wrote, or deletes fish's file when it carries the marker, after
-// asking. A setup without the marker is somebody's own and stays.
+// asking. A setup without the marker is somebody's own and stays, and so does
+// a block in a profile a change would damage, a signed one above all.
+//
+// As in install, the files the question named are read and planned again
+// after the yes, and only those, so an edit made while it waited is kept.
 func (a *App) uninstallCompletion(cmd *cobra.Command, args []string, yes bool) error {
 	_, targets, err := a.completionTargets(cmd, args)
 	if err != nil {
 		return err
 	}
 
-	var marked []completionTarget
-	for _, t := range targets {
-		switch t.state {
-		case shellrc.Installed:
-			marked = append(marked, t)
-		case shellrc.ByHand:
-			a.notice(a.Cat.T("completion.byHandLeft", i18n.Args{"file": t.path}))
-		}
-	}
-	if len(marked) == 0 {
+	plan := a.planUninstall(targets, false)
+	if len(plan.marked) == 0 && len(plan.refused) == 0 {
 		a.notice(a.Cat.T("completion.nothingToRemove"))
 		return nil
 	}
+	if err := a.refuseProfiles(plan.refused, len(plan.marked) == 0); err != nil {
+		return err
+	}
 
 	ok, err := a.confirm(yes, a.Cat.T("completion.confirmUninstall", i18n.Args{
-		"files": joinPaths(pathsOf(marked)),
+		"files": joinPaths(pathsOf(plan.marked)),
 	}))
 	if err != nil || !ok {
 		return err
 	}
 
-	for _, t := range marked {
+	fresh, err := a.reread(plan.marked)
+	if err != nil {
+		return err
+	}
+	again := a.planUninstall(fresh, true)
+
+	for _, t := range again.marked {
 		if t.own {
 			if err := os.Remove(t.path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 				return a.fileFailure(t.path, err, true)
@@ -253,7 +352,37 @@ func (a *App) uninstallCompletion(cmd *cobra.Command, args []string, yes bool) e
 		}
 		a.notice(a.Cat.T("completion.removed", i18n.Args{"file": t.path}))
 	}
-	return nil
+	return a.refuseProfiles(again.refused, len(again.marked) == 0)
+}
+
+// uninstallPlan is what uninstall makes of the files' content.
+type uninstallPlan struct {
+	// marked are the files to take the block out of.
+	marked []completionTarget
+	// refused are the profiles that hold the block and that a change would
+	// damage.
+	refused []string
+}
+
+// planUninstall sorts the targets by what they hold and reports the setups
+// made by hand, which stay. again says the files are being read a second
+// time, after the question: a file whose block went in the meantime is then
+// reported, where on the first read it is simply not one of the files.
+func (a *App) planUninstall(targets []completionTarget, again bool) uninstallPlan {
+	var plan uninstallPlan
+	for _, t := range targets {
+		switch {
+		case t.state == shellrc.Installed && t.unsafe:
+			plan.refused = append(plan.refused, t.path)
+		case t.state == shellrc.Installed:
+			plan.marked = append(plan.marked, t)
+		case t.state == shellrc.ByHand:
+			a.notice(a.Cat.T("completion.byHandLeft", i18n.Args{"file": t.path}))
+		case again:
+			a.notice(a.Cat.T("completion.alreadyRemoved", i18n.Args{"file": t.path}))
+		}
+	}
+	return plan
 }
 
 // confirm asks the person, unless --yes already said yes. Without a terminal
@@ -290,8 +419,7 @@ func (a *App) confirm(yes bool, question string) (bool, error) {
 	return false, nil
 }
 
-// completionTargets settles the shell, finds its files and reads them. A file
-// that does not exist reads as empty, which is a file with no setup in it.
+// completionTargets settles the shell, finds its files and reads them.
 func (a *App) completionTargets(cmd *cobra.Command, args []string) (shellrc.Shell, []completionTarget, error) {
 	shell, err := a.completionShell(cmd, args)
 	if err != nil {
@@ -302,26 +430,46 @@ func (a *App) completionTargets(cmd *cobra.Command, args []string) (shellrc.Shel
 		return "", nil, err
 	}
 	for i := range targets {
-		t := &targets[i]
-		data, err := os.ReadFile(t.path)
-		exists := err == nil
-		if err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return "", nil, errors.New(a.Cat.T("completion.readFailed", i18n.Args{
-				"file":   t.path,
-				"reason": describe(err, a.Cat),
-			}))
-		}
-		t.content = data
-		t.state = shellrc.Inspect(data)
-		// Cobra's own help tells people to save its fish script in this
-		// very file, and that script does not contain the words Inspect
-		// recognises a hand-made setup by. In a file that is ours alone,
-		// anything without the marker is somebody's setup all the same.
-		if t.own && exists && t.state != shellrc.Installed {
-			t.state = shellrc.ByHand
+		if err := a.readTarget(&targets[i]); err != nil {
+			return "", nil, err
 		}
 	}
 	return shell, targets, nil
+}
+
+// reread returns copies of the targets with what their files hold now.
+func (a *App) reread(targets []completionTarget) ([]completionTarget, error) {
+	fresh := slices.Clone(targets)
+	for i := range fresh {
+		if err := a.readTarget(&fresh[i]); err != nil {
+			return nil, err
+		}
+	}
+	return fresh, nil
+}
+
+// readTarget reads what a file holds and judges it. A file that does not
+// exist reads as empty, which is a file with no setup in it.
+func (a *App) readTarget(t *completionTarget) error {
+	data, err := os.ReadFile(t.path)
+	exists := err == nil
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return errors.New(a.Cat.T("completion.readFailed", i18n.Args{
+			"file":   t.path,
+			"reason": describe(err, a.Cat),
+		}))
+	}
+	t.content = data
+	t.state = shellrc.Inspect(data)
+	// Cobra's own help tells people to save its fish script in this very
+	// file, and that script does not contain the words Inspect recognises a
+	// hand-made setup by. In a file that is ours alone, anything without the
+	// marker is somebody's setup all the same.
+	if t.own && exists && t.state != shellrc.Installed {
+		t.state = shellrc.ByHand
+	}
+	t.unsafe = t.profile && unsafeProfile(data)
+	return nil
 }
 
 // completionShell is the shell to set up: the argument when there is one,
@@ -440,7 +588,12 @@ func (a *App) powerShellProfiles(ctx context.Context) ([]completionTarget, error
 		// Windows ends each line with CRLF, which TrimSpace takes off.
 		lines := strings.Split(string(out), "\n")
 		profile := strings.TrimSpace(lines[0])
-		if !filepath.IsAbs(profile) {
+		// The path is opened as it came, so it has to be one: valid UTF-8,
+		// as asked for, with no byte-order mark in front, and absolute. A
+		// path decoded wrongly would name a file that is not the profile.
+		// %q shows what came instead, with any byte that is not text
+		// escaped.
+		if !utf8.ValidString(profile) || strings.HasPrefix(profile, "\uFEFF") || !filepath.IsAbs(profile) {
 			return nil, a.profileFailure(program, fmt.Sprintf("%q", profile))
 		}
 		policy := ""
@@ -453,7 +606,7 @@ func (a *App) powerShellProfiles(ctx context.Context) ([]completionTarget, error
 			continue
 		}
 		seen[profile] = true
-		targets = append(targets, completionTarget{path: profile, policy: policy})
+		targets = append(targets, completionTarget{path: profile, profile: true, policy: policy})
 	}
 	if len(targets) == 0 {
 		return nil, errors.New(a.Cat.T("completion.noPowerShell"))
