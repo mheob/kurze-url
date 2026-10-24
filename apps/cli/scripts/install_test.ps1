@@ -1271,6 +1271,40 @@ function Move-Item {
         Assert-Output -Result $r -Text "kurze-url wurde installiert nach $exe"
     }
 
+    Invoke-Case 'suggests_completion' {
+        # The hint is said with Write-Host, so it reaches the person's console
+        # and not the pipeline of whoever captures the result of irm | iex,
+        # and it comes before the version line, which has to stay the last
+        # thing on stdout. German is checked through a fragment of plain
+        # ASCII, for the reason speaks_german_with_a_german_locale gives.
+        $r = Invoke-Installer
+        Assert-Success -Result $r
+        Assert-Output -Result $r -Text 'To turn on tab completion, run: kurze-url completion install'
+        Assert-That -Condition ((Get-LastLine -Text $r.Stdout) -ceq $fakeVersionLine) -Message 'stdout does not end with the version line'
+
+        $r = Invoke-Installer -Environment @{ LC_ALL = 'de' }
+        Assert-Success -Result $r
+        Assert-Output -Result $r -Text 'einzuschalten'
+        Assert-Output -Result $r -Text 'kurze-url completion install'
+        Assert-NoOutput -Result $r -Text 'To turn on tab completion'
+        Assert-That -Condition ((Get-LastLine -Text $r.Stdout) -ceq $fakeVersionLine) -Message 'stdout does not end with the version line in German'
+
+        # What a script that captures the installer's result gets is the
+        # version line alone.
+        $capture = '$line = Get-Content -Raw -LiteralPath ' + (ConvertTo-Literal -Text $installPs1) + ' | Invoke-Expression' + "`n" + 'Write-Output (''CAPTURED='' + ($line -join ''|''))'
+        $r = Invoke-Installer -Code $capture
+        Assert-Success -Result $r
+        Assert-That -Condition ((Get-LastLine -Text $r.Stdout) -ceq ('CAPTURED=' + $fakeVersionLine)) -Message ('the captured result is not the version line alone: ' + (Format-Output -Result $r))
+    }
+
+    Invoke-Case 'does_not_suggest_completion_after_a_failure' {
+        $rel = Copy-Release -Name 'release'
+        Edit-ZipHeader -Path (Join-Path -Path $rel -ChildPath $asset)
+        $r = Invoke-Installer -Environment @{ KURZE_URL_DOWNLOAD_URL = (ConvertTo-FileUrl -Path $rel) }
+        Assert-Failure -Result $r
+        Assert-NoOutput -Result $r -Text 'completion install'
+    }
+
     Invoke-Case 'speaks_german_with_a_german_locale' {
         $rel = Copy-Release -Name 'release'
         Edit-ZipHeader -Path (Join-Path -Path $rel -ChildPath $asset)

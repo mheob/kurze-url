@@ -84,6 +84,8 @@ Oder lade das Archiv von $2 herunter."
 	en:path_hint) text="$2 is not in your PATH. To run kurze-url from anywhere, add this line to ~/$3:" ;;
 	de:path_hint) text="$2 ist nicht in deinem PATH. Damit du kurze-url überall aufrufen kannst, füge diese Zeile zu ~/$3 hinzu:" ;;
 	*:path_export) text="  export PATH=\"$2:\$PATH\"" ;;
+	en:completion_hint) text="To turn on tab completion, run: kurze-url completion install" ;;
+	de:completion_hint) text="Um die Tab-Vervollständigung einzuschalten, führe aus: kurze-url completion install" ;;
 	*) text=$1 ;;
 	esac
 	printf '%s\n' "$text" >&2
@@ -274,6 +276,11 @@ main() {
 		msg path_export "$dir"
 		;;
 	esac
+
+	# Last, so it is what the person reads last. It only names the command:
+	# `kurze-url completion install` asks before it touches a shell's
+	# configuration, and this script never does.
+	msg completion_hint
 }
 
 main "$@"

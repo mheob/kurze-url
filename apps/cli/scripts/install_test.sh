@@ -426,6 +426,47 @@ is_755() {
 )
 
 (
+	begin suggests_completion
+	# The hint is the last thing the installer says, after the PATH hint, so
+	# it is what the person reads last, and it keeps stdout to the version
+	# line. It comes whether or not the directory is on PATH.
+	run_install "$dl" "$to" SHELL=/bin/zsh
+	expect_status 0
+	stderr_has "To turn on tab completion, run: kurze-url completion install"
+	[ "$(tail -n 1 "$dir/stderr")" = "To turn on tab completion, run: kurze-url completion install" ] ||
+		fail "the last line of stderr is '$(tail -n 1 "$dir/stderr")'"
+	[ "$(tail -n 1 "$dir/stdout")" = "$fake_version_line" ] || fail "stdout ends with '$(tail -n 1 "$dir/stdout")'"
+	[ "$(wc -l <"$dir/stdout" | tr -d ' ')" -eq 1 ] || fail "stdout holds more than the version line"
+	run_install "$dl" "$to" "PATH=$bin:$shims:$PATH"
+	expect_status 0
+	stderr_lacks "export PATH"
+	stderr_has "To turn on tab completion, run: kurze-url completion install"
+	pass
+)
+
+(
+	begin suggests_completion_in_german
+	run_install "$dl" "$to" SHELL=/bin/zsh LANG=de_DE.UTF-8
+	expect_status 0
+	stderr_has "Um die Tab-Vervollständigung einzuschalten, führe aus: kurze-url completion install"
+	stderr_lacks "To turn on tab completion"
+	[ "$(tail -n 1 "$dir/stdout")" = "$fake_version_line" ] || fail "stdout ends with '$(tail -n 1 "$dir/stdout")'"
+	[ "$(wc -l <"$dir/stdout" | tr -d ' ')" -eq 1 ] || fail "stdout holds more than the version line"
+	pass
+)
+
+(
+	begin does_not_suggest_completion_after_a_failure
+	cp -R "$release" "$dir/release"
+	printf x | dd of="$dir/release/$host_asset" bs=1 count=1 conv=notrunc 2>/dev/null
+	run_install "KURZE_URL_DOWNLOAD_URL=file://$dir/release" "$to"
+	expect_status 1
+	stderr_lacks "completion install"
+	nothing_installed
+	pass
+)
+
+(
 	begin speaks_german_with_a_german_locale
 	cp -R "$release" "$dir/release"
 	printf x | dd of="$dir/release/$host_asset" bs=1 count=1 conv=notrunc 2>/dev/null
