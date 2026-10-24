@@ -236,3 +236,54 @@ jobs:
 
           echo "dist/ holds exactly:"
           echo "$actual"
+
+      # The assertion above checks the names goreleaser writes; this one
+      # checks that install.sh asks for those very names. It installs the
+      # snapshot the way a user's `curl | sh` would, with a file:// URL
+      # standing in for releases/latest/download, so a platform mapping or an
+      # archive name that drifted from the config fails here instead of as a
+      # 404 on the first real install. Only stdout is captured: the script
+      # puts everything but the binary's own `version` line on stderr, and
+      # the PATH hint it ends with would otherwise be the last line.
+      - name: install the snapshot with install.sh
+        run: |
+          output=$(KURZE_URL_DOWNLOAD_URL="file://$PWD/dist" KURZE_URL_INSTALL_DIR="$RUNNER_TEMP/bin" sh install.sh)
+          echo "$output"
+
+          last=$(printf '%s\n' "$output" | tail -n 1)
+          case $last in
+            "kurze-url "*-snapshot*) ;;
+            *)
+              echo "::error::the installed binary's last line of output is not a snapshot version line: $last"
+              exit 1
+              ;;
+          esac
+
+  # install.sh is what `curl | sh` runs on a stranger's machine, so it gets
+  # its own tests on both operating systems it supports: the Linux runner's
+  # dash and the macOS runner's sh differ in exactly the places a portable
+  # script slips (tar, sha256sum against shasum, mktemp, find). The tests need
+  # no network: they install from a fake release in a file:// directory.
+  # shellcheck runs on Linux only, where the runner image carries it.
+  install-script:
+    name: install script (cli, ${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.cli == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    defaults:
+      run:
+        working-directory: apps/cli
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: shellcheck
+        if: runner.os == 'Linux'
+        run: shellcheck install.sh scripts/install_test.sh
+
+      - name: install script tests
+        run: sh scripts/install_test.sh
