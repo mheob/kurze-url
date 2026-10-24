@@ -552,9 +552,18 @@ function Restore-UserPathState {
     <#
     .SYNOPSIS
     Writes a state read by Get-UserPathState back, value and type, or deletes the value.
+    .DESCRIPTION
+    Writes nothing when the registry already holds exactly that, so a run that
+    changed nothing also reverts nothing: on a developer's machine another
+    program may have changed the Path in the meantime, and that is not ours to
+    undo.
     #>
     param($State)
     if ($null -eq $State) {
+        return
+    }
+    $current = Get-UserPathState
+    if (($State.Exists -eq $current.Exists) -and ($State.Raw -ceq $current.Raw) -and ($State.Kind -ceq $current.Kind)) {
         return
     }
     $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
@@ -595,49 +604,93 @@ function Get-InstallerFunction {
     $tokens = $null
     $errors = $null
     $ast = [Management.Automation.Language.Parser]::ParseFile($installPs1, [ref]$tokens, [ref]$errors)
-    $function = $ast.Find({ param($node) ($node -is [Management.Automation.Language.FunctionDefinitionAst]) -and ($node.Name -ceq $Name) }, $true)
-    Assert-That -Condition ($null -ne $function) -Message "install.ps1 has no $Name function"
-    $function.Extent.Text
+    foreach ($function in $ast.FindAll({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] }, $true)) {
+        if ($function.Name -ceq $Name) {
+            return $function.Extent.Text
+        }
+    }
+    throw "install.ps1 has no $Name function"
 }
 
-function Get-FakeEnvironmentKey {
+function Get-FakeRegistry {
     <#
     .SYNOPSIS
-    Returns a stand-in for the registry key HKCU\Environment that holds only a Path value.
+    Returns the contents of a stand-in for the registry key HKCU\Environment, which holds only a Path value.
     .DESCRIPTION
-    Kind is the value's type, or empty for a key without a Path value. Every
+    Kind is the value's type, or empty when there is no Path value. Every
     write is recorded in Writes as name, value and type, and changes what the
-    key holds from then on, as a real one would. GetValue expands an
-    expandable value unless it is passed DoNotExpandEnvironmentNames.
+    registry holds from then on, as a real one would. Open-FakeKey hands out
+    handles on it.
     #>
     param([string]$Raw, [string]$Kind)
-    $key = [pscustomobject]@{ Raw = $Raw; Kind = $Kind; Writes = (New-Object Collections.ArrayList) }
-    # Like the real key: an expandable value comes back with its %VARIABLES%
-    # expanded unless the caller asks for them not to be.
+    [pscustomobject]@{ Raw = $Raw; Kind = $Kind; Writes = (New-Object Collections.ArrayList) }
+}
+
+function Open-FakeKey {
+    <#
+    .SYNOPSIS
+    Opens a handle on a stand-in registry, read-only unless Writable is given.
+    .DESCRIPTION
+    Behaves like a RegistryKey where the installer can tell the difference:
+    GetValue expands an expandable value unless it is passed
+    DoNotExpandEnvironmentNames; a write through a handle that was not opened
+    for writing fails; any use of a handle after Dispose fails; and asking for
+    any value but Path fails, so a call for another one cannot go unnoticed.
+    #>
+    param($Registry, [switch]$Writable)
+    $key = [pscustomobject]@{ Registry = $Registry; Writable = [bool]$Writable; Disposed = $false }
     $key | Add-Member -MemberType ScriptMethod -Name GetValue -Value {
         param($name, $default, $options)
-        if ($this.Kind -eq '') {
+        if ($this.Disposed) {
+            throw 'the stand-in key was already disposed'
+        }
+        if ($name -ne 'Path') {
+            throw "the stand-in key has no value $name"
+        }
+        if ($this.Registry.Kind -eq '') {
             return $default
         }
-        if ($this.Kind -eq 'ExpandString' -and $options -ne [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames) {
-            return [Environment]::ExpandEnvironmentVariables($this.Raw)
+        if ($this.Registry.Kind -eq 'ExpandString' -and $options -ne [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames) {
+            return [Environment]::ExpandEnvironmentVariables($this.Registry.Raw)
         }
-        $this.Raw
+        $this.Registry.Raw
     }
     $key | Add-Member -MemberType ScriptMethod -Name GetValueNames -Value {
-        if ($this.Kind -ne '') { 'Path' }
+        if ($this.Disposed) {
+            throw 'the stand-in key was already disposed'
+        }
+        if ($this.Registry.Kind -ne '') {
+            'Path'
+        }
     }
     $key | Add-Member -MemberType ScriptMethod -Name GetValueKind -Value {
         param($name)
-        [Microsoft.Win32.RegistryValueKind]$this.Kind
+        if ($this.Disposed) {
+            throw 'the stand-in key was already disposed'
+        }
+        if ($name -ne 'Path') {
+            throw "the stand-in key has no value $name"
+        }
+        [Microsoft.Win32.RegistryValueKind]$this.Registry.Kind
     }
     $key | Add-Member -MemberType ScriptMethod -Name SetValue -Value {
         param($name, $value, $kind)
-        $null = $this.Writes.Add(@($name, $value, $kind.ToString()))
-        $this.Raw = $value
-        $this.Kind = $kind.ToString()
+        if ($this.Disposed) {
+            throw 'the stand-in key was already disposed'
+        }
+        if ($name -ne 'Path') {
+            throw "the stand-in key has no value $name"
+        }
+        if (-not $this.Writable) {
+            throw 'the stand-in key was opened read-only'
+        }
+        $null = $this.Registry.Writes.Add(@($name, $value, $kind.ToString()))
+        $this.Registry.Raw = $value
+        $this.Registry.Kind = $kind.ToString()
     }
-    $key | Add-Member -MemberType ScriptMethod -Name Dispose -Value { }
+    $key | Add-Member -MemberType ScriptMethod -Name Dispose -Value {
+        $this.Disposed = $true
+    }
     $key
 }
 
@@ -986,14 +1039,31 @@ function Move-Item {
     Invoke-Case 'edits_the_user_path_without_freezing_it' {
         # The same logic against a stand-in for the registry key, so that it
         # runs everywhere and not only where there is a registry. The
-        # installer's own Add-UserPathEntry and Test-PathEntry are taken out of
-        # install.ps1; the key and the broadcast are the two things they reach
-        # out to, and each is a function of its own for exactly this.
-        foreach ($name in 'Test-PathEntry', 'Add-UserPathEntry') {
+        # installer's own Add-UserPathEntry and the two functions it is built
+        # from are taken out of install.ps1; the key and the broadcast are the
+        # two things they reach out to, and each is a function of its own for
+        # exactly this.
+        foreach ($name in 'Test-PathEntry', 'Get-UserPathUpdate', 'Add-UserPathEntry') {
             . ([scriptblock]::Create((Get-InstallerFunction -Name $name)))
         }
-        function Open-EnvironmentKey { $script:fakeKey }
+        # The stand-in for the key records how it was opened, and refuses to
+        # open it for writing when the case says the registry would.
+        function Open-EnvironmentKey {
+            param([switch]$Writable)
+            if ($Writable -and $script:writesDenied) {
+                throw 'Access to the registry key is denied.'
+            }
+            if ($Writable) {
+                $null = $script:opens.Add('write')
+            }
+            else {
+                $null = $script:opens.Add('read')
+            }
+            Open-FakeKey -Registry $script:fakeRegistry -Writable:$Writable
+        }
         function Send-SettingChange { $script:broadcasts++ }
+        $script:writesDenied = $false
+        $script:opens = New-Object Collections.ArrayList
 
         $savedSentinel = $env:KURZE_SENTINEL
         try {
@@ -1003,46 +1073,71 @@ function Move-Item {
             # variable and a trailing semicolon: the entries stay as they are,
             # the type stays, the directory comes after the last one, and a
             # second run finds it, however it is spelled.
-            $script:fakeKey = Get-FakeEnvironmentKey -Raw '%KURZE_SENTINEL%\bin;C:\other;' -Kind 'ExpandString'
+            $script:fakeRegistry = Get-FakeRegistry -Raw '%KURZE_SENTINEL%\bin;C:\other;' -Kind 'ExpandString'
             $script:broadcasts = 0
+            $script:opens.Clear()
             $added = Add-UserPathEntry -Directory $bin
             Assert-That -Condition ($added -eq $true) -Message 'the first run did not add the directory'
-            Assert-That -Condition ($script:fakeKey.Writes.Count -eq 1) -Message "the first run wrote $($script:fakeKey.Writes.Count) times"
-            $write = $script:fakeKey.Writes[0]
+            Assert-That -Condition ($script:fakeRegistry.Writes.Count -eq 1) -Message "the first run wrote $($script:fakeRegistry.Writes.Count) times"
+            $write = $script:fakeRegistry.Writes[0]
             Assert-That -Condition ($write[0] -ceq 'Path') -Message "it wrote the value '$($write[0])'"
             Assert-That -Condition ($write[1] -ceq ('%KURZE_SENTINEL%\bin;C:\other;' + $bin)) -Message "it wrote '$($write[1])'"
             Assert-That -Condition ($write[2] -ceq 'ExpandString') -Message "it wrote a $($write[2]), not an ExpandString"
             Assert-That -Condition ($script:broadcasts -eq 1) -Message 'the change was not broadcast'
+            Assert-That -Condition (($script:opens -join ', ') -ceq 'read, write') -Message "the key was opened as [$($script:opens -join ', ')], wanted read-only first and writable once"
+            $script:opens.Clear()
             $added = Add-UserPathEntry -Directory ($bin.ToUpperInvariant() + '\')
             Assert-That -Condition ($added -eq $false) -Message 'the second run added the directory again'
-            Assert-That -Condition ($script:fakeKey.Writes.Count -eq 1) -Message 'the second run wrote'
+            Assert-That -Condition (($script:opens -join ', ') -ceq 'read') -Message "the second run opened the key as [$($script:opens -join ', ')], wanted read-only and nothing else"
+            Assert-That -Condition ($script:fakeRegistry.Writes.Count -eq 1) -Message 'the second run wrote'
             Assert-That -Condition ($script:broadcasts -eq 1) -Message 'the second run broadcast'
 
             # An entry that names a variable which is the directory is the
             # directory.
             $env:KURZE_SENTINEL = $bin
-            $script:fakeKey = Get-FakeEnvironmentKey -Raw 'C:\other;%KURZE_SENTINEL%' -Kind 'ExpandString'
+            $script:fakeRegistry = Get-FakeRegistry -Raw 'C:\other;%KURZE_SENTINEL%' -Kind 'ExpandString'
             $script:broadcasts = 0
+            $script:opens.Clear()
             $added = Add-UserPathEntry -Directory $bin
             Assert-That -Condition ($added -eq $false) -Message 'an entry that expands to the directory was not recognised'
-            Assert-That -Condition (($script:fakeKey.Writes.Count -eq 0) -and ($script:broadcasts -eq 0)) -Message 'it wrote or broadcast for a directory that was there'
+            Assert-That -Condition (($script:fakeRegistry.Writes.Count -eq 0) -and ($script:broadcasts -eq 0)) -Message 'it wrote or broadcast for a directory that was there'
+
+            # A registry that refuses writing, as a policy can make it: with
+            # the directory on the Path already there is nothing to write, and
+            # so nothing refuses. Without it, the refusal is the error.
+            $script:writesDenied = $true
+            $script:opens.Clear()
+            $added = Add-UserPathEntry -Directory $bin
+            Assert-That -Condition ($added -eq $false) -Message 'a reinstall failed under a registry that refuses writing'
+            Assert-That -Condition (($script:opens -join ', ') -ceq 'read') -Message "a reinstall opened the key as [$($script:opens -join ', ')], wanted read-only and nothing else"
+            $script:fakeRegistry = Get-FakeRegistry -Raw 'C:\other' -Kind 'ExpandString'
+            $refused = $null
+            try {
+                $null = Add-UserPathEntry -Directory $bin
+            }
+            catch {
+                $refused = $_.Exception.Message
+            }
+            Assert-That -Condition ($refused -ceq 'Access to the registry key is denied.') -Message "a refused write ended as '$refused'"
+            Assert-That -Condition (($script:fakeRegistry.Writes.Count -eq 0) -and ($script:broadcasts -eq 0)) -Message 'it wrote or broadcast under a registry that refuses writing'
+            $script:writesDenied = $false
 
             # A value of the plain type keeps its type.
-            $script:fakeKey = Get-FakeEnvironmentKey -Raw 'C:\plain' -Kind 'String'
+            $script:fakeRegistry = Get-FakeRegistry -Raw 'C:\plain' -Kind 'String'
             $script:broadcasts = 0
             $added = Add-UserPathEntry -Directory $bin
             Assert-That -Condition ($added -eq $true) -Message 'the directory was not added to a String value'
-            Assert-That -Condition (($script:fakeKey.Writes[0][1] -ceq ('C:\plain;' + $bin)) -and ($script:fakeKey.Writes[0][2] -ceq 'String')) -Message "it wrote '$($script:fakeKey.Writes[0][1])' as a $($script:fakeKey.Writes[0][2])"
+            Assert-That -Condition (($script:fakeRegistry.Writes[0][1] -ceq ('C:\plain;' + $bin)) -and ($script:fakeRegistry.Writes[0][2] -ceq 'String')) -Message "it wrote '$($script:fakeRegistry.Writes[0][1])' as a $($script:fakeRegistry.Writes[0][2])"
 
             # No value yet: the directory alone, as the expandable type that
             # Windows itself uses, and no leading semicolon. An empty value is
             # the same.
-            $script:fakeKey = Get-FakeEnvironmentKey -Raw '' -Kind ''
+            $script:fakeRegistry = Get-FakeRegistry -Raw '' -Kind ''
             $added = Add-UserPathEntry -Directory $bin
-            Assert-That -Condition (($added -eq $true) -and ($script:fakeKey.Writes[0][1] -ceq $bin) -and ($script:fakeKey.Writes[0][2] -ceq 'ExpandString')) -Message 'a missing value did not become the directory alone, as an ExpandString'
-            $script:fakeKey = Get-FakeEnvironmentKey -Raw ';' -Kind 'ExpandString'
+            Assert-That -Condition (($added -eq $true) -and ($script:fakeRegistry.Writes[0][1] -ceq $bin) -and ($script:fakeRegistry.Writes[0][2] -ceq 'ExpandString')) -Message 'a missing value did not become the directory alone, as an ExpandString'
+            $script:fakeRegistry = Get-FakeRegistry -Raw ';' -Kind 'ExpandString'
             $added = Add-UserPathEntry -Directory $bin
-            Assert-That -Condition (($added -eq $true) -and ($script:fakeKey.Writes[0][1] -ceq $bin)) -Message "an empty value became '$($script:fakeKey.Writes[0][1])'"
+            Assert-That -Condition (($added -eq $true) -and ($script:fakeRegistry.Writes[0][1] -ceq $bin)) -Message "an empty value became '$($script:fakeRegistry.Writes[0][1])'"
         }
         finally {
             if ($null -eq $savedSentinel) {
@@ -1051,6 +1146,44 @@ function Move-Item {
             else {
                 $env:KURZE_SENTINEL = $savedSentinel
             }
+        }
+    }
+
+    Invoke-Case 'restores_the_user_path_only_when_it_changed' {
+        # The harness puts the user Path back after the cases that touch it,
+        # and on a developer's machine another program may have changed it in
+        # the meantime. A restore that finds the registry holding exactly
+        # what was saved must write nothing. It decides before it opens the
+        # registry, so this runs anywhere with Get-UserPathState stubbed: a
+        # write would open the registry, which only Windows has.
+        function Get-UserPathState { $script:currentState }
+        $saved = [pscustomobject]@{ Exists = $true; Raw = '%USERPROFILE%\bin;C:\other'; Kind = 'ExpandString' }
+
+        $script:currentState = [pscustomobject]@{ Exists = $true; Raw = '%USERPROFILE%\bin;C:\other'; Kind = 'ExpandString' }
+        Restore-UserPathState -State $saved
+        $script:currentState = [pscustomobject]@{ Exists = $false; Raw = ''; Kind = '' }
+        Restore-UserPathState -State $script:currentState
+        Restore-UserPathState -State $null
+
+        if ($onWindows) {
+            # Past this point the restore would write, and the registry would
+            # be the real one.
+            return
+        }
+        foreach ($changed in @(
+                @{ Exists = $true; Raw = 'C:\other'; Kind = 'ExpandString' }
+                @{ Exists = $true; Raw = '%USERPROFILE%\bin;C:\other'; Kind = 'String' }
+                @{ Exists = $false; Raw = ''; Kind = '' }
+            )) {
+            $script:currentState = [pscustomobject]$changed
+            $wrote = $false
+            try {
+                Restore-UserPathState -State $saved
+            }
+            catch {
+                $wrote = $true
+            }
+            Assert-That -Condition $wrote -Message "a Path that differs from the saved one ($($changed.Raw), $($changed.Kind)) was not written back"
         }
     }
 

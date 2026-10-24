@@ -93,44 +93,46 @@ function Install-KurzeUrl {
         }
 
         $en = @{
-            unsupported_arch  = 'Unsupported architecture: {0}. kurze-url is built for amd64 and arm64.'
-            no_localappdata   = 'LOCALAPPDATA is not set. Set KURZE_URL_INSTALL_DIR to the directory to install into.'
-            no_tmp            = 'Could not create a temporary directory.'
-            url_not_https     = 'Refusing {0}: only https URLs are accepted, and file URLs in KURZE_URL_DOWNLOAD_URL.'
-            final_url_unknown = 'Could not tell where the download from {0} ended up, so it was refused. Nothing was installed.'
-            downloading       = 'Downloading {0} ...'
-            download_failed   = 'Download failed: {0} ({1})'
-            no_checksum       = 'checksums.txt has no entry for {0}. Nothing was installed.'
-            hash_failed       = 'Could not compute the checksum of {0}. Nothing was installed.'
-            checksum_mismatch = 'Checksum mismatch for {0}: expected {1}, got {2}. Nothing was installed.'
-            extract_failed    = 'Could not extract kurze-url.exe from {0}. Nothing was installed.'
-            dir_in_the_way    = 'A directory named {0} is in the way. Remove it and run this script again.'
-            install_failed    = 'Could not install into {0}: {1}'
-            installed         = 'Installed kurze-url to {0}'
-            path_added        = 'Added {0} to your user Path. New terminals pick it up, and this one has it already.'
-            path_hint         = '{0} is not in your Path, and KURZE_URL_NO_MODIFY_PATH asks this script to leave your Path alone. To run kurze-url from anywhere, add that directory to your user Path.'
-            path_failed       = 'Could not add {0} to your user Path: {1}'
-            run_failed        = 'The installed {0} does not run on this machine.'
+            unsupported_arch    = 'Unsupported architecture: {0}. kurze-url is built for amd64 and arm64.'
+            no_localappdata     = 'LOCALAPPDATA is not set. Set KURZE_URL_INSTALL_DIR to the directory to install into.'
+            no_tmp              = 'Could not create a temporary directory.'
+            url_not_https       = 'Refusing {0}: only https URLs are accepted, and file URLs in KURZE_URL_DOWNLOAD_URL.'
+            final_url_unknown   = 'Could not tell where the download from {0} ended up, so it was refused. Nothing was installed.'
+            registry_key_failed = 'The registry key {0} cannot be opened.'
+            downloading         = 'Downloading {0} ...'
+            download_failed     = 'Download failed: {0} ({1})'
+            no_checksum         = 'checksums.txt has no entry for {0}. Nothing was installed.'
+            hash_failed         = 'Could not compute the checksum of {0}. Nothing was installed.'
+            checksum_mismatch   = 'Checksum mismatch for {0}: expected {1}, got {2}. Nothing was installed.'
+            extract_failed      = 'Could not extract kurze-url.exe from {0}. Nothing was installed.'
+            dir_in_the_way      = 'A directory named {0} is in the way. Remove it and run this script again.'
+            install_failed      = 'Could not install into {0}: {1}'
+            installed           = 'Installed kurze-url to {0}'
+            path_added          = 'Added {0} to your user Path. New terminals pick it up, and this one has it already.'
+            path_hint           = '{0} is not in your Path, and KURZE_URL_NO_MODIFY_PATH asks this script to leave your Path alone. To run kurze-url from anywhere, add that directory to your user Path.'
+            path_failed         = 'Could not add {0} to your user Path: {1}'
+            run_failed          = 'The installed {0} does not run on this machine.'
         }
         $de = @{
-            unsupported_arch  = 'Nicht unterst\u00fctzte Architektur: {0}. kurze-url gibt es f\u00fcr amd64 und arm64.'
-            no_localappdata   = 'LOCALAPPDATA ist nicht gesetzt. Setze KURZE_URL_INSTALL_DIR auf das Verzeichnis, in das installiert werden soll.'
-            no_tmp            = 'Es konnte kein tempor\u00e4res Verzeichnis angelegt werden.'
-            url_not_https     = '{0} wird abgelehnt: Es werden nur https-URLs akzeptiert, und file-URLs in KURZE_URL_DOWNLOAD_URL.'
-            final_url_unknown = 'Es lie\u00df sich nicht feststellen, auf welcher Adresse der Download von {0} endete, deshalb wurde er abgelehnt. Es wurde nichts installiert.'
-            downloading       = 'Lade {0} herunter ...'
-            download_failed   = 'Download fehlgeschlagen: {0} ({1})'
-            no_checksum       = 'In checksums.txt gibt es keinen Eintrag f\u00fcr {0}. Es wurde nichts installiert.'
-            hash_failed       = 'Die Pr\u00fcfsumme von {0} konnte nicht berechnet werden. Es wurde nichts installiert.'
-            checksum_mismatch = 'Die Pr\u00fcfsumme von {0} stimmt nicht \u00fcberein: erwartet {1}, erhalten {2}. Es wurde nichts installiert.'
-            extract_failed    = 'kurze-url.exe konnte nicht aus {0} entpackt werden. Es wurde nichts installiert.'
-            dir_in_the_way    = 'Ein Verzeichnis namens {0} steht im Weg. Entferne es und f\u00fchre dieses Skript erneut aus.'
-            install_failed    = 'Die Installation in {0} ist fehlgeschlagen: {1}'
-            installed         = 'kurze-url wurde installiert nach {0}'
-            path_added        = '{0} wurde zu deinem Benutzer-Path hinzugef\u00fcgt. Neue Terminals \u00fcbernehmen das, und dieses hat es schon.'
-            path_hint         = '{0} ist nicht in deinem Path, und KURZE_URL_NO_MODIFY_PATH weist dieses Skript an, deinen Path nicht zu \u00e4ndern. Damit du kurze-url \u00fcberall aufrufen kannst, f\u00fcge dieses Verzeichnis zu deinem Benutzer-Path hinzu.'
-            path_failed       = '{0} konnte nicht zu deinem Benutzer-Path hinzugef\u00fcgt werden: {1}'
-            run_failed        = 'Das installierte {0} l\u00e4sst sich auf diesem Rechner nicht ausf\u00fchren.'
+            unsupported_arch    = 'Nicht unterst\u00fctzte Architektur: {0}. kurze-url gibt es f\u00fcr amd64 und arm64.'
+            no_localappdata     = 'LOCALAPPDATA ist nicht gesetzt. Setze KURZE_URL_INSTALL_DIR auf das Verzeichnis, in das installiert werden soll.'
+            no_tmp              = 'Es konnte kein tempor\u00e4res Verzeichnis angelegt werden.'
+            url_not_https       = '{0} wird abgelehnt: Es werden nur https-URLs akzeptiert, und file-URLs in KURZE_URL_DOWNLOAD_URL.'
+            final_url_unknown   = 'Es lie\u00df sich nicht feststellen, bei welcher Adresse der Download von {0} endete, deshalb wurde er abgelehnt. Es wurde nichts installiert.'
+            registry_key_failed = 'Der Registrierungsschl\u00fcssel {0} l\u00e4sst sich nicht \u00f6ffnen.'
+            downloading         = 'Lade {0} herunter ...'
+            download_failed     = 'Download fehlgeschlagen: {0} ({1})'
+            no_checksum         = 'In checksums.txt gibt es keinen Eintrag f\u00fcr {0}. Es wurde nichts installiert.'
+            hash_failed         = 'Die Pr\u00fcfsumme von {0} konnte nicht berechnet werden. Es wurde nichts installiert.'
+            checksum_mismatch   = 'Die Pr\u00fcfsumme von {0} stimmt nicht \u00fcberein: erwartet {1}, erhalten {2}. Es wurde nichts installiert.'
+            extract_failed      = 'kurze-url.exe konnte nicht aus {0} entpackt werden. Es wurde nichts installiert.'
+            dir_in_the_way      = 'Ein Verzeichnis namens {0} steht im Weg. Entferne es und f\u00fchre dieses Skript erneut aus.'
+            install_failed      = 'Die Installation in {0} ist fehlgeschlagen: {1}'
+            installed           = 'kurze-url wurde installiert nach {0}'
+            path_added          = '{0} wurde zu deinem Benutzer-Path hinzugef\u00fcgt. Neue Terminals \u00fcbernehmen das, und dieses hat es schon.'
+            path_hint           = '{0} ist nicht in deinem Path, und KURZE_URL_NO_MODIFY_PATH weist dieses Skript an, deinen Path nicht zu \u00e4ndern. Damit du kurze-url \u00fcberall aufrufen kannst, f\u00fcge dieses Verzeichnis zu deinem Benutzer-Path hinzu.'
+            path_failed         = '{0} konnte nicht zu deinem Benutzer-Path hinzugef\u00fcgt werden: {1}'
+            run_failed          = 'Das installierte {0} l\u00e4sst sich auf diesem Rechner nicht ausf\u00fchren.'
         }
 
         if ($locale.StartsWith('de', [StringComparison]::OrdinalIgnoreCase)) {
@@ -173,14 +175,16 @@ function Install-KurzeUrl {
         return $false
     }
 
-    # Open-EnvironmentKey returns the user's environment in the registry,
-    # HKEY_CURRENT_USER\Environment, opened for writing. It is a function of its
-    # own so that the test of Add-UserPathEntry can hand that one a stand-in
-    # for the key.
+    # Open-EnvironmentKey [-Writable] returns the user's environment in the
+    # registry, HKEY_CURRENT_USER\Environment, opened read-only unless it is asked for
+    # writable. It is a function of its own so that the test of
+    # Add-UserPathEntry can hand that one a stand-in for the key.
     function Open-EnvironmentKey {
-        $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
+        param([switch]$Writable)
+
+        $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', [bool]$Writable)
         if ($null -eq $key) {
-            throw 'the registry key HKEY_CURRENT_USER\Environment cannot be opened'
+            throw (Get-Message 'registry_key_failed' 'HKEY_CURRENT_USER\Environment')
         }
         $key
     }
@@ -208,6 +212,33 @@ public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint msg, UIntPtr wP
         }
     }
 
+    # Get-UserPathUpdate KEY DIRECTORY returns the value and the type to write
+    # so that the Path in KEY has an entry that is DIRECTORY, or nothing when
+    # it has one already. The Path is read raw, which is why the entries that
+    # name variables survive: see Add-UserPathEntry.
+    function Get-UserPathUpdate {
+        param($Key, [string]$Directory)
+
+        $raw = [string]$Key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+        if (Test-PathEntry -PathValue $raw -Directory $Directory) {
+            return $null
+        }
+        if ($Key.GetValueNames() -contains 'Path') {
+            $kind = $Key.GetValueKind('Path')
+        }
+        else {
+            $kind = [Microsoft.Win32.RegistryValueKind]::ExpandString
+        }
+        $head = $raw.TrimEnd(';')
+        if ($head) {
+            $value = $head + ';' + $Directory
+        }
+        else {
+            $value = $Directory
+        }
+        [pscustomobject]@{ Value = $value; Kind = $kind }
+    }
+
     # Add-UserPathEntry DIRECTORY puts DIRECTORY at the end of the user's Path,
     # unless an entry of it already is that directory, and says which. The user's
     # Path is a registry value that is usually an expandable string, and its
@@ -218,32 +249,34 @@ public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint msg, UIntPtr wP
     # result as plain text, which freezes every such entry for good. So this
     # reads the value raw, keeps its type, and writes back exactly what it read
     # with one entry added after the last: every other entry stays as it was.
+    # The key is opened read-only to find out whether there is anything to do,
+    # so a reinstall of a directory that is on the Path already asks the
+    # registry for nothing it might refuse, and is opened again for writing,
+    # and read again, only when there is.
     function Add-UserPathEntry {
         param([string]$Directory)
 
-        $key = Open-EnvironmentKey
+        $reader = Open-EnvironmentKey
         try {
-            $raw = [string]$key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
-            if (Test-PathEntry -PathValue $raw -Directory $Directory) {
-                return $false
-            }
-            if ($key.GetValueNames() -contains 'Path') {
-                $kind = $key.GetValueKind('Path')
-            }
-            else {
-                $kind = [Microsoft.Win32.RegistryValueKind]::ExpandString
-            }
-            $head = $raw.TrimEnd(';')
-            if ($head) {
-                $value = $head + ';' + $Directory
-            }
-            else {
-                $value = $Directory
-            }
-            $key.SetValue('Path', $value, $kind)
+            $update = Get-UserPathUpdate -Key $reader -Directory $Directory
         }
         finally {
-            $key.Dispose()
+            $reader.Dispose()
+        }
+        if ($null -eq $update) {
+            return $false
+        }
+
+        $writer = Open-EnvironmentKey -Writable
+        try {
+            $update = Get-UserPathUpdate -Key $writer -Directory $Directory
+            if ($null -eq $update) {
+                return $false
+            }
+            $writer.SetValue('Path', $update.Value, $update.Kind)
+        }
+        finally {
+            $writer.Dispose()
         }
         Send-SettingChange
         return $true
