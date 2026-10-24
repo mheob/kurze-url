@@ -23,9 +23,10 @@ func newTeamCmd(d *Deps) *cobra.Command {
 // newTeamListCmd lists the teams the person belongs to.
 func newTeamListCmd(d *Deps) *cobra.Command {
 	return &cobra.Command{
-		Use:   "list",
-		Short: "List your teams, with the default team marked",
-		Args:  usageArgs(cobra.NoArgs),
+		Use:               "list",
+		Short:             "List your teams, with the default team marked",
+		Args:              usageArgs(cobra.NoArgs),
+		ValidArgsFunction: noValues,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			a, err := newApp(d)
 			if err != nil {

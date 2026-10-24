@@ -59,6 +59,50 @@ func parseKey(text string) (config.Key, error) {
 	return key, nil
 }
 
+// completeConfigKey offers the setting names for the key that `config get`,
+// `set` and `unset` all take first, and nothing for a word after it: those
+// commands take no more, and offering the keys again would suggest a command
+// that then fails its argument count.
+//
+// The names come from config.Keys, in its order, the same list the help and
+// the file's validation read, so a ninth setting completes without anyone
+// remembering to add it here.
+func completeConfigKey(_ *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+	if len(args) > 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	keys := config.Keys()
+	names := make([]cobra.Completion, 0, len(keys))
+	for _, k := range keys {
+		names = append(names, string(k))
+	}
+	return withPrefix(names, toComplete), cobra.ShellCompDirectiveNoFileComp
+}
+
+// completeConfigSet offers the key for `config set`'s first word and, for the
+// second, the values the chosen key accepts when they are a closed set: the
+// two languages and the two image formats, which are the values the config
+// package's own rules allow.
+//
+// A size and a colour are free text, and so offer nothing; the same is true
+// for team, folder and domain until they are completed from the service. A key
+// the file does not know has no values either, and past the value there is
+// nothing to offer, for the reason completeConfigKey gives.
+func completeConfigSet(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+	if len(args) != 1 {
+		return completeConfigKey(cmd, args, toComplete)
+	}
+
+	var values []cobra.Completion
+	switch config.Key(args[0]) {
+	case config.Language:
+		values = []cobra.Completion{string(i18n.EN), string(i18n.DE)}
+	case config.QRFormat:
+		values = []cobra.Completion{qrSVG, qrPNG}
+	}
+	return withPrefix(values, toComplete), cobra.ShellCompDirectiveNoFileComp
+}
+
 // newConfigGetCmd shows one setting, or all of them with where each comes from.
 func newConfigGetCmd(d *Deps) *cobra.Command {
 	var team string
@@ -69,7 +113,8 @@ func newConfigGetCmd(d *Deps) *cobra.Command {
 			"With KEY, prints only its value and exits 1 when it is not set.\n\n" +
 			"Settings are looked up for the team given by --team, else for your default team:\n" +
 			"that team's own value first, then the global one.\n\n" + keyHelp(),
-		Args: usageArgs(cobra.MaximumNArgs(1)),
+		Args:              usageArgs(cobra.MaximumNArgs(1)),
+		ValidArgsFunction: completeConfigKey,
 		RunE: func(_ *cobra.Command, args []string) error {
 			var key config.Key
 			if len(args) == 1 {
@@ -100,7 +145,8 @@ func newConfigSetCmd(d *Deps) *cobra.Command {
 		Short: "Change a setting in the config file",
 		Long: "Writes the setting to the top of the config file, or to one team's section with --team.\n" +
 			"The team is not checked against your memberships, because those change.\n\n" + keyHelp(),
-		Args: usageArgs(cobra.ExactArgs(2)),
+		Args:              usageArgs(cobra.ExactArgs(2)),
+		ValidArgsFunction: completeConfigSet,
 		RunE: func(_ *cobra.Command, args []string) error {
 			key, err := parseKey(args[0])
 			if err != nil {
@@ -125,7 +171,8 @@ func newConfigUnsetCmd(d *Deps) *cobra.Command {
 		Short: "Remove a setting from the config file",
 		Long: "Removes the setting from the top of the config file, or from one team's section with --team.\n\n" +
 			keyHelp(),
-		Args: usageArgs(cobra.ExactArgs(1)),
+		Args:              usageArgs(cobra.ExactArgs(1)),
+		ValidArgsFunction: completeConfigKey,
 		RunE: func(_ *cobra.Command, args []string) error {
 			key, err := parseKey(args[0])
 			if err != nil {

@@ -95,6 +95,10 @@ func newLinkQRCmd(d *Deps) *cobra.Command {
 	flags.StringVar(&o.output, "output", "", "the file to write, or - for standard output (default: <slug>.<format>)")
 	flags.BoolVar(&o.force, "force", false, "overwrite the file if it exists")
 	addLookupFlags(cmd, &o.domain, &o.team)
+	registerFlagCompletion(cmd, "format", fixedValues(qrSVG, qrPNG))
+	registerFlagCompletion(cmd, "size", noValues)
+	registerFlagCompletion(cmd, "fg", noValues)
+	registerFlagCompletion(cmd, "bg", noValues)
 	return cmd
 }
 

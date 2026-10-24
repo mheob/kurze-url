@@ -85,11 +85,17 @@ type Deps struct {
 	// in-memory store from it.
 	CredentialsDir string
 	NewStore       func(envName, dir string) credentials.Store
+
+	// CompletionTimeout is the one deadline a Tab press gets, for building
+	// the App, refreshing the token and every request together. A test that
+	// needs it to pass shortens it.
+	CompletionTimeout time.Duration
 }
 
 // Default returns the production wiring: the process's own streams,
 // environment, clock and terminal, a real browser opener, the keychain-backed
-// credential store and a client with a 30 second timeout.
+// credential store, a client with a 30 second timeout and a two second budget
+// for tab completion.
 func Default(b BuildInfo) *Deps {
 	return &Deps{
 		Stdout: os.Stdout,
@@ -115,6 +121,8 @@ func Default(b BuildInfo) *Deps {
 		NewStore: func(envName, dir string) credentials.Store {
 			return credentials.New(envName, dir)
 		},
+
+		CompletionTimeout: completionTimeout,
 	}
 }
 

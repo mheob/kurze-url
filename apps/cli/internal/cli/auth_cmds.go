@@ -26,9 +26,10 @@ const maxTeamAttempts = 3
 // newLoginCmd signs the person in through the browser.
 func newLoginCmd(d *Deps) *cobra.Command {
 	return &cobra.Command{
-		Use:   "login",
-		Short: "Sign in to your kurze-url account",
-		Args:  usageArgs(cobra.NoArgs),
+		Use:               "login",
+		Short:             "Sign in to your kurze-url account",
+		Args:              usageArgs(cobra.NoArgs),
+		ValidArgsFunction: noValues,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			a, err := newApp(d)
 			if err != nil {
@@ -42,9 +43,10 @@ func newLoginCmd(d *Deps) *cobra.Command {
 // newLogoutCmd ends the CLI's own session.
 func newLogoutCmd(d *Deps) *cobra.Command {
 	return &cobra.Command{
-		Use:   "logout",
-		Short: "Sign out of the CLI",
-		Args:  usageArgs(cobra.NoArgs),
+		Use:               "logout",
+		Short:             "Sign out of the CLI",
+		Args:              usageArgs(cobra.NoArgs),
+		ValidArgsFunction: noValues,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			a, err := newApp(d)
 			if err != nil {
@@ -58,9 +60,10 @@ func newLogoutCmd(d *Deps) *cobra.Command {
 // newWhoamiCmd prints who is signed in.
 func newWhoamiCmd(d *Deps) *cobra.Command {
 	return &cobra.Command{
-		Use:   "whoami",
-		Short: "Show the signed-in account and the default team",
-		Args:  usageArgs(cobra.NoArgs),
+		Use:               "whoami",
+		Short:             "Show the signed-in account and the default team",
+		Args:              usageArgs(cobra.NoArgs),
+		ValidArgsFunction: noValues,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			a, err := newApp(d)
 			if err != nil {

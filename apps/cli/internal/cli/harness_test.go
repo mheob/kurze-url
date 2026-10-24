@@ -152,6 +152,9 @@ func newHarness(t *testing.T) *harness {
 		HTTPClient:   &http.Client{Timeout: 5 * time.Second},
 		LoginPorts:   []int{0},
 		LoginTimeout: 5 * time.Second,
+		// Completion keeps its production budget, which no test comes
+		// near; one that needs the deadline to pass shortens it.
+		CompletionTimeout: completionTimeout,
 		// The credentials directory is never used while the store is in
 		// memory, but handing over a real, empty one keeps a mistake from
 		// writing next to the test.
