@@ -92,7 +92,9 @@ func newRoot(d *Deps) *cobra.Command {
 	// hint). The parent gets a group's shape and each shell keeps its own
 	// RunE with a wrapped validator. Cobra adds the command on its own
 	// during execution and skips it when one exists, so adding it here,
-	// early, is what lets it be changed at all.
+	// early, is what lets it be changed at all. install and uninstall join
+	// the four shells after the loop that gives those their validator,
+	// because they take an argument of their own.
 	root.InitDefaultCompletionCmd()
 	for _, cmd := range root.Commands() {
 		if cmd.Name() != "completion" {
@@ -102,6 +104,7 @@ func newRoot(d *Deps) *cobra.Command {
 		for _, shell := range cmd.Commands() {
 			shell.Args = usageArgs(cobra.NoArgs)
 		}
+		cmd.AddCommand(newCompletionInstallCmd(d), newCompletionUninstallCmd(d))
 	}
 
 	return root

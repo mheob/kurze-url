@@ -62,7 +62,8 @@ func newLinkCreateCmd(d *Deps) *cobra.Command {
 			"The folder and the domain default to the ones set for the team with `config set`.\n" +
 			"A folder that does not exist is an error and is never created. A domain must be one\n" +
 			"of the team's verified domains, or the shared domain.",
-		Args: usageArgs(cobra.ExactArgs(1)),
+		Args:              usageArgs(cobra.ExactArgs(1)),
+		ValidArgsFunction: noValues,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := newApp(d)
 			if err != nil {
@@ -77,6 +78,10 @@ func newLinkCreateCmd(d *Deps) *cobra.Command {
 	flags.StringVar(&o.domain, "domain", "",
 		"use this domain (default: the team's configured domain, else the shared domain)")
 	flags.StringVar(&o.team, "team", "", "create the link in this team (default: your default team)")
+	registerFlagCompletion(cmd, "slug", noValues)
+	registerFlagCompletion(cmd, "folder", completeFolders(d, true))
+	registerFlagCompletion(cmd, "domain", completeDomains(d, true))
+	registerFlagCompletion(cmd, "team", completeTeams(d))
 	return cmd
 }
 
@@ -96,7 +101,8 @@ func newLinkListCmd(d *Deps) *cobra.Command {
 			"On a terminal the columns are aligned and a long destination is shortened to fit.\n" +
 			"When piped, every row is tab-separated and nothing is shortened. The team's\n" +
 			"configured folder is not a filter here: only --folder narrows the list.",
-		Args: usageArgs(cobra.NoArgs),
+		Args:              usageArgs(cobra.NoArgs),
+		ValidArgsFunction: noValues,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// A flag outside its range is a mistake in how the command was
 			// typed, whatever the config file looks like, so it is judged
@@ -116,6 +122,10 @@ func newLinkListCmd(d *Deps) *cobra.Command {
 	flags.StringVar(&o.search, "search", "", "only links matching this text")
 	flags.IntVar(&o.limit, "limit", defaultListLimit, "how many links to show, from 1 to 100")
 	flags.StringVar(&o.team, "team", "", "list the links of this team (default: your default team)")
+	registerFlagCompletion(cmd, "search", noValues)
+	registerFlagCompletion(cmd, "limit", noValues)
+	registerFlagCompletion(cmd, "folder", completeFolders(d, true))
+	registerFlagCompletion(cmd, "team", completeTeams(d))
 	return cmd
 }
 

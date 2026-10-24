@@ -72,7 +72,8 @@ func newLinkQRCmd(d *Deps) *cobra.Command {
 			"Format, size and the two colours default to the `qr` settings of the team the link\n" +
 			"belongs to, then to the global ones (see `kurze-url config`). --size is for PNG only.\n" +
 			"The API refuses two colours too close together for a camera to tell apart.",
-		Args: usageArgs(cobra.ExactArgs(1)),
+		Args:              usageArgs(cobra.ExactArgs(1)),
+		ValidArgsFunction: completeLinkSlugs(d),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			o.sizeGiven = cmd.Flags().Changed("size")
 			// What the flags alone can show is wrong is a usage error before
@@ -94,7 +95,11 @@ func newLinkQRCmd(d *Deps) *cobra.Command {
 	flags.StringVar(&o.bg, "bg", "", "the background colour as RRGGBB (default: the qr.bg setting)")
 	flags.StringVar(&o.output, "output", "", "the file to write, or - for standard output (default: <slug>.<format>)")
 	flags.BoolVar(&o.force, "force", false, "overwrite the file if it exists")
-	addLookupFlags(cmd, &o.domain, &o.team)
+	addLookupFlags(cmd, d, &o.domain, &o.team)
+	registerFlagCompletion(cmd, "format", fixedValues(qrSVG, qrPNG))
+	registerFlagCompletion(cmd, "size", noValues)
+	registerFlagCompletion(cmd, "fg", noValues)
+	registerFlagCompletion(cmd, "bg", noValues)
 	return cmd
 }
 

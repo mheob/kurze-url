@@ -112,6 +112,7 @@ function Install-KurzeUrl {
             path_hint           = '{0} is not in your Path, and KURZE_URL_NO_MODIFY_PATH asks this script to leave your Path alone. To run kurze-url from anywhere, add that directory to your user Path.'
             path_failed         = 'Could not add {0} to your user Path: {1}\nkurze-url.exe is installed there all the same. To skip this step, run this script again with KURZE_URL_NO_MODIFY_PATH=1, or add that directory to your user Path yourself.'
             run_failed          = 'The installed {0} does not run on this machine.'
+            completion_hint     = 'To turn on tab completion, run: kurze-url completion install'
         }
         $de = @{
             unsupported_arch    = 'Nicht unterst\u00fctzte Architektur: {0}. kurze-url gibt es f\u00fcr amd64 und arm64.'
@@ -133,6 +134,7 @@ function Install-KurzeUrl {
             path_hint           = '{0} ist nicht in deinem Path, und KURZE_URL_NO_MODIFY_PATH weist dieses Skript an, deinen Path nicht zu \u00e4ndern. Damit du kurze-url \u00fcberall aufrufen kannst, f\u00fcge dieses Verzeichnis zu deinem Benutzer-Path hinzu.'
             path_failed         = '{0} konnte nicht zu deinem Benutzer-Path hinzugef\u00fcgt werden: {1}\nkurze-url.exe ist trotzdem installiert. Um diesen Schritt zu \u00fcberspringen, f\u00fchre dieses Skript erneut mit KURZE_URL_NO_MODIFY_PATH=1 aus, oder f\u00fcge dieses Verzeichnis selbst zu deinem Benutzer-Path hinzu.'
             run_failed          = 'Das installierte {0} l\u00e4sst sich auf diesem Rechner nicht ausf\u00fchren.'
+            completion_hint     = 'Um die Tab-Vervollst\u00e4ndigung einzuschalten, f\u00fchre aus: kurze-url completion install'
         }
 
         if ($locale.StartsWith('de', [StringComparison]::OrdinalIgnoreCase)) {
@@ -569,6 +571,12 @@ public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint msg, UIntPtr wP
         if ($LASTEXITCODE -ne 0 -or -not $versionLine) {
             throw (Get-Message 'run_failed' $target)
         }
+        # The last of the messages, and said before the version line because
+        # that has to be the last thing on stdout: a run under -File sends
+        # Write-Host there too. It only names the command: `kurze-url
+        # completion install` asks before it touches a profile, and this
+        # script never does.
+        Write-Host (Get-Message 'completion_hint')
         Write-Output $versionLine
     }
     finally {

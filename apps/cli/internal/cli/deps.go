@@ -1,11 +1,17 @@
 package cli
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/mheob/kurze-url/apps/cli/internal/auth"
@@ -32,9 +38,14 @@ const credentialsDirName = "kurze-url"
 // client both use it as handed over.
 const httpTimeout = 30 * time.Second
 
+// commandTimeout bounds a program RunCommand starts. The one it starts is
+// PowerShell, asked for its profile, which takes a second or two on a cold
+// Windows machine and should never take ten.
+const commandTimeout = 10 * time.Second
+
 // Deps is everything a command reaches outside the process through: its
-// streams, the environment, the clock, the terminal, the browser, HTTP and
-// the credential store.
+// streams, the environment, the clock, the terminal, the browser, HTTP, the
+// credential store, the home directory and other programs.
 //
 // Commands never read os.Stdout, os.Getenv or a package-level client
 // directly, so a test hands them buffers, a fake server and an in-memory
@@ -85,11 +96,31 @@ type Deps struct {
 	// in-memory store from it.
 	CredentialsDir string
 	NewStore       func(envName, dir string) credentials.Store
+
+	// CompletionTimeout is the one deadline a Tab press gets, for building
+	// the App, refreshing the token and every request together. A test that
+	// needs it to pass shortens it.
+	CompletionTimeout time.Duration
+
+	// GOOS is the operating system the binary runs on (runtime.GOOS).
+	// `completion install` reads it to choose PowerShell on Windows.
+	GOOS string
+	// HomeDir is the person's home directory (os.UserHomeDir), where the
+	// shell configuration files live. A test hands out a directory of its
+	// own, so no command reaches the real ones.
+	HomeDir func() (string, error)
+	// LookPath finds a program on the PATH (exec.LookPath), and RunCommand
+	// starts one and returns what it printed to stdout, giving up after
+	// commandTimeout. `completion install` asks PowerShell for its profile
+	// through them, and a test fakes both, so none is ever started.
+	LookPath   func(string) (string, error)
+	RunCommand func(ctx context.Context, name string, args ...string) ([]byte, error)
 }
 
 // Default returns the production wiring: the process's own streams,
 // environment, clock and terminal, a real browser opener, the keychain-backed
-// credential store and a client with a 30 second timeout.
+// credential store, a client with a 30 second timeout, a two second budget
+// for tab completion, and the real home directory and PATH.
 func Default(b BuildInfo) *Deps {
 	return &Deps{
 		Stdout: os.Stdout,
@@ -115,7 +146,46 @@ func Default(b BuildInfo) *Deps {
 		NewStore: func(envName, dir string) credentials.Store {
 			return credentials.New(envName, dir)
 		},
+
+		CompletionTimeout: completionTimeout,
+
+		GOOS:       runtime.GOOS,
+		HomeDir:    os.UserHomeDir,
+		LookPath:   exec.LookPath,
+		RunCommand: runCommand,
 	}
+}
+
+// runCommand starts a program and returns its standard output, within
+// commandTimeout. Its standard error is not passed through to the person's
+// terminal: a program that fails has the first line of it added to the
+// error (withStderr).
+func runCommand(ctx context.Context, name string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, commandTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, name, args...).Output()
+	return out, withStderr(err)
+}
+
+// withStderr adds to the error of a program that exited with a failure the
+// first line it wrote to its standard error that is not blank. An
+// *exec.ExitError alone says "exit status 1", which tells the person nothing
+// about why PowerShell would not answer, and PowerShell's first line is the
+// reason; what it writes after that is where in our own command the error
+// happened. The text is the program's and not the CLI's, so it is cleaned
+// like any other (output.Clean). Any other error, nil included, comes back as
+// it was.
+func withStderr(err error) error {
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		return err
+	}
+	for line := range strings.Lines(string(exitErr.Stderr)) {
+		if line = strings.TrimSpace(line); line != "" {
+			return fmt.Errorf("%w: %s", err, output.Clean(line))
+		}
+	}
+	return err
 }
 
 // credentialsDir is the user's config directory plus "kurze-url", or "" when

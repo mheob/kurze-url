@@ -26,12 +26,15 @@ type reference struct {
 // addLookupFlags gives a command the two flags that settle which link a slug
 // means: --domain for a slug that exists on several domains, and --team for
 // the team to look in. `link stats` and `link qr` both find their link through
-// findLink, so they word these flags once.
-func addLookupFlags(cmd *cobra.Command, domain, team *string) {
+// findLink, so they word these flags once, and complete them once: d is what
+// the completions build their App from.
+func addLookupFlags(cmd *cobra.Command, d *Deps, domain, team *string) {
 	flags := cmd.Flags()
 	flags.StringVar(domain, "domain", "", "the domain of the link, if the slug exists on several")
 	flags.StringVar(team, "team", "",
 		"look in this team (default: your default team; a full short URL is looked up in all your teams)")
+	registerFlagCompletion(cmd, "domain", completeDomains(d, true))
+	registerFlagCompletion(cmd, "team", completeTeams(d))
 }
 
 // parseReference takes apart a slug or a short URL.

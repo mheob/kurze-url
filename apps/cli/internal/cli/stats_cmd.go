@@ -52,7 +52,8 @@ func newLinkStatsCmd(d *Deps) *cobra.Command {
 			"  kurze-url link stats https://go.kurze-url.app/sommerfest\n\n" +
 			"Visitors are counted per day and added up, so someone who comes back on three days\n" +
 			"counts three times.",
-		Args: usageArgs(cobra.ExactArgs(1)),
+		Args:              usageArgs(cobra.ExactArgs(1)),
+		ValidArgsFunction: completeLinkSlugs(d),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := newApp(d)
 			if err != nil {
@@ -61,7 +62,7 @@ func newLinkStatsCmd(d *Deps) *cobra.Command {
 			return a.linkStats(cmd.Context(), args[0], o)
 		},
 	}
-	addLookupFlags(cmd, &o.domain, &o.team)
+	addLookupFlags(cmd, d, &o.domain, &o.team)
 	return cmd
 }
 
