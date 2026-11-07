@@ -80,6 +80,21 @@ func describeProblem(p *apiclient.ProblemError, c *i18n.Catalog) string {
 			return c.T("errors.qrLowContrast")
 		case p.HasDetail("query.fg", "invalid_color"), p.HasDetail("query.bg", "invalid_color"):
 			return c.T("errors.qrInvalidColour")
+		// A refused destination's reason: the token the API's
+		// destination.Reason sends, each worded with its own literal key.
+		case p.HasDetail("body.destination_url", "malformed"):
+			return c.T("errors.destinationMalformed")
+		case p.HasDetail("body.destination_url", "scheme"):
+			return c.T("errors.destinationScheme")
+		case p.HasDetail("body.destination_url", "private_address"):
+			return c.T("errors.destinationPrivate")
+		case p.HasDetail("body.destination_url", "self_reference"):
+			return c.T("errors.destinationSelf")
+		case p.HasDetail("body.destination_url", "too_long"):
+			return c.T("errors.destinationTooLong")
+		// After the tokens on purpose: any other value at the field, or none,
+		// is a server ahead of this build or Huma's own check of the field's
+		// schema, and gets the general wording.
 		case p.HasDetail("body.destination_url", ""):
 			return c.T("errors.invalidDestination")
 		}
