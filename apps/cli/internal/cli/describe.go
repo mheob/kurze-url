@@ -94,9 +94,12 @@ func describeProblem(p *apiclient.ProblemError, c *i18n.Catalog) string {
 			return c.T("errors.destinationTooLong")
 		// After the tokens on purpose: any other value at the field, or none,
 		// is a server ahead of this build or Huma's own check of the field's
-		// schema, and gets the general wording.
+		// schema. It gets a neutral wording rather than errors.invalidDestination,
+		// which is checkDestination's: the destination already passed that
+		// check before it was sent, so its "complete https:// address" would
+		// mislead here.
 		case p.HasDetail("body.destination_url", ""):
-			return c.T("errors.invalidDestination")
+			return c.T("errors.destinationRefused")
 		}
 	}
 	// Any other answer: what the API says, in the words it chose. Those words

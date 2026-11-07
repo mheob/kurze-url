@@ -125,13 +125,13 @@ func TestDescribeMapsEveryKnownCase(t *testing.T) {
 			name: "invalid destination with a reason this build does not know",
 			err: problem(http.StatusUnprocessableEntity, "validation failed",
 				apiclient.ProblemDetail{Location: "body.destination_url", Message: "must be https", Value: "http://example.org"}),
-			want: "The destination must be a complete https:// address.",
+			want: "This destination was refused.",
 		},
 		{
-			name: "invalid destination with any value",
+			name: "invalid destination with no value",
 			err: problem(http.StatusUnprocessableEntity, "validation failed",
 				apiclient.ProblemDetail{Location: "body.destination_url"}),
-			want: "The destination must be a complete https:// address.",
+			want: "This destination was refused.",
 		},
 		{
 			name: "another 422 shows the API's own words",
@@ -240,7 +240,7 @@ func TestDescribeSpeaksGerman(t *testing.T) {
 		"Die beiden Farben liegen zu nah beieinander, eine Kamera kann den Code so nicht lesen.",
 		describe(problem(http.StatusUnprocessableEntity, "x", apiclient.ProblemDetail{Location: "query.fg", Value: "low_contrast"}), cat))
 	require.Equal(t,
-		"Das Ziel muss eine vollständige https://-Adresse sein.",
+		"Dieses Ziel wurde abgelehnt.",
 		describe(problem(http.StatusUnprocessableEntity, "x", apiclient.ProblemDetail{Location: "body.destination_url"}), cat))
 	require.Equal(t,
 		"Adressen aus privaten oder lokalen Netzen sind als Ziel nicht erlaubt.",

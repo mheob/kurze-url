@@ -52,6 +52,7 @@
 	"config.staleTeam": "Die Einstellungen für „{slug}“ in deiner Konfigurationsdatei werden ignoriert: Du bist kein Mitglied dieses Teams.",
 	"errors.destinationMalformed": "Das Ziel muss eine vollständige Adresse wie https://example.org sein.",
 	"errors.destinationPrivate": "Adressen aus privaten oder lokalen Netzen sind als Ziel nicht erlaubt.",
+	"errors.destinationRefused": "Dieses Ziel wurde abgelehnt.",
 	"errors.destinationScheme": "Als Ziel sind nur https://-Adressen erlaubt.",
 	"errors.destinationSelf": "Ein Kurzlink darf nicht auf kurze-url selbst zeigen.",
 	"errors.destinationTooLong": "Die Zieladresse ist zu lang.",
