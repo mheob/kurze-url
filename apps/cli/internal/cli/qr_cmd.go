@@ -112,7 +112,9 @@ func newLinkQRCmd(d *Deps) *cobra.Command {
 // It words the refusal through catalogFor because it runs before an App
 // exists: the same reasoning as checkLimit. What it cannot judge is --size
 // against a format that comes from the config, which needs the link's team and
-// is left to linkQR.
+// is left to linkQR. A --format svg typed beside a --size needs no config to
+// judge, so it is refused here, before findLink has called the API; the same
+// refusal in qrQuery covers an SVG that comes from the config.
 func checkQRFlags(d *Deps, o qrOptions) error {
 	if o.format != "" && o.format != qrSVG && o.format != qrPNG {
 		text := catalogFor(d).T("qr.formatInvalid", i18n.Args{"value": o.format})
@@ -121,6 +123,9 @@ func checkQRFlags(d *Deps, o qrOptions) error {
 	if o.sizeGiven && (o.size < qrMinSize || o.size > qrMaxSize) {
 		text := catalogFor(d).T("qr.sizeRange", i18n.Args{"value": strconv.Itoa(o.size)})
 		return &UsageError{Err: errors.New(text)}
+	}
+	if o.format == qrSVG && o.sizeGiven {
+		return &UsageError{Err: errors.New(catalogFor(d).T("qr.sizeNeedsPNG"))}
 	}
 	if o.fg != "" && !qrColour.MatchString(o.fg) {
 		text := catalogFor(d).T("qr.colourInvalid", i18n.Args{"flag": "--fg", "value": o.fg})
