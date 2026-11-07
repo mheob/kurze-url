@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // Modes of the fallback file and its directory. The directory is normally the
@@ -20,6 +21,15 @@ const (
 // leading dot keeps it out of casual listings, and the suffix makes it
 // recognisable to a person who finds one after a crash.
 const tempPattern = ".credentials-*.tmp"
+
+// staleTempAge is how old a leftover temporary file has to be before a save or
+// a delete sweeps it. A younger one may be another process's, between its
+// create and its rename; a save takes milliseconds, so a minute is far past it.
+const staleTempAge = time.Minute
+
+// now is the clock the sweep judges a file's age by. It is a variable so a
+// test can move it.
+var now = time.Now
 
 // readFile loads the tokens from the file at path. A file that does not exist
 // is ErrNotFound; a file that cannot be read or decoded is an error of its
@@ -54,6 +64,7 @@ func writeFile(path string, data []byte) error {
 	if err := os.MkdirAll(dir, dirMode); err != nil {
 		return fmt.Errorf("create the credentials directory: %w", err)
 	}
+	sweepTempFiles(dir)
 
 	tmp, err := os.CreateTemp(dir, tempPattern)
 	if err != nil {
@@ -88,11 +99,44 @@ func writeFile(path string, data []byte) error {
 	return nil
 }
 
-// removeFile deletes the file at path. A file that is not there is the
-// expected state, not an error.
+// removeFile deletes the file at path, and any leftover temporary file beside
+// it that is old enough to sweep. A file that is not there is the expected
+// state, not an error.
 func removeFile(path string) error {
+	defer sweepTempFiles(filepath.Dir(path))
 	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 	return nil
+}
+
+// sweepTempFiles removes the temporary files in dir that a process left
+// behind, those matching tempPattern and older than staleTempAge.
+//
+// writeFile removes its own temporary file on every failure it can see, but a
+// process that is killed between creating the file and renaming it cannot, and
+// tab completion's two-second deadline ends a process in just that place when
+// a refresh is slow. The file then holds a live refresh token that `logout`
+// never looks for. A save and a delete are the two moments this package
+// touches the directory, so both sweep.
+//
+// It is best effort: a directory that cannot be read or a file that cannot be
+// removed is not a reason to fail a save the person asked for or a logout.
+// Only regular files are removed, and the real credentials file does not match
+// the pattern.
+func sweepTempFiles(dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if matched, _ := filepath.Match(tempPattern, entry.Name()); !matched || !entry.Type().IsRegular() {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil || now().Sub(info.ModTime()) <= staleTempAge {
+			continue
+		}
+		_ = os.Remove(filepath.Join(dir, entry.Name()))
+	}
 }

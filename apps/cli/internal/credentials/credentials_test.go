@@ -405,6 +405,82 @@ func TestSaveReplacesAnExistingFileAtomically(t *testing.T) {
 	}
 }
 
+// plantTemp writes a file the way a process that died between creating its
+// temporary file and renaming it leaves one, refresh token and all.
+func plantTemp(t *testing.T, dir, name string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	require.NoError(t, os.WriteFile(path, []byte(`{"access_token":"a","refresh_token":"LEFTOVER"}`), 0o600))
+	return path
+}
+
+// laterBy makes the sweep see the clock this far ahead of the files the test
+// has just written, which is the same as those files being that old.
+func laterBy(t *testing.T, age time.Duration) {
+	t.Helper()
+	t.Cleanup(credentials.SetClock(func() time.Time { return time.Now().Add(age) }))
+}
+
+// A process that tab completion's deadline ended mid-refresh dies between
+// creating the temporary file and renaming it, and nothing else ever removes
+// what it left: logout deleted only the real file.
+func TestSaveSweepsAnOldLeftoverTemporaryFile(t *testing.T) {
+	brokenKeychain(t)
+	dir := t.TempDir()
+	plantTemp(t, dir, ".credentials-1234567.tmp")
+	laterBy(t, 2*time.Minute)
+
+	require.NoError(t, credentials.New("a", dir).Save(sampleTokens()))
+
+	require.Equal(t, []string{"credentials-a.json"}, directoryEntries(t, dir))
+}
+
+func TestDeleteSweepsAnOldLeftoverTemporaryFile(t *testing.T) {
+	workingKeychain(t)
+	dir := t.TempDir()
+	plantTemp(t, dir, ".credentials-1234567.tmp")
+	laterBy(t, 2*time.Minute)
+
+	require.NoError(t, credentials.New("a", dir).Delete())
+
+	require.Empty(t, directoryEntries(t, dir))
+}
+
+// A younger file may be another process's temporary file between its create
+// and its rename, and removing that one would fail that process's save.
+func TestAFreshTemporaryFileIsKept(t *testing.T) {
+	brokenKeychain(t)
+	dir := t.TempDir()
+	plantTemp(t, dir, ".credentials-1234567.tmp")
+	laterBy(t, 59*time.Second)
+
+	require.NoError(t, credentials.New("a", dir).Save(sampleTokens()))
+	require.Equal(t, []string{".credentials-1234567.tmp", "credentials-a.json"}, directoryEntries(t, dir))
+	workingKeychain(t)
+	require.NoError(t, credentials.New("a", dir).Delete())
+
+	require.Equal(t, []string{".credentials-1234567.tmp"}, directoryEntries(t, dir))
+}
+
+func TestTheSweepLeavesTheRealFileAndUnrelatedFilesAlone(t *testing.T) {
+	brokenKeychain(t)
+	dir := t.TempDir()
+	plantTemp(t, dir, ".credentials-old.tmp")
+	plantTemp(t, dir, "notes.tmp")
+	plantTemp(t, dir, ".credentials-old.json")
+	plantTemp(t, dir, "credentials-b.json")
+	laterBy(t, time.Hour)
+
+	require.NoError(t, credentials.New("a", dir).Save(sampleTokens()))
+
+	require.Equal(t,
+		[]string{".credentials-old.json", "credentials-a.json", "credentials-b.json", "notes.tmp"},
+		directoryEntries(t, dir))
+	got, err := credentials.New("a", dir).Load()
+	require.NoError(t, err)
+	requireSameTokens(t, sampleTokens(), got)
+}
+
 // TestSaveReportsAStaleFileItCannotRemove pins the one place a successful
 // keychain write still ends in an error: a leftover file that stays behind
 // would keep a secret on disk without anyone knowing.
