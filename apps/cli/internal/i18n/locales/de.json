@@ -112,6 +112,7 @@
 	"stats.footnote": "* Besucher werden pro Tag gezählt und addiert: Wer an drei Tagen wiederkommt, zählt dreimal.",
 	"stats.humans": "Menschen",
 	"stats.visitors": "Besucher*",
+	"team.emptyFlag": "--team braucht einen Team-Slug.",
 	"team.header.name": "Name",
 	"team.header.role": "Rolle",
 	"team.header.slug": "Slug",

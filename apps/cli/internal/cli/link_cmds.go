@@ -65,6 +65,9 @@ func newLinkCreateCmd(d *Deps) *cobra.Command {
 		Args:              usageArgs(cobra.ExactArgs(1)),
 		ValidArgsFunction: noValues,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := checkTeamFlag(cmd, d); err != nil {
+				return err
+			}
 			a, err := newApp(d)
 			if err != nil {
 				return err
@@ -104,6 +107,9 @@ func newLinkListCmd(d *Deps) *cobra.Command {
 		Args:              usageArgs(cobra.NoArgs),
 		ValidArgsFunction: noValues,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := checkTeamFlag(cmd, d); err != nil {
+				return err
+			}
 			// A flag outside its range is a mistake in how the command was
 			// typed, whatever the config file looks like, so it is judged
 			// before the file is read.

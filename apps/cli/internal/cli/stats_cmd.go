@@ -55,6 +55,9 @@ func newLinkStatsCmd(d *Deps) *cobra.Command {
 		Args:              usageArgs(cobra.ExactArgs(1)),
 		ValidArgsFunction: completeLinkSlugs(d),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := checkTeamFlag(cmd, d); err != nil {
+				return err
+			}
 			a, err := newApp(d)
 			if err != nil {
 				return err

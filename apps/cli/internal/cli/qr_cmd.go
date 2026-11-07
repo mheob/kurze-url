@@ -75,6 +75,9 @@ func newLinkQRCmd(d *Deps) *cobra.Command {
 		Args:              usageArgs(cobra.ExactArgs(1)),
 		ValidArgsFunction: completeLinkSlugs(d),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := checkTeamFlag(cmd, d); err != nil {
+				return err
+			}
 			o.sizeGiven = cmd.Flags().Changed("size")
 			// What the flags alone can show is wrong is a usage error before
 			// the config file is read, like a --limit out of range.
