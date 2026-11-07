@@ -285,6 +285,9 @@ export function sentryOptions(dsn: string): Parameters<typeof init>[0] {
 				request: { deny: IP_OR_USER_LIKE_KEYS },
 				response: { deny: IP_OR_USER_LIKE_KEYS },
 			},
+			// New in v11.11 and on by default: MCP tool and prompt content. Off, like `genAI`,
+			// because v10's off-state recorded no AI request or response content at all.
+			mcp: { inputs: false, outputs: false },
 			// New in v11 and on by default; v10's off-state never collected queue task arguments.
 			queues: false,
 			// The off-state's `true`: stack-frame local variables are not
