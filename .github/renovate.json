@@ -1,6 +1,7 @@
 {
 	"$schema": "https://docs.renovatebot.com/renovate-schema.json",
 	"extends": ["github>mheob/renovate-config"],
+	"postUpdateOptions": ["gomodTidy"],
 	"packageRules": [
 		{
 			"description": "The typescript6 catalog in pnpm-workspace.yaml, used by packages/api-client alone, pins TypeScript 6 for its generator, which crashes on 7 (CLAUDE.md). CI never runs the generator, so a bump would pass every check and break the next regeneration. Renovate gives that entry the depType pnpm.catalog.typescript6, so the default catalog's TypeScript 7 (pnpm.catalog.default) is not capped.",
