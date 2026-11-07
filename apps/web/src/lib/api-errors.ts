@@ -209,10 +209,10 @@ function isKnownDestinationRejectionReason(value: string): value is DestinationR
  * Returns `'rejected'`, not `undefined`, whenever a detail names the
  * destination field at all but carries no value this build can use — a
  * missing `value`, or a token a newer server knows and this build doesn't.
- * Huma's own schema checks on that field (its `maxLength`, a value that is not
- * a string) land here too, and are refused destinations all the same. Only a
- * 422 with no detail on `body.destination_url` returns `undefined`, so it
- * still falls through to `fieldsOf`.
+ * Huma's own schema check on that field (a value that is not a string) lands
+ * here too, and is a refused destination all the same. Only a 422 with no
+ * detail on `body.destination_url` returns `undefined`, so it still falls
+ * through to `fieldsOf`.
  *
  * @param error - Whatever the failed API call threw.
  * @returns The destination-rejection reason, `'rejected'` for an unrecognized one, or `undefined`

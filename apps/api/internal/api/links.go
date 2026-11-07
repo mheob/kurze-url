@@ -379,7 +379,13 @@ func (d Deps) resolveTagRefs(
 type CreateLinkInput struct {
 	authz.EditorScope
 	Body struct {
-		DestinationURL   string      `json:"destination_url" maxLength:"2048" doc:"Where the link points. https:// only."`
+		// No maxLength on purpose. Huma would refuse an over-long destination
+		// itself, before this handler runs, with a detail carrying the URL
+		// rather than a reason token, and too_long would never reach a
+		// client. destination.Validate owns the limit (destination.MaxLength),
+		// so every refusal has one shape: the reasoning SetLinkPasswordInput
+		// gives for its password. The doc states the same number.
+		DestinationURL   string      `json:"destination_url" doc:"Where the link points. https:// only, at most 2048 characters."`
 		Slug             string      `json:"slug,omitempty" maxLength:"64" doc:"Optional custom alias. Lowercased on input; generated when omitted."`
 		DomainID         *uuid.UUID  `json:"domain_id,omitempty" doc:"Optional. Defaults to the instance's shared domain."`
 		RedirectType     int         `json:"redirect_type,omitempty" enum:"301,302" default:"302" doc:"301 is cached by browsers: clicks go uncounted and destination changes stop taking effect."`
@@ -797,7 +803,8 @@ type UpdateLinkInput struct {
 	// OpenAPI schema and the generated TS client depend on it.
 	RawBody []byte
 	Body    struct {
-		DestinationURL   *string     `json:"destination_url,omitempty" maxLength:"2048"`
+		// No maxLength, for the reason CreateLinkInput's DestinationURL gives.
+		DestinationURL   *string     `json:"destination_url,omitempty" doc:"Where the link points from now on. https:// only, at most 2048 characters."`
 		Slug             *string     `json:"slug,omitempty" maxLength:"64"`
 		RedirectType     *int        `json:"redirect_type,omitempty" enum:"301,302"`
 		State            *string     `json:"state,omitempty" enum:"active,disabled" doc:"expired follows from expires_at and flagged is set by scanning; neither is a caller's to write. A flagged link refuses any state with 409: change its destination, or wait until Google clears it."`

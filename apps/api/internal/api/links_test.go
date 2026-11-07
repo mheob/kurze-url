@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/mheob/kurze-url/apps/api/internal/authz"
+	"github.com/mheob/kurze-url/apps/api/internal/destination"
 	"github.com/mheob/kurze-url/apps/api/internal/link"
 	"github.com/mheob/kurze-url/apps/api/internal/slug"
 )
@@ -111,6 +112,10 @@ func TestCreateLinkRejectsANonHTTPSDestination(t *testing.T) {
 	}
 }
 
+// longDestination is an https URL one character past destination.MaxLength.
+var longDestination = "https://example.org/" +
+	strings.Repeat("a", destination.MaxLength+1-len("https://example.org/"))
+
 // TestCreateLinkSendsTheReasonForARefusedDestination pins the wire contract
 // apps/web and apps/cli read: the reason travels as a typed ErrorDetail at
 // body.destination_url, never inside the English detail, so a reworded
@@ -121,16 +126,18 @@ func TestCreateLinkSendsTheReasonForARefusedDestination(t *testing.T) {
 	for raw, token := range map[string]string{
 		"http://example.org":      "scheme",
 		"https://127.0.0.1/admin": "private_address",
+		// No schema bound on the field, so the handler's own check answers.
+		longDestination: "too_long",
 	} {
 		rec := f.do(t, f.members[authz.RoleEditor], http.MethodPost,
 			"/v1/teams/"+f.teamID.String()+"/links",
 			map[string]any{"destination_url": raw})
 
-		require.Equal(t, http.StatusUnprocessableEntity, rec.Code, "%q, body: %s", raw, rec.Body.String())
+		require.Equal(t, http.StatusUnprocessableEntity, rec.Code, "%s, body: %s", token, rec.Body.String())
 		problem := decode[problemBody](t, rec)
-		require.Len(t, problem.Errors, 1, "%q, body: %s", raw, rec.Body.String())
+		require.Len(t, problem.Errors, 1, "%s, body: %s", token, rec.Body.String())
 		require.Equal(t, "body.destination_url", problem.Errors[0].Location)
-		require.Equal(t, token, problem.Errors[0].Value, "%q", raw)
+		require.Equal(t, token, problem.Errors[0].Value)
 	}
 }
 
@@ -429,15 +436,17 @@ func TestUpdateLinkSendsTheReasonForARefusedDestination(t *testing.T) {
 	for raw, token := range map[string]string{
 		"http://example.org":      "scheme",
 		"https://127.0.0.1/admin": "private_address",
+		// No schema bound on the field, so the handler's own check answers.
+		longDestination: "too_long",
 	} {
 		rec := f.do(t, f.members[authz.RoleEditor], http.MethodPatch, "/v1/links/"+created.ID.String(),
 			map[string]any{"destination_url": raw})
 
-		require.Equal(t, http.StatusUnprocessableEntity, rec.Code, "%q, body: %s", raw, rec.Body.String())
+		require.Equal(t, http.StatusUnprocessableEntity, rec.Code, "%s, body: %s", token, rec.Body.String())
 		problem := decode[problemBody](t, rec)
-		require.Len(t, problem.Errors, 1, "%q, body: %s", raw, rec.Body.String())
+		require.Len(t, problem.Errors, 1, "%s, body: %s", token, rec.Body.String())
 		require.Equal(t, "body.destination_url", problem.Errors[0].Location)
-		require.Equal(t, token, problem.Errors[0].Value, "%q", raw)
+		require.Equal(t, token, problem.Errors[0].Value)
 	}
 }
 

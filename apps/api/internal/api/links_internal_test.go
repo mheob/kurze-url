@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
@@ -117,4 +120,97 @@ func TestUpdateLinkSendsTheDestinationReasonWithoutTheDatabase(t *testing.T) {
 	_, err := d.updateLink(context.Background(), in)
 
 	requireDestinationReason(t, err, "private_address")
+}
+
+// longDestination is an https URL exactly one character past
+// destination.MaxLength.
+func longDestination() string {
+	const prefix = "https://example.org/"
+	return prefix + strings.Repeat("a", destination.MaxLength+1-len(prefix))
+}
+
+// linkWriteBodySchema is the request body schema of one link write, from the
+// same registration cmd/openapi documents, so it is the schema Huma checks a
+// request against. A zero Deps registers without touching anything.
+func linkWriteBodySchema(t *testing.T, path, method string) (huma.Registry, *huma.Schema) {
+	t.Helper()
+	humaAPI := humago.New(http.NewServeMux(), NewHumaConfig())
+	Deps{}.RegisterV1(humaAPI)
+
+	doc := humaAPI.OpenAPI()
+	item := doc.Paths[path]
+	require.NotNil(t, item, path)
+	operation := item.Post
+	if method == http.MethodPatch {
+		operation = item.Patch
+	}
+	require.NotNil(t, operation, "%s %s", method, path)
+
+	registry := doc.Components.Schemas
+	schema := registry.SchemaFromRef(operation.RequestBody.Content["application/json"].Schema.Ref)
+	require.NotNil(t, schema, "%s %s", method, path)
+	return registry, schema
+}
+
+// TestLinkWritesLeaveTheDestinationsLengthToTheHandler pins why neither link
+// write bounds destination_url in its schema. With a maxLength there, Huma
+// refuses an over-long destination itself, before the handler runs, with a
+// detail valued with the URL rather than a token, and too_long is unreachable
+// over HTTP: the reasoning SetLinkPasswordInput gives for its password. The
+// limit is stated in the field's doc instead, and this keeps that doc and
+// destination.MaxLength on the same number.
+func TestLinkWritesLeaveTheDestinationsLengthToTheHandler(t *testing.T) {
+	for _, tc := range []struct{ name, path, method string }{
+		{"create", "/v1/teams/{team_id}/links", http.MethodPost},
+		{"update", "/v1/links/{link_id}", http.MethodPatch},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			registry, schema := linkWriteBodySchema(t, tc.path, tc.method)
+
+			res := &huma.ValidateResult{}
+			huma.Validate(registry, schema, huma.NewPathBuffer([]byte("body"), len("body")),
+				huma.ModeWriteToServer, map[string]any{"destination_url": longDestination()}, res)
+			// Location and message only: the value is the 2049-character URL.
+			var refusals []string
+			for _, err := range res.Errors {
+				var detail *huma.ErrorDetail
+				if errors.As(err, &detail) {
+					refusals = append(refusals, detail.Location+": "+detail.Message)
+				}
+			}
+			require.Empty(t, refusals, "the length is destination.Validate's to refuse")
+			require.Len(t, res.Errors, len(refusals))
+
+			field := schema.Properties["destination_url"]
+			require.NotNil(t, field)
+			require.Contains(t, field.Description, strconv.Itoa(destination.MaxLength)+" characters",
+				"the doc must state the limit destination.Validate enforces")
+		})
+	}
+}
+
+// TestCreateLinkRefusesALongDestinationAsTooLongWithoutTheDatabase is the
+// handler's half of the test above: what Huma now lets through, createLink
+// refuses with the too_long token like every other refusal.
+func TestCreateLinkRefusesALongDestinationAsTooLongWithoutTheDatabase(t *testing.T) {
+	var d Deps
+	in := &CreateLinkInput{}
+	in.Body.DestinationURL = longDestination()
+
+	_, err := d.createLink(context.Background(), in)
+
+	requireDestinationReason(t, err, "too_long")
+}
+
+// TestUpdateLinkRefusesALongDestinationAsTooLongWithoutTheDatabase is the
+// PATCH half of the test above.
+func TestUpdateLinkRefusesALongDestinationAsTooLongWithoutTheDatabase(t *testing.T) {
+	var d Deps
+	in := &UpdateLinkInput{}
+	raw := longDestination()
+	in.Body.DestinationURL = &raw
+
+	_, err := d.updateLink(context.Background(), in)
+
+	requireDestinationReason(t, err, "too_long")
 }

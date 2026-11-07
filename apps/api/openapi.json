@@ -173,8 +173,7 @@
 						"type": "boolean"
 					},
 					"destination_url": {
-						"description": "Where the link points. https:// only.",
-						"maxLength": 2048,
+						"description": "Where the link points. https:// only, at most 2048 characters.",
 						"type": "string"
 					},
 					"domain_id": {
@@ -1132,7 +1131,7 @@
 						"type": "boolean"
 					},
 					"destination_url": {
-						"maxLength": 2048,
+						"description": "Where the link points from now on. https:// only, at most 2048 characters.",
 						"type": "string"
 					},
 					"expires_at": {
