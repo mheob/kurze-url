@@ -94,6 +94,14 @@
 		"detailsHeading": "Linkdetails",
 		"destination": "Ziel-URL",
 		"destinationRequired": "Die Ziel-URL ist erforderlich.",
+		"destinationRejected": {
+			"malformed": "Gib eine vollständige Adresse wie https://example.org ein.",
+			"private_address": "Adressen aus privaten oder lokalen Netzen sind nicht erlaubt.",
+			"rejected": "Dieses Ziel wurde abgelehnt.",
+			"scheme": "Nur https://-Adressen sind erlaubt.",
+			"self_reference": "Ein Kurzlink darf nicht auf kurze-url selbst zeigen.",
+			"too_long": "Diese Adresse ist zu lang."
+		},
 		"slug": "Kurzpfad",
 		"slugGenerated": "Leer lassen, dann wird einer erzeugt",
 		"slugKeep": "Leer lassen, um den aktuellen Pfad zu behalten",

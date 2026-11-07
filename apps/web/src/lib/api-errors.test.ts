@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vite-plus/test';
 
-import { classifyApiError, inviteRateLimitTokenOf, statusOf } from './api-errors';
+import { createI18n } from '../i18n';
+import {
+	classifyApiError,
+	inviteRateLimitTokenOf,
+	linkFieldErrorsOf,
+	statusOf,
+	type DestinationRejectionReason,
+} from './api-errors';
 
 /**
  * Shapes copied from what Huma/the generated client actually produce, not
@@ -115,10 +122,10 @@ describe(classifyApiError, () => {
 
 	it('maps 422 field errors onto field names', () => {
 		const failure = classifyApiError(
-			problem(422, [{ location: 'body.destination_url', message: 'must be a valid URL' }]),
+			problem(422, [{ location: 'body.expires_at', message: 'must be in the future' }]),
 		);
 		expect(failure).toStrictEqual({
-			fields: { destination_url: 'must be a valid URL' },
+			fields: { expires_at: 'must be in the future' },
 			kind: 'fields',
 		});
 	});
@@ -126,12 +133,12 @@ describe(classifyApiError, () => {
 	it('collects more than one field error', () => {
 		const failure = classifyApiError(
 			problem(422, [
-				{ location: 'body.destination_url', message: 'must be a valid URL' },
+				{ location: 'body.expires_at', message: 'must be in the future' },
 				{ location: 'body.slug', message: 'already taken' },
 			]),
 		);
 		expect(failure).toStrictEqual({
-			fields: { destination_url: 'must be a valid URL', slug: 'already taken' },
+			fields: { expires_at: 'must be in the future', slug: 'already taken' },
 			kind: 'fields',
 		});
 	});
@@ -152,9 +159,9 @@ describe(classifyApiError, () => {
 
 	it('treats a 400 with a proper field location the same as a 422', () => {
 		const failure = classifyApiError(
-			problem(400, [{ location: 'body.destination_url', message: 'required' }]),
+			problem(400, [{ location: 'body.slug', message: 'required' }]),
 		);
-		expect(failure).toStrictEqual({ fields: { destination_url: 'required' }, kind: 'fields' });
+		expect(failure).toStrictEqual({ fields: { slug: 'required' }, kind: 'fields' });
 	});
 
 	it('ignores a field error with no message', () => {
@@ -292,7 +299,7 @@ describe('a rejected link password', () => {
 
 	it('still classifies other 422s as field errors', () => {
 		const failure = classifyApiError(
-			problem(422, [{ location: 'body.destination_url', message: 'must be https' }]),
+			problem(422, [{ location: 'body.slug', message: 'must be lowercase' }]),
 		);
 
 		expect(failure.kind).toBe('fields');
@@ -322,6 +329,96 @@ describe('a rejected link password', () => {
 		const failure = classifyApiError(problem(422, [{ location: 'body.password' }]));
 
 		expect(failure).toStrictEqual({ kind: 'passwordRejected', reason: 'rejected' });
+	});
+});
+
+describe('a refused link destination', () => {
+	// `destinationRejected` (apps/api/internal/api/links.go) answers a refused
+	// destination on create and on edit with one typed detail on the field,
+	// carrying `destination.Reason`'s token. It has to be read BEFORE the
+	// generic field-error branch, the same as the password's: `fieldsOf` would
+	// otherwise file it as `{ kind: 'fields' }` and show the API's English.
+	it.each(['malformed', 'private_address', 'scheme', 'self_reference', 'too_long'])(
+		'classifies the %s token as a destination rejection',
+		(token: string) => {
+			const failure = classifyApiError(
+				problem(422, [{ location: 'body.destination_url', message: 'refused', value: token }]),
+			);
+
+			expect(failure).toStrictEqual({ kind: 'destinationRejected', reason: token });
+		},
+	);
+
+	/**
+	 * A server ahead of this build may send a token this build does not list.
+	 * It is still a refused destination, so it keeps that kind with the
+	 * generic reason rather than passing an untranslatable string through.
+	 */
+	it('falls back to a generic reason for an unrecognized token', () => {
+		const failure = classifyApiError(
+			problem(422, [{ location: 'body.destination_url', value: 'too_suspicious' }]),
+		);
+
+		expect(failure).toStrictEqual({ kind: 'destinationRejected', reason: 'rejected' });
+	});
+
+	it('falls back to a generic reason when the value is missing', () => {
+		const failure = classifyApiError(
+			problem(422, [{ location: 'body.destination_url', message: 'must be https' }]),
+		);
+
+		expect(failure).toStrictEqual({ kind: 'destinationRejected', reason: 'rejected' });
+	});
+
+	// What the API answered before it sent a reason, and what any 422 without
+	// a detail still is: nothing names the field, so there is nothing to show
+	// at it.
+	it('is not a destination rejection when the 422 carries no detail at all', () => {
+		const failure = classifyApiError(
+			problem(422, undefined, 'destination: only https:// destinations are allowed: got "http"'),
+		);
+
+		expect(failure).toStrictEqual({ kind: 'unknown' });
+	});
+});
+
+describe(linkFieldErrorsOf, () => {
+	const english = createI18n('en').getFixedT('en');
+
+	it.each([
+		['malformed', 'Enter a complete address such as https://example.org.'],
+		['scheme', 'Only https:// addresses are allowed.'],
+		['private_address', 'Private and local network addresses are not allowed.'],
+		['self_reference', 'A short link may not point at kurze-url itself.'],
+		['too_long', 'This address is too long.'],
+		['rejected', 'This destination was refused.'],
+	] as const)(
+		'words the %s reason at the destination field',
+		(reason: DestinationRejectionReason | 'rejected', message: string) => {
+			expect(linkFieldErrorsOf({ kind: 'destinationRejected', reason }, english)).toStrictEqual({
+				destination_url: message,
+			});
+		},
+	);
+
+	it('words it in German for a German reader', () => {
+		const german = createI18n('de').getFixedT('de');
+
+		expect(
+			linkFieldErrorsOf({ kind: 'destinationRejected', reason: 'scheme' }, german),
+		).toStrictEqual({ destination_url: 'Nur https://-Adressen sind erlaubt.' });
+	});
+
+	it('passes field errors through as the API worded them', () => {
+		expect(
+			linkFieldErrorsOf({ fields: { slug: 'already taken' }, kind: 'fields' }, english),
+		).toStrictEqual({ slug: 'already taken' });
+	});
+
+	// Everything else is the page banner's, and must not also appear at a field.
+	it('leaves every other failure, and no failure at all, to the banner', () => {
+		expect(linkFieldErrorsOf({ kind: 'rateLimited' }, english)).toBeUndefined();
+		expect(linkFieldErrorsOf(null, english)).toBeUndefined();
 	});
 });
 

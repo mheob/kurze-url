@@ -22,7 +22,12 @@ import { LinkScanNotice } from '../../components/link-scan-notice';
 import { buttonVariants } from '../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { prefetchTags, useLinkFormTags } from '../../hooks/use-link-form-tags';
-import { classifyApiError, type ApiFailure, type QrRejectionReason } from '../../lib/api-errors';
+import {
+	classifyApiError,
+	linkFieldErrorsOf,
+	type ApiFailure,
+	type QrRejectionReason,
+} from '../../lib/api-errors';
 import { remapFolderGoneFailure } from '../../lib/folders';
 import { remapTagGoneFailure, sameTagSet } from '../../lib/tags';
 import { canEdit } from '../../lib/team-roles';
@@ -702,8 +707,10 @@ function RouteComponent(): React.JSX.Element {
 		onSuccess: onPasswordSuccess,
 	});
 
-	const fieldErrors = failure?.kind === 'fields' ? failure.fields : undefined;
-	const formMessage = failure && failure.kind !== 'fields' ? t(`errors.${failure.kind}`) : null;
+	const fieldErrors = linkFieldErrorsOf(failure, t);
+	// At a field or in this banner, never both: see `link.new.tsx`'s identical
+	// pair. A refused destination's reason is one a field shows.
+	const formMessage = failure && fieldErrors === undefined ? t(`errors.${failure.kind}`) : null;
 	// Below editor the API refuses the form's save, the password's set, change
 	// and remove, and the delete with a 403, so this page offers none of them. A
 	// viewer still reads the link here, and keeps the QR download and the
