@@ -138,16 +138,19 @@ type completionTarget struct {
 	// unsafe says a change from here would damage the file (see
 	// unsafeProfile).
 	unsafe bool
-	// foreign says the file exists and belongs to a user other than the one
-	// running the command (see Deps.FileOwnedByOther).
-	foreign bool
+	// foreign is the path that belongs to a user other than the one running
+	// the command, or "" when none does: the file itself when it exists,
+	// else the nearest directory that exists, which a write would create the
+	// file in (see foreignOwner).
+	foreign string
 }
 
-// refusal is a file left as it is. foreign says why: it belongs to another
-// user, where otherwise a change would damage the profile.
+// refusal is a file left as it is. foreign is set when the reason is
+// ownership, and holds the path that belongs to another user; otherwise a
+// change would damage the profile.
 type refusal struct {
 	path    string
-	foreign bool
+	foreign string
 }
 
 // signatureBlock opens the signature PowerShell appends to a signed script.
@@ -256,8 +259,8 @@ func (a *App) planInstall(targets []completionTarget) installPlan {
 		case t.state == shellrc.ByHand:
 			a.notice(a.Cat.T("completion.byHand", i18n.Args{"file": t.path}))
 			plan.settled = true
-		case t.foreign:
-			plan.refused = append(plan.refused, refusal{path: t.path, foreign: true})
+		case t.foreign != "":
+			plan.refused = append(plan.refused, refusal{path: t.path, foreign: t.foreign})
 		case t.unsafe:
 			plan.refused = append(plan.refused, refusal{path: t.path})
 		default:
@@ -280,9 +283,16 @@ func (a *App) planInstall(targets []completionTarget) installPlan {
 func (a *App) refuseFiles(refused []refusal, fatal bool) error {
 	for i, r := range refused {
 		// The catalog keys are literals, which TestEveryUsedKeyIsDefined needs.
-		text := a.Cat.T("completion.profileUnsafe", i18n.Args{"file": r.path})
-		if r.foreign {
-			text = a.Cat.T("completion.notYourFile", i18n.Args{"file": r.path})
+		var text string
+		switch {
+		case r.foreign == "":
+			text = a.Cat.T("completion.profileUnsafe", i18n.Args{"file": r.path})
+		case a.d.RunningAsRoot != nil && a.d.RunningAsRoot():
+			// Under sudo: the advice is to leave sudo out.
+			text = a.Cat.T("completion.notYourFile", i18n.Args{"file": r.foreign})
+		default:
+			// Not root, so an earlier sudo run left it: take it back.
+			text = a.Cat.T("completion.foreignFile", i18n.Args{"file": r.foreign})
 		}
 		if fatal && i == len(refused)-1 {
 			return errors.New(text)
@@ -415,8 +425,8 @@ func (a *App) planUninstall(targets []completionTarget, again bool) uninstallPla
 	var plan uninstallPlan
 	for _, t := range targets {
 		switch {
-		case t.state == shellrc.Installed && t.foreign:
-			plan.refused = append(plan.refused, refusal{path: t.path, foreign: true})
+		case t.state == shellrc.Installed && t.foreign != "":
+			plan.refused = append(plan.refused, refusal{path: t.path, foreign: t.foreign})
 		case t.state == shellrc.Installed && t.unsafe:
 			plan.refused = append(plan.refused, refusal{path: t.path})
 		case t.state == shellrc.Installed:
@@ -493,6 +503,39 @@ func (a *App) reread(targets []completionTarget) ([]completionTarget, error) {
 	return fresh, nil
 }
 
+// foreignOwner returns the path that belongs to another user and that a write
+// to path would touch, or "" when there is none.
+//
+// An existing file is judged by itself, because the write replaces it. A file
+// that does not exist is judged by the nearest directory that does, because
+// that is where the write creates it, and under sudo it would make root the
+// owner of it, and of any directory made on the way: macOS has no ~/.zshrc
+// until somebody makes one, and fish's completions directory is often absent.
+// A path nobody can examine has no known owner, and the read that follows
+// reports what is wrong with it.
+func (a *App) foreignOwner(path string) string {
+	if a.d.FileOwnedByOther == nil {
+		return ""
+	}
+	for current := path; ; {
+		info, err := os.Stat(current)
+		if err == nil {
+			if a.d.FileOwnedByOther(info) {
+				return current
+			}
+			return ""
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return ""
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return ""
+		}
+		current = parent
+	}
+}
+
 // readTarget reads what a file holds and judges it. A file that does not
 // exist reads as empty, which is a file with no setup in it.
 func (a *App) readTarget(t *completionTarget) error {
@@ -501,10 +544,7 @@ func (a *App) readTarget(t *completionTarget) error {
 	// The owner is read where the file is read, so the second look after the
 	// question judges it again. A file that cannot be examined has no known
 	// owner, and the read above has already reported what is wrong with it.
-	t.foreign = false
-	if info, statErr := os.Stat(t.path); statErr == nil && a.d.FileOwnedByOther != nil {
-		t.foreign = a.d.FileOwnedByOther(info)
-	}
+	t.foreign = a.foreignOwner(t.path)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return errors.New(a.Cat.T("completion.readFailed", i18n.Args{
 			"file":   t.path,

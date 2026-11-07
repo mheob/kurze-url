@@ -798,6 +798,18 @@ func notYourFile(path string) string {
 	return path + " belongs to another user; nothing was changed there. Run the command without sudo."
 }
 
+// foreignFile is the refusal for a person who is not root: the file is one an
+// earlier sudo run left behind, so the advice is to take it back.
+func foreignFile(path string) string {
+	return path + " belongs to another user; nothing was changed there. " +
+		"If it should be yours, change its owner first: sudo chown \"$USER\" \"" + path + "\""
+}
+
+// asRoot makes the command run as the superuser, as under sudo.
+func (h *harness) asRoot() {
+	h.deps.RunningAsRoot = func() bool { return true }
+}
+
 // ownedByOther fakes the file system's answer: the files with these base
 // names belong to someone else. The real check needs a second user.
 func (h *harness) ownedByOther(names ...string) {
@@ -813,6 +825,7 @@ func TestInstallRefusesAFileOfAnotherUser(t *testing.T) {
 	h := shellHarness(t, "/bin/zsh")
 	zshrc := h.homeFile(".zshrc")
 	putFile(t, zshrc, "export A=1")
+	h.asRoot()
 	h.ownedByOther(".zshrc")
 
 	code := h.run("completion", "install", "--yes")
@@ -834,6 +847,7 @@ func TestInstallStillWritesTheFilesOfTheRunUser(t *testing.T) {
 	h.programs["pwsh"], h.programs["powershell"] = true, true
 	h.outputs["pwsh"] = a + "\nRemoteSigned\n"
 	h.outputs["powershell"] = b + "\nRemoteSigned\n"
+	h.asRoot()
 	h.ownedByOther("b.ps1")
 
 	code := h.run("completion", "install", "--yes")
@@ -852,6 +866,7 @@ func TestUninstallRefusesAFileOfAnotherUser(t *testing.T) {
 	zshrc := h.homeFile(".zshrc")
 	content := "export A=1\n" + shellrc.Block(shellrc.Zsh)
 	putFile(t, zshrc, content)
+	h.asRoot()
 	h.ownedByOther(".zshrc")
 
 	code := h.run("completion", "uninstall", "--yes")
@@ -873,6 +888,7 @@ func TestUninstallStillCleansTheFilesOfTheRunUser(t *testing.T) {
 	h.programs["pwsh"], h.programs["powershell"] = true, true
 	h.outputs["pwsh"] = a + "\nRemoteSigned\n"
 	h.outputs["powershell"] = b + "\nRemoteSigned\n"
+	h.asRoot()
 	h.ownedByOther("b.ps1")
 
 	code := h.run("completion", "uninstall", "--yes")
@@ -893,6 +909,7 @@ func TestUninstallRefusesFishsFileOfAnotherUser(t *testing.T) {
 	h := shellHarness(t, "/usr/bin/fish")
 	fishFile := filepath.Join(h.home, ".config", "fish", "completions", "kurze-url.fish")
 	putFile(t, fishFile, shellrc.OwnFile(shellrc.Fish))
+	h.asRoot()
 	h.ownedByOther("kurze-url.fish")
 
 	code := h.run("completion", "uninstall", "--yes")
@@ -908,6 +925,7 @@ func TestTheOwnershipRefusalIsWordedInGerman(t *testing.T) {
 	h.env["LANG"] = "de_DE.UTF-8"
 	zshrc := h.homeFile(".zshrc")
 	putFile(t, zshrc, "export A=1")
+	h.asRoot()
 	h.ownedByOther(".zshrc")
 
 	code := h.run("completion", "install", "--yes")
@@ -916,6 +934,103 @@ func TestTheOwnershipRefusalIsWordedInGerman(t *testing.T) {
 	require.Equal(t,
 		"kurze-url: "+zshrc+" gehört einem anderen Benutzer; dort wurde nichts geändert. Führe den Befehl ohne sudo aus.\n",
 		h.stderr.String())
+}
+
+// A person who is not root and finds a file of another user got it from an
+// earlier sudo run, so telling them to leave out sudo would be wrong.
+func TestTheRefusalForANonRootUserSaysHowToTakeTheFileBack(t *testing.T) {
+	for _, command := range []string{"install", "uninstall"} {
+		t.Run(command, func(t *testing.T) {
+			h := shellHarness(t, "/bin/zsh")
+			zshrc := h.homeFile(".zshrc")
+			content := "export A=1\n" + shellrc.Block(shellrc.Zsh)
+			putFile(t, zshrc, content)
+			if command == "install" {
+				content = "export A=1\n"
+				putFile(t, zshrc, content)
+			}
+			h.ownedByOther(".zshrc")
+
+			code := h.run("completion", command, "--yes")
+
+			require.Equal(t, 1, code)
+			require.Equal(t, "kurze-url: "+foreignFile(zshrc)+"\n", h.stderr.String())
+			got, _ := fileContent(t, zshrc)
+			require.Equal(t, content, got)
+		})
+	}
+}
+
+func TestTheNonRootRefusalIsWordedInGerman(t *testing.T) {
+	h := shellHarness(t, "/bin/zsh")
+	h.env["LANG"] = "de_DE.UTF-8"
+	zshrc := h.homeFile(".zshrc")
+	putFile(t, zshrc, "export A=1")
+	h.ownedByOther(".zshrc")
+
+	code := h.run("completion", "install", "--yes")
+
+	require.Equal(t, 1, code)
+	require.Equal(t,
+		"kurze-url: "+zshrc+" gehört einem anderen Benutzer; dort wurde nichts geändert. "+
+			"Wenn sie dir gehören soll, ändere zuerst den Eigentümer: sudo chown \"$USER\" \""+zshrc+"\"\n",
+		h.stderr.String())
+}
+
+// macOS has no ~/.zshrc until somebody makes one, and under sudo the rename
+// that creates it would make root its owner: the case the ownership check
+// exists for. A missing file is judged by the directory it would be created
+// in, the nearest one that exists.
+func TestInstallRefusesToCreateAFileInADirectoryOfAnotherUser(t *testing.T) {
+	h := shellHarness(t, "/bin/zsh")
+	h.asRoot()
+	h.ownedByOther(filepath.Base(h.home))
+
+	code := h.run("completion", "install", "--yes")
+
+	require.Equal(t, 1, code)
+	require.Equal(t, "kurze-url: "+notYourFile(h.home)+"\n", h.stderr.String())
+	requireEmptyDir(t, h.home)
+}
+
+// fish's file sits under directories that may not exist yet, and creating
+// them as root would leave the person's ~/.config with a root-owned part.
+func TestInstallRefusesFishsMissingDirectoriesUnderAForeignOne(t *testing.T) {
+	h := shellHarness(t, "/usr/bin/fish")
+	h.ownedByOther(filepath.Base(h.home))
+
+	code := h.run("completion", "install", "--yes")
+
+	require.Equal(t, 1, code)
+	require.Equal(t, "kurze-url: "+foreignFile(h.home)+"\n", h.stderr.String())
+	requireEmptyDir(t, h.home)
+}
+
+func TestInstallCreatesAMissingFileInADirectoryOfTheRunUser(t *testing.T) {
+	h := shellHarness(t, "/bin/zsh")
+	h.ownedByOther("somebody-elses-directory")
+
+	code := h.run("completion", "install", "--yes")
+
+	require.Equal(t, 0, code, h.stderr.String())
+	got, _ := fileContent(t, h.homeFile(".zshrc"))
+	require.Equal(t, shellrc.Block(shellrc.Zsh), got)
+}
+
+// The nearest existing directory is the one that counts, not the home.
+func TestAMissingFileIsJudgedByItsNearestExistingDirectory(t *testing.T) {
+	h := shellHarness(t, "/usr/bin/fish")
+	h.asRoot()
+	require.NoError(t, os.MkdirAll(filepath.Join(h.home, ".config"), 0o755))
+	// Only ~/.config is another user's; the home, further up, is the person's.
+	h.ownedByOther(".config")
+
+	code := h.run("completion", "install", "--yes")
+
+	require.Equal(t, 1, code)
+	require.Equal(t, "kurze-url: "+notYourFile(filepath.Join(h.home, ".config"))+"\n", h.stderr.String())
+	_, err := os.Stat(filepath.Join(h.home, ".config", "fish"))
+	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
 // ---- uninstall ----

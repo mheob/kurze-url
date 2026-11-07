@@ -8,6 +8,7 @@
 	"completion.confirmInstall": "Add tab completion for {shell} to {files}? [Y/n] ",
 	"completion.confirmUninstall": "Remove tab completion from {files}? [Y/n] ",
 	"completion.declined": "Nothing was changed.",
+	"completion.foreignFile": "{file} belongs to another user; nothing was changed there. If it should be yours, change its owner first: sudo chown \"$USER\" \"{file}\"",
 	"completion.installed": "Added tab completion to {file}.",
 	"completion.needsYes": "There is no terminal to ask for confirmation. Add --yes to go ahead without asking.",
 	"completion.noHome": "Could not find your home directory: {reason}",

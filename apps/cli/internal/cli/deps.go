@@ -121,6 +121,11 @@ type Deps struct {
 	// whoever ran the command: under `sudo`, root. A test fakes it, since the
 	// real answer needs a second user. A nil value answers no.
 	FileOwnedByOther func(os.FileInfo) bool
+	// RunningAsRoot says the process runs as the superuser, which is how a
+	// foreign file is worded: under `sudo` the advice is to leave sudo out,
+	// and otherwise the file is one an earlier sudo run left behind. A test
+	// fakes it. A nil value answers no.
+	RunningAsRoot func() bool
 }
 
 // Default returns the production wiring: the process's own streams,
@@ -161,6 +166,7 @@ func Default(b BuildInfo) *Deps {
 		RunCommand: runCommand,
 
 		FileOwnedByOther: fileOwnedByOther,
+		RunningAsRoot:    runningAsRoot,
 	}
 }
 

@@ -18,3 +18,8 @@ func fileOwnedByOther(info os.FileInfo) bool {
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	return ok && int(stat.Uid) != os.Geteuid()
 }
+
+// runningAsRoot reports whether the effective user is the superuser.
+func runningAsRoot() bool {
+	return os.Geteuid() == 0
+}

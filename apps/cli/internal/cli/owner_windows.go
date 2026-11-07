@@ -10,3 +10,8 @@ import "os"
 func fileOwnedByOther(os.FileInfo) bool {
 	return false
 }
+
+// runningAsRoot is always false on Windows, which has no superuser id.
+func runningAsRoot() bool {
+	return false
+}

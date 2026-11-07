@@ -189,6 +189,7 @@ func newHarness(t *testing.T) *harness {
 		RunCommand: h.runCommand,
 		// Nothing a test writes belongs to another user until it says so.
 		FileOwnedByOther: func(os.FileInfo) bool { return false },
+		RunningAsRoot:    func() bool { return false },
 	}
 	return h
 }
