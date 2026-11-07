@@ -334,6 +334,7 @@ describe(sentryOptions, () => {
 		const httpHeaders = assertDefined(dc.httpHeaders);
 		const graphQL = assertDefined(dc.graphQL);
 		const genAI = assertDefined(dc.genAI);
+		const mcp = assertDefined(dc.mcp);
 
 		// `toEqual` on two `Set`s compares membership, not insertion order —
 		// this pins which fields are set, not the order they are written in.
@@ -346,6 +347,7 @@ describe(sentryOptions, () => {
 				'graphQL',
 				'httpBodies',
 				'httpHeaders',
+				'mcp',
 				'queues',
 				'stackFrameVariables',
 				'urlQueryParams',
@@ -355,14 +357,15 @@ describe(sentryOptions, () => {
 		expect(new Set(Object.keys(httpHeaders))).toStrictEqual(new Set(['request', 'response']));
 		expect(new Set(Object.keys(graphQL))).toStrictEqual(new Set(['document', 'variables']));
 		expect(new Set(Object.keys(genAI))).toStrictEqual(new Set(['inputs', 'outputs']));
+		expect(new Set(Object.keys(mcp))).toStrictEqual(new Set(['inputs', 'outputs']));
 	});
 
 	/**
 	 * The type guard only checks that every field is present, not what it
 	 * holds: `queues: true` or `userInfo: true` type-checks just as well and
 	 * quietly widens collection. Every value here is what v10's
-	 * `sendDefaultPii: false` resolved to, plus `queues: false` for the field
-	 * v11 added, which that off-state never collected.
+	 * `sendDefaultPii: false` resolved to, plus `queues` and `mcp` switched off,
+	 * the fields v11 added, whose content that off-state never collected.
 	 */
 	it('keeps every dataCollection field at the v10 sendDefaultPii off-state', () => {
 		const { dataCollection } = sentryOptions('https://public@o0.ingest.sentry.io/0');
@@ -376,6 +379,7 @@ describe(sentryOptions, () => {
 			graphQL: { document: true, variables: true },
 			httpBodies: [],
 			httpHeaders: { request: deny, response: deny },
+			mcp: { inputs: false, outputs: false },
 			queues: false,
 			stackFrameVariables: true,
 			urlQueryParams: deny,

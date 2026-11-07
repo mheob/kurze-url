@@ -1613,13 +1613,6 @@
 							"schema": {
 								"$ref": "#/components/schemas/UpdateLinkInputBody"
 							}
-						},
-						"application/octet-stream": {
-							"schema": {
-								"contentMediaType": "application/octet-stream",
-								"format": "binary",
-								"type": "string"
-							}
 						}
 					},
 					"required": true
