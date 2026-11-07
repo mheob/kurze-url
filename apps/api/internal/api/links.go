@@ -233,6 +233,22 @@ func (d Deps) selfHostnames() []string {
 	return []string{d.Config.SharedDomainHostname, d.Config.APIHostname}
 }
 
+// destinationRejected turns a destination.Validate refusal into the 422 both
+// link writes answer. The English detail stays as it was; the reason travels
+// as a token in ErrorDetail.Value keyed by the field, the convention
+// passwordRejected follows, so apps/web and apps/cli word it in their own
+// language and the prose stays free to reword. An error destination.Reason
+// cannot name gets no detail rather than an invented token.
+func destinationRejected(err error) error {
+	reason := destination.Reason(err)
+	if reason == "" {
+		return huma.Error422UnprocessableEntity(err.Error())
+	}
+	return huma.Error422UnprocessableEntity(err.Error(), &huma.ErrorDetail{
+		Location: "body.destination_url", Message: err.Error(), Value: reason,
+	})
+}
+
 // invalidateLink drops a link's redirect-cache entry after its transaction has
 // committed. Best-effort by design: the database is the source of truth and
 // LinkCacheTTL bounds the staleness, so a Redis failure here is worth an error
@@ -494,7 +510,7 @@ func (d Deps) createLink(ctx context.Context, in *CreateLinkInput) (*LinkOutput,
 	}
 
 	if err := destination.Validate(in.Body.DestinationURL, d.selfHostnames()); err != nil {
-		return nil, huma.Error422UnprocessableEntity(err.Error())
+		return nil, destinationRejected(err)
 	}
 
 	if in.Body.ExpiresAt != nil && !in.Body.ExpiresAt.After(d.now()) {
@@ -908,7 +924,7 @@ func (d Deps) updateLink(ctx context.Context, in *UpdateLinkInput) (*LinkOutput,
 
 	if in.Body.DestinationURL != nil {
 		if err := destination.Validate(*in.Body.DestinationURL, d.selfHostnames()); err != nil {
-			return nil, huma.Error422UnprocessableEntity(err.Error())
+			return nil, destinationRejected(err)
 		}
 	}
 	if in.Body.ExpiresAt != nil && !in.Body.ExpiresAt.After(d.now()) {

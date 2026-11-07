@@ -37,6 +37,28 @@ var (
 	ErrTooLong = errors.New("destination: url is too long")
 )
 
+// Reason names the sentinel behind a Validate refusal with the token the API
+// sends at body.destination_url, so a client can word the refusal in its own
+// language instead of showing this package's English. The tokens are a wire
+// contract read by apps/web and apps/cli, and destination_test.go pins each
+// one. An error that is none of the sentinels gives "", and the caller then
+// sends no detail rather than an invented one.
+func Reason(err error) string {
+	switch {
+	case errors.Is(err, ErrMalformed):
+		return "malformed"
+	case errors.Is(err, ErrScheme):
+		return "scheme"
+	case errors.Is(err, ErrPrivateAddress):
+		return "private_address"
+	case errors.Is(err, ErrSelfReference):
+		return "self_reference"
+	case errors.Is(err, ErrTooLong):
+		return "too_long"
+	}
+	return ""
+}
+
 // Validate checks a destination URL. selfHostnames is the set of hostnames
 // this instance answers on; a destination naming any of them is a loop.
 func Validate(raw string, selfHostnames []string) error {
