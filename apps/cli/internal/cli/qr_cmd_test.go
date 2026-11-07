@@ -167,6 +167,26 @@ func TestQRExplicitSizeWithSVGIsAUsageError(t *testing.T) {
 	}
 }
 
+// Both flags typed on the line contradict each other whatever the config
+// says, so the refusal does not wait for the lookup of the link.
+func TestQRSizeWithFormatSVGIsRefusedBeforeTheNetwork(t *testing.T) {
+	// A config that says png changes nothing: the flag wins.
+	h := linkHarness(t, "team: sv-gruenwald\nqr:\n  format: png\n", teamGruenwald)
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	code := h.run("link", "qr", "x", "--format", "svg", "--size", "512")
+
+	require.Equal(t, 2, code)
+	require.Empty(t, h.stdout.String())
+	require.Equal(t,
+		"kurze-url: --size only applies to PNG images. Add --format png, or leave out --size for an SVG.\n"+
+			"Run 'kurze-url link qr --help' for usage.\n",
+		h.stderr.String())
+	require.Empty(t, h.api.requests())
+	require.Empty(t, entries(t, dir))
+}
+
 func TestQRExplicitSizeWithPNGFromTheConfigIsFine(t *testing.T) {
 	h, _ := qrHarness(t, "team: sv-gruenwald\nqr:\n  format: png\n")
 

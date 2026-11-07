@@ -133,7 +133,10 @@ func newConfigGetCmd(d *Deps) *cobra.Command {
 			"that team's own value first, then the global one.\n\n" + keyHelp(),
 		Args:              usageArgs(cobra.MaximumNArgs(1)),
 		ValidArgsFunction: completeConfigKey,
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := checkTeamFlag(cmd, d); err != nil {
+				return err
+			}
 			var key config.Key
 			if len(args) == 1 {
 				var err error
@@ -166,7 +169,10 @@ func newConfigSetCmd(d *Deps) *cobra.Command {
 			"The team is not checked against your memberships, because those change.\n\n" + keyHelp(),
 		Args:              usageArgs(cobra.ExactArgs(2)),
 		ValidArgsFunction: completeConfigSet(d),
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := checkTeamFlag(cmd, d); err != nil {
+				return err
+			}
 			key, err := parseKey(args[0])
 			if err != nil {
 				return err
@@ -193,7 +199,10 @@ func newConfigUnsetCmd(d *Deps) *cobra.Command {
 			keyHelp(),
 		Args:              usageArgs(cobra.ExactArgs(1)),
 		ValidArgsFunction: completeConfigKey,
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := checkTeamFlag(cmd, d); err != nil {
+				return err
+			}
 			key, err := parseKey(args[0])
 			if err != nil {
 				return err

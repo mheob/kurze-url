@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -99,4 +100,33 @@ func exitCode(err error) int {
 		return exitUsage
 	}
 	return exitFailure
+}
+
+// checkTeamFlag refuses a --team that was typed and names no team, as a usage
+// error in the person's language.
+//
+// An empty value used to mean two things: "global" on `config get`, `set` and
+// `unset`, and "the default team" on the link commands. So `config set
+// language de --team ""` wrote the global section without a word, usually a
+// shell variable that came out empty. A person who wants the global settings
+// or the default team leaves the flag out, so a flag that was given and is
+// blank after trimming is a mistake on every command that has it.
+//
+// It runs first in each RunE, before the config is read and before any
+// request, and words the refusal through catalogFor because no App exists yet:
+// the same reasoning as checkLimit.
+func checkTeamFlag(cmd *cobra.Command, d *Deps) error {
+	if !cmd.Flags().Changed("team") {
+		return nil
+	}
+	team, err := cmd.Flags().GetString("team")
+	if err != nil {
+		// Changed found the flag, so only a flag of another type fails here:
+		// a programming error, reported as one rather than taken for a team.
+		return fmt.Errorf("read --team: %w", err)
+	}
+	if strings.TrimSpace(team) != "" {
+		return nil
+	}
+	return &UsageError{Err: errors.New(catalogFor(d).T("team.emptyFlag"))}
 }

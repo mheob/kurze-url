@@ -206,6 +206,30 @@ func TestCleanLeavesOrdinaryTextAlone(t *testing.T) {
 	}
 }
 
+// A right-to-left override reverses how the rest of a line reads, and a
+// zero-width character makes two different names look the same.
+func TestCleanReplacesBidiControlsAndInvisibleFillers(t *testing.T) {
+	for _, r := range []rune{
+		'\u202a', '\u202b', '\u202c', '\u202d', '\u202e',
+		'\u2066', '\u2067', '\u2068', '\u2069',
+		'\u200e', '\u200f', '\u061c',
+		'\u200b', '\u2060', '\ufeff',
+	} {
+		require.Equal(t, "a b", Clean("a"+string(r)+"b"), "U+%04X survived", r)
+	}
+}
+
+// ZWNJ and ZWJ stay: emoji sequences and several scripts need them.
+func TestCleanKeepsJoinersAndPlainText(t *testing.T) {
+	for _, text := range []string{
+		"👩\u200d💻",
+		"می\u200cخواهم",
+		"Größe Übung ä ö ü ß",
+	} {
+		require.Equal(t, text, Clean(text))
+	}
+}
+
 func TestTSVHasNoHeader(t *testing.T) {
 	var buf bytes.Buffer
 

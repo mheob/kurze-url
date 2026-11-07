@@ -115,6 +115,17 @@ type Deps struct {
 	// through them, and a test fakes both, so none is ever started.
 	LookPath   func(string) (string, error)
 	RunCommand func(ctx context.Context, name string, args ...string) ([]byte, error)
+	// FileOwnedByOther says a file belongs to a user other than the one
+	// running the process. `completion install` and `uninstall` refuse such a
+	// file, because their write replaces it and the result would belong to
+	// whoever ran the command: under `sudo`, root. A test fakes it, since the
+	// real answer needs a second user. A nil value answers no.
+	FileOwnedByOther func(os.FileInfo) bool
+	// RunningAsRoot says the process runs as the superuser, which is how a
+	// foreign file is worded: under `sudo` the advice is to leave sudo out,
+	// and otherwise the file is one an earlier sudo run left behind. A test
+	// fakes it. A nil value answers no.
+	RunningAsRoot func() bool
 }
 
 // Default returns the production wiring: the process's own streams,
@@ -153,6 +164,9 @@ func Default(b BuildInfo) *Deps {
 		HomeDir:    os.UserHomeDir,
 		LookPath:   exec.LookPath,
 		RunCommand: runCommand,
+
+		FileOwnedByOther: fileOwnedByOther,
+		RunningAsRoot:    runningAsRoot,
 	}
 }
 
