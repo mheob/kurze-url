@@ -39,28 +39,49 @@ func Truncate(s string, limit int) string {
 	return string(runes[:limit-1]) + ellipsis
 }
 
-// Clean makes a piece of text safe to print: every control character, tabs
-// and newlines included, becomes a space.
+// Clean makes a piece of text safe to print: every control character, tab
+// and newline included, bidirectional control and invisible filler becomes a
+// space.
 //
 // Text a team's admin wrote (a team name, a folder) or the API returned (a
 // destination, a short URL, an error's detail) is not the CLI's own. An
 // embedded ESC or BEL would let that text drive the person's terminal: an OSC
 // 52 sequence writes to the clipboard without showing anything. An embedded
 // newline would turn one table row into two and an embedded tab would add a
-// column, so a script splitting the output would misread it. None of these has
-// a place in a name, so Table and TSV clean every cell, and a command cleans
-// what it puts into a sentence or a plain line itself, because only the
-// command knows which of its values came from outside.
+// column, so a script splitting the output would misread it. A right-to-left
+// override or isolate reverses how the rest of a line reads, so a folder or a
+// destination can show different text from what it holds ("Trojan Source"),
+// and a zero-width character makes two different names look the same. None
+// of these has a place in a name, so Table and TSV clean every cell, and a
+// command cleans what it puts into a sentence or a plain line itself, because
+// only the command knows which of its values came from outside.
 //
-// Only the characters Unicode classes as control are replaced, which covers
-// the C0 and C1 ranges and DEL. Text with none comes back unchanged.
+// What is replaced: the characters Unicode classes as control (the C0 and C1
+// ranges and DEL), the bidi controls U+202A to U+202E, U+2066 to U+2069,
+// U+200E, U+200F and U+061C, and the invisible fillers U+200B, U+2060 and
+// U+FEFF. U+200C and U+200D stay: emoji sequences and several scripts need
+// them. Text with none of the replaced characters comes back unchanged.
 func Clean(text string) string {
 	return strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) {
+		if unicode.IsControl(r) || isBidiOrInvisible(r) {
 			return ' '
 		}
 		return r
 	}, text)
+}
+
+// isBidiOrInvisible reports whether r is a bidirectional control or an
+// invisible filler that Clean replaces.
+func isBidiOrInvisible(r rune) bool {
+	switch {
+	case r >= '\u202a' && r <= '\u202e', r >= '\u2066' && r <= '\u2069':
+		return true
+	}
+	switch r {
+	case '\u200e', '\u200f', '\u061c', '\u200b', '\u2060', '\ufeff':
+		return true
+	}
+	return false
 }
 
 // cleanRow cleans every cell of a row.

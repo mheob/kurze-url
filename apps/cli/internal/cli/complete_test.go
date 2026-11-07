@@ -839,6 +839,20 @@ func TestCandidateDropsEachShellSyntaxCharacter(t *testing.T) {
 	}
 }
 
+// A right-to-left override would make a folder read differently from what it
+// holds, and a cleaned copy would name a folder that does not exist, so
+// candidate drops the value.
+func TestCandidateDropsABidiOverride(t *testing.T) {
+	h := linkHarness(t, "team: sv-gruenwald\n", teamGruenwald)
+	h.serveFolders(teamGruenwald,
+		apiclient.Folder{ID: "f1", Name: "Rechnung\u202egpj.exe"},
+		folderPresse,
+	)
+
+	folders, _ := h.complete("link", "list", "--folder", "")
+	require.Equal(t, []string{"Presse"}, folders)
+}
+
 // Without a command separator, parentheses, quotes and spaces cannot run
 // anything, and a folder like "Sommerfest (2026)" is a name people really use.
 func TestCandidateOffersNamesWithoutCommandSyntax(t *testing.T) {
