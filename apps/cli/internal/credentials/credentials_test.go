@@ -481,6 +481,28 @@ func TestTheSweepLeavesTheRealFileAndUnrelatedFilesAlone(t *testing.T) {
 	requireSameTokens(t, sampleTokens(), got)
 }
 
+// Only a regular file is swept. A directory or a link that happens to carry
+// the pattern's name is not something this package wrote.
+func TestTheSweepLeavesADirectoryAndASymlinkAlone(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("creating a symlink needs a privilege on Windows")
+	}
+	brokenKeychain(t)
+	dir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(dir, ".credentials-dir.tmp"), 0o700))
+	target := plantTemp(t, t.TempDir(), "elsewhere")
+	require.NoError(t, os.Symlink(target, filepath.Join(dir, ".credentials-link.tmp")))
+	laterBy(t, time.Hour)
+
+	require.NoError(t, credentials.New("a", dir).Save(sampleTokens()))
+
+	require.Equal(t,
+		[]string{".credentials-dir.tmp", ".credentials-link.tmp", "credentials-a.json"},
+		directoryEntries(t, dir))
+	_, err := os.Stat(target)
+	require.NoError(t, err, "the link's target is untouched")
+}
+
 // TestSaveReportsAStaleFileItCannotRemove pins the one place a successful
 // keychain write still ends in an error: a leftover file that stays behind
 // would keep a secret on disk without anyone knowing.

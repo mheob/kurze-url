@@ -39,9 +39,8 @@ func Truncate(s string, limit int) string {
 	return string(runes[:limit-1]) + ellipsis
 }
 
-// Clean makes a piece of text safe to print: every control character, tab
-// and newline included, bidirectional control and invisible filler becomes a
-// space.
+// Clean makes a piece of text safe to print: every control character (tabs
+// and newlines included), bidi control and invisible filler becomes a space.
 //
 // Text a team's admin wrote (a team name, a folder) or the API returned (a
 // destination, a short URL, an error's detail) is not the CLI's own. An
