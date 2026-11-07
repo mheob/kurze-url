@@ -1,6 +1,8 @@
 package destination_test
 
 import (
+	"errors"
+	"fmt"
 	"net"
 	"strings"
 	"testing"
@@ -83,6 +85,19 @@ func TestValidateRejectsAnOverlongURL(t *testing.T) {
 	require.ErrorIs(t, destination.Validate(long, self), destination.ErrTooLong)
 }
 
+// The limit is in bytes, as the API documents it: a URL of fewer than
+// MaxLength characters is still too long once its UTF-8 bytes pass the limit,
+// and the error says which unit it counted.
+func TestValidateCountsTheLimitInBytes(t *testing.T) {
+	// 20 bytes of prefix and 1015 two-byte characters: 1035 characters, 2050 bytes.
+	long := "https://example.org/" + strings.Repeat("\u00e4", 1015)
+
+	err := destination.Validate(long, self)
+
+	require.ErrorIs(t, err, destination.ErrTooLong)
+	require.ErrorContains(t, err, "2050 bytes, limit is 2048")
+}
+
 func TestValidateRejectsAHostlessURL(t *testing.T) {
 	require.Error(t, destination.Validate("https://", self))
 	require.Error(t, destination.Validate("", self))
@@ -118,6 +133,50 @@ func TestValidateStillAcceptsHostsSafeBrowsingReadsDifferently(t *testing.T) {
 	} {
 		require.NoError(t, destination.Validate(ok, self), "%q must be accepted", ok)
 	}
+}
+
+// The tokens are a wire contract: apps/web and apps/cli each key a translated
+// message off these exact strings, so a renamed token turns a precise reason
+// back into a generic one in both clients without failing anything there.
+// Each sentinel is wrapped the way Validate wraps it, because that is the
+// shape Reason is handed.
+func TestReasonNamesEverySentinelWithItsWireToken(t *testing.T) {
+	for _, tc := range []struct {
+		sentinel error
+		token    string
+	}{
+		{destination.ErrMalformed, "malformed"},
+		{destination.ErrScheme, "scheme"},
+		{destination.ErrPrivateAddress, "private_address"},
+		{destination.ErrSelfReference, "self_reference"},
+		{destination.ErrTooLong, "too_long"},
+	} {
+		t.Run(tc.token, func(t *testing.T) {
+			require.Equal(t, tc.token, destination.Reason(fmt.Errorf("%w: detail", tc.sentinel)))
+		})
+	}
+}
+
+// Reason is handed exactly what Validate returns, so this pins that every
+// refusal there still unwraps to its sentinel, including the two that wrap
+// ErrMalformed with their own words (no host, and no host Safe Browsing can
+// read). One that stopped would reach the client as a 422 with no reason.
+func TestReasonNamesWhatValidateRefuses(t *testing.T) {
+	for raw, token := range map[string]string{
+		"https://":               "malformed",
+		"https://./":             "malformed",
+		"http://example.org":     "scheme",
+		"https://10.0.0.1/":      "private_address",
+		"https://kurze.url/abcd": "self_reference",
+		"https://example.org/" + strings.Repeat("a", destination.MaxLength): "too_long",
+	} {
+		require.Equal(t, token, destination.Reason(destination.Validate(raw, self)), "%q", raw)
+	}
+}
+
+func TestReasonIsEmptyForAnythingElse(t *testing.T) {
+	require.Empty(t, destination.Reason(nil))
+	require.Empty(t, destination.Reason(errors.New("destination: something new")))
 }
 
 func TestValidateAcceptsAPublicIPLiteral(t *testing.T) {

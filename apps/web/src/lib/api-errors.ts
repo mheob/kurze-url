@@ -107,10 +107,11 @@ function blockingLinkCountOf(error: unknown): number | undefined {
  * function. The moment one of those gains a typed detail here, this function
  * starts matching it too, and `classifyApiError` reports `slugTaken` for a
  * link the same way it does for a team — but the create-link and edit-link
- * banners render `t(\`errors.${failure.kind}\`)` for every kind except
- * `fields`, and `errors.slugTaken` exists in neither catalogue. Whoever adds
- * that typed detail to a link-slug 409 needs to also teach those two banners
- * about `slugTaken`, the way `new-team.tsx` already excludes it from its own.
+ * banners render `t(\`errors.${failure.kind}\`)` for every kind
+ * `linkFieldErrorsOf` does not put at a field, and `errors.slugTaken` exists
+ * in neither catalogue. Whoever adds that typed detail to a link-slug 409
+ * needs to also teach those two banners about `slugTaken`, the way
+ * `new-team.tsx` already excludes it from its own.
  *
  * @param error - Whatever the failed API call threw.
  * @returns Whether `error` is a 409 carrying `location === 'body.slug'`.
@@ -172,6 +173,107 @@ function passwordRejectionOf(error: unknown): (LinkPasswordReason | 'rejected') 
 	if (typeof detail.value === 'string' && isKnownLinkPasswordReason(detail.value))
 		return detail.value;
 	return 'rejected';
+}
+
+/**
+ * Written as a `switch` rather than a `Set` for the same reason
+ * `isKnownLinkPasswordReason` above is: TypeScript narrows a `string` to a
+ * literal union across matching `case`s on its own, so this needs no type
+ * assertion.
+ *
+ * @param value - The destination-rejection reason token from a typed `ErrorDetail.value`.
+ * @returns Whether `value` is one of the reason tokens this build recognizes.
+ */
+function isKnownDestinationRejectionReason(value: string): value is DestinationRejectionReason {
+	switch (value) {
+		case 'malformed':
+		case 'private_address':
+		case 'scheme':
+		case 'self_reference':
+		case 'too_long': {
+			return true;
+		}
+		default: {
+			return false;
+		}
+	}
+}
+
+/**
+ * `destinationRejected` (apps/api/internal/api/links.go) answers a refused
+ * destination on both link writes with 422 and a typed detail on the field,
+ * the same convention `setLinkPassword` uses for `body.password`. The token
+ * is `destination.Reason`'s, pinned by `destination_test.go`, so it is a wire
+ * contract rather than prose.
+ *
+ * Returns `'rejected'`, not `undefined`, whenever a detail names the
+ * destination field at all but carries no value this build can use — a
+ * missing `value`, or a token a newer server knows and this build doesn't.
+ * Huma's own schema check on that field (a value that is not a string) lands
+ * here too, and is a refused destination all the same. Only a 422 with no
+ * detail on `body.destination_url` returns `undefined`, so it still falls
+ * through to `fieldsOf`.
+ *
+ * @param error - Whatever the failed API call threw.
+ * @returns The destination-rejection reason, `'rejected'` for an unrecognized one, or `undefined`
+ * when no detail names the destination field.
+ */
+function destinationRejectionOf(
+	error: unknown,
+): (DestinationRejectionReason | 'rejected') | undefined {
+	const detail = problemDetailsOf(error).find((entry) => entry.location === 'body.destination_url');
+	if (detail === undefined) return undefined;
+	if (typeof detail.value === 'string' && isKnownDestinationRejectionReason(detail.value))
+		return detail.value;
+	return 'rejected';
+}
+
+/**
+ * The page's `t`, narrowed to the one call this module makes. A real
+ * `TFunction` satisfies it, so neither link page needs a cast, and this module
+ * stays free of an i18next import.
+ */
+type Translate = (key: string) => string;
+
+/**
+ * One catalogue entry per token, exhaustive by construction: the `default`
+ * case narrows `reason` to `never`, so a token added to
+ * `DestinationRejectionReason` without an arm here fails to compile instead
+ * of reaching the reader as a blank message — the same guard
+ * `failureMessageKey` in `member-invite-form.tsx` uses.
+ *
+ * @param reason - Why the API refused the destination, or `'rejected'` when this build cannot say.
+ * @param translate - The page's `t`.
+ * @returns What to fix, in the reader's language.
+ */
+function destinationRejectionMessage(
+	reason: DestinationRejectionReason | 'rejected',
+	translate: Translate,
+): string {
+	switch (reason) {
+		case 'malformed': {
+			return translate('links.destinationRejected.malformed');
+		}
+		case 'private_address': {
+			return translate('links.destinationRejected.private_address');
+		}
+		case 'rejected': {
+			return translate('links.destinationRejected.rejected');
+		}
+		case 'scheme': {
+			return translate('links.destinationRejected.scheme');
+		}
+		case 'self_reference': {
+			return translate('links.destinationRejected.self_reference');
+		}
+		case 'too_long': {
+			return translate('links.destinationRejected.too_long');
+		}
+		default: {
+			const exhaustive: never = reason;
+			return exhaustive;
+		}
+	}
 }
 
 /**
@@ -257,6 +359,10 @@ function validationKind(error: unknown): ApiFailure | undefined {
 	const reason = passwordRejectionOf(error);
 	if (reason !== undefined) return { kind: 'passwordRejected', reason };
 
+	const destinationReason = destinationRejectionOf(error);
+	if (destinationReason !== undefined)
+		return { kind: 'destinationRejected', reason: destinationReason };
+
 	const qrReason = qrRejectionOf(error);
 	if (qrReason !== undefined) return { kind: 'qrRejected', reason: qrReason };
 
@@ -272,6 +378,19 @@ function validationKind(error: unknown): ApiFailure | undefined {
  * contracts pinned by that package's tests, not prose.
  */
 export type QrRejectionReason = 'invalid_color' | 'low_contrast' | 'size_requires_png';
+
+/**
+ * The reason tokens `destination.Reason` (apps/api/internal/destination) can
+ * send at `body.destination_url` when a link's destination is refused, on
+ * create and on edit. Each names one of that package's sentinels; the Go
+ * table test pins every string, because both this app and the CLI read them.
+ */
+export type DestinationRejectionReason =
+	| 'malformed'
+	| 'private_address'
+	| 'scheme'
+	| 'self_reference'
+	| 'too_long';
 
 /**
  * `allowInvite` (`apps/api/internal/api/members.go`) attaches this exact
@@ -322,6 +441,7 @@ export type ApiFailure =
 	| { kind: 'slugTaken' }
 	| { kind: 'passwordRejected'; reason: LinkPasswordReason | 'rejected' }
 	| { kind: 'qrRejected'; reason: QrRejectionReason | 'rejected' }
+	| { kind: 'destinationRejected'; reason: DestinationRejectionReason | 'rejected' }
 	| { kind: 'unknown' };
 
 /**
@@ -361,4 +481,31 @@ export function classifyApiError(error: unknown): ApiFailure {
 	}
 
 	return { kind: 'unknown' };
+}
+
+/**
+ * The server-reported field errors both link pages hand `LinkForm`: a
+ * `fields` failure as the API worded it, and a refused destination as its
+ * reason, translated, on `destination_url`. One function for both pages, so
+ * the create and edit forms cannot come to disagree about which failures
+ * belong at a field. Every other kind is the page banner's and gives
+ * `undefined`, which is also what each page reads to decide that the banner
+ * should show.
+ *
+ * It lives here rather than beside `LinkForm` because both pages already
+ * import this module, and the edit page is at `import/max-dependencies`' cap.
+ *
+ * @param failure - The failure the page's save mutation stored, or `null` when there is none.
+ * @param translate - The page's `t`, so the message is in the reader's language.
+ * @returns Errors keyed by field name, or `undefined` when the failure is not one a field shows.
+ */
+export function linkFieldErrorsOf(
+	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- `ApiFailure`'s `fields` variant nests a plain, mutable `Record<string, string>`; `Readonly<>` is shallow and cannot reach it, the same reason `remapFolderGoneFailure` (`folders.ts`) gives for this exact type.
+	failure: ApiFailure | null,
+	translate: Translate,
+): Readonly<Record<string, string>> | undefined {
+	if (failure?.kind === 'fields') return failure.fields;
+	if (failure?.kind === 'destinationRejected')
+		return { destination_url: destinationRejectionMessage(failure.reason, translate) };
+	return undefined;
 }

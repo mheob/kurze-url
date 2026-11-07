@@ -94,6 +94,14 @@
 		"detailsHeading": "Link details",
 		"destination": "Destination URL",
 		"destinationRequired": "Destination URL is required.",
+		"destinationRejected": {
+			"malformed": "Enter a complete address such as https://example.org.",
+			"private_address": "Private and local network addresses are not allowed.",
+			"rejected": "This destination was refused.",
+			"scheme": "Only https:// addresses are allowed.",
+			"self_reference": "A short link may not point at kurze-url itself.",
+			"too_long": "This address is too long."
+		},
 		"slug": "Short path",
 		"slugGenerated": "Leave empty and one will be generated",
 		"slugKeep": "Leave empty to keep the current path",

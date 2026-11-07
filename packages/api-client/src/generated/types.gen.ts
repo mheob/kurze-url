@@ -91,7 +91,7 @@ export type CreateLinkInputBody = {
      */
     analytics_enabled?: boolean;
     /**
-     * Where the link points. https:// only.
+     * Where the link points. https:// only, at most 2048 bytes.
      */
     destination_url: string;
     /**
@@ -515,6 +515,9 @@ export type UpdateLinkInputBody = {
      */
     readonly $schema?: string;
     analytics_enabled?: boolean;
+    /**
+     * Where the link points from now on. https:// only, at most 2048 bytes.
+     */
     destination_url?: string;
     expires_at?: string;
     /**
@@ -619,7 +622,7 @@ export type CreateLinkInputBodyWritable = {
      */
     analytics_enabled?: boolean;
     /**
-     * Where the link points. https:// only.
+     * Where the link points. https:// only, at most 2048 bytes.
      */
     destination_url: string;
     /**
@@ -843,6 +846,9 @@ export type UpdateFolderInputBodyWritable = {
 
 export type UpdateLinkInputBodyWritable = {
     analytics_enabled?: boolean;
+    /**
+     * Where the link points from now on. https:// only, at most 2048 bytes.
+     */
     destination_url?: string;
     expires_at?: string;
     /**

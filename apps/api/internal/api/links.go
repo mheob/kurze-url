@@ -233,6 +233,22 @@ func (d Deps) selfHostnames() []string {
 	return []string{d.Config.SharedDomainHostname, d.Config.APIHostname}
 }
 
+// destinationRejected turns a destination.Validate refusal into the 422 both
+// link writes answer. The English detail stays as it was; the reason travels
+// as a token in ErrorDetail.Value keyed by the field, the convention
+// passwordRejected follows, so apps/web and apps/cli word it in their own
+// language and the prose stays free to reword. An error destination.Reason
+// cannot name gets no detail rather than an invented token.
+func destinationRejected(err error) error {
+	reason := destination.Reason(err)
+	if reason == "" {
+		return huma.Error422UnprocessableEntity(err.Error())
+	}
+	return huma.Error422UnprocessableEntity(err.Error(), &huma.ErrorDetail{
+		Location: "body.destination_url", Message: err.Error(), Value: reason,
+	})
+}
+
 // invalidateLink drops a link's redirect-cache entry after its transaction has
 // committed. Best-effort by design: the database is the source of truth and
 // LinkCacheTTL bounds the staleness, so a Redis failure here is worth an error
@@ -363,7 +379,13 @@ func (d Deps) resolveTagRefs(
 type CreateLinkInput struct {
 	authz.EditorScope
 	Body struct {
-		DestinationURL   string      `json:"destination_url" maxLength:"2048" doc:"Where the link points. https:// only."`
+		// No maxLength on purpose. Huma would refuse an over-long destination
+		// itself, before this handler runs, with a detail carrying the URL
+		// rather than a reason token, and too_long would never reach a
+		// client. destination.Validate owns the limit (destination.MaxLength),
+		// so every refusal has one shape: the reasoning SetLinkPasswordInput
+		// gives for its password. The doc states the same number.
+		DestinationURL   string      `json:"destination_url" doc:"Where the link points. https:// only, at most 2048 bytes."`
 		Slug             string      `json:"slug,omitempty" maxLength:"64" doc:"Optional custom alias. Lowercased on input; generated when omitted."`
 		DomainID         *uuid.UUID  `json:"domain_id,omitempty" doc:"Optional. Defaults to the instance's shared domain."`
 		RedirectType     int         `json:"redirect_type,omitempty" enum:"301,302" default:"302" doc:"301 is cached by browsers: clicks go uncounted and destination changes stop taking effect."`
@@ -494,7 +516,7 @@ func (d Deps) createLink(ctx context.Context, in *CreateLinkInput) (*LinkOutput,
 	}
 
 	if err := destination.Validate(in.Body.DestinationURL, d.selfHostnames()); err != nil {
-		return nil, huma.Error422UnprocessableEntity(err.Error())
+		return nil, destinationRejected(err)
 	}
 
 	if in.Body.ExpiresAt != nil && !in.Body.ExpiresAt.After(d.now()) {
@@ -781,7 +803,8 @@ type UpdateLinkInput struct {
 	// OpenAPI schema and the generated TS client depend on it.
 	RawBody []byte
 	Body    struct {
-		DestinationURL   *string     `json:"destination_url,omitempty" maxLength:"2048"`
+		// No maxLength, for the reason CreateLinkInput's DestinationURL gives.
+		DestinationURL   *string     `json:"destination_url,omitempty" doc:"Where the link points from now on. https:// only, at most 2048 bytes."`
 		Slug             *string     `json:"slug,omitempty" maxLength:"64"`
 		RedirectType     *int        `json:"redirect_type,omitempty" enum:"301,302"`
 		State            *string     `json:"state,omitempty" enum:"active,disabled" doc:"expired follows from expires_at and flagged is set by scanning; neither is a caller's to write. A flagged link refuses any state with 409: change its destination, or wait until Google clears it."`
@@ -908,7 +931,7 @@ func (d Deps) updateLink(ctx context.Context, in *UpdateLinkInput) (*LinkOutput,
 
 	if in.Body.DestinationURL != nil {
 		if err := destination.Validate(*in.Body.DestinationURL, d.selfHostnames()); err != nil {
-			return nil, huma.Error422UnprocessableEntity(err.Error())
+			return nil, destinationRejected(err)
 		}
 	}
 	if in.Body.ExpiresAt != nil && !in.Body.ExpiresAt.After(d.now()) {

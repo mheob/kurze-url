@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { LinkForm, type LinkFormValues } from '../../components/link-form';
 import type { TagOption } from '../../components/tag-picker';
 import { useLinkFormTags } from '../../hooks/use-link-form-tags';
-import { classifyApiError, type ApiFailure } from '../../lib/api-errors';
+import { classifyApiError, linkFieldErrorsOf, type ApiFailure } from '../../lib/api-errors';
 import { parseFolderIdSearch, remapFolderGoneFailure } from '../../lib/folders';
 import { parseUuidSearch } from '../../lib/names';
 import { remapTagGoneFailure } from '../../lib/tags';
@@ -336,11 +336,12 @@ function NewLinkPage(): React.JSX.Element {
 		},
 	});
 
-	const fieldErrors = failure?.kind === 'fields' ? failure.fields : undefined;
-	// `fields` renders on the form itself, via `fieldErrors` above — a second,
-	// generic message here would be the "banner about an error" this task's
-	// own rule says a field error must not become.
-	const formMessage = failure && failure.kind !== 'fields' ? t(`errors.${failure.kind}`) : null;
+	const fieldErrors = linkFieldErrorsOf(failure, t);
+	// A failure a field shows — `fields`, or a refused destination's reason —
+	// renders on the form itself, via `fieldErrors` above; a second, generic
+	// message here would be the "banner about an error" this task's own rule
+	// says a field error must not become.
+	const formMessage = failure && fieldErrors === undefined ? t(`errors.${failure.kind}`) : null;
 
 	return (
 		<>

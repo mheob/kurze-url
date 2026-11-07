@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/mheob/kurze-url/apps/api/internal/authz"
+	"github.com/mheob/kurze-url/apps/api/internal/destination"
 	"github.com/mheob/kurze-url/apps/api/internal/link"
 	"github.com/mheob/kurze-url/apps/api/internal/slug"
 )
@@ -108,6 +109,35 @@ func TestCreateLinkRejectsANonHTTPSDestination(t *testing.T) {
 			"/v1/teams/"+f.teamID.String()+"/links",
 			map[string]any{"destination_url": bad})
 		require.Equal(t, http.StatusUnprocessableEntity, rec.Code, "%q must be refused", bad)
+	}
+}
+
+// longDestination is an ASCII https URL one byte past destination.MaxLength.
+var longDestination = "https://example.org/" +
+	strings.Repeat("a", destination.MaxLength+1-len("https://example.org/"))
+
+// TestCreateLinkSendsTheReasonForARefusedDestination pins the wire contract
+// apps/web and apps/cli read: the reason travels as a typed ErrorDetail at
+// body.destination_url, never inside the English detail, so a reworded
+// message cannot turn a precise reason back into a generic failure.
+func TestCreateLinkSendsTheReasonForARefusedDestination(t *testing.T) {
+	f := newTenancyFixture(t)
+
+	for raw, token := range map[string]string{
+		"http://example.org":      "scheme",
+		"https://127.0.0.1/admin": "private_address",
+		// No schema bound on the field, so the handler's own check answers.
+		longDestination: "too_long",
+	} {
+		rec := f.do(t, f.members[authz.RoleEditor], http.MethodPost,
+			"/v1/teams/"+f.teamID.String()+"/links",
+			map[string]any{"destination_url": raw})
+
+		require.Equal(t, http.StatusUnprocessableEntity, rec.Code, "%s, body: %s", token, rec.Body.String())
+		problem := decode[problemBody](t, rec)
+		require.Len(t, problem.Errors, 1, "%s, body: %s", token, rec.Body.String())
+		require.Equal(t, "body.destination_url", problem.Errors[0].Location)
+		require.Equal(t, token, problem.Errors[0].Value)
 	}
 }
 
@@ -394,6 +424,30 @@ func TestUpdateLinkChangingTheSlugInvalidatesBothKeys(t *testing.T) {
 	require.Error(t, err, "the old slug must stop resolving")
 	_, err = f.deps.Cache.Raw().Get(ctx, f.deps.Cache.Key(newKey)).Result()
 	require.Error(t, err, "the new slug's cached not-found sentinel must be cleared too")
+}
+
+// TestUpdateLinkSendsTheReasonForARefusedDestination is the PATCH half of
+// TestCreateLinkSendsTheReasonForARefusedDestination: the edit page reads the
+// same token at the same location.
+func TestUpdateLinkSendsTheReasonForARefusedDestination(t *testing.T) {
+	f := newTenancyFixture(t)
+	created := f.createLink(t, "umleiten", "https://example.org/x")
+
+	for raw, token := range map[string]string{
+		"http://example.org":      "scheme",
+		"https://127.0.0.1/admin": "private_address",
+		// No schema bound on the field, so the handler's own check answers.
+		longDestination: "too_long",
+	} {
+		rec := f.do(t, f.members[authz.RoleEditor], http.MethodPatch, "/v1/links/"+created.ID.String(),
+			map[string]any{"destination_url": raw})
+
+		require.Equal(t, http.StatusUnprocessableEntity, rec.Code, "%s, body: %s", token, rec.Body.String())
+		problem := decode[problemBody](t, rec)
+		require.Len(t, problem.Errors, 1, "%s, body: %s", token, rec.Body.String())
+		require.Equal(t, "body.destination_url", problem.Errors[0].Location)
+		require.Equal(t, token, problem.Errors[0].Value)
+	}
 }
 
 func TestUpdateLinkRefusesAPasswordField(t *testing.T) {

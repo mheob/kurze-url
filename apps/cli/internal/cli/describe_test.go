@@ -92,16 +92,46 @@ func TestDescribeMapsEveryKnownCase(t *testing.T) {
 			want: "A colour must be six hexadecimal digits, such as 1a3a6e.",
 		},
 		{
-			name: "invalid destination",
-			err: problem(http.StatusUnprocessableEntity, "validation failed",
-				apiclient.ProblemDetail{Location: "body.destination_url", Message: "must be https", Value: "http://example.org"}),
-			want: "The destination must be a complete https:// address.",
+			name: "destination is not a complete address",
+			err: problem(http.StatusUnprocessableEntity, "destination: not an absolute URL: no host",
+				apiclient.ProblemDetail{Location: "body.destination_url", Value: "malformed"}),
+			want: "The destination must be a complete address such as https://example.org.",
 		},
 		{
-			name: "invalid destination with any value",
+			name: "destination is not https",
+			err: problem(http.StatusUnprocessableEntity, "destination: only https:// destinations are allowed",
+				apiclient.ProblemDetail{Location: "body.destination_url", Value: "scheme"}),
+			want: "Only https:// addresses are allowed as a destination.",
+		},
+		{
+			name: "destination is a private address",
+			err: problem(http.StatusUnprocessableEntity, "destination: private and local addresses are not allowed",
+				apiclient.ProblemDetail{Location: "body.destination_url", Value: "private_address"}),
+			want: "Private and local network addresses are not allowed as a destination.",
+		},
+		{
+			name: "destination points at kurze-url",
+			err: problem(http.StatusUnprocessableEntity, "destination: a link may not point at this service",
+				apiclient.ProblemDetail{Location: "body.destination_url", Value: "self_reference"}),
+			want: "A short link may not point at kurze-url itself.",
+		},
+		{
+			name: "destination is too long",
+			err: problem(http.StatusUnprocessableEntity, "destination: url is too long",
+				apiclient.ProblemDetail{Location: "body.destination_url", Value: "too_long"}),
+			want: "The destination address is too long.",
+		},
+		{
+			name: "invalid destination with a reason this build does not know",
+			err: problem(http.StatusUnprocessableEntity, "validation failed",
+				apiclient.ProblemDetail{Location: "body.destination_url", Message: "must be https", Value: "http://example.org"}),
+			want: "This destination was refused.",
+		},
+		{
+			name: "invalid destination with no value",
 			err: problem(http.StatusUnprocessableEntity, "validation failed",
 				apiclient.ProblemDetail{Location: "body.destination_url"}),
-			want: "The destination must be a complete https:// address.",
+			want: "This destination was refused.",
 		},
 		{
 			name: "another 422 shows the API's own words",
@@ -210,8 +240,12 @@ func TestDescribeSpeaksGerman(t *testing.T) {
 		"Die beiden Farben liegen zu nah beieinander, eine Kamera kann den Code so nicht lesen.",
 		describe(problem(http.StatusUnprocessableEntity, "x", apiclient.ProblemDetail{Location: "query.fg", Value: "low_contrast"}), cat))
 	require.Equal(t,
-		"Das Ziel muss eine vollständige https://-Adresse sein.",
+		"Dieses Ziel wurde abgelehnt.",
 		describe(problem(http.StatusUnprocessableEntity, "x", apiclient.ProblemDetail{Location: "body.destination_url"}), cat))
+	require.Equal(t,
+		"Adressen aus privaten oder lokalen Netzen sind als Ziel nicht erlaubt.",
+		describe(problem(http.StatusUnprocessableEntity, "x",
+			apiclient.ProblemDetail{Location: "body.destination_url", Value: "private_address"}), cat))
 	require.Equal(t,
 		"127.0.0.1:9 ist nicht erreichbar. Prüfe deine Internetverbindung und versuche es erneut.",
 		describe(&url.Error{Op: "Get", URL: "http://127.0.0.1:9/", Err: syscall.ECONNREFUSED}, cat))

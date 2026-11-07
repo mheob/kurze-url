@@ -342,7 +342,9 @@ func TestCreateExplainsATakenSlugInGerman(t *testing.T) {
 }
 
 // Only a 409 means "taken". The API's other answers keep the generic wording,
-// and a 422 on the destination keeps its own.
+// and a 422 on the destination keeps its own: with no reason this build
+// knows, a neutral one, not the local check's "complete https:// address",
+// since the destination already passed that check before it was sent.
 func TestCreateKeepsTheGenericWordingForOtherFailures(t *testing.T) {
 	h := linkHarness(t, "team: sv-gruenwald\n", teamGruenwald)
 	h.api.problem(http.MethodPost, teamPath(teamGruenwald, "links"), http.StatusUnprocessableEntity, "bad",
@@ -350,7 +352,7 @@ func TestCreateKeepsTheGenericWordingForOtherFailures(t *testing.T) {
 
 	require.Equal(t, 1, h.run("link", "create", testDestination))
 
-	require.Equal(t, "kurze-url: The destination must be a complete https:// address.\n", h.stderr.String())
+	require.Equal(t, "kurze-url: This destination was refused.\n", h.stderr.String())
 }
 
 func TestCreateUsesTheDefaultTeam(t *testing.T) {
