@@ -385,7 +385,7 @@ type CreateLinkInput struct {
 		// client. destination.Validate owns the limit (destination.MaxLength),
 		// so every refusal has one shape: the reasoning SetLinkPasswordInput
 		// gives for its password. The doc states the same number.
-		DestinationURL   string      `json:"destination_url" doc:"Where the link points. https:// only, at most 2048 characters."`
+		DestinationURL   string      `json:"destination_url" doc:"Where the link points. https:// only, at most 2048 bytes."`
 		Slug             string      `json:"slug,omitempty" maxLength:"64" doc:"Optional custom alias. Lowercased on input; generated when omitted."`
 		DomainID         *uuid.UUID  `json:"domain_id,omitempty" doc:"Optional. Defaults to the instance's shared domain."`
 		RedirectType     int         `json:"redirect_type,omitempty" enum:"301,302" default:"302" doc:"301 is cached by browsers: clicks go uncounted and destination changes stop taking effect."`
@@ -804,7 +804,7 @@ type UpdateLinkInput struct {
 	RawBody []byte
 	Body    struct {
 		// No maxLength, for the reason CreateLinkInput's DestinationURL gives.
-		DestinationURL   *string     `json:"destination_url,omitempty" doc:"Where the link points from now on. https:// only, at most 2048 characters."`
+		DestinationURL   *string     `json:"destination_url,omitempty" doc:"Where the link points from now on. https:// only, at most 2048 bytes."`
 		Slug             *string     `json:"slug,omitempty" maxLength:"64"`
 		RedirectType     *int        `json:"redirect_type,omitempty" enum:"301,302"`
 		State            *string     `json:"state,omitempty" enum:"active,disabled" doc:"expired follows from expires_at and flagged is set by scanning; neither is a caller's to write. A flagged link refuses any state with 409: change its destination, or wait until Google clears it."`

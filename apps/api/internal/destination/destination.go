@@ -15,8 +15,8 @@ import (
 	"github.com/mheob/kurze-url/apps/api/internal/scanning"
 )
 
-// MaxLength caps a destination. Long enough for any real campaign URL, short
-// enough that a row stays small.
+// MaxLength caps a destination, in bytes. Long enough for any real campaign
+// URL, short enough that a row stays small.
 const MaxLength = 2048
 
 var (
@@ -63,7 +63,7 @@ func Reason(err error) string {
 // this instance answers on; a destination naming any of them is a loop.
 func Validate(raw string, selfHostnames []string) error {
 	if len(raw) > MaxLength {
-		return fmt.Errorf("%w: %d characters, limit is %d", ErrTooLong, len(raw), MaxLength)
+		return fmt.Errorf("%w: %d bytes, limit is %d", ErrTooLong, len(raw), MaxLength)
 	}
 
 	parsed, err := url.Parse(raw)

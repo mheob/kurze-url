@@ -112,7 +112,7 @@ func TestCreateLinkRejectsANonHTTPSDestination(t *testing.T) {
 	}
 }
 
-// longDestination is an https URL one character past destination.MaxLength.
+// longDestination is an ASCII https URL one byte past destination.MaxLength.
 var longDestination = "https://example.org/" +
 	strings.Repeat("a", destination.MaxLength+1-len("https://example.org/"))
 

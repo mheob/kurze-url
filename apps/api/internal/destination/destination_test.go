@@ -85,6 +85,19 @@ func TestValidateRejectsAnOverlongURL(t *testing.T) {
 	require.ErrorIs(t, destination.Validate(long, self), destination.ErrTooLong)
 }
 
+// The limit is in bytes, as the API documents it: a URL of fewer than
+// MaxLength characters is still too long once its UTF-8 bytes pass the limit,
+// and the error says which unit it counted.
+func TestValidateCountsTheLimitInBytes(t *testing.T) {
+	// 20 bytes of prefix and 1015 two-byte characters: 1035 characters, 2050 bytes.
+	long := "https://example.org/" + strings.Repeat("\u00e4", 1015)
+
+	err := destination.Validate(long, self)
+
+	require.ErrorIs(t, err, destination.ErrTooLong)
+	require.ErrorContains(t, err, "2050 bytes, limit is 2048")
+}
+
 func TestValidateRejectsAHostlessURL(t *testing.T) {
 	require.Error(t, destination.Validate("https://", self))
 	require.Error(t, destination.Validate("", self))

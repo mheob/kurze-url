@@ -122,7 +122,7 @@ func TestUpdateLinkSendsTheDestinationReasonWithoutTheDatabase(t *testing.T) {
 	requireDestinationReason(t, err, "private_address")
 }
 
-// longDestination is an https URL exactly one character past
+// longDestination is an ASCII https URL exactly one byte past
 // destination.MaxLength.
 func longDestination() string {
 	const prefix = "https://example.org/"
@@ -170,7 +170,7 @@ func TestLinkWritesLeaveTheDestinationsLengthToTheHandler(t *testing.T) {
 			res := &huma.ValidateResult{}
 			huma.Validate(registry, schema, huma.NewPathBuffer([]byte("body"), len("body")),
 				huma.ModeWriteToServer, map[string]any{"destination_url": longDestination()}, res)
-			// Location and message only: the value is the 2049-character URL.
+			// Location and message only: the value is the 2049-byte URL.
 			var refusals []string
 			for _, err := range res.Errors {
 				var detail *huma.ErrorDetail
@@ -183,7 +183,7 @@ func TestLinkWritesLeaveTheDestinationsLengthToTheHandler(t *testing.T) {
 
 			field := schema.Properties["destination_url"]
 			require.NotNil(t, field)
-			require.Contains(t, field.Description, strconv.Itoa(destination.MaxLength)+" characters",
+			require.Contains(t, field.Description, strconv.Itoa(destination.MaxLength)+" bytes",
 				"the doc must state the limit destination.Validate enforces")
 		})
 	}
