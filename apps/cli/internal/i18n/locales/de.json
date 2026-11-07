@@ -13,6 +13,7 @@
 	"completion.noHome": "Dein Home-Verzeichnis ließ sich nicht finden: {reason}",
 	"completion.noPowerShell": "Auf dem PATH wurde keine PowerShell gefunden.",
 	"completion.noShell": "Welche Shell du nutzt, ließ sich nicht erkennen. Nenne sie: `{command} SHELL`, wobei SHELL eine von {shells} ist.",
+	"completion.notYourFile": "{file} gehört einem anderen Benutzer; dort wurde nichts geändert. Führe den Befehl ohne sudo aus.",
 	"completion.nothingToRemove": "In {files} gibt es keine von `completion install` eingerichtete Tab-Vervollständigung, die sich entfernen ließe. Für eine andere Shell führe `{command} SHELL` aus.",
 	"completion.policyBlocks": "Die Ausführungsrichtlinie von PowerShell ist {policy} und verhindert, dass {file} geladen wird. Die Vervollständigung bleibt aus, bis die Richtlinie das Profil zulässt. Die Richtlinie wurde nicht geändert.",
 	"completion.profileFailed": "{program} ließ sich nicht nach seinem Profil fragen: {reason}",

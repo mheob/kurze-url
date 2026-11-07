@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -788,6 +789,133 @@ func TestInstallRefusesAProfilePathThatIsNotClean(t *testing.T) {
 			requireEmptyDir(t, dir)
 		})
 	}
+}
+
+// ---- files that belong to another user ----
+
+// notYourFile is the refusal, with the file's path filled in.
+func notYourFile(path string) string {
+	return path + " belongs to another user; nothing was changed there. Run the command without sudo."
+}
+
+// ownedByOther fakes the file system's answer: the files with these base
+// names belong to someone else. The real check needs a second user.
+func (h *harness) ownedByOther(names ...string) {
+	h.deps.FileOwnedByOther = func(info os.FileInfo) bool {
+		return slices.Contains(names, info.Name())
+	}
+}
+
+// `sudo kurze-url completion install` keeps $HOME on macOS, and the write
+// goes through a temporary file and a rename, so ~/.zshrc would end up owned
+// by root and the person could no longer edit it.
+func TestInstallRefusesAFileOfAnotherUser(t *testing.T) {
+	h := shellHarness(t, "/bin/zsh")
+	zshrc := h.homeFile(".zshrc")
+	putFile(t, zshrc, "export A=1")
+	h.ownedByOther(".zshrc")
+
+	code := h.run("completion", "install", "--yes")
+
+	// It was all there was to do, so completion is on nowhere: exit 1.
+	require.Equal(t, 1, code)
+	require.Equal(t, "kurze-url: "+notYourFile(zshrc)+"\n", h.stderr.String())
+	got, _ := fileContent(t, zshrc)
+	require.Equal(t, "export A=1", got)
+}
+
+func TestInstallStillWritesTheFilesOfTheRunUser(t *testing.T) {
+	h := newHarness(t)
+	h.deps.GOOS = "windows"
+	dir := t.TempDir()
+	a, b := filepath.Join(dir, "a.ps1"), filepath.Join(dir, "b.ps1")
+	putFile(t, a, "Set-Alias ll Get-ChildItem\n")
+	putFile(t, b, "Set-Alias ls Get-ChildItem\n")
+	h.programs["pwsh"], h.programs["powershell"] = true, true
+	h.outputs["pwsh"] = a + "\nRemoteSigned\n"
+	h.outputs["powershell"] = b + "\nRemoteSigned\n"
+	h.ownedByOther("b.ps1")
+
+	code := h.run("completion", "install", "--yes")
+
+	require.Equal(t, 0, code, h.stderr.String())
+	got, _ := fileContent(t, a)
+	require.Contains(t, got, shellrc.Marker)
+	got, _ = fileContent(t, b)
+	require.Equal(t, "Set-Alias ls Get-ChildItem\n", got)
+	require.True(t, strings.HasPrefix(h.stderr.String(), notYourFile(b)+"\n"), h.stderr.String())
+	require.Contains(t, h.stderr.String(), "Added tab completion to "+a)
+}
+
+func TestUninstallRefusesAFileOfAnotherUser(t *testing.T) {
+	h := shellHarness(t, "/bin/zsh")
+	zshrc := h.homeFile(".zshrc")
+	content := "export A=1\n" + shellrc.Block(shellrc.Zsh)
+	putFile(t, zshrc, content)
+	h.ownedByOther(".zshrc")
+
+	code := h.run("completion", "uninstall", "--yes")
+
+	require.Equal(t, 1, code)
+	require.Equal(t, "kurze-url: "+notYourFile(zshrc)+"\n", h.stderr.String())
+	got, _ := fileContent(t, zshrc)
+	require.Equal(t, content, got)
+}
+
+func TestUninstallStillCleansTheFilesOfTheRunUser(t *testing.T) {
+	h := newHarness(t)
+	h.deps.GOOS = "windows"
+	dir := t.TempDir()
+	a, b := filepath.Join(dir, "a.ps1"), filepath.Join(dir, "b.ps1")
+	withBlock := "Set-Alias ll Get-ChildItem\n" + shellrc.Block(shellrc.PowerShell)
+	putFile(t, a, withBlock)
+	putFile(t, b, withBlock)
+	h.programs["pwsh"], h.programs["powershell"] = true, true
+	h.outputs["pwsh"] = a + "\nRemoteSigned\n"
+	h.outputs["powershell"] = b + "\nRemoteSigned\n"
+	h.ownedByOther("b.ps1")
+
+	code := h.run("completion", "uninstall", "--yes")
+
+	require.Equal(t, 0, code, h.stderr.String())
+	got, _ := fileContent(t, a)
+	require.NotContains(t, got, shellrc.Marker)
+	got, _ = fileContent(t, b)
+	require.Equal(t, withBlock, got)
+	require.True(t, strings.HasPrefix(h.stderr.String(), notYourFile(b)+"\n"), h.stderr.String())
+	require.Contains(t, h.stderr.String(), "Removed tab completion from "+a)
+}
+
+// The fish file is ours alone and removed rather than rewritten, and it is
+// still checked: deleting a file that another user's directory entry names is
+// not for a sudo run to do either.
+func TestUninstallRefusesFishsFileOfAnotherUser(t *testing.T) {
+	h := shellHarness(t, "/usr/bin/fish")
+	fishFile := filepath.Join(h.home, ".config", "fish", "completions", "kurze-url.fish")
+	putFile(t, fishFile, shellrc.OwnFile(shellrc.Fish))
+	h.ownedByOther("kurze-url.fish")
+
+	code := h.run("completion", "uninstall", "--yes")
+
+	require.Equal(t, 1, code)
+	require.Equal(t, "kurze-url: "+notYourFile(fishFile)+"\n", h.stderr.String())
+	_, exists := fileContent(t, fishFile)
+	require.True(t, exists)
+}
+
+func TestTheOwnershipRefusalIsWordedInGerman(t *testing.T) {
+	h := shellHarness(t, "/bin/zsh")
+	h.env["LANG"] = "de_DE.UTF-8"
+	zshrc := h.homeFile(".zshrc")
+	putFile(t, zshrc, "export A=1")
+	h.ownedByOther(".zshrc")
+
+	code := h.run("completion", "install", "--yes")
+
+	require.Equal(t, 1, code)
+	require.Equal(t,
+		"kurze-url: "+zshrc+" gehört einem anderen Benutzer; dort wurde nichts geändert. Führe den Befehl ohne sudo aus.\n",
+		h.stderr.String())
 }
 
 // ---- uninstall ----

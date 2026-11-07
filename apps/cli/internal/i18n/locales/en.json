@@ -13,6 +13,7 @@
 	"completion.noHome": "Could not find your home directory: {reason}",
 	"completion.noPowerShell": "No PowerShell was found on the PATH.",
 	"completion.noShell": "Could not tell which shell you use. Name it: `{command} SHELL`, where SHELL is one of {shells}.",
+	"completion.notYourFile": "{file} belongs to another user; nothing was changed there. Run the command without sudo.",
 	"completion.nothingToRemove": "There is no tab completion set up by `completion install` in {files} to remove. For another shell, run `{command} SHELL`.",
 	"completion.policyBlocks": "PowerShell's execution policy is {policy}, which keeps it from loading {file}, so completion stays off until the policy allows the profile to run. The policy was not changed.",
 	"completion.profileFailed": "Could not ask {program} where its profile is: {reason}",
