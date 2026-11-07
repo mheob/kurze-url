@@ -120,7 +120,12 @@ func checkTeamFlag(cmd *cobra.Command, d *Deps) error {
 		return nil
 	}
 	team, err := cmd.Flags().GetString("team")
-	if err != nil || strings.TrimSpace(team) != "" {
+	if err != nil {
+		// Changed found the flag, so only a flag of another type fails here:
+		// a programming error, reported as one rather than taken for a team.
+		return fmt.Errorf("read --team: %w", err)
+	}
+	if strings.TrimSpace(team) != "" {
 		return nil
 	}
 	return &UsageError{Err: errors.New(catalogFor(d).T("team.emptyFlag"))}
