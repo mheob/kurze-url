@@ -298,7 +298,7 @@ func newTenancyFixture(t *testing.T) *tenancyFixture {
 	require.NoError(t, err)
 
 	key, jwksURL := startAuthenticatedJWKSServer(t)
-	verifier, err := auth.NewVerifier(ctx, jwksURL, meTestIssuer, meTestAudience)
+	verifier, err := auth.NewVerifier(ctx, slog.New(slog.DiscardHandler), jwksURL, meTestIssuer, meTestAudience)
 	require.NoError(t, err)
 
 	cfg, err := config.Load()

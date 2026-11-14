@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -101,7 +102,7 @@ func newFixtureWithVerifier(t *testing.T) (*fixture, *ecdsa.PrivateKey) {
 	f := newFixture(t)
 
 	key, jwksURL := startAuthenticatedJWKSServer(t)
-	verifier, err := auth.NewVerifier(context.Background(), jwksURL, meTestIssuer, meTestAudience)
+	verifier, err := auth.NewVerifier(context.Background(), slog.New(slog.DiscardHandler), jwksURL, meTestIssuer, meTestAudience)
 	require.NoError(t, err)
 	f.deps.Verifier = verifier
 
