@@ -7,8 +7,10 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -47,8 +49,23 @@ func jwksServerWithoutAlg(t *testing.T) (*ecdsa.PrivateKey, string) {
 func startJWKSServer(t *testing.T, includeAlg bool) (*ecdsa.PrivateKey, string) {
 	t.Helper()
 
+	key := newSigningKey(t)
+	server := newKeySetServer(t)
+	server.serve(publicJWK(t, key, testKID, includeAlg))
+
+	return key, server.url
+}
+
+func newSigningKey(t *testing.T) *ecdsa.PrivateKey {
+	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
+	return key
+}
+
+// publicJWK is the JWK Supabase would publish for key under kid.
+func publicJWK(t *testing.T, key *ecdsa.PrivateKey, kid string, includeAlg bool) map[string]string {
+	t.Helper()
 
 	// Bytes() returns the SEC1 uncompressed point encoding (0x04 || X || Y,
 	// each coordinate left-padded to the P-256 field size) — the non-deprecated
@@ -63,7 +80,7 @@ func startJWKSServer(t *testing.T, includeAlg bool) (*ecdsa.PrivateKey, string) 
 	jwk := map[string]string{
 		"kty": "EC",
 		"crv": "P-256",
-		"kid": testKID,
+		"kid": kid,
 		"use": "sig",
 		"x":   base64.RawURLEncoding.EncodeToString(x),
 		"y":   base64.RawURLEncoding.EncodeToString(y),
@@ -71,21 +88,67 @@ func startJWKSServer(t *testing.T, includeAlg bool) (*ecdsa.PrivateKey, string) 
 	if includeAlg {
 		jwk["alg"] = "ES256"
 	}
-	document := map[string]any{"keys": []map[string]string{jwk}}
+	return jwk
+}
 
+// keySetServer stands in for Supabase's JWKS endpoint. A test can change the
+// keys it publishes, make it fail, and count how often it was asked.
+type keySetServer struct {
+	url string
+
+	mu      sync.Mutex
+	keys    []map[string]string
+	broken  bool
+	fetched int
+}
+
+func newKeySetServer(t *testing.T) *keySetServer {
+	t.Helper()
+	s := &keySetServer{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.fetched++
+		if s.broken {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(document)
+		_ = json.NewEncoder(w).Encode(map[string]any{"keys": s.keys})
 	}))
 	t.Cleanup(server.Close)
+	s.url = server.URL
+	return s
+}
 
-	return key, server.URL
+func (s *keySetServer) serve(keys ...map[string]string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.keys = keys
+	s.broken = false
+}
+
+func (s *keySetServer) fail() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.broken = true
+}
+
+func (s *keySetServer) fetches() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.fetched
 }
 
 func sign(t *testing.T, key *ecdsa.PrivateKey, claims jwt.MapClaims, alg jwt.SigningMethod) string {
 	t.Helper()
+	return signWithKID(t, key, testKID, claims, alg)
+}
+
+func signWithKID(t *testing.T, key *ecdsa.PrivateKey, kid string, claims jwt.MapClaims, alg jwt.SigningMethod) string {
+	t.Helper()
 	token := jwt.NewWithClaims(alg, claims)
-	token.Header["kid"] = testKID
+	token.Header["kid"] = kid
 	signed, err := token.SignedString(key)
 	require.NoError(t, err)
 	return signed
@@ -102,9 +165,11 @@ func validClaims(subject string) jwt.MapClaims {
 	}
 }
 
+var discardLog = slog.New(slog.DiscardHandler)
+
 func newVerifier(t *testing.T, jwksURL string) *auth.Verifier {
 	t.Helper()
-	v, err := auth.NewVerifier(context.Background(), jwksURL, testIssuer, testAudience)
+	v, err := auth.NewVerifier(context.Background(), discardLog, jwksURL, testIssuer, testAudience)
 	require.NoError(t, err)
 	return v
 }
@@ -246,7 +311,7 @@ func TestVerifyRejectsAnAlgorithmOutsideTheAllowList(t *testing.T) {
 func TestNewVerifierRejectsAnEmptyIssuer(t *testing.T) {
 	_, jwksURL := jwksServer(t)
 
-	_, err := auth.NewVerifier(context.Background(), jwksURL, "", testAudience)
+	_, err := auth.NewVerifier(context.Background(), discardLog, jwksURL, "", testAudience)
 
 	require.Error(t, err, "a misconfigured deployment must fail to start, not accept tokens from any issuer")
 }
@@ -254,7 +319,7 @@ func TestNewVerifierRejectsAnEmptyIssuer(t *testing.T) {
 func TestNewVerifierRejectsAnEmptyAudience(t *testing.T) {
 	_, jwksURL := jwksServer(t)
 
-	_, err := auth.NewVerifier(context.Background(), jwksURL, testIssuer, "")
+	_, err := auth.NewVerifier(context.Background(), discardLog, jwksURL, testIssuer, "")
 
 	require.Error(t, err, "a misconfigured deployment must fail to start, not accept tokens for any audience")
 }

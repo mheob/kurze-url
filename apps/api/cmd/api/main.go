@@ -246,7 +246,7 @@ func run(log *slog.Logger) (*slog.Logger, func(), error) {
 	// runnable locally without a Supabase project. /v1 operations that declare
 	// bearerAuth reject every request until it is configured.
 	if cfg.JWKSURL != "" {
-		verifier, err := auth.NewVerifier(ctx, cfg.JWKSURL, cfg.JWTIssuer, cfg.JWTAudience)
+		verifier, err := auth.NewVerifier(ctx, log, cfg.JWKSURL, cfg.JWTIssuer, cfg.JWTAudience)
 		if err != nil {
 			return log, flushSentry, err
 		}
