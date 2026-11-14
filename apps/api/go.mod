@@ -2,7 +2,7 @@ module github.com/mheob/kurze-url/apps/api
 
 go 1.27.0
 
-toolchain go1.27.3
+toolchain go1.27.4
 
 require (
 	github.com/MicahParks/jwkset v0.11.4
