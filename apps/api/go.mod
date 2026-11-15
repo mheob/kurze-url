@@ -6,13 +6,13 @@ toolchain go1.27.4
 
 require (
 	github.com/MicahParks/jwkset v0.11.4
-	github.com/MicahParks/keyfunc/v3 v3.9.1
+	github.com/MicahParks/keyfunc/v3 v3.9.2
 	github.com/danielgtaylor/huma/v2 v2.40.0
 	github.com/getsentry/sentry-go v0.50.0
 	github.com/go-chi/chi/v5 v5.5.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
-	github.com/jackc/pgx/v5 v5.12.0
+	github.com/jackc/pgx/v5 v5.13.0
 	github.com/mileusna/useragent v1.3.5
 	github.com/piglig/go-qr v1.1.0
 	github.com/redis/go-redis/v9 v9.23.0
