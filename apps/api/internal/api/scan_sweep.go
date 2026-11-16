@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/mheob/kurze-url/apps/api/internal/db"
@@ -26,20 +28,25 @@ import (
 const scanBatchSize = 200
 
 const (
-	// scanBudget bounds the run itself. The workflow's own step failing
-	// withholds the heartbeat either way, as for /internal/retention.
+	// scanBudget bounds the run itself. A run that fails withholds the
+	// heartbeat either way, as for /internal/retention.
 	scanBudget = 25 * time.Second
 	// scanCountBudget is what the closing count of remaining links gets, from
 	// a context the run's budget does not cancel, so a run that used all of
 	// its time still reports how much is left.
 	scanCountBudget = 5 * time.Second
+	// scanHeartbeatTimeout bounds the ping after a successful run. Vercel
+	// freezes a Go function once its response is done, so the ping happens
+	// inside the request, before the answer, and a slow Better Stack delays
+	// the answer by at most this much.
+	scanHeartbeatTimeout = 5 * time.Second
 )
 
 // errScanCheck marks a sweep whose call to Google failed as a whole.
 var errScanCheck = errors.New("safe browsing check failed")
 
-// scanReport is POST /internal/scan's body. The workflow's logs read these
-// keys.
+// scanReport is /internal/scan's body. The function logs of Vercel's cron
+// invocations, and a manual run's workflow log, read these keys.
 type scanReport struct {
 	// Checked counts links whose verdict was applied, or discarded because the
 	// link changed or disappeared while Google was answering.
@@ -61,17 +68,26 @@ type scanReport struct {
 	stoppedAtBudget bool
 }
 
-// HandleScan answers POST /internal/scan: one sweep of due links, the half of
-// scanning that does not depend on Vercel letting a goroutine finish. It
-// checks links never checked for their current destination, flagged links
-// (so a false positive Google corrects is lifted unvisited), and every other
-// link once a day.
+// HandleScan answers /internal/scan: one sweep of due links, the half of
+// scanning that does not depend on a request to a link. It checks links never
+// checked for their current destination, flagged links (so a false positive
+// Google corrects is lifted unvisited), and every other link once a day.
 //
-// The authorization is HandleRetention's, deliberately unchanged: the same 404
-// for a missing and a wrong token, the same constant-time compare, the same
-// empty-means-disabled rule. Like /internal/retention it sits on the root
-// router above the hostname split, outside Huma and the OpenAPI document, so
-// the token is the security boundary here, not the hostname.
+// Two callers reach it, each with its own secret in its own header (see
+// scanAuthorized): Vercel Cron, at :07 and :37 every hour from
+// apps/api/vercel.json, with a GET carrying CRON_SECRET as a bearer token;
+// and .github/workflows/scan.yml, run by hand, with a POST carrying
+// X-Scan-Token. Both get the same 404 for a missing and a wrong secret, the
+// same constant-time compare and the same empty-means-closed rule as
+// HandleRetention. Like /internal/retention it sits on the root router above
+// the hostname split, outside Huma and the OpenAPI document, so the secrets
+// are the security boundary here, not the hostname. A GET that writes is
+// unusual; it is there because Vercel Cron sends nothing but GET.
+//
+// A successful run pings SCAN_HEARTBEAT_URL before it answers, whichever
+// caller asked, and nothing else does. That makes the heartbeat a
+// dead-man's switch for both hazards at once: a failing sweep withholds the
+// ping, and so does a schedule that stopped firing.
 //
 // Two ways a run ends early look alike and are not. Running out of its own
 // time budget is an ordinary run: the report says what was done, the rest
@@ -81,12 +97,12 @@ type scanReport struct {
 // nothing checked is Google answering too slowly for the batch, a stall the
 // green heartbeat alone would hide. Google failing the check as a whole is a
 // failed run, a 502 that withholds the heartbeat.
+//
+// Vercel Cron may deliver one scheduled run twice. Two sweeps at once check
+// the same links twice and write nothing twice: applyVerdict locks each link
+// and records a verdict only when it changes.
 func (d Deps) HandleScan(w http.ResponseWriter, r *http.Request) {
-	if d.Config.ScanToken == "" ||
-		subtle.ConstantTimeCompare(
-			[]byte(r.Header.Get("X-Scan-Token")),
-			[]byte(d.Config.ScanToken),
-		) != 1 {
+	if !d.scanAuthorized(r) {
 		http.NotFound(w, r)
 		return
 	}
@@ -115,15 +131,74 @@ func (d Deps) HandleScan(w http.ResponseWriter, r *http.Request) {
 		"checked", report.Checked, "flagged", report.Flagged, "unflagged", report.Unflagged,
 		"failed", report.Failed, "remaining", report.Remaining,
 	}
-	// Info, not Debug: in the workflow's history this line is what tells
-	// "ran and found nothing due" from "did not run".
+	// Info, not Debug: in the function logs this line is what tells "ran
+	// and found nothing due" from "did not run".
 	d.Log.Info("safe browsing sweep ran", counts...)
 	if report.stoppedAtBudget {
 		d.Log.Warn("safe browsing sweep stopped at its budget", counts...)
 	}
 
+	d.pingScanHeartbeat(r.Context())
+
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(report)
+}
+
+// scanAuthorized reports whether the request carries either caller's secret
+// in that caller's own header: Vercel Cron's "Bearer <CRON_SECRET>" in
+// Authorization, or SCAN_TOKEN in X-Scan-Token. An unset secret closes its
+// way in, and a secret in the other caller's header counts for nothing, so
+// one leaked value authorizes one caller.
+func (d Deps) scanAuthorized(r *http.Request) bool {
+	if d.Config.CronSecret != "" &&
+		secretMatches(r.Header.Get("Authorization"), "Bearer "+d.Config.CronSecret) {
+		return true
+	}
+	return d.Config.ScanToken != "" &&
+		secretMatches(r.Header.Get("X-Scan-Token"), d.Config.ScanToken)
+}
+
+// secretMatches compares in constant time, so the answer's timing says
+// nothing about how much of a guess was right.
+func secretMatches(got, want string) bool {
+	return subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
+}
+
+// pingScanHeartbeat tells the Better Stack heartbeat that a sweep succeeded.
+// A failed ping is logged at Warn and changes nothing else: the sweep did its
+// work, and the heartbeat going missing is the alarm. The URL is a credential
+// — whoever holds it can keep the monitor green — and Go prints a request's
+// URL into its transport errors, so only the cause is logged.
+//
+// The context is detached from the caller's: a client that hangs up after the
+// sweep must not cost the run its ping.
+func (d Deps) pingScanHeartbeat(ctx context.Context) {
+	if d.Config.ScanHeartbeatURL == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), scanHeartbeatTimeout)
+	defer cancel()
+
+	const message = "safe browsing sweep could not ping its heartbeat"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, d.Config.ScanHeartbeatURL, nil)
+	if err != nil {
+		d.Log.Warn(message, "error", "SCAN_HEARTBEAT_URL is not a valid URL")
+		return
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		var urlErr *url.Error
+		if errors.As(err, &urlErr) {
+			err = urlErr.Err
+		}
+		d.Log.Warn(message, "error", err)
+		return
+	}
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		d.Log.Warn(message, "status", resp.StatusCode)
+	}
 }
 
 // sweep checks one batch of due links in as few hashes.search calls as the

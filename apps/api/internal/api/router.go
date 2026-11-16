@@ -66,9 +66,12 @@ func NewRouter(deps Deps) http.Handler {
 	// With(Recoverer), not root.Use: middleware on root would run on every
 	// redirect.
 	root.With(middleware.Recoverer).Post("/internal/retention", deps.HandleRetention)
-	// POST /internal/scan checks due links against Safe Browsing, twice an
-	// hour from .github/workflows/scan.yml. Placed and guarded exactly like
-	// /internal/retention above, for the same reasons.
+	// /internal/scan checks due links against Safe Browsing. Placed like
+	// /internal/retention above, for the same reasons. GET is Vercel Cron's,
+	// twice an hour from apps/api/vercel.json; POST is the manual run from
+	// .github/workflows/scan.yml. HandleScan tells the two apart by secret,
+	// not by method.
+	root.With(middleware.Recoverer).Get("/internal/scan", deps.HandleScan)
 	root.With(middleware.Recoverer).Post("/internal/scan", deps.HandleScan)
 	root.HandleFunc("/*", func(w http.ResponseWriter, r *http.Request) {
 		if Hostname(r.Host) == apiHost {
