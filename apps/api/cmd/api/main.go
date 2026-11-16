@@ -287,7 +287,7 @@ func run(log *slog.Logger) (*slog.Logger, func(), error) {
 		log.Info("safe browsing scanning enabled")
 	} else {
 		log.Warn("SAFE_BROWSING_API_KEY is unset — destinations are not scanned, " +
-			"POST /internal/scan answers 503, and a flagged link answers 503")
+			"/internal/scan answers 503, and a flagged link answers 503")
 	}
 
 	// The recorder gets its own context, independent of the signal-cancelled

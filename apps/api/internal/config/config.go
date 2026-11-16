@@ -144,20 +144,35 @@ type Config struct {
 
 	// SafeBrowsingAPIKey authenticates hashes.search, the Google Safe Browsing
 	// lookup internal/scanning makes. Empty turns scanning off: cmd/api logs a
-	// warning at startup and leaves api.Deps.Scanner nil, POST /internal/scan
+	// warning at startup and leaves api.Deps.Scanner nil, /internal/scan
 	// answers 503, and a flagged link answers the neutral 503 page instead of
 	// the block page, because Google's terms forbid blocking on a verdict
 	// older than thirty minutes. Optional like every external service here;
 	// the redirect surface must start without it.
 	SafeBrowsingAPIKey string
 
-	// ScanToken guards POST /internal/scan, the sweep .github/workflows/scan.yml
-	// calls twice an hour. Empty disables the endpoint outright — it then
-	// answers 404 for every caller — for RetentionToken's reason: a forgotten
-	// value must not leave an endpoint that writes to every link open to
-	// whoever guesses the path. Its own value, not RetentionToken's or
-	// HealthCheckToken's, so one leaked string authorizes one job.
+	// ScanToken guards the manual way into /internal/scan, the sweep: the
+	// X-Scan-Token header .github/workflows/scan.yml sends when somebody runs
+	// it by hand. Empty closes that way — it then answers 404 — for
+	// RetentionToken's reason: a forgotten value must not leave an endpoint
+	// that writes to every link open to whoever guesses the path. Its own
+	// value, not RetentionToken's or HealthCheckToken's, so one leaked string
+	// authorizes one job.
 	ScanToken string
+
+	// CronSecret guards the scheduled way into /internal/scan. Vercel Cron
+	// reads the variable of the same name from the project and sends it as
+	// "Authorization: Bearer <value>" on every invocation, so the name is
+	// Vercel's, not ours. Empty closes that way, never opens it: an empty
+	// secret must not match an empty bearer token. Not ScanToken's value, so
+	// the two callers can be rotated and revoked apart.
+	CronSecret string
+
+	// ScanHeartbeatURL is the Better Stack heartbeat a successful sweep pings
+	// before it answers. Empty pings nothing, which is right everywhere but
+	// Production. It is a credential — whoever holds it can keep the monitor
+	// green — so it is never logged.
+	ScanHeartbeatURL string
 
 	// SentryDSN empty disables error reporting entirely. Errors are still
 	// logged; they just do not outlive Vercel's log retention.
@@ -282,6 +297,8 @@ func Load() (Config, error) {
 	cfg.RetentionToken = os.Getenv("RETENTION_TOKEN")
 	cfg.SafeBrowsingAPIKey = os.Getenv("SAFE_BROWSING_API_KEY")
 	cfg.ScanToken = os.Getenv("SCAN_TOKEN")
+	cfg.CronSecret = os.Getenv("CRON_SECRET")
+	cfg.ScanHeartbeatURL = os.Getenv("SCAN_HEARTBEAT_URL")
 
 	cfg.SentryDSN = os.Getenv("SENTRY_DSN")
 	cfg.Environment = env("VERCEL_ENV", "development")
