@@ -1,7 +1,7 @@
 {
 	"$schema": "https://docs.renovatebot.com/renovate-schema.json",
 	"extends": ["github>mheob/renovate-config"],
-	"postUpdateOptions": ["gomodTidy"],
+	"postUpdateOptions": ["gomodTidy", "gomodUpdateImportPaths"],
 	"packageRules": [
 		{
 			"description": "The typescript6 catalog in pnpm-workspace.yaml, used by packages/api-client alone, pins TypeScript 6 for its generator, which crashes on 7 (CLAUDE.md). CI never runs the generator, so a bump would pass every check and break the next regeneration. Renovate gives that entry the depType pnpm.catalog.typescript6, so the default catalog's TypeScript 7 (pnpm.catalog.default) is not capped.",
@@ -17,14 +17,15 @@
 			"allowedVersions": "<5"
 		},
 		{
-			"description": "The catalog's vite (an npm: alias of @voidzero-dev/vite-plus-core), vitest, vite-plus and @vitest/browser-playwright entries must sit at exactly the versions vite-plus declares: dependencies.vite, dependencies.vitest and peerDependencies['@vitest/browser-playwright'] in its package.json. The vite@* and vitest@* overrides in pnpm-workspace.yaml force the catalog's versions onto vite-plus's own dependencies, so a mismatch installs without an error. This group keeps the four in one pull request when they release together, but cannot guarantee it: Vitest publishes patches before vite-plus re-pins them, so a group PR can carry only some of them. CI's check:vite-plus step fails such a pull request: after pnpm install it compares the installed vite, vitest and @vitest/browser-playwright with what vite-plus declares (scripts/check-vite-plus-versions.ts). The alias is matched by its real package name: matchPackageNames reads packageName (@voidzero-dev/vite-plus-core), while the dependency's depName is the alias, vite.",
+			"description": "The catalog's vite (an npm: alias of @voidzero-dev/vite-plus-core), vitest, vite-plus and @vitest/browser-playwright entries must sit at exactly the versions vite-plus declares: dependencies.vite, dependencies.vitest and peerDependencies['@vitest/browser-playwright'] in its package.json. The vite@* and vitest@* overrides in pnpm-workspace.yaml force the catalog's versions onto vite-plus's own dependencies, so a mismatch installs without an error. This group keeps the four in one pull request when they release together, but cannot guarantee it: Vitest publishes patches before vite-plus re-pins them, so a group PR can carry only some of them. CI's check:vite-plus step fails such a pull request: after pnpm install it compares the installed vite, vitest and @vitest/browser-playwright with what vite-plus declares (scripts/check-vite-plus-versions.ts). The alias is matched by its real package name: matchPackageNames reads packageName (@voidzero-dev/vite-plus-core), while the dependency's depName is the alias, vite. separateMajorMinor is off because the two do not share a version scheme since vite-plus 1.7.0 (2026-11-17): its core is published as 8.3.8000, after the Vite it carries, while vite-plus stays on 1.x, so by default the core moved in a major pull request and vite-plus in the non-major one, and each failed check:vite-plus alone.",
 			"matchPackageNames": [
 				"vite-plus",
 				"@voidzero-dev/vite-plus-core",
 				"vitest",
 				"@vitest/browser-playwright"
 			],
-			"groupName": "vite-plus toolchain"
+			"groupName": "vite-plus toolchain",
+			"separateMajorMinor": false
 		},
 		{
 			"description": "Nitro 3 ships as date-stamped betas, pinned exactly in pnpm-workspace.yaml's catalog, and a new one can break the web build in ways no required check notices: source maps reaching .vercel/output/static, a changed Sentry upload, or a different function runtime or region. Each new beta is a non-major update, so the preset's non-major group would carry it without the major ⚠️ label, and Kodiak would merge it once green. This rule makes it wait for approval on the Dependency Dashboard and takes it out of that group with groupName null, so the approved update gets a pull request of its own. The null is required, and it works only because this rule comes after the preset's group-non-major rule: packageRules apply in order, and if nitro stayed in the group, the whole group would inherit dependencyDashboardApproval and wait for an approval nobody gives. The preset's own security.json does the same for GitHub Actions.",

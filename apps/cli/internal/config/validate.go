@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 )
 
 // Code names the rule a config file or a `config set` call broke. The package
