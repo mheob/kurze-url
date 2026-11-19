@@ -34,9 +34,12 @@
 #     accounts only, not to one created through the Vercel or Fly.io
 #     integration, so this workflow cannot work for such an account.
 #   - secret REDIS_BUDGET_HEARTBEAT_URL: the URL of a Better Stack heartbeat
-#     expecting a ping every 6 hours, with a grace of at least an hour:
-#     GitHub starts scheduled runs late, and a run that is merely late must
-#     not read as a dead job.
+#     expecting a ping every 6 hours, with a grace of 12 hours. GitHub starts
+#     scheduled runs late, and since November 2026 it drops most of them:
+#     two or three of the four a day run, at gaps of up to 15.4 hours
+#     (measured 2026-11-01 to 2026-11-19). A grace shorter than the longest
+#     gap raises the dead-job alarm over a job that is fine; 12 hours puts
+#     that alarm at 18 hours without a ping.
 #   - variable UPSTASH_REDIS_DB_ID: the database's id, from the console.
 #   - variable REDIS_MONTHLY_LIMIT, optional: the monthly limit, 500000 when
 #     unset. Change it with the plan.
@@ -52,8 +55,12 @@ name: redis budget
 
 on:
   schedule:
-    # Every six hours, so a burst has at most that long to outrun the alarm;
-    # the call costs no Redis commands, so polling more often would only cost
+    # Every six hours, though GitHub runs only two or three of them a day
+    # since November 2026, so a burst has up to about 15 hours, not 6, to
+    # outrun the alarm. Moving the check to Vercel Cron, as the scan sweep
+    # was, would make it punctual but put the account-wide Developer API key
+    # into the API's runtime; the maintainer declined that on 2026-11-19.
+    # The call costs no Redis commands, so polling more often would only cost
     # runner minutes. Not on the hour: GitHub queues every scheduled job at
     # :00 and runs the backlog late.
     - cron: "29 */6 * * *"
