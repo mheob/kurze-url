@@ -95,7 +95,7 @@ catalog:
   "@types/react-dom": ^19.3.0
   "@vercel/related-projects": ^1.1.1
   "@vitejs/plugin-react": ^6.3.0
-  "@vitest/browser-playwright": 5.1.0
+  "@vitest/browser-playwright": 5.1.1
   axe-core: ^4.14.1
   class-variance-authority: ^0.7.1
   cn: ^0.5.2
@@ -126,7 +126,7 @@ catalog:
   typescript: ^7.0.2
   vite: npm:@voidzero-dev/vite-plus-core@8.3.8000
   vite-plus: 1.7.0
-  vitest: 5.1.0
+  vitest: 5.1.1
 
 # The `typescript6` catalog is used by `packages/api-client` alone: its generator,
 # `@hey-api/openapi-ts`, crashes on the TypeScript 7 that the default catalog carries
