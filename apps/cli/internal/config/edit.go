@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 )
 
 // refuse builds the error for a call Set or Unset turns down before it looks
