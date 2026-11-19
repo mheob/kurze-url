@@ -37,8 +37,8 @@ overrides:
 # pnpm's own default, one day, which pnpm applies non-strictly — when no
 # matching version is old enough, it falls back to a younger one rather than
 # failing the install. The explicit three days set on 2026-09-25 matched the
-# Renovate preset's window (`security:minimumReleaseAgeNpm`); Renovate itself
-# still waits that long.
+# Renovate preset's window (`security:minimumReleaseAgeNpm`); since 2026-11-19
+# `.github/renovate.json` lowers Renovate's wait to the same one day.
 #
 # Exclude trusted packages from the age gate.
 minimumReleaseAgeExclude:
