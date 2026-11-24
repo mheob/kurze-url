@@ -5,7 +5,7 @@ go 1.27.0
 toolchain go1.27.4
 
 require (
-	github.com/MicahParks/jwkset v0.11.5
+	github.com/MicahParks/jwkset v0.12.0
 	github.com/MicahParks/keyfunc/v3 v3.9.2
 	github.com/danielgtaylor/huma/v2 v2.41.0
 	github.com/getsentry/sentry-go v0.50.0
@@ -15,7 +15,7 @@ require (
 	github.com/jackc/pgx/v5 v5.13.0
 	github.com/mileusna/useragent v1.3.5
 	github.com/piglig/go-qr v1.1.0
-	github.com/redis/go-redis/v9 v9.23.0
+	github.com/redis/go-redis/v9 v9.24.0
 	github.com/stretchr/testify v1.12.1
 	github.com/testcontainers/testcontainers-go/modules/redis v0.45.0
 	golang.org/x/crypto v0.59.0
